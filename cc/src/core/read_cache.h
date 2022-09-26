@@ -37,11 +37,10 @@ class ReadCache {
   // FASTER hlog allocator
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
 
-  ReadCache(LightEpoch& epoch, hlog_t& hlog, hash_index_t& hash_index,
+  ReadCache(LightEpoch& epoch, hash_index_t& hash_index,
             const std::string& filename, uint64_t log_size,
             double log_mutable_fraction, bool pre_allocate_log)
     : epoch_{ &epoch }
-    , hlog_{ &hlog }
     , hash_index_{ &hash_index }
     , disk_{ filename, epoch, "" }
     , read_cache_{ true, log_size, epoch, disk_, disk_.log(), log_mutable_fraction, pre_allocate_log, EvictCallback} {
@@ -89,7 +88,6 @@ class ReadCache {
 
  private:
   LightEpoch* epoch_;
-  hlog_t* hlog_;
   hash_index_t* hash_index_;
 
   mem_device_t disk_;
@@ -106,20 +104,25 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
     return Status::NotFound;
   }
 
-  if (TraceBackForKeyMatch(pending_context, address)) {
-    Address rc_address = address.readcache_address();
-    Address head_address = read_cache_.head_address.load();
+  Address rc_address;
+  const record_t* record;
 
-    if (head_address <= rc_address) {
-      const record_t* record = reinterpret_cast<const record_t*>(read_cache_.Get(rc_address));
-      assert(!record->header.tombstone); // read cache does not store tombstones
+  while (address.in_readcache()) {
+    rc_address = address.readcache_address();
 
-      if (record != nullptr && !record->header.invalid &&
-          pending_context.is_key_equal(record->key())) {
+    record = reinterpret_cast<const record_t*>(read_cache_.Get(rc_address));
+    assert(!record->header.tombstone);
+
+    if (!record->header.invalid && pending_context.is_key_equal(record->key())) {
+      if (rc_address >= read_cache_.safe_head_address.load()) {
+        //fprintf(stderr, "HA = %llu | RCA = %llu\n", read_cache_.head_address.control(), rc_address.control());
         pending_context.Get(record);
         return Status::Ok;
       }
+      assert(rc_address >= read_cache_.head_address.load());
     }
+
+    address = record->header.previous_address();
   }
   // not handled by read cache
   return Status::NotFound;
@@ -172,19 +175,26 @@ inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(C& pending_context) {
 template <class K, class V, class D, class H>
 template <class C>
 inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& pending_context, record_t* record, Address insert_address) {
+  // Store previous info wrt expected hash bucket entry
+  HashBucketEntry expected_entry = pending_context.entry;
+  AtomicHashBucketEntry* atomic_entry = pending_context.atomic_entry;
+
   Status index_status = hash_index_->FindEntry(exec_context, pending_context);
   assert(index_status == Status::Ok); // record should exist
   // TODO: change this for hot-cold -- can also be Status::NotFound
 
   // find first non-read cache address
   Address hlog_address = Skip(pending_context);
+  assert(!hlog_address.in_readcache());
+  assert(hlog_address != HashBucketEntry::kInvalidEntry);
+
+  // Restore expected hash bucket entry info to perform the hash bucket CAS
+  pending_context.set_index_entry(expected_entry, atomic_entry);
 
   // Create new record
-  //uint32_t record_size = record->size();
-  //Address new_address = BlockAllocate(record_size);
   record_t* new_record = reinterpret_cast<record_t*>(read_cache_.Get(insert_address));
   memcpy(new_record, record, record->size());
-  new_record->header.previous_address_ = hlog_address.control(); // TODO: CHECK
+  new_record->header.previous_address_ = hlog_address.control();
 
   // Try to update hash index
   index_status = hash_index_->TryUpdateEntry(exec_context, pending_context, insert_address, true);
@@ -196,34 +206,9 @@ inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& p
 }
 
 template <class K, class V, class D, class H>
-template <class C>
-inline bool ReadCache<K, V, D, H>::TraceBackForKeyMatch(C& pending_context, Address& address) const {
-  const record_t* record;
-
-  while (address.in_readcache()) {
-    const record_t* record = GetRecordPointer(address);
-    if (record == nullptr) {
-      return false;
-    }
-    if (!record->header.invalid) {
-      if (pending_context.is_key_equal(record->key())) {
-        // TODO: compare addresses only
-        if (address.readcache_address().control() >= read_cache_.safe_read_only_address.control()) {
-          return true;
-        }
-      }
-    }
-
-    address = record->header.previous_address();
-  }
-
-  return false;
-}
-
-template <class K, class V, class D, class H>
 inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_head_address) {
   typedef ReadCacheEvictContext<K, V> rc_evict_context_t;
-  // Evice one page at a time -- first page is smaller than the remaining ones
+  // Evict one page at a time -- first page is smaller than the remaining ones
   //fprintf(stderr, "EVICT %llu %llu\n", to_head_address.control(), from_head_address.control());
   assert(to_head_address - from_head_address <= read_cache_.kPageSize);
 
@@ -231,6 +216,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
   ExecutionContext exec_context;
 
   Address address = from_head_address;
+  int i = 0;
   while (address < to_head_address) {
     record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(address));
     if (record->header.IsNull()) {
@@ -239,7 +225,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     }
 
     uint32_t record_size = record->size();
-    if (!record->header.invalid) {
+    if (record->header.invalid) {
       address += record_size;
       continue;
     }
@@ -254,6 +240,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     rc_evict_context_t context{ record };
     Status index_status = hash_index_->FindEntry(exec_context, context);
     assert(index_status == Status::Ok);
+    assert(context.entry != HashBucketEntry::kInvalidEntry);
 
     while (context.atomic_entry && context.entry.rc_.readcache_) {
       index_status = hash_index_->TryUpdateEntry(exec_context, context, prev_address);
@@ -266,6 +253,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
 
     address += record_size;
   }
+  //fprintf(stderr, "EVICT DONE %llu %llu\n", to_head_address.control(), from_head_address.control());
 }
 
 template <class K, class V, class D, class H>
@@ -277,46 +265,6 @@ inline void ReadCache<K, V, D, H>::SkipBucket(hash_bucket_t* const bucket) {
       record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(entry->address_));
       entry->address_ = record->header.previous_address_;
     }
-  }
-}
-
-//template <class K, class V, class D, class H>
-//inline Status ReadCache<K, V, D, H>::Checkpoint(CheckpointState<file_t>& checkpoint) {
-//  // Checkpoint the read cache
-//  auto path = disk_.relative_index_checkpoint_path(checkpoint.index_token);
-//  file_t ht_file = disk_.NewFile(path + "rc.dat");
-//  RETURN_NOT_OK(ht_file.Open(&disk_.handler()));
-//  ///TODO
-//}
-
-/*template <class K, class V, class D, class H>
-inline Address ReadCache<K, V, D, H>::BlockAllocate(uint32_t record_size) {
-  uint32_t page;
-  Address retval = read_cache_.Allocate(record_size, page);
-  while (retval < read_cache_.read_only_address.load()) {
-    //Refresh();
-    epoch_->ProtectAndDrain();
-    bool page_closed = (retval == Address::kInvalidAddress);
-    while (page_closed) {
-      page_closed = !read_cache_.NewPage(page);
-      epoch_->ProtectAndDrain();
-      //Refresh();
-    }
-    retval = read_cache_.Allocate(record_size, page);
-  }
-  return retval;
-}*/
-
-template <class K, class V, class D, class H>
-inline const Record<K, V>* ReadCache<K, V, D, H>::GetRecordPointer(Address address) const {
-  if (address.in_readcache()) {
-    return (address >= read_cache_.head_address.load())
-      ? reinterpret_cast<const record_t*>(read_cache_.Get(address.readcache_address()))
-      : nullptr;
-  } else {
-    return (address >= hlog_->head_address.load())
-      ? reinterpret_cast<const record_t*>(hlog_->Get(address))
-      : nullptr;
   }
 }
 

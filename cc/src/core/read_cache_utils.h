@@ -21,7 +21,12 @@ class ReadCacheEvictContext : public IAsyncContext {
 
   /// Constructs and returns a context given a pointer to a record.
   ReadCacheEvictContext(record_t* record)
-   : record_{ record } {
+   : record_{ record }
+   , entry{ HashBucketEntry::kInvalidEntry }
+   , atomic_entry{ nullptr }
+   // the following two are not used, since RC is only available in hot hlog
+   , index_op_type{ IndexOperationType::None }
+   , index_op_result{ Status::Corruption } {
   }
 
   /// Copy constructor deleted -- operation never goes async

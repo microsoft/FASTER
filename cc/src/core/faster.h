@@ -142,7 +142,7 @@ class FasterKv {
     //fprintf(stderr, "Read Cache is %d\n", use_readcache);
 
     if (use_readcache) {
-      read_cache_ = std::make_unique<read_cache_t>(epoch_, hlog, hash_index_, "", log_size,
+      read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, "", log_size,
                                                   log_mutable_fraction, pre_allocate_log);
     }
   }
@@ -1214,6 +1214,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
   }
 
   if(address >= read_only_address) {
+    // TODO: check
     // Mutable region. Try to update in place.
     if(atomic_entry->load() != expected_entry) {
       // Some other thread may have RCUed the record before we locked it; try again.
@@ -1800,9 +1801,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
       // Try to insert record to read cache
       if (UseReadCache() && !pending_context->skip_read_cache) {
         Address insert_address = BlockAllocateReadCache(record->size());
-        //fprintf(stderr, "%llu\n", insert_address.control());
         Status rc_status = read_cache_->Insert(context, *pending_context, record, insert_address);
-        //printf("RC INSERT %d %llu\n", rc_status, record->key());
         assert(rc_status == Status::Ok || rc_status == Status::Aborted);
       }
 
@@ -1900,7 +1899,8 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingConditionalInse
   pending_context->min_search_offset = pending_context->start_search_entry.address();
   if (address != Address::kInvalidAddress) {
     // TODO: check that this is indeed correct
-    pending_context->start_search_entry = expected_entry;
+    //pending_context->start_search_entry = expected_entry;
+    pending_context->start_search_entry = address;
   }
 
   return OperationStatus::RETRY_NOW;
@@ -1930,7 +1930,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
   Address address = pending_context->entry.address();
 
   //bool index_points_to_rc = UseReadCache() && pending_context->entry.is_readcache() &&
-  if (UseReadCache() && !pending_context->skip_read_cache) {
+  if (UseReadCache()) {
     address = read_cache_->SkipAndInvalidate(*pending_context);
   }
   Address hlog_address = address;
@@ -1961,8 +1961,6 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
     return OperationStatus::RETRY_NOW;
   }
   assert(address < begin_address || address == prev_address);
-
-  HashBucketEntry expected_entry{ pending_context->entry };
 
   // We have to do RCU and write the updated value to the tail of the log.
   Address new_address;
@@ -3336,10 +3334,17 @@ inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCal
   Status index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
   assert(index_status == Status::Ok || index_status == Status::Pending);
 
+  Address address = pending_context.entry.address();
+  if (UseReadCache()) {
+    address = read_cache_->Skip(pending_context);
+  }
+  assert(!address.in_readcache());
+
   OperationStatus internal_status;
   if (index_status == Status::Ok) {
-    pending_context.start_search_entry = pending_context.entry;
+    pending_context.start_search_entry = address;
     pending_context.entry = HashBucketEntry::kInvalidEntry;
+    assert(pending_context.start_search_entry != HashBucketEntry::kInvalidEntry);
     // perform op
     internal_status = InternalConditionalInsert(pending_context);
   } else {
@@ -3376,7 +3381,10 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
   // always exist an entry that points to the record that we are checking if it is actually live.
   other_faster_t* dest_store = static_cast<other_faster_t*>(pending_context.dest_store);
   bool dest_store_differs = (dest_store != reinterpret_cast<other_faster_t*>(this));
+
   Address min_search_offset = pending_context.min_search_offset;
+  assert(!min_search_offset.in_readcache());
+  assert(!pending_context.start_search_entry.address().in_readcache());
 
   if(thread_ctx().phase != Phase::REST) {
     HeavyEnter();
@@ -3409,6 +3417,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
     // entries in readcache do not count as "active"
     address = read_cache_->Skip(pending_context);
   }
+  Address hlog_address = address;
   assert(!address.in_readcache());
 
   // (Note that address will be Address::kInvalidAddress, if the entry was created.)
@@ -3431,7 +3440,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
     return OperationStatus::NOT_FOUND;
   }
 
-  if(address >= head_address && min_search_offset != expected_entry.address()) {
+  if(address >= head_address && min_search_offset != hlog_address) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
     Address search_until = std::max(min_search_offset + 1, head_address);
     if(!pending_context.is_key_equal(record->key())) {
@@ -3467,8 +3476,8 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
   }
 
   // Update search range
-  pending_context.start_search_entry = expected_entry;
-  pending_context.min_search_offset = expected_entry.address();
+  pending_context.start_search_entry = hlog_address;
+  pending_context.min_search_offset = hlog_address;
 
 create_record:
   // Append entry to the log
@@ -3486,7 +3495,7 @@ create_record:
     new(record) record_t{
       RecordInfo{
         static_cast<uint16_t>(thread_ctx().version),
-        true, false, false, expected_entry.address() }
+        true, false, false, hlog_address }
     };
     // Try to update hash bucket address
     index_status = hash_index_.TryUpdateEntry(thread_ctx(), pending_context, new_address);
