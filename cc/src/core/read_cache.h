@@ -242,7 +242,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     assert(index_status == Status::Ok);
     assert(context.entry != HashBucketEntry::kInvalidEntry);
 
-    while (context.atomic_entry && context.entry.rc_.readcache_) {
+    while (!record->header.invalid && context.atomic_entry && context.entry.rc_.readcache_) {
       index_status = hash_index_->TryUpdateEntry(exec_context, context, prev_address);
       if (index_status == Status::Ok) {
         break;

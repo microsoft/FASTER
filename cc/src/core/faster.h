@@ -130,6 +130,7 @@ class FasterKv {
     , read_cache_{ nullptr }
     , num_pending_ios{ 0 }
     , num_compaction_truncs{ 0 }
+    , compaction_in_progress{ false }
     , num_active_sessions{ 0 } {
     if(!Utility::IsPowerOfTwo(table_size)) {
       throw std::invalid_argument{ " Size is not a power of 2" };
@@ -353,6 +354,8 @@ class FasterKv {
 
   /// Global count of number of truncations after compaction
   std::atomic<uint64_t> num_compaction_truncs;
+
+  std::atomic<bool> compaction_in_progress;
 
   /// Number of active sessions
   std::atomic<size_t> num_active_sessions;
@@ -1799,7 +1802,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
       pending_context->Get(record);
 
       // Try to insert record to read cache
-      if (UseReadCache() && !pending_context->skip_read_cache) {
+      if (UseReadCache() && !compaction_in_progress.load()) {
         Address insert_address = BlockAllocateReadCache(record->size());
         Status rc_status = read_cache_->Insert(context, *pending_context, record, insert_address);
         assert(rc_status == Status::Ok || rc_status == Status::Aborted);
@@ -3021,6 +3024,8 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     throw std::invalid_argument {"Thread should have an active FASTER session"};
   }
 
+  compaction_in_progress.store(true);
+
   std::deque<std::thread> threads;
   LogPageIterator<faster_t> iter(&hlog, hlog.begin_address.load(),
                                   Address(until_address), &disk);
@@ -3051,6 +3056,8 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     }
     std::this_thread::yield();
   }
+
+  compaction_in_progress.store(false);
 
   if (checkpoint) {
     // index checkpoint
@@ -3480,6 +3487,12 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
   pending_context.min_search_offset = hlog_address;
 
 create_record:
+  if (UseReadCache()) {
+    // Record will be moved either to the tail, or the another log
+    // making any potential read cache record invalid
+    read_cache_->SkipAndInvalidate(pending_context);
+  }
+
   // Append entry to the log
   if (!dest_store_differs) {
     // Case: Single log compaction, or Hot-Cold RMW conditional insert
