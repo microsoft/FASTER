@@ -393,6 +393,7 @@ namespace FASTER.core
             SetHeader(length, (byte*)physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -437,8 +438,8 @@ namespace FASTER.core
                 physicalAddress += Align(length) + headerSize;
             }
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
-            if (AutoCommit) Commit();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
         
@@ -475,6 +476,7 @@ namespace FASTER.core
             SetHeader(length, (byte*)physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -510,6 +512,7 @@ namespace FASTER.core
             SetHeader(length, (byte*)physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -547,6 +550,7 @@ namespace FASTER.core
             SetHeader(length, physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -586,6 +590,7 @@ namespace FASTER.core
             SetHeader(length, physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -620,6 +625,7 @@ namespace FASTER.core
             SetHeader(length, physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -2082,6 +2088,7 @@ namespace FASTER.core
             }
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
