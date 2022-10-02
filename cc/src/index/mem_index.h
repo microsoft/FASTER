@@ -309,7 +309,27 @@ inline Status HashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pe
     // To handle InternalDelete's minor optimization that elides a record completely
     new_entry = HashBucketEntry::kInvalidEntry;
   }
+
+  hash_bucket_entry_t before{ pending_context.entry };
   bool success = pending_context.atomic_entry->compare_exchange_strong(pending_context.entry, new_entry);
+  hash_bucket_entry_t after{ pending_context.entry };
+
+  /*
+  if (success) {
+  log_debug("{%p} [%llu %lu %d] -> [%llu %lu %d] SUCCESS",
+    pending_context.atomic_entry,
+    before.address().control(), before.tag(), before.tentative(),
+    new_entry.address().control(), new_entry.tag(), new_entry.tentative());
+    assert(before == after);
+  } else {
+  log_debug("{%p} [%llu %lu %d] -> [%llu %lu %d] FAILED! {%llu %lu %d}",
+    pending_context.atomic_entry,
+    before.address().control(), before.tag(), before.tentative(),
+    new_entry.address().control(), new_entry.tag(), new_entry.tentative(),
+    after.address().control(), after.tag(), after.tentative());
+    assert(before != after);
+  }
+  */
   return success ? Status::Ok : Status::Aborted;
 }
 
@@ -366,18 +386,19 @@ struct HashBucketOverflowEntryHelper {
     HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
 
     // Try updating overflow entry to point to new bucket
-    HashBucketOverflowEntry overflow_entry = current->overflow_entry.load();
-    bool success;
-    do {
+    // We expect current overflow_entry to be unused -- if some other thread managed to allocate first CAS will fail
+    HashBucketOverflowEntry overflow_entry{ HashBucketEntry::kInvalidEntry };
+    bool success = current->overflow_entry.compare_exchange_strong(overflow_entry, new_bucket_entry);
+
+    /* do {
       success = current->overflow_entry.compare_exchange_strong(overflow_entry, new_bucket_entry);
-    } while(!success && overflow_entry.unused());
+    } while(!success && overflow_entry.unused()); */
 
     if(!success) {
       // Install failed, undo allocation
       overflow_buckets_allocator_.FreeAtEpoch(new_bucket_addr, 0);
       // Use the winner's entry
-      current = &overflow_buckets_allocator_.Get(
-                      current->overflow_entry.load().address());
+      current = &overflow_buckets_allocator_.Get(overflow_entry.address());
     } else {
       // Install succeeded; we have a new bucket on the chain. Return its first slot.
       current = &overflow_buckets_allocator_.Get(new_bucket_addr);
