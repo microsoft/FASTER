@@ -6,6 +6,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <string.h>
 
 #include <chrono>
 
@@ -13,27 +14,42 @@
 enum class Lvl {
   DEBUG = 0,
   INFO  = 1,
-  ERR = 2,
+  ERROR = 2
 };
 
 /// By default, only print ERROR log messages.
-#define LEVEL Lvl::INFO
+#define LEVEL Lvl::DEBUG
 
 /// Macro to add in the file and function name, and line number.
 #ifdef _WIN32
-#define logMessage(l, f, ...) logMsg(l, __LINE__, __func__, __FILE__, f, __VA_ARGS__)
+#define __FILENAME__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
+#define logMessage(l, f, ...) log_msg(l, __LINE__, __func__, __FILENAME__, f, __VA_ARGS__)
 #else
-#define logMessage(l, f, a...) logMsg(l, __LINE__, __func__, __FILE__, f, ##a)
+#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+#define logMessage(l, f, a...) log_msg(l, __LINE__, __func__, __FILENAME__, f, ##a)
 #endif
 
+#ifdef NDEBUG
+#define log_debug(f, a...) do {} while(0)
+#define log_info(f, a...) do {} while(0)
+#else
+#define log_debug(f, a...) logMessage(Lvl::DEBUG, f, ##a)
+#define log_info(f, a...) logMessage(Lvl::INFO , f, ##a)
+#endif
+
+#define log_error(f, a...) logMessage(Lvl::ERROR, f, ##a)
+
+typedef std::chrono::high_resolution_clock log_clock_t;
+
+static std::chrono::time_point<log_clock_t> start;
+
 /// Prints out a message with the current timestamp and code location.
-inline void logMsg(Lvl level, int line, const char* func,
-                   const char* file, const char* fmt, ...)
-{
+inline void log_msg(Lvl level, int line, const char* func,
+                   const char* file, const char* fmt, ...) {
   // Do not print messages below the current level.
   if (level < static_cast<Lvl>(LEVEL)) return;
 
-  auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
+  auto now = log_clock_t::now();
 
   va_list argptr;
   va_start(argptr, fmt);
@@ -54,10 +70,16 @@ inline void logMsg(Lvl level, int line, const char* func,
     break;
   }
 
-  fprintf(stderr, "[%010lu.%09lu]::%s::%s:%s:%d:: %s\n",
-          (unsigned long) std::chrono::duration_cast<std::chrono::seconds>(now).count(),
-          (unsigned long) std::chrono::duration_cast<std::chrono::nanoseconds>(now).count(),
+  fprintf(stderr, "[%04lu.%09lu]::%s::%s:%s:%d: %s\n",
+          (unsigned long) std::chrono::duration_cast<std::chrono::seconds>(now - start).count(),
+          (unsigned long) std::chrono::duration_cast<std::chrono::nanoseconds>(now - start).count(),
           l.c_str(), file, func, line, buffer);
 
   va_end(argptr);
+}
+
+inline void log_init() {
+ #ifndef NDEBUG
+  start = log_clock_t::now();
+ #endif
 }
