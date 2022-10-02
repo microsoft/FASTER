@@ -177,14 +177,16 @@ class AsyncPendingReadContext : public PendingContext<K> {
     : PendingContext<key_t>(OperationType::Read, caller_context_, caller_callback_)
     , abort_if_tombstone{ abort_if_tombstone_ }
     , min_search_offset{ min_search_offset_ }
-    , num_compaction_truncs{ num_compaction_truncs_ } {
+    , num_compaction_truncs{ num_compaction_truncs_ }
+    , expected_hlog_address{ Address::kInvalidAddress } {
   }
   /// The deep copy constructor.
   AsyncPendingReadContext(AsyncPendingReadContext& other, IAsyncContext* caller_context)
     : PendingContext<key_t>(other, caller_context)
     , abort_if_tombstone{ other.abort_if_tombstone }
     , min_search_offset{ other.min_search_offset }
-    , num_compaction_truncs{ other.num_compaction_truncs } {
+    , num_compaction_truncs{ other.num_compaction_truncs }
+    , expected_hlog_address{ other.expected_hlog_address } {
   }
  public:
   virtual void Get(const void* rec) = 0;
@@ -192,10 +194,13 @@ class AsyncPendingReadContext : public PendingContext<K> {
 
   /// If true, Read will return ABORT (instead of NOT_FOUND), if record is tombstone
   bool abort_if_tombstone;
-  ///
+  /// Lower address that the Read op should consider
+  /// Used when partially retrying Read to address Read-Compaction race condition
   Address min_search_offset;
-  ///
+  /// Used to infer whether a log truncation took place, after compacting entries to the log tail
   uint64_t num_compaction_truncs;
+  /// Keeps latest hlog address, as found by hash index entry (after skipping read cache)
+  Address expected_hlog_address;
 };
 
 /// A synchronous Read() context preserves its type information.
@@ -335,12 +340,14 @@ class AsyncPendingRmwContext : public PendingContext<K> {
  protected:
   AsyncPendingRmwContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_, bool create_if_not_exists_)
     : PendingContext<key_t>(OperationType::RMW, caller_context_, caller_callback_)
-    , create_if_not_exists{create_if_not_exists_} {
+    , create_if_not_exists{ create_if_not_exists_ }
+    , expected_hlog_address{ Address::kInvalidAddress } {
   }
   /// The deep copy constructor.
   AsyncPendingRmwContext(AsyncPendingRmwContext& other, IAsyncContext* caller_context)
     : PendingContext<key_t>(other, caller_context)
-    , create_if_not_exists{other.create_if_not_exists} {
+    , create_if_not_exists{ other.create_if_not_exists }
+    , expected_hlog_address{ other.expected_hlog_address } {
   }
  public:
   /// Set initial value.
@@ -357,7 +364,7 @@ class AsyncPendingRmwContext : public PendingContext<K> {
   /// If false, it will return NOT_FOUND instead of creating a new record
   bool create_if_not_exists;
   /// Keeps latest hlog address, as found by hash index entry (after skipping read cache)
-  Address prev_address;
+  Address expected_hlog_address;
 };
 
 /// A synchronous Rmw() context preserves its type information.

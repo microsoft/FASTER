@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <unordered_set>
 
+#include "common/log.h"
 #include "device/file_system_disk.h"
 #include "index/mem_index.h"
 
@@ -130,8 +131,9 @@ class FasterKv {
     , read_cache_{ nullptr }
     , num_pending_ios{ 0 }
     , num_compaction_truncs{ 0 }
-    , compaction_in_progress{ false }
     , num_active_sessions{ 0 } {
+    log_init();
+
     if(!Utility::IsPowerOfTwo(table_size)) {
       throw std::invalid_argument{ " Size is not a power of 2" };
     }
@@ -139,9 +141,10 @@ class FasterKv {
       throw std::invalid_argument{ " Cannot allocate such a large hash table " };
     }
 
+    log_debug("Hash Index Size: %lu", table_size);
     hash_index_.Initialize(table_size);
-    //fprintf(stderr, "Read Cache is %d\n", use_readcache);
 
+    log_debug("Read cache is %d", use_readcache);
     if (use_readcache) {
       read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, "", log_size,
                                                   log_mutable_fraction, pre_allocate_log);
@@ -354,8 +357,6 @@ class FasterKv {
 
   /// Global count of number of truncations after compaction
   std::atomic<uint64_t> num_compaction_truncs;
-
-  std::atomic<bool> compaction_in_progress;
 
   /// Number of active sessions
   std::atomic<size_t> num_active_sessions;
@@ -623,7 +624,8 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIoPendingRequests(ExecutionContext
           io_context->caller_context);
 
       // Re-scan newly introduced log range (i.e. [expected_entry->address, tailAddress])
-      read_pending_context->min_search_offset = read_pending_context->entry.address();
+      assert(!read_pending_context->expected_hlog_address.in_readcache());
+      read_pending_context->min_search_offset = read_pending_context->expected_hlog_address;
       read_pending_context->num_compaction_truncs = num_compaction_truncs.load();
       // TODO: check if retrying is done properly wrt execution contexts (i.e. like RMW)
       result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
@@ -853,11 +855,13 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
   if (UseReadCache()) {
     Status rc_status = read_cache_->Read(pending_context, address);
     if (rc_status == Status::Ok) {
+      //log_error("Found in RC!");
       return OperationStatus::SUCCESS;
     }
     assert(rc_status == Status::NotFound);
     // address should have been modified to point to hlog
   }
+  pending_context.expected_hlog_address = address;
   assert(!address.in_readcache());
 
   Address begin_address = hlog.begin_address.load();
@@ -1074,6 +1078,7 @@ create_record:
   uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
   Address new_address = BlockAllocate(record_size);
   record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+  assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
   new(record) record_t{
     RecordInfo{
       static_cast<uint16_t>(thread_ctx().version), true, false, false,
@@ -1127,7 +1132,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
   if (UseReadCache()) {
     address = read_cache_->Skip(pending_context);
   }
-  pending_context.prev_address = address;
+  pending_context.expected_hlog_address = address;
   assert(!address.in_readcache());
 
   Address begin_address = hlog.begin_address.load();
@@ -1254,10 +1259,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
   // Create a record and attempt RCU.
 create_record:
   if (UseReadCache()) {
-    // invalidate read cache entries before trying to insert new entry
-    // The following does NOT work (for some reason...)
-    // address = read_cache_->SkipAndInvalidate(pending_context);
-    // This one, works! TODO: find out why...
+    // invalidate read cache entry before trying to insert new entry
     read_cache_->SkipAndInvalidate(pending_context);
   }
   assert(!address.in_readcache());
@@ -1284,10 +1286,11 @@ create_record:
     pending_context.stamp_request(thread_ctx().phase, thread_ctx().version);
   }
 
+  assert(!pending_context.expected_hlog_address.in_readcache()); // hlog entries do *not* point to read cache
   new(new_record) record_t{
     RecordInfo{
       static_cast<uint16_t>(pending_context.version), true, false, false,
-      pending_context.prev_address },
+      pending_context.expected_hlog_address },
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&new_record->key()));
 
@@ -1468,6 +1471,7 @@ create_record:
   uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
   Address new_address = BlockAllocate(record_size);
   record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+  assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
   new(record) record_t{
     RecordInfo{
       static_cast<uint16_t>(thread_ctx().version), true, true, false,
@@ -1802,7 +1806,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
       pending_context->Get(record);
 
       // Try to insert record to read cache
-      if (UseReadCache() && !compaction_in_progress.load()) {
+      if (UseReadCache()) { // && !compaction_in_progress.load()) {
         Address insert_address = BlockAllocateReadCache(record->size());
         Status rc_status = read_cache_->Insert(context, *pending_context, record, insert_address);
         assert(rc_status == Status::Ok || rc_status == Status::Aborted);
@@ -1918,8 +1922,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
         io_context.caller_context);
   bool create_if_not_exists = pending_context->create_if_not_exists;
 
-  //Address prev_address = pending_context->entry.address();
-  Address prev_address = pending_context->prev_address;
+  Address expected_hlog_address = pending_context->expected_hlog_address;
   Address begin_address = hlog.begin_address.load();
 
   // This is an optimization for when index is in-memory (and thus index ops are sync).
@@ -1932,25 +1935,24 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
   // Address from new hash index entry
   Address address = pending_context->entry.address();
 
-  //bool index_points_to_rc = UseReadCache() && pending_context->entry.is_readcache() &&
   if (UseReadCache()) {
-    address = read_cache_->SkipAndInvalidate(*pending_context);
+    address = read_cache_->Skip(*pending_context);
   }
   Address hlog_address = address;
   assert(!address.in_readcache());
 
   // Make sure that no other record has been inserted in the meantime
-  if(address >= head_address && address != prev_address) {
+  if(address >= head_address && address != expected_hlog_address) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
     if(!pending_context->is_key_equal(record->key())) {
-      Address min_offset = std::max(prev_address + 1, head_address);
+      Address min_offset = std::max(expected_hlog_address + 1, head_address);
       address = TraceBackForKeyMatchCtxt(*pending_context, record->header.previous_address(), min_offset);
     }
   }
   // part of the same hash chain or entry deleted
-  assert(address < begin_address || address >= prev_address);
+  assert(address < begin_address || address >= expected_hlog_address);
 
-  if(address > prev_address) {
+  if(address > expected_hlog_address) {
     // This handles two mutually exclusive cases. In both cases InternalRmw will be called immediately:
     //  1) Found a newer record in the in-memory region (i.e. address >= head_address)
     //     Calling InternalRmw will result in taking into account the newer version,
@@ -1963,7 +1965,12 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
     pending_context->go_async(address);
     return OperationStatus::RETRY_NOW;
   }
-  assert(address < begin_address || address == prev_address);
+  assert(address < begin_address || address == expected_hlog_address);
+
+  // invalidate read cache entry
+  if (UseReadCache()) {
+    read_cache_->SkipAndInvalidate(*pending_context);
+  }
 
   // We have to do RCU and write the updated value to the tail of the log.
   Address new_address;
@@ -1978,6 +1985,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
     new_address = BlockAllocate(record_size);
     new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));
 
+    assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
     new(new_record) record_t{
       RecordInfo{
         static_cast<uint16_t>(context.version), true, false, false,
@@ -1994,6 +2002,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
     new_address = BlockAllocate(record_size);
     new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));
 
+    assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
     new(new_record) record_t{
       RecordInfo{
         static_cast<uint16_t>(context.version), true, false, false,
@@ -3024,8 +3033,6 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     throw std::invalid_argument {"Thread should have an active FASTER session"};
   }
 
-  compaction_in_progress.store(true);
-
   std::deque<std::thread> threads;
   LogPageIterator<faster_t> iter(&hlog, hlog.begin_address.load(),
                                   Address(until_address), &disk);
@@ -3056,8 +3063,6 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     }
     std::this_thread::yield();
   }
-
-  compaction_in_progress.store(false);
 
   if (checkpoint) {
     // index checkpoint
