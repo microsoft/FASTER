@@ -4,6 +4,7 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,8 +36,8 @@ namespace FASTER.core
 
         internal readonly InternalFasterSession FasterSession;
 
-        UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
-        LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
+        readonly UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
+        readonly LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
         readonly LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
         readonly BasicContext<Key, Value, Input, Output, Context, Functions> bContext;
 
@@ -49,32 +50,53 @@ namespace FASTER.core
         internal ulong sharedLockCount;
         internal ulong exclusiveLockCount;
 
-        bool isAcquired;
+        bool isAcquiredLockable;
 
-        internal void Acquire()
+        internal void AcquireLockable()
         {
-            CheckNotAcquired();
-            fht.IncrementNumLockingSessions();
-            isAcquired = true;
+            CheckIsNotAcquiredLockable();
+
+            while (true)
+            {
+                // Checkpoints cannot complete while we have active locking sessions.
+                while (IsInPreparePhase())
+                    Thread.Yield();
+
+                fht.IncrementNumLockingSessions();
+                isAcquiredLockable = true;
+
+                if (!IsInPreparePhase())
+                    break;
+                InternalReleaseLockable();
+                Thread.Yield();
+            }
         }
 
-        internal void Release()
+        internal void ReleaseLockable()
         {
-            CheckAcquired();
-            isAcquired = false;
+            CheckIsAcquiredLockable();
+            if (TotalLockCount > 0)
+                throw new FasterException($"EndLockable called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+            InternalReleaseLockable();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void InternalReleaseLockable()
+        {
+            isAcquiredLockable = false;
             fht.DecrementNumLockingSessions();
         }
 
-        internal void CheckAcquired()
+        internal void CheckIsAcquiredLockable()
         {
-            if (!isAcquired)
-                throw new FasterException("Method call on not-acquired Context");
+            if (!isAcquiredLockable)
+                throw new FasterException("Lockable method call when BeginLockable has not been called");
         }
 
-        void CheckNotAcquired()
+        void CheckIsNotAcquiredLockable()
         {
-            if (isAcquired)
-                throw new FasterException("Method call on acquired Context");
+            if (isAcquiredLockable)
+                throw new FasterException("BeginLockable cannot be called twice (call EndLockable first)");
         }
 
         internal ClientSession(
@@ -86,6 +108,8 @@ namespace FASTER.core
         {
             this.lContext = new(this);
             this.bContext = new(this);
+            this.luContext = new(this);
+            this.uContext = new(this);
 
             this.loggerFactory = loggerFactory;
             this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
@@ -199,22 +223,12 @@ namespace FASTER.core
         /// <summary>
         /// Return a new interface to Faster operations that supports manual epoch control.
         /// </summary>
-        public UnsafeContext<Key, Value, Input, Output, Context, Functions> GetUnsafeContext()
-        {
-            this.uContext ??= new(this);
-            this.uContext.Acquire();
-            return this.uContext;
-        }
+        public UnsafeContext<Key, Value, Input, Output, Context, Functions> UnsafeContext => uContext;
 
         /// <summary>
         /// Return a new interface to Faster operations that supports manual locking and epoch control.
         /// </summary>
-        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> GetLockableUnsafeContext()
-        {
-            this.luContext ??= new(this);
-            this.luContext.Acquire();
-            return this.luContext;
-        }
+        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> LockableUnsafeContext => luContext;
 
         /// <summary>
         /// Return a session wrapper that supports manual locking.
@@ -655,40 +669,51 @@ namespace FASTER.core
         #region Other Operations
 
         /// <inheritdoc/>
-        public unsafe void ResetModified(ref Key key)
+        public void ResetModified(ref Key key)
         {
             UnsafeResumeThread();
             try
             {
-                OperationStatus status;
-                do
-                    status = fht.InternalModifiedBitOperation(ref key, out _);
-                while (fht.HandleImmediateNonPendingRetryStatus(status, ctx, FasterSession));
+                UnsafeResetModified(ref key);
             }
             finally
             {
                 UnsafeSuspendThread();
             }
         }
+
+        internal void UnsafeResetModified(ref Key key)
+        {
+            OperationStatus status;
+            do
+                status = fht.InternalModifiedBitOperation(ref key, out _);
+            while (fht.HandleImmediateNonPendingRetryStatus(status, ctx, FasterSession));
+        }
+
         /// <inheritdoc/>
         public unsafe void ResetModified(Key key) => ResetModified(ref key);
 
         /// <inheritdoc/>
-        internal unsafe bool IsModified(ref Key key)
+        internal bool IsModified(ref Key key)
         {
-            RecordInfo modifiedInfo;
             UnsafeResumeThread();
             try
             {
-                OperationStatus status;
-                do
-                    status = fht.InternalModifiedBitOperation(ref key, out modifiedInfo, false);
-                while (fht.HandleImmediateNonPendingRetryStatus(status, ctx, FasterSession));
+                return UnsafeIsModified(ref key);
             }
             finally
             {
                 UnsafeSuspendThread();
             }
+        }
+
+        internal bool UnsafeIsModified(ref Key key)
+        {
+            RecordInfo modifiedInfo;
+            OperationStatus status;
+            do
+                status = fht.InternalModifiedBitOperation(ref key, out modifiedInfo, false);
+            while (fht.HandleImmediateNonPendingRetryStatus(status, ctx, FasterSession));
             return modifiedInfo.Modified;
         }
 
@@ -848,6 +873,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnsafeResumeThread()
         {
+            // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
+            // get the "trying to acquire already-acquired epoch" error.
             fht.epoch.Resume();
             fht.InternalRefresh(ctx, FasterSession);
         }
@@ -856,8 +883,11 @@ namespace FASTER.core
         /// Suspend session on current thread
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeSuspendThread() 
-            => fht.epoch.Suspend();
+        internal void UnsafeSuspendThread()
+        {
+            Debug.Assert(fht.epoch.ThisInstanceProtected());
+            fht.epoch.Suspend();
+        }
 
         void IClientSession.AtomicSwitch(long version)
         {
@@ -867,7 +897,7 @@ namespace FASTER.core
         /// <summary>
         /// Return true if Faster State Machine is in PREPARE sate
         /// </summary>
-        public bool IsInPreparePhase()
+        internal bool IsInPreparePhase()
         {
             return this.fht.SystemState.Phase == Phase.PREPARE;
         }

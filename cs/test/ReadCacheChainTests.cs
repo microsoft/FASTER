@@ -495,7 +495,7 @@ namespace FASTER.test.ReadCacheTests
             CreateChain();
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            using var luContext = session.GetLockableUnsafeContext();
+            var luContext = session.LockableUnsafeContext;
 
             Dictionary<int, LockType> locks = new()
             {
@@ -504,7 +504,8 @@ namespace FASTER.test.ReadCacheTests
                 { highChainKey, LockType.Exclusive }
             };
 
-            luContext.ResumeThread();
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
 
             try
             {
@@ -536,7 +537,8 @@ namespace FASTER.test.ReadCacheTests
             }
             finally
             {
-                luContext.SuspendThread();
+                luContext.EndLockable();
+                luContext.EndUnsafe();
             }
 
             Assert.IsFalse(fht.LockTable.IsActive);
@@ -556,7 +558,7 @@ namespace FASTER.test.ReadCacheTests
             //CreateChain();
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            using var luContext = session.GetLockableUnsafeContext();
+            var luContext = session.LockableUnsafeContext;
 
             Dictionary<int, LockType> locks = new()
             {
@@ -565,7 +567,9 @@ namespace FASTER.test.ReadCacheTests
                 { highChainKey, LockType.Exclusive }
             };
 
-            luContext.ResumeThread();
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
+
             try
             {
                 // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
@@ -612,7 +616,8 @@ namespace FASTER.test.ReadCacheTests
             }
             finally
             {
-                luContext.SuspendThread();
+                luContext.EndLockable();
+                luContext.EndUnsafe();
             }
 
             Assert.IsFalse(fht.LockTable.IsActive);

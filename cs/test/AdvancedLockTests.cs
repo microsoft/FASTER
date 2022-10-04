@@ -230,43 +230,43 @@ namespace FASTER.test.LockTests
 
                 {   // Populate and Lock
                     using var session = fht1.NewSession(new SimpleFunctions<int, int>());
-                    using var luContext = session.GetLockableUnsafeContext();
+                    var luContext = session.LockableUnsafeContext;
                     var firstKeyEnd = incremental ? numKeys / 2 : numKeys;
 
-                    luContext.ResumeThread();
+                    luContext.BeginUnsafe();
                     for (int key = 0; key < firstKeyEnd; key++)
                     {
                         luContext.Upsert(key, getValue(key));
                         if ((key % lockKeyInterval) == 0)
                             luContext.Lock(key, getLockType(key));
                     }
-                    luContext.SuspendThread();
+                    luContext.EndUnsafe();
 
                     fht1.TryInitiateFullCheckpoint(out token, checkpointType);
                     await fht1.CompleteCheckpointAsync();
 
                     if (incremental)
                     {
-                        luContext.ResumeThread();
+                        luContext.BeginUnsafe();
                         for (int key = firstKeyEnd; key < numKeys; key++)
                         {
                             luContext.Upsert(key, getValue(key));
                             if ((key % lockKeyInterval) == 0)
                                 luContext.Lock(key, getLockType(key));
                         }
-                        luContext.SuspendThread();
+                        luContext.EndUnsafe();
 
                         var _result1 = fht1.TryInitiateHybridLogCheckpoint(out var _token1, checkpointType, tryIncremental: true);
                         await fht1.CompleteCheckpointAsync();
                     }
 
-                    luContext.ResumeThread();
+                    luContext.BeginUnsafe();
                     for (int key = 0; key < numKeys; key += lockKeyInterval)
                     {
                         // This also verifies the locks are there--otherwise (in Debug) we'll AssertFail trying to unlock an unlocked record
                         luContext.Unlock(key, getLockType(key));
                     }
-                    luContext.SuspendThread();
+                    luContext.EndUnsafe();
                 }
 
                 if (syncMode == SyncMode.Async)
@@ -276,15 +276,15 @@ namespace FASTER.test.LockTests
 
                 {   // Ensure there are no locks
                     using var session = fht2.NewSession(new SimpleFunctions<int, int>());
-                    using var luContext = session.GetLockableUnsafeContext();
-                    luContext.ResumeThread();
+                    var luContext = session.LockableUnsafeContext;
+                    luContext.BeginUnsafe();
                     for (int key = 0; key < numKeys; key++)
                     {
                         (bool isExclusive, byte isShared) = luContext.IsLocked(key);
                         Assert.IsFalse(isExclusive);
                         Assert.AreEqual(0, isShared);
                     }
-                    luContext.SuspendThread();
+                    luContext.EndUnsafe();
                 }
             }
         }

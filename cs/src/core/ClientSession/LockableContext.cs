@@ -17,59 +17,31 @@ namespace FASTER.core
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
         readonly InternalFasterSession FasterSession;
 
+        /// <summary>Indicates whether this struct has been initialized</summary>
+        public bool IsNull => this.clientSession is null;
+
         internal LockableContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             this.clientSession = clientSession;
             FasterSession = new InternalFasterSession(clientSession);
         }
 
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeResumeThread()
-        {
-            clientSession.CheckAcquired();
-            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
-        }
+        #region Begin/EndLockable
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeSuspendThread()
-        {
-            clientSession.CheckAcquired();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            clientSession.UnsafeSuspendThread();
-        }
+        public void BeginLockable() => clientSession.AcquireLockable();
 
-        #region Acquire and Dispose
+        /// <inheritdoc/>
+        public void EndLockable() => clientSession.ReleaseLockable();
 
-        /// <summary>
-        /// Acquire a lockable context
-        /// </summary>
-        public void Acquire()
-        {
-            clientSession.Acquire();
-        }
-
-        /// <summary>
-        /// Release a lockable context; does not actually dispose of anything
-        /// </summary>
-        public void Release()
-        {
-            if (clientSession.fht.epoch.ThisInstanceProtected())
-                throw new FasterException("Releasing LockableContext with a protected epoch; must call UnsafeSuspendThread");
-            if (clientSession.TotalLockCount > 0)
-                throw new FasterException($"Releasing LockableContext with locks held: {clientSession.sharedLockCount} shared locks, {clientSession.exclusiveLockCount} exclusive locks");
-            clientSession.Release();
-        }
-        #endregion Acquire and Dispose
+        #endregion Begin/EndLockable
 
         #region Key Locking
 
         /// <inheritdoc/>
         public unsafe void Lock(ref Key key, LockType lockType)
         {
-            clientSession.CheckAcquired();
+            clientSession.CheckIsAcquiredLockable();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
             try
@@ -100,7 +72,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Unlock(ref Key key, LockType lockType)
         {
-            clientSession.CheckAcquired();
+            clientSession.CheckIsAcquiredLockable();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
             try
@@ -131,7 +103,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public (bool exclusive, byte shared) IsLocked(ref Key key)
         {
-            clientSession.CheckAcquired();
+            clientSession.CheckIsAcquiredLockable();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
             try
@@ -643,8 +615,8 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
             {
-                recordInfo.SetDirtyAndModified();
                 lockFailed = false;
+                recordInfo.SetDirtyAndModified();
                 return _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
             }
 
