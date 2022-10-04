@@ -421,7 +421,7 @@ class HotColdRmwReadContext : public IAsyncContext {
 
   ~HotColdRmwReadContext() {
     if (record != nullptr && (!deep_copied_ || this->from_deep_copy())) {
-      delete record;
+      delete[] record;
     }
   }
 
