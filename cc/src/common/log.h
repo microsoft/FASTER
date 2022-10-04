@@ -10,6 +10,8 @@
 
 #include <chrono>
 
+#include "../core/thread.h"
+
 /// Defines the type of log messages supported by the system.
 enum class Lvl {
   DEBUG = 0,
@@ -70,10 +72,10 @@ inline void log_msg(Lvl level, int line, const char* func,
     break;
   }
 
-  fprintf(stderr, "[%04lu.%09lu]::%s::%s:%s:%d: %s\n",
+  fprintf(stderr, "[%04lu.%09lu]{%u}::%s::%s:%s:%d: %s\n",
           (unsigned long) std::chrono::duration_cast<std::chrono::seconds>(now - start).count(),
           (unsigned long) std::chrono::duration_cast<std::chrono::nanoseconds>(now - start).count(),
-          l.c_str(), file, func, line, buffer);
+          FASTER::core::Thread::id(), l.c_str(), file, func, line, buffer);
 
   va_end(argptr);
 }
