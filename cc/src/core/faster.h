@@ -129,6 +129,7 @@ class FasterKv {
     , grow_state_{ &hlog }
     , hash_index_{ disk, epoch_, gc_state_, grow_state_ }
     , read_cache_{ nullptr }
+    , other_store_{ nullptr }
     , num_pending_ios{ 0 }
     , num_compaction_truncs{ 0 }
     , num_active_sessions{ 0 } {
@@ -146,7 +147,7 @@ class FasterKv {
 
     log_debug("Read cache is %d", use_readcache);
     if (use_readcache) {
-      read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, "", log_size,
+      read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, hlog, "", log_size,
                                                   log_mutable_fraction, pre_allocate_log);
     }
   }
@@ -252,7 +253,7 @@ class FasterKv {
   Address TraceBackForOtherChainStart(uint64_t old_size,  uint64_t new_size, Address from_address,
                                       Address min_address, uint8_t side);
 
-  inline Address BlockAllocate(uint32_t record_size, other_faster_t* other_store = nullptr);
+  inline Address BlockAllocate(uint32_t record_size);
   inline Address BlockAllocateReadCache(uint32_t record_size);
 
   inline Status HandleOperationStatus(ExecutionContext& ctx,
@@ -321,6 +322,10 @@ class FasterKv {
   bool UseReadCache() const {
     return (read_cache_.get() != nullptr);
   }
+  void SetOtherStore(other_faster_t* other_store) {
+    assert(other_store_ == nullptr); // set only once
+    other_store_ = other_store;
+  }
 
  private:
   LightEpoch epoch_;
@@ -360,6 +365,10 @@ class FasterKv {
 
   /// Number of active sessions
   std::atomic<size_t> num_active_sessions;
+
+  // Pointer to other FasterKv instance (if hot-cold); else nullptr
+  // Required for the Epoch framework to work properly
+  other_faster_t* other_store_;
 
   /// Space for two contexts per thread, stored inline.
   ThreadContext thread_contexts_[Thread::kMaxNumThreads];
@@ -855,7 +864,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
   if (UseReadCache()) {
     Status rc_status = read_cache_->Read(pending_context, address);
     if (rc_status == Status::Ok) {
-      //log_error("Found in RC!");
       return OperationStatus::SUCCESS;
     }
     assert(rc_status == Status::NotFound);
@@ -881,7 +889,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
   }
 
   if (pending_context.min_search_offset != Address::kInvalidAddress &&
-        pending_context.min_search_offset > address) {
+      pending_context.min_search_offset > address) {
     // Found an record before the designated start of search range
     return OperationStatus::NOT_FOUND;
   }
@@ -1670,24 +1678,18 @@ inline Status FasterKv<K, V, D, H, OH>::IssueAsyncIoRequest(ExecutionContext& ct
 }
 
 template <class K, class V, class D, class H, class OH>
-inline Address FasterKv<K, V, D, H, OH>::BlockAllocate(uint32_t record_size,
-                                                      other_faster_t* other_store) {
-  bool other_store_differs = (other_store != nullptr);
-  if (other_store == nullptr) {
-    other_store = reinterpret_cast<other_faster_t*>(this);
-  }
-
+inline Address FasterKv<K, V, D, H, OH>::BlockAllocate(uint32_t record_size) {
   uint32_t page;
   Address retval = hlog.Allocate(record_size, page);
   while(retval < hlog.read_only_address.load()) {
     Refresh();
-    if (other_store_differs) other_store->Refresh();
+    if (other_store_) other_store_->Refresh();
     // Don't overrun the hlog's tail offset.
     bool page_closed = (retval == Address::kInvalidAddress);
     while(page_closed) {
       page_closed = !hlog.NewPage(page);
       Refresh();
-      if (other_store_differs) other_store->Refresh();
+      if (other_store_) other_store_->Refresh();
     }
     retval = hlog.Allocate(record_size, page);
   }
@@ -1700,10 +1702,12 @@ inline Address FasterKv<K, V, D, H, OH>::BlockAllocateReadCache(uint32_t record_
   Address retval = read_cache_->read_cache_.Allocate(record_size, page);
   while (retval < read_cache_->read_cache_.read_only_address.load()) {
     Refresh();
+    if (other_store_) other_store_->Refresh();
     bool page_closed = (retval == Address::kInvalidAddress);
     while (page_closed) {
       page_closed = !read_cache_->read_cache_.NewPage(page);
       Refresh();
+    if (other_store_) other_store_->Refresh();
     }
     retval = read_cache_->read_cache_.Allocate(record_size, page);
   }
@@ -1806,7 +1810,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
       pending_context->Get(record);
 
       // Try to insert record to read cache
-      if (UseReadCache()) { // && !compaction_in_progress.load()) {
+      if (UseReadCache()) {
         Address insert_address = BlockAllocateReadCache(record->size());
         Status rc_status = read_cache_->Insert(context, *pending_context, record, insert_address);
         assert(rc_status == Status::Ok || rc_status == Status::Aborted);
@@ -3058,11 +3062,10 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
       }
     }
     Refresh();
-    if (dest_store_differs) {
-      dest_store->Refresh();
-    }
+    if (dest_store_differs) dest_store->Refresh();
     std::this_thread::yield();
   }
+  assert(remaining == 0);
 
   if (checkpoint) {
     // index checkpoint
