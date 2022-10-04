@@ -46,8 +46,6 @@ class ReadCacheEvictContext : public IAsyncContext {
   inline void set_index_entry(HashBucketEntry entry_, AtomicHashBucketEntry* atomic_entry_) {
     entry = entry_;
     atomic_entry = atomic_entry_;
-
-    assert(atomic_entry != nullptr);
   }
 
  protected:

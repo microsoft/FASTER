@@ -25,6 +25,7 @@ class ReadCache {
 
   typedef D faster_disk_t;
   typedef typename D::file_t file_t;
+  typedef PersistentMemoryMalloc<faster_disk_t> faster_hlog_t;
 
   typedef H hash_index_t;
   typedef typename H::hash_bucket_t hash_bucket_t;
@@ -34,12 +35,13 @@ class ReadCache {
   typedef FASTER::device::NullDisk disk_t;
   typedef ReadCachePersistentMemoryMalloc<disk_t> hlog_t;
 
-  ReadCache(LightEpoch& epoch, hash_index_t& hash_index,
+  ReadCache(LightEpoch& epoch, hash_index_t& hash_index, faster_hlog_t& faster_hlog,
             const std::string& filename, uint64_t log_size,
             double log_mutable_fraction, bool pre_allocate_log)
     : epoch_{ &epoch }
     , hash_index_{ &hash_index }
     , disk_{ filename, epoch, "" }
+    , faster_hlog_{ &faster_hlog }
     , read_cache_{ true, log_size, epoch, disk_, disk_.log(), log_mutable_fraction, pre_allocate_log, EvictCallback} {
     // hash index should be entirely in memory
     assert(hash_index_->IsSync());
@@ -88,6 +90,7 @@ class ReadCache {
   hash_index_t* hash_index_;
 
   disk_t disk_;
+  faster_hlog_t* faster_hlog_;
 
  public:
   hlog_t read_cache_;
@@ -131,6 +134,7 @@ inline Address ReadCache<K, V, D, H>::Skip(C& pending_context) const {
   const record_t* record;
 
   while (address.in_readcache()) {
+    assert(address.readcache_address() >= read_cache_.begin_address.load());
     record = reinterpret_cast<const record_t*>(read_cache_.Get(address.readcache_address()));
     address = record->header.previous_address();
   }
@@ -144,6 +148,7 @@ inline Address ReadCache<K, V, D, H>::Skip(C& pending_context) {
   record_t* record;
 
   while (address.in_readcache()) {
+    assert(address.readcache_address() >= read_cache_.begin_address.load());
     record = reinterpret_cast<record_t*>(read_cache_.Get(address.readcache_address()));
     address = record->header.previous_address();
   }
@@ -158,6 +163,7 @@ inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(C& pending_context) {
   record_t* record;
 
   while (address.in_readcache()) {
+    assert(address.readcache_address() >= read_cache_.begin_address.load());
     record = reinterpret_cast<record_t*>(read_cache_.Get(address.readcache_address()));
     if (pending_context.is_key_equal(record->key())) {
       // invalidate record if keys match
@@ -208,7 +214,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
   static std::atomic<bool> eviction_in_progress{ false };
 
   // Evict one page at a time -- first page is smaller than the remaining ones
-  // log_error("EVICT %llu %llu", to_head_address.control(), from_head_address.control());
+  log_error("EVICT %llu %llu", to_head_address.control(), from_head_address.control());
 
   bool active = false;
   if (!eviction_in_progress.compare_exchange_strong(active, true)) {
@@ -220,6 +226,8 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     return;
   }
   assert(eviction_in_progress.load());
+
+  Address faster_hlog_begin_address = faster_hlog_->begin_address.load();
 
   // not used in sync (hot) hash index; init invalid/empty context
   ExecutionContext exec_context;
@@ -234,18 +242,25 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
       address = Address{ address.page() + 1, 0 };
       continue;
     }
-    if (record->header.invalid) {
+    /*if (record->header.invalid) {
       // ignore invalid records
       address += record_size;
       continue;
-    }
-    // Assume for now that only a single entry per hash bucket lies in read cache
+    }*/
+    // Assume (for now) that only a single entry per hash bucket lies in read cache
     assert(!record->header.previous_address().in_readcache());
 
     rc_evict_context_t context{ record };
     Status index_status = hash_index_->FindEntry(exec_context, context);
-    // TODO: this can be Status::NotFound for cold log-resident records
-    assert(index_status == Status::Ok);
+    assert(index_status == Status::Ok || index_status == Status::NotFound);
+
+    // status can be non-found if (1) entry was GCed after log trimming
+    if (index_status == Status::NotFound) {
+      // nothing to update -- continue to next record
+      assert(context.entry == HashBucketEntry::kInvalidEntry);
+      address += record_size;
+      continue;
+    }
     assert(context.entry != HashBucketEntry::kInvalidEntry);
 
     assert(!context.entry.rc_.readcache_ || context.entry.address().readcache_address() >= address);
@@ -253,11 +268,21 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
       address += record_size;
       continue;
     }
-    // Hash index entry points to the entry -- need to CAS pointer to actual record in FASTER log
+    assert(context.entry.address().readcache_address() == address);
 
-    while (!record->header.invalid && context.atomic_entry && context.entry.rc_.readcache_ &&
-              (context.entry.address().readcache_address() == address) ) {
-      index_status = hash_index_->TryUpdateEntry(exec_context, context, record->header.previous_address());
+    // Hash index entry points to the entry -- need to CAS pointer to actual record in FASTER log
+    while (context.atomic_entry && context.entry.rc_.readcache_ &&
+            (context.entry.address().readcache_address() == address)) {
+
+      // Minor optimization when ReadCache evict runs concurent to HashIndex GC
+      // If a to-be-evicted read cache entry points to a trimmed hlog address, try to elide the bucket entry
+      // NOTE: there is still a chance that read-cache entry points to an invalid hlog address (race condition)
+      //       this is handled by FASTER's Internal* methods
+      Address updated_address = (record->header.previous_address() >= faster_hlog_begin_address)
+                                  ? record->header.previous_address()
+                                  : HashBucketEntry::kInvalidEntry;
+
+      index_status = hash_index_->TryUpdateEntry(exec_context, context, updated_address);
       if (index_status == Status::Ok) {
         break;
       }
@@ -268,7 +293,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     assert(address.offset() + record_size <= Address::kMaxOffset);
     address += record_size;
   }
-  // log_error("EVICT DONE %llu %llu", to_head_address.control(), from_head_address.control());
+  log_error("EVICT DONE %llu %llu", to_head_address.control(), from_head_address.control());
 
   eviction_in_progress.store(false);
 }
