@@ -55,6 +55,8 @@ class ReadCache {
   template <class C>
   Address Skip(C& pending_context) const;
 
+  Address Skip(Address address);
+
   template <class C>
   Address Skip(C& pending_context);
 
@@ -131,6 +133,18 @@ template <class K, class V, class D, class H>
 template <class C>
 inline Address ReadCache<K, V, D, H>::Skip(C& pending_context) const {
   Address address = pending_context.entry.address();
+  const record_t* record;
+
+  while (address.in_readcache()) {
+    assert(address.readcache_address() >= read_cache_.begin_address.load());
+    record = reinterpret_cast<const record_t*>(read_cache_.Get(address.readcache_address()));
+    address = record->header.previous_address();
+  }
+  return address;
+}
+
+template <class K, class V, class D, class H>
+inline Address ReadCache<K, V, D, H>::Skip(Address address) {
   const record_t* record;
 
   while (address.in_readcache()) {

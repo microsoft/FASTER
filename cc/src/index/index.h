@@ -41,6 +41,8 @@ class IHashIndex {
   void GarbageCollectSetup(Address new_begin_address,
                           GcState::truncate_callback_t truncate_callback,
                           GcState::complete_callback_t complete_callback);
+
+  template<class RC>
   bool GarbageCollect();
 
   // Index grow methods

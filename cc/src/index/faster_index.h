@@ -67,7 +67,7 @@ class FasterIndex : public IHashIndex<D> {
         root_path += "cold_index";
         assert(std::experimental::filesystem::create_directories(root_path));
       }
-      store_ = std::make_unique<store_t>(kHashIndexNumEntries, 192 * (1 << 20), root_path, 0.4);
+      store_ = std::make_unique<store_t>(kHashIndexNumEntries, 192 * (1 << 20), root_path, 0.4, false);
   }
 
   void Initialize(uint64_t new_size) {
@@ -96,7 +96,9 @@ class FasterIndex : public IHashIndex<D> {
   void GarbageCollectSetup(Address new_begin_address,
                           GcState::truncate_callback_t truncate_callback,
                           GcState::complete_callback_t complete_callback);
-  bool GarbageCollect();
+
+  template <class RC>
+  bool GarbageCollect(RC* read_cache);
 
   // Index grow related methods
   void GrowSetup(GrowCompleteCallback callback) {
@@ -299,7 +301,13 @@ void FasterIndex<D, HID>::GarbageCollectSetup(Address new_begin_address,
 }
 
 template <class D, class HID>
-bool FasterIndex<D, HID>::GarbageCollect() {
+template <class RC>
+bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
+  if (read_cache != nullptr) {
+    throw std::runtime_error{ "FasterIndex should *not* store read-cach'ed entries" };
+  }
+  assert(read_cache == nullptr);
+
   uint64_t chunk = gc_state_->next_chunk++;
   if(chunk >= gc_state_->num_chunks) {
     // No chunk left to clean.

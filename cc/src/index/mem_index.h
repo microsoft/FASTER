@@ -98,7 +98,9 @@ class HashIndex : public IHashIndex<D> {
   void GarbageCollectSetup(Address new_begin_address,
                           GcState::truncate_callback_t truncate_callback,
                           GcState::complete_callback_t complete_callback);
-  bool GarbageCollect();
+
+  template <class RC>
+  bool GarbageCollect(RC* read_cache);
 
   // Index grow related methods
   void GrowSetup(GrowCompleteCallback callback);
@@ -306,7 +308,7 @@ inline Status HashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pe
   key_hash_t hash{ pending_context.get_key_hash() };
   hash_bucket_entry_t new_entry{ new_address, hash.tag(), false, readcache };
   if (new_address == HashBucketEntry::kInvalidEntry) {
-    // To handle InternalDelete's minor optimization that elides a record completely
+    // This handles (1) InternalDelete's & (2) ReadCache's eviction minor optimization that elides a record
     new_entry = HashBucketEntry::kInvalidEntry;
   }
 
@@ -532,12 +534,17 @@ inline void HashIndex<D, HID>::GarbageCollectSetup(Address new_begin_address,
 }
 
 template <class D, class HID>
-inline bool HashIndex<D, HID>::GarbageCollect() {
+template <class RC>
+inline bool HashIndex<D, HID>::GarbageCollect(RC* read_cache) {
   uint64_t chunk = gc_state_->next_chunk++;
   if(chunk >= gc_state_->num_chunks) {
     // No chunk left to clean.
     return false;
   }
+
+  log_debug("MemIndex-GC: %llu/%llu [START...]", chunk, gc_state_->num_chunks);
+  log_debug("MemIndex-GC: begin-address: %llu", gc_state_->new_begin_address.control());
+
   uint8_t version = this->resize_info.version;
   uint64_t upper_bound;
   if(chunk + 1 < gc_state_->num_chunks) {
@@ -554,11 +561,22 @@ inline bool HashIndex<D, HID>::GarbageCollect() {
       for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
         AtomicHashBucketEntry& atomic_entry = bucket->entries[entry_idx];
         hash_bucket_entry_t expected_entry{ atomic_entry.load() };
-        if(!expected_entry.unused() && expected_entry.address() != Address::kInvalidAddress &&
-            expected_entry.address() < gc_state_->new_begin_address) {
+
+        Address address = expected_entry.address();
+        if (read_cache != nullptr) {
+          address = read_cache->Skip(address);
+        }
+
+        //log_debug("%llu-%lu: hi-address: %llu, hlog-address: %llu",
+        //          idx, entry_idx, expected_entry.address().control(), address.control());
+        if(!expected_entry.unused() &&
+            address != Address::kInvalidAddress &&
+            address < gc_state_->new_begin_address
+          ) {
           // The record that this entry points to was truncated; try to delete the entry.
           HashBucketEntry entry{ expected_entry };
-          atomic_entry.compare_exchange_strong(entry, HashBucketEntry::kInvalidEntry);
+          bool success = atomic_entry.compare_exchange_strong(entry, HashBucketEntry::kInvalidEntry);
+          //log_debug("CAS update status: %d [received-entry-address=%llu]", success, entry.address().control());
           // If deletion failed, then some other thread must have added a new record to the entry.
         }
       }
@@ -569,6 +587,9 @@ inline bool HashIndex<D, HID>::GarbageCollect() {
       }
     }
   }
+
+  log_debug("MemIndex-GC: %llu/%llu [DONE!]", chunk, gc_state_->num_chunks);
+
   // Done with this chunk--did some work.
   return true;
 }

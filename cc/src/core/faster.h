@@ -132,6 +132,7 @@ class FasterKv {
     , other_store_{ nullptr }
     , num_pending_ios{ 0 }
     , num_compaction_truncs{ 0 }
+    , next_hlog_begin_address{ Address::kInvalidAddress }
     , num_active_sessions{ 0 } {
     log_init();
 
@@ -362,6 +363,9 @@ class FasterKv {
 
   /// Global count of number of truncations after compaction
   std::atomic<uint64_t> num_compaction_truncs;
+
+  /// Hlog begin address after the compaction & log trimming is finished
+  AtomicAddress next_hlog_begin_address;
 
   /// Number of active sessions
   std::atomic<size_t> num_active_sessions;
@@ -1810,7 +1814,8 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
       pending_context->Get(record);
 
       // Try to insert record to read cache
-      if (UseReadCache()) {
+      // NOTE: Insert only if record will be valid after any potential concurrent log trimming operation
+      if (UseReadCache() && io_context.address >= next_hlog_begin_address.load()) {
         Address insert_address = BlockAllocateReadCache(record->size());
         Status rc_status = read_cache_->Insert(context, *pending_context, record, insert_address);
         assert(rc_status == Status::Ok || rc_status == Status::Aborted);
@@ -2366,7 +2371,7 @@ Status FasterKv<K, V, D, H, OH>::RestoreHybridLog() {
 template <class K, class V, class D, class H, class OH>
 void FasterKv<K, V, D, H, OH>::HeavyEnter() {
   if(thread_ctx().phase == Phase::GC_IO_PENDING || thread_ctx().phase == Phase::GC_IN_PROGRESS) {
-    hash_index_.GarbageCollect();
+    hash_index_.GarbageCollect(read_cache_.get());
     return;
   }
   while(thread_ctx().phase == Phase::GROW_PREPARE) {
@@ -2766,7 +2771,7 @@ void FasterKv<K, V, D, H, OH>::HandleSpecialPhases() {
       case Phase::GC_IN_PROGRESS:
         // Handle GC_IO_PENDING -> GC_IN_PROGRESS and GC_IN_PROGRESS -> GC_IN_PROGRESS.
         if(!epoch_.HasThreadFinishedPhase(Phase::GC_IN_PROGRESS)) {
-          if(!hash_index_.GarbageCollect()) {
+          if(!hash_index_.GarbageCollect(read_cache_.get())) {
             // No more buckets for this thread to clean; thread has finished GC.
             thread_ctx().phase = Phase::REST;
             // Thread ack that it has finished GC.
@@ -2966,6 +2971,10 @@ bool FasterKv<K, V, D, H, OH>::ShiftBeginAddress(Address address,
     ++num_compaction_truncs;
   }
   hlog.begin_address.store(address);
+
+  if (after_compaction) {
+    next_hlog_begin_address.store(Address::kInvalidAddress);
+  }
   // Each active thread will notify the epoch when all pending I/Os have completed.
   epoch_.ResetPhaseFinished();
   // Prepare for index garbage collection
@@ -3035,6 +3044,11 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 
   if (!epoch_.IsProtected() || !dest_store->epoch_.IsProtected()) {
     throw std::invalid_argument {"Thread should have an active FASTER session"};
+  }
+
+  if (shift_begin_address) {
+    // used to avoid inserting soon-to-be-compacted records to Read Cache
+    next_hlog_begin_address.store(until_address);
   }
 
   std::deque<std::thread> threads;
