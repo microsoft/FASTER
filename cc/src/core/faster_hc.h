@@ -33,14 +33,17 @@ public:
               uint64_t hot_log_mem_size, uint64_t hot_log_table_size, const std::string& hot_log_filename,
               uint64_t cold_log_mem_size, uint64_t cold_log_table_size, const std::string& cold_log_filename,
               double hot_log_mutable_perc = 0.2, double cold_log_mutable_perc = 0,
-              bool automatic_compaction = true, double compaction_trigger_perc = 0.9,
+              bool automatic_compaction = true, bool use_read_cache = true,
+              double compaction_trigger_perc = 0.9,
               double hot_log_compaction_log_perc = 0.20, double cold_log_compaction_log_perc = 0.1,
               bool pre_allocate_logs = false, const std::string& hot_log_config = "", const std::string& cold_log_config = "")
-  : hot_store{ hot_log_table_size, hot_log_mem_size, hot_log_filename, hot_log_mutable_perc, true, pre_allocate_logs, hot_log_config }
+  : hot_store{ hot_log_table_size, hot_log_mem_size, hot_log_filename, hot_log_mutable_perc, use_read_cache, pre_allocate_logs, hot_log_config }
   , cold_store{ cold_log_table_size, cold_log_mem_size, cold_log_filename, cold_log_mutable_perc, false, pre_allocate_logs, cold_log_config }
   , hot_log_compaction_log_perc_{ hot_log_compaction_log_perc }
   , cold_log_compaction_log_perc_{ cold_log_compaction_log_perc }
   {
+    hot_store.SetOtherStore(&cold_store);
+
     // Calculate disk size for hot & cold logs
     if (hot_log_perc < 0 || hot_log_perc > 1) {
       throw std::invalid_argument {"Invalid hot log perc; should be between 0 and 1"};
@@ -285,21 +288,21 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
   typedef HotColdIndexContext<hc_rmw_context_t> hc_index_context_t;
 
   // Keep hash bucket entry
-  KeyHash hash = context.key().GetHash();
-  HashBucketEntry entry;
-  AtomicHashBucketEntry* atomic_entry;
-
   hc_rmw_context_t hc_rmw_context{ this, RmwOperationStage::HOT_LOG_RMW,
                                   HashBucketEntry::kInvalidEntry,
+                                  hot_store.hlog.GetTailAddress(),
                                   context, callback, monotonic_serial_num };
 
   hc_index_context_t index_context{ &hc_rmw_context };
-  Status status = hot_store.hash_index_.template FindEntry<hc_index_context_t>(
+  Status status = hot_store.hash_index_.template FindOrCreateEntry<hc_index_context_t>(
                         hot_store.thread_ctx(), index_context);
-  assert(status == Status::Ok || status == Status::NotFound);
+  assert(status == Status::Ok);
+  assert(index_context.entry.address() >= Address::kInvalidAddress);
 
-  // Store index expected entry at the time
-  hc_rmw_context.expected_entry = index_context.entry;
+  // Store index latest hash index hlog address at the time
+  hc_rmw_context.expected_hlog_address = (hot_store.UseReadCache())
+      ? hot_store.read_cache_->Skip(index_context)
+      : index_context.entry.address();
 
   return InternalRmw(hc_rmw_context);
 }
@@ -330,8 +333,8 @@ inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
     bool rmw_rcu = (read_status == Status::Ok);
     hc_rmw_ci_context_t ci_context{ &hc_rmw_context, rmw_rcu };
     hc_rmw_context.ci_context = &ci_context;
-    Status ci_status = hot_store.ConditionalInsert(ci_context,  AsyncContinuePendingRmwConditionalInsert,
-                                                  hc_rmw_context.expected_entry.address(),
+    Status ci_status = hot_store.ConditionalInsert(ci_context, AsyncContinuePendingRmwConditionalInsert,
+                                                  hc_rmw_context.expected_hlog_address,
                                                   static_cast<void*>(&hot_store));
     if (ci_status == Status::Aborted || ci_status == Status::NotFound) {
       // add to retry rmw queue
@@ -386,7 +389,7 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, St
       bool rmw_rcu = (result == Status::Ok);
       hc_rmw_ci_context_t ci_context{ context.get(), rmw_rcu };
       Status ci_status = faster_hc->hot_store.ConditionalInsert(ci_context, AsyncContinuePendingRmwConditionalInsert,
-                                                                context->expected_entry.address(),
+                                                                context->expected_hlog_address,
                                                                 static_cast<void*>(&faster_hc->hot_store));
       if (ci_status == Status::Pending) {
         context.async = true;
@@ -464,12 +467,22 @@ inline bool FasterKvHC<K, V, D>::Checkpoint(IndexPersistenceCallback index_persi
 
 template<class K, class V, class D>
 inline bool FasterKvHC<K, V, D>::CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
-  return hot_store.CompactWithLookup(until_address, shift_begin_address, n_threads, &cold_store);
+  log_info("Compact HOT: {sz=%llu} [%llu %llu] until=%llu", hot_store.Size(), hot_store.hlog.begin_address.control(),
+            hot_store.hlog.GetTailAddress().control(), until_address);
+
+  bool success = hot_store.CompactWithLookup(until_address, shift_begin_address, n_threads, &cold_store);
+  log_info("Compact HOT: {%llu} Done!", hot_store.Size());
+  return success;
 }
 
 template<class K, class V, class D>
 inline bool FasterKvHC<K, V, D>::CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
-  return cold_store.CompactWithLookup(until_address, shift_begin_address, n_threads);
+  log_info("Compact COLD: {sz=%llu} [%llu %llu] until=%llu", cold_store.Size(), cold_store.hlog.begin_address.control(),
+            cold_store.hlog.GetTailAddress().control(), until_address);
+
+  bool success = cold_store.CompactWithLookup(until_address, shift_begin_address, n_threads);
+  log_info("Compact COLD: {%llu} Done!", cold_store.Size());
+  return success;
 }
 
 template<class K, class V, class D>
@@ -484,17 +497,14 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
       assert(until_address <= hot_store.hlog.safe_read_only_address.control());
       assert(until_address % hot_store.hlog.kPageSize == 0);
-      //fprintf(stderr, "HOT: {%llu} [%llu %llu] %llu\n", hot_store.Size(), hot_store.hlog.begin_address.control(),
-      //          hot_store.hlog.GetTailAddress().control(), until_address);
       // perform hot-cold compaction
       StartSession();
       cold_store.StartSession();
       if (!CompactHotLog(until_address, true)) {
-        fprintf(stderr, "warn: hot-cold compaction not successful\n");
+        log_error("Compact HOT: *not* successful! :(");
       }
       cold_store.StopSession();
       StopSession();
-      //fprintf(stderr, "HOT: {%llu} Done!\n", hot_store.Size());
     }
     if (cold_store.Size() > cold_log_disk_size_limit_) {
       uint64_t until_address = cold_store.hlog.begin_address.control() + (
@@ -504,15 +514,12 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
       assert(until_address <= cold_store.hlog.safe_read_only_address.control());
       assert(until_address % cold_store.hlog.kPageSize == 0);
-      //fprintf(stderr, "COLD: {%llu} [%llu %llu] %llu\n", cold_store.Size(), cold_store.hlog.begin_address.control(),
-      //          cold_store.hlog.GetTailAddress().control(), until_address);
       // perform cold-cold compaction
       cold_store.StartSession();
       if (!CompactColdLog(until_address, true)) {
-        fprintf(stdout, "warn: cold-cold compaction not successful\n");
+        log_error("Compact COLD: *not* successful! :(");
       }
       cold_store.StopSession();
-      //fprintf(stderr, "COLD: {%llu} Done!\n", cold_store.Size());
     }
 
     std::this_thread::sleep_for(compaction_check_interval_);
@@ -525,15 +532,21 @@ inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
 
   async_hc_rmw_context_t* ctxt;
   while (retry_rmw_requests.try_pop(ctxt)) {
+    log_debug("RMW RETRY");
     CallbackContext<async_hc_rmw_context_t> context{ ctxt };
     // Get hash bucket entry
     hc_index_context_t index_context{ context.get() };
-    Status index_status = hot_store.hash_index_.template FindEntry<hc_index_context_t>(
+    Status index_status = hot_store.hash_index_.template FindOrCreateEntry<hc_index_context_t>(
                                   hot_store.thread_ctx(), index_context);
-    assert(index_status == Status::Ok || index_status == Status::NotFound); // Non-pending status
+    assert(index_status == Status::Ok); // Non-pending status
+    assert(index_context.entry.address() >= Address::kInvalidAddress);
 
     // Initialize rmw context vars
-    context->expected_entry = index_context.entry;
+    // Store index latest hash index hlog address at the time
+    context->expected_hlog_address = (hot_store.UseReadCache())
+        ? hot_store.read_cache_->Skip(index_context)
+        : index_context.entry.address();
+
     context->stage = RmwOperationStage::HOT_LOG_RMW;
     // Re-issue RMW request
     Status status = InternalRmw(*context.get());

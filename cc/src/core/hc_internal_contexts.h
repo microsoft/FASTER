@@ -270,11 +270,13 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
   typedef HotColdRmwConditionalInsertContext<K, V> hc_rmw_ci_context_t;
 
  protected:
-  AsyncHotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry expected_entry_,
-                      IAsyncContext& caller_context_, AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+  AsyncHotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, Address expected_hlog_address_,
+                        Address orig_hlog_tail_address_, IAsyncContext& caller_context_,
+                        AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
     : HotColdContext<key_t>(faster_hc_, caller_context_, caller_callback_, monotonic_serial_num_)
     , stage{ stage_ }
-    , expected_entry{ expected_entry_ }
+    , expected_hlog_address{ expected_hlog_address_ }
+    , orig_hlog_tail_address{ orig_hlog_tail_address_ }
     , read_context{ nullptr }
     , ci_context{ nullptr }
   {}
@@ -282,7 +284,8 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
   AsyncHotColdRmwContext(AsyncHotColdRmwContext& other, IAsyncContext* caller_context)
     : HotColdContext<key_t>(other, caller_context)
     , stage{ other.stage }
-    , expected_entry{ other.expected_entry }
+    , expected_hlog_address{ other.expected_hlog_address }
+    , orig_hlog_tail_address{ other.orig_hlog_tail_address }
     , read_context{ other.read_context }
     , ci_context{ other.ci_context }
   {}
@@ -306,7 +309,7 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
 
   void prepare_for_retry() {
     stage = RmwOperationStage::WAIT_FOR_RETRY;
-    expected_entry = HashBucketEntry::kInvalidEntry;
+    expected_hlog_address = Address::kInvalidAddress;
     this->free_aux_contexts();
   }
 
@@ -325,7 +328,9 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
   }
 
   RmwOperationStage stage;
-  HashBucketEntry expected_entry;
+  Address expected_hlog_address;
+  Address orig_hlog_tail_address;
+
   IAsyncContext* read_context;  // HotColdRmwRead context
   IAsyncContext* ci_context;    // HotColdRmwConditionalInsert context
 };
@@ -338,9 +343,10 @@ class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, type
   typedef typename rmw_context_t::value_t value_t;
   typedef Record<key_t, value_t> record_t;
 
-  HotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, HashBucketEntry expected_entry_,
-                  rmw_context_t& caller_context_, AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
-    : AsyncHotColdRmwContext<key_t, value_t>(faster_hc_, stage_, expected_entry_,
+  HotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, Address expected_hlog_address_,
+                    Address orig_hlog_tail_address_, rmw_context_t& caller_context_,
+                    AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+    : AsyncHotColdRmwContext<key_t, value_t>(faster_hc_, stage_, expected_hlog_address_, orig_hlog_tail_address_,
                                             caller_context_, caller_callback_, monotonic_serial_num_)
     {}
   /// The deep-copy constructor.
@@ -602,6 +608,9 @@ class HotColdRmwConditionalInsertContext: public IAsyncContext {
   }
   inline bool is_tombstone() const {
     return false; // rmw never copies tombstone records
+  }
+  inline Address orig_hlog_tail_address() const {
+    return rmw_context->orig_hlog_tail_address;
   }
 
   inline bool Insert(void* dest, uint32_t alloc_size) const {

@@ -362,6 +362,7 @@ class AsyncPendingRmwContext : public PendingContext<K> {
   virtual uint32_t value_size(const void* old_rec) const = 0;
 
   /// If false, it will return NOT_FOUND instead of creating a new record
+  /// NOTE: false when doing HC-RMW Copy from cold log operation; true otherwise
   bool create_if_not_exists;
   /// Keeps latest hlog address, as found by hash index entry (after skipping read cache)
   Address expected_hlog_address;
@@ -515,20 +516,20 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
  protected:
   AsyncPendingConditionalInsertContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_,
-                                        HashBucketEntry start_search_entry_, Address min_search_offset_, void* dest_store_)
+                                        Address min_search_offset_, void* dest_store_)
     : PendingContext<key_t>(OperationType::ConditionalInsert, caller_context_, caller_callback_)
-    , start_search_entry{ start_search_entry_ }
     , min_search_offset{ min_search_offset_ }
     , orig_min_search_offset{ min_search_offset_ }
+    , expected_hlog_address{ Address::kInvalidAddress }
     , dest_store{ dest_store_ }
     , io_context{ nullptr } {
   }
   /// The deep copy constructor.
   AsyncPendingConditionalInsertContext(AsyncPendingConditionalInsertContext& other, IAsyncContext* caller_context)
     : PendingContext<key_t>(other, caller_context)
-    , start_search_entry{ other.start_search_entry }
     , min_search_offset{ other.min_search_offset }
     , orig_min_search_offset{ other.orig_min_search_offset }
+    , expected_hlog_address{ other.expected_hlog_address }
     , dest_store{ other.dest_store }
     , io_context{ other.io_context } {
   }
@@ -536,6 +537,7 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
  public:
   virtual uint32_t value_size() const = 0;
   virtual bool is_tombstone() const = 0;
+  virtual Address orig_hlog_tail_address() const = 0;
 
   // Called when writing to same store
   virtual bool Insert(void* dest, uint32_t alloc_size) const = 0;
@@ -546,9 +548,10 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
   virtual async_pending_delete_context_t* WrapInDeleteContext() = 0;
 
  public:
-  HashBucketEntry start_search_entry;
   Address min_search_offset;
   Address orig_min_search_offset;
+  /// Keeps latest hlog address, as found by hash index entry (after skipping read cache)
+  Address expected_hlog_address;
   void* dest_store;
 
   AsyncIOContext* io_context;
@@ -571,9 +574,9 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
   typedef PendingDeleteContext<CIC, true> pending_delete_context_t;
 
   PendingConditionalInsertContext(conditional_insert_context_t& caller_context_, AsyncCallback caller_callback_,
-                                  HashBucketEntry start_search_entry_, Address min_search_offset_, void* dest_store_)
+                                  Address min_search_offset_, void* dest_store_)
     : AsyncPendingConditionalInsertContext<key_t>(caller_context_, caller_callback_,
-                                                start_search_entry_, min_search_offset_, dest_store_) {
+                                                  min_search_offset_, dest_store_) {
   }
   /// The deep copy constructor.
   PendingConditionalInsertContext(PendingConditionalInsertContext& other, IAsyncContext* caller_context_)
@@ -612,6 +615,9 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
   // ConditionalInsert contexts contains these additional methods
   inline bool is_tombstone() const final {
     return conditional_insert_context().is_tombstone();
+  }
+  inline Address orig_hlog_tail_address() const final {
+    return conditional_insert_context().orig_hlog_tail_address();
   }
   inline bool Insert(void* dest, uint32_t alloc_size) const final {
     return conditional_insert_context().Insert(dest, alloc_size);

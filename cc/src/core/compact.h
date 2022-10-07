@@ -74,6 +74,12 @@ class CompactionConditionalInsertContext : public IAsyncContext {
   inline bool is_tombstone() const {
     return record_->header.tombstone;
   }
+  inline Address orig_hlog_tail_address() const {
+    // During compaction, both min_search_address & latest hash index address
+    // *cannot* !=  Address::kInvalidAddress
+    throw std::runtime_error{
+      "CompactionConditionalInsertContext.orig_hlog_tail_address() called" };
+  }
   inline bool Insert(void* dest, uint32_t alloc_size) const {
     if (alloc_size != record_->size()) {
       return false;

@@ -717,10 +717,15 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
         if (pending_context->index_op_type == IndexOperationType::Retrieve) {
           // Resume request with retrieved index hash bucket
           {
-            //fprintf(stderr, "RETRIEVE: %d\n", pending_context->index_op_result);
-            async_pending_ci_context_t* pending_ci_context = \
-              static_cast<async_pending_ci_context_t*>(index_io_context->caller_context);
+            assert(pending_context->index_op_result == Status::Ok);
 
+            result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                          pending_context.async);
+
+            //fprintf(stderr, "RETRIEVE: %d\n", pending_context->index_op_result);
+            //async_pending_ci_context_t* pending_ci_context = \
+            //  static_cast<async_pending_ci_context_t*>(index_io_context->caller_context);
+            /*
             OperationStatus internal_status;
             if (pending_ci_context->start_search_entry == HashBucketEntry::kInvalidEntry) {
               // Set starting entry and start CI request
@@ -743,6 +748,7 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
               assert(internal_status == OperationStatus::ABORTED);
               result = Status::Aborted;
             }
+            */
           }
         } else if (pending_context->index_op_type == IndexOperationType::Update) {
           //fprintf(stderr, "UPDATE: %d\n", pending_context->index_op_result);
@@ -753,6 +759,7 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
           } else {
             assert(pending_context->index_op_result == Status::Aborted);
             // Request was aborted: try to mark record as invalid
+            // NOTE: this record is stray: i.e., *not* part of the hash chain.
             Address record_address = index_io_context->record_address;
             if (record_address >= hlog.head_address.load()) {
               record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));
@@ -854,8 +861,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
     index_status = pending_context.index_op_result;
     pending_context.clear_index_op();
   }
-  //fprintf(stderr, "READ INDEX STATUS = %d\n", index_status);
-  //fprintf(stderr, "ENTRY = %llu\n", pending_context.entry.control_);
 
   if(index_status == Status::NotFound) {
     // no record found
@@ -1850,19 +1855,20 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingConditionalInse
 
   async_pending_ci_context_t* pending_context = (
     static_cast<async_pending_ci_context_t*>(io_context.caller_context));
+
   assert(pending_context->min_search_offset != Address::kInvalidAddress &&
-          pending_context->min_search_offset != Address::kInvalidAddress);
-  assert(pending_context->min_search_offset <= pending_context->start_search_entry.address());
+          pending_context->expected_hlog_address != Address::kInvalidAddress);
+  // assert(pending_context->min_search_offset <= pending_context->start_search_entry.address());
 
   Address begin_address = hlog.begin_address.load();
   Address head_address = hlog.head_address.load();
 
-  //fprintf(stderr, "QQQQ %10llu %10llu\n", io_context.address.control(), pending_context->min_search_offset.control());
   if (pending_context->min_search_offset < begin_address) {
     // we cannot scan the entire region because log was truncated
     // request should be re-tried at a higher level!
     return OperationStatus::NOT_FOUND;
   }
+
   if (io_context.address > pending_context->min_search_offset) {
     // found newer version for this record -- abort insert!
     return OperationStatus::ABORTED;
@@ -1870,15 +1876,20 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingConditionalInse
     // record not part of the same hash chain: i.e., invalid record; skip record
     // NOTE: this check mainly protects from copying "invalid" records that were not marked invalid
     // due to an index operation going pending, and the record being flushed to disk before being marked.
-    // (flush-before-maked-invalid race condition).
+    // (flush-before-marked-invalid race condition).
     // Cross-validating that a record is part of the same hash chain is a relatively cheap way to identify
     // those records.
-    //fprintf(stderr, "WWWW %10llu < %10llu \n", io_context.address.control(), pending_context->min_search_offset.control());
     return OperationStatus::ABORTED;
   }
   assert(io_context.address >= pending_context->orig_min_search_offset);
   // Searched entire region, but did not find newer version for record
 
+  // Update search range to [prev start search addr, latest hash entry addr]
+  pending_context->min_search_offset = pending_context->expected_hlog_address;
+
+  return OperationStatus::RETRY_NOW;
+
+  /*
   // Find a hash bucket entry to store the updated value in.
   Status index_status;
   if (pending_context->index_op_type == IndexOperationType::None) {
@@ -1909,7 +1920,6 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingConditionalInse
   }
   assert(!address.in_readcache());
 
-  // Update search range to [prev start search addr, current latest hash entry addr]
   //fprintf(stderr, "MMMM %10llu <- %10llu \n", pending_context->min_search_offset.control(),
   //                  pending_context->start_search_entry.address().control());
   pending_context->min_search_offset = pending_context->start_search_entry.address();
@@ -1918,8 +1928,9 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingConditionalInse
     //pending_context->start_search_entry = expected_entry;
     pending_context->start_search_entry = address;
   }
+  */
 
-  return OperationStatus::RETRY_NOW;
+  // return OperationStatus::RETRY_NOW;
 }
 
 
@@ -3282,6 +3293,8 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F
     }
 
     {
+      assert(record_address != Address::kInvalidAddress);
+
       // add to pending records
       assert(pending_records.find(record_address.control()) == pending_records.end());
       pending_records.insert(record_address.control());
@@ -3356,29 +3369,36 @@ inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCal
   static_assert(alignof(value_t) == alignof(typename pending_ci_context_t::value_t),
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
-  pending_ci_context_t pending_context{ context, callback, HashBucketEntry::kInvalidEntry,
-                                        min_search_offset, dest_store };
+  pending_ci_context_t pending_context{ context, callback, min_search_offset, dest_store };
 
   // Set initial start address to last entry of hash chain
-  Status index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
-  assert(index_status == Status::Ok || index_status == Status::Pending);
+  // Status index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
+  // assert(index_status == Status::Ok || index_status == Status::Pending);
 
-  Address address = pending_context.entry.address();
-  if (UseReadCache()) {
-    address = read_cache_->Skip(pending_context);
-  }
-  assert(!address.in_readcache());
+  // TODO: this should only be executed when index_status == OK
+  // Address address = pending_context.entry.address();
+  // if (UseReadCache()) {
+  //   address = read_cache_->Skip(pending_context);
+  // }
+  // assert(!address.in_readcache());
 
-  OperationStatus internal_status;
+  //log_info("ADDR %llu %llu %d",
+  //        address.control(), hlog.begin_address.load().control(),
+  //        address.control() < hlog.begin_address.load().control());
+
+
+  OperationStatus internal_status = InternalConditionalInsert(pending_context);
+
+  /* OperationStatus internal_status;
   if (index_status == Status::Ok) {
     pending_context.start_search_entry = address;
     pending_context.entry = HashBucketEntry::kInvalidEntry;
-    assert(pending_context.start_search_entry != HashBucketEntry::kInvalidEntry);
+    //assert(pending_context.start_search_entry.address() != Address::kInvalidAddress);
     // perform op
     internal_status = InternalConditionalInsert(pending_context);
   } else {
     internal_status = OperationStatus::INDEX_ENTRY_ON_DISK;
-  }
+  } */
 
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
@@ -3405,16 +3425,15 @@ inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCal
 template <class K, class V, class D, class H, class OH>
 template <class C>
 inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pending_context) {
-  // TODO: fix cases where start_search_entry can be HashBucketEntry::kInvalidEntry
-  // this is only possible in the hot-cold compaction; for single hot (or cold) compaction there
-  // always exist an entry that points to the record that we are checking if it is actually live.
+
   other_faster_t* dest_store = static_cast<other_faster_t*>(pending_context.dest_store);
   bool dest_store_differs = (dest_store != reinterpret_cast<other_faster_t*>(this));
 
   Address min_search_offset = pending_context.min_search_offset;
   assert(!min_search_offset.in_readcache());
-  assert(!pending_context.start_search_entry.address().in_readcache());
+  //assert(!pending_context.start_search_entry.address().in_readcache());
 
+  // Handle hash index GC operation
   if(thread_ctx().phase != Phase::REST) {
     HeavyEnter();
   }
@@ -3439,45 +3458,63 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
   }
   assert(index_status == Status::Ok);
 
-  HashBucketEntry expected_entry{ pending_context.entry };
-  Address address = expected_entry.address();
+  Address address = pending_context.entry.address();
 
   if (UseReadCache()) {
     // entries in readcache do not count as "active"
     address = read_cache_->Skip(pending_context);
   }
-  Address hlog_address = address;
+  pending_context.expected_hlog_address = address;
+  //Address hlog_address = address;
   assert(!address.in_readcache());
 
   // (Note that address will be Address::kInvalidAddress, if the entry was created.)
-  if (address == Address::kInvalidAddress) {
+  if (min_search_offset == Address::kInvalidAddress) {
+    // == Only possible in HC-RMW Copy case ==
     // no other record exists for the same key in this log
-    // only possible in the RMW copy from cold to hot case
-    goto create_record;
-  }
-  else if (min_search_offset == Address::kInvalidAddress) {
+    if (address == Address::kInvalidAddress) {
+      if (pending_context.orig_hlog_tail_address() >= begin_address) {
+        //log_info("%llu %llu", pending_context.orig_hlog_tail_address().control(), begin_address.control());
+        // last condition ensure that we did *not* lose any records
+        goto create_record;
+      }
+    }
     // cannot determine where the min_search_offset should be
     // request needs to be retried at a higher level!
     return OperationStatus::NOT_FOUND;
   }
-  assert(address != Address::kInvalidAddress && min_search_offset != Address::kInvalidAddress);
-  assert(min_search_offset <= pending_context.start_search_entry.address());
-
-  if (min_search_offset < begin_address) {
-    // result of log truncation -- only possible in CI from RMW
+  else if (address == Address::kInvalidAddress) {
+    // == Only possible in HC-RMW Copy case ==
+    // record pointed by min_search_offset compacted to cold log
+    // it was certainly a hash-collision, because otherwise the initial
+    // hot-log RMW would have worked.
+    if (pending_context.orig_hlog_tail_address() >= begin_address) {
+      // last condition ensure that we did *not* lose any records
+      goto create_record;
+    }
+  }
+  else if (min_search_offset < begin_address) {
+    // == Only possible in HC-RMW Copy case ==
+    // result of log truncation -- cannot happen during hot-cold/cold-cold compaction
     // request should be re-tried at a higher level!
     return OperationStatus::NOT_FOUND;
   }
+  assert(address != Address::kInvalidAddress && min_search_offset != Address::kInvalidAddress);
+  //assert(min_search_offset <= pending_context.start_search_entry.address());
 
-  if(address >= head_address && min_search_offset != hlog_address) {
+  if(address >= head_address && min_search_offset != pending_context.expected_hlog_address) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
     Address search_until = std::max(min_search_offset + 1, head_address);
     if(!pending_context.is_key_equal(record->key())) {
       address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(), search_until);
     }
   }
-  //fprintf(stderr, "SSSS %10llu %10llu [H=%10llu]\n", address.control(), min_search_offset.control(),
-  //                                                  head_address.control());
+
+  if (address < min_search_offset) {
+    // == Only possible in cold-cold compaction, when using *async* cold-index ==
+    // not part of the same hash chain due to the flush-before-marked-invalid race condition
+    return OperationStatus::ABORTED;
+  }
   assert(address >= min_search_offset); // part of the same hash chain
 
   if(address >= head_address) {
@@ -3505,13 +3542,13 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
   }
 
   // Update search range
-  pending_context.start_search_entry = hlog_address;
-  pending_context.min_search_offset = hlog_address;
+  //pending_context.start_search_entry = hlog_address;
+  pending_context.min_search_offset = pending_context.expected_hlog_address;
 
 create_record:
   if (UseReadCache()) {
-    // Record will be moved either to the tail, or the another log
-    // making any potential read cache record invalid
+    // Record will be moved either to the tail, or to another log
+    // Thus, make any potential read cache record invalid
     read_cache_->SkipAndInvalidate(pending_context);
   }
 
@@ -3530,7 +3567,7 @@ create_record:
     new(record) record_t{
       RecordInfo{
         static_cast<uint16_t>(thread_ctx().version),
-        true, false, false, hlog_address }
+        true, false, false, pending_context.expected_hlog_address }
     };
     // Try to update hash bucket address
     index_status = hash_index_.TryUpdateEntry(thread_ctx(), pending_context, new_address);
