@@ -108,6 +108,7 @@ static_assert(sizeof(SectorAlignedMemory) == 32, "sizeof(SectorAlignedMemory) !=
 class NativeSectorAlignedBufferPool {
  private:
   static constexpr uint32_t kLevels = 32;
+  static constexpr uint32_t kMaxSegmentsPerLevel = 256;
 
  public:
   NativeSectorAlignedBufferPool(uint32_t recordSize, uint32_t sectorSize)
@@ -115,8 +116,22 @@ class NativeSectorAlignedBufferPool {
     , sector_size_{ sectorSize } {
   }
 
+  inline ~NativeSectorAlignedBufferPool() {
+    uint8_t* buffer;
+    for (uint32_t level = 0; level < kLevels; ++level) {
+      while(queue_[level].try_pop(buffer)) {
+        aligned_free(static_cast<void*>(buffer));
+      }
+    }
+  }
+
   inline void Return(uint32_t level, uint8_t* buffer) {
     assert(level < kLevels);
+    // do not let queue size grow forever
+    if (queue_[level].unsafe_size() > kMaxSegmentsPerLevel) {
+      aligned_free(static_cast<void*>(buffer));
+      return;
+    }
     queue_[level].push(buffer);
   }
   inline SectorAlignedMemory Get(uint32_t numRecords);
