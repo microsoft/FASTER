@@ -567,8 +567,6 @@ inline bool HashIndex<D, HID>::GarbageCollect(RC* read_cache) {
           address = read_cache->Skip(address);
         }
 
-        //log_debug("%llu-%lu: hi-address: %llu, hlog-address: %llu",
-        //          idx, entry_idx, expected_entry.address().control(), address.control());
         if(!expected_entry.unused() &&
             address != Address::kInvalidAddress &&
             address < gc_state_->new_begin_address
@@ -576,7 +574,6 @@ inline bool HashIndex<D, HID>::GarbageCollect(RC* read_cache) {
           // The record that this entry points to was truncated; try to delete the entry.
           HashBucketEntry entry{ expected_entry };
           bool success = atomic_entry.compare_exchange_strong(entry, HashBucketEntry::kInvalidEntry);
-          //log_debug("CAS update status: %d [received-entry-address=%llu]", success, entry.address().control());
           // If deletion failed, then some other thread must have added a new record to the entry.
         }
       }
@@ -812,6 +809,7 @@ inline Status HashIndex<D, HID>::WriteCheckpointMetadata(CheckpointState<file_t>
     disk_.TryComplete();
     std::this_thread::yield();
   }
+  core::aligned_free(reinterpret_cast<uint8_t*>(buffer));
   return write_result;
 }
 
@@ -889,6 +887,7 @@ inline Status HashIndex<D, HID>::ReadCheckpointMetadata(const Guid& token,
   }
   // Copy from buffer to struct
   memcpy(&checkpoint.index_metadata, buffer, sizeof(checkpoint.index_metadata));
+  core::aligned_free(reinterpret_cast<uint8_t*>(buffer));
 
   return read_result;
 }

@@ -18,6 +18,7 @@
 #include "common/log.h"
 #include "device/file_system_disk.h"
 #include "index/mem_index.h"
+#include "index/faster_index.h"
 
 #include "address.h"
 #include "alloc.h"

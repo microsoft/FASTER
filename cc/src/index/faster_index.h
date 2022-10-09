@@ -46,7 +46,7 @@ class FasterIndex : public IHashIndex<D> {
   typedef typename HID::hash_bucket_entry_t hash_bucket_entry_t;
 
   typedef HashIndex<D, HID> hash_index_t;
-  typedef FasterKv<HashIndexChunkKey, HashIndexChunkEntry, disk_t, hash_index_t> store_t;
+  typedef FasterKv<HashIndexChunkKey, HashIndexChunkEntry, disk_t, hash_index_t, hash_index_t> store_t;
 
   typedef GcStateFasterIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
@@ -271,6 +271,9 @@ void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, S
   CallbackContext<FasterIndexContext> context{ ctxt };
   // Result here is wrt to FASTER operation (i.e., Read / Rmw) result
   assert(result == Status::Ok || result == Status::NotFound);
+  assert(context->result == Status::Ok ||
+        context->result == Status::NotFound ||
+        context->result == Status::Aborted);
 
   // FIXME: store this inside FasterIndexReadContext
   AsyncIndexIOContext index_io_context{ context->caller_context, context->thread_io_responses,
@@ -306,7 +309,6 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
   if (read_cache != nullptr) {
     throw std::runtime_error{ "FasterIndex should *not* store read-cach'ed entries" };
   }
-  assert(read_cache == nullptr);
 
   uint64_t chunk = gc_state_->next_chunk++;
   if(chunk >= gc_state_->num_chunks) {
