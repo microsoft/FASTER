@@ -51,6 +51,11 @@ namespace FASTER.core
         /// </summary>
         public long BeginAddress => beginAddress;
 
+        /// <summary>
+        /// BeginAddress as per allocator, used in tests
+        /// </summary>
+        internal long AllocatorBeginAddress => allocator.BeginAddress;
+
         // Here's a soft begin address that is observed by all access at the FasterLog level but not actually on the
         // allocator. This is to make sure that any potential physical deletes only happen after commit.
         long beginAddress;
@@ -888,7 +893,7 @@ namespace FASTER.core
             if (!spinWait) return;
             if (success)
                 WaitForCommit(actualTail, actualCommitNum);
-            else 
+            else
                 // Still need to imitate semantics to spin until all previous enqueues are committed when commit has been filtered  
                 WaitForCommit(tail, lastCommit);
         }

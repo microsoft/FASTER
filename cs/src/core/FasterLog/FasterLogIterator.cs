@@ -658,13 +658,15 @@ namespace FASTER.core
                 physicalAddress = 0;
                 entryLength = 0;
                 currentAddress = nextAddress;
-                outNextAddress = nextAddress;
+                outNextAddress = currentAddress;
                 commitRecord = false;
 
                 // Check for boundary conditions
                 if (currentAddress < allocator.BeginAddress)
                 {
-                    currentAddress = allocator.BeginAddress;
+                    Utility.MonotonicUpdate(ref nextAddress, allocator.BeginAddress, out _);
+                    currentAddress = nextAddress;
+                    outNextAddress = currentAddress;
                 }
 
                 var _currentPage = currentAddress >> allocator.LogPageSizeBits;
