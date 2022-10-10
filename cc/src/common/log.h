@@ -16,7 +16,8 @@
 enum class Lvl {
   DEBUG = 0,
   INFO  = 1,
-  ERROR = 2
+  WARN  = 2,
+  ERROR = 3
 };
 
 /// By default, only print ERROR log messages.
@@ -39,6 +40,7 @@ enum class Lvl {
 #define log_info(f, a...) logMessage(Lvl::INFO , f, ##a)
 #endif
 
+#define log_warn(f, a...) logMessage(Lvl::WARN, f, ##a)
 #define log_error(f, a...) logMessage(Lvl::ERROR, f, ##a)
 
 typedef std::chrono::high_resolution_clock log_clock_t;
@@ -67,9 +69,15 @@ inline void log_msg(Lvl level, int line, const char* func,
   case Lvl::INFO:
     l = std::string("INFO");
     break;
-  default:
+  case Lvl::WARN:
+    l = std::string("WARN");
+    break;
+  case Lvl::ERROR:
     l = std::string("ERROR");
     break;
+  default:
+    fprintf(stderr, "Invalid logging level: %d\n", static_cast<int>(level));
+    throw std::runtime_error{ "Invalid logging level "};
   }
 
   fprintf(stderr, "[%04lu.%09lu]{%u}::%s::%s:%s:%d: %s\n",
@@ -81,7 +89,5 @@ inline void log_msg(Lvl level, int line, const char* func,
 }
 
 inline void log_init() {
- #ifndef NDEBUG
   start = log_clock_t::now();
- #endif
 }
