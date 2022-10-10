@@ -12,6 +12,60 @@
 namespace FASTER {
 namespace core {
 
+typedef Address(*ReadCacheBlockAllocateCallback)(void* faster, uint32_t record_size);
+
+/// Read Cache Record header, internal to FASTER.
+class ReadCacheRecordInfo {
+ public:
+  ReadCacheRecordInfo(uint16_t checkpoint_version_, bool in_cold_hlog_, bool tombstone_,
+                      bool invalid_, Address previous_address)
+    : checkpoint_version{ checkpoint_version_ }
+    , in_cold_hlog{ in_cold_hlog_ }
+    , invalid{ invalid_ }
+    , tombstone{ tombstone_ }
+    , previous_address_{ previous_address.control() } {
+  }
+  ReadCacheRecordInfo(const ReadCacheRecordInfo& other)
+    : control_{ other.control_ } {
+  }
+  ReadCacheRecordInfo(const RecordInfo& other)
+    : control_{ other.control_ } {
+  }
+
+  inline RecordInfo ToRecordInfo() {
+    return RecordInfo{ control_ };
+  }
+
+  inline bool IsNull() const {
+    return control_ == 0;
+  }
+  inline Address previous_address() const {
+    return Address{ previous_address_ };
+  }
+
+  union {
+      struct {
+        uint64_t previous_address_  : 48;
+        uint64_t checkpoint_version : 13;
+        uint64_t invalid            :  1;
+        uint64_t tombstone          :  1;
+        uint64_t in_cold_hlog       :  1;
+      };
+      struct {
+        uint64_t previous_address_  : 47;
+        uint64_t readcache          :  1;
+        uint64_t checkpoint_version : 13;
+        uint64_t invalid            :  1;
+        uint64_t tombstone          :  1;
+        uint64_t in_cold_hlog       :  1;
+      } rc_;
+
+      uint64_t control_;
+    };
+};
+static_assert(sizeof(ReadCacheRecordInfo) == 8, "sizeof(RecordInfo) != 8");
+
+
 template <class K, class V>
 class ReadCacheEvictContext : public IAsyncContext {
  public:

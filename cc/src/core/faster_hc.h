@@ -218,10 +218,21 @@ inline Status FasterKvHC<K, V, D>::Read(RC& context, AsyncCallback callback,
                                       uint64_t monotonic_serial_num) {
   typedef RC read_context_t;
   typedef HotColdReadContext<read_context_t> hc_read_context_t;
+  typedef HotColdIndexContext<hc_read_context_t> hc_index_context_t;
 
-  // Issue request to hot log
   hc_read_context_t hc_context{ this, ReadOperationStage::HOT_LOG_READ,
                               context, callback, monotonic_serial_num };
+
+  // Store latest hash index entry before initiating Read op
+  hc_index_context_t index_context{ &hc_context };
+  Status index_status = hot_store.hash_index_.template FindEntry<hc_index_context_t>(
+                              hot_store.thread_ctx(), index_context);
+  assert(index_status == Status::Ok || index_status == Status::NotFound);
+  // index_context.entry can be either HashBucketEntry::kInvalidEntry or a valid one (either hlog or read cache)
+  hc_context.entry = index_context.entry;
+  hc_context.atomic_entry = index_context.atomic_entry;
+
+  // Issue request to hot log
   Status status = hot_store.Read(hc_context, AsyncContinuePendingRead, monotonic_serial_num, true);
   if (status != Status::NotFound) {
     if (status == Status::Aborted) {
@@ -231,12 +242,24 @@ inline Status FasterKvHC<K, V, D>::Read(RC& context, AsyncCallback callback,
     return status;
   }
   // Issue request on cold log
-  return cold_store.Read(context, callback, monotonic_serial_num);
+  hc_context.stage = ReadOperationStage::COLD_LOG_READ;
+  status = cold_store.Read(hc_context, AsyncContinuePendingRead, monotonic_serial_num);
+  assert(status != Status::Aborted); // impossible when !abort_if_tombstone
+
+  if (status == Status::Ok && hot_store.UseReadCache()) {
+    // Try to insert cold log-resident record to read cache
+    auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(hc_context.record);
+    Status rc_status = hot_store.read_cache_->Insert(hot_store.thread_ctx(), hc_context, record, true);
+    assert(rc_status == Status::Ok || rc_status == Status::Aborted);
+  }
+  // OK (no read-cache), not_found, pending or error status
+  return status;
 }
 
 template<class K, class V, class D>
 inline void FasterKvHC<K, V, D>::AsyncContinuePendingRead(IAsyncContext* ctxt, Status result) {
   CallbackContext<async_hc_read_context_t> context{ ctxt };
+  faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
 
   if (context->stage == ReadOperationStage::HOT_LOG_READ) {
     if (result != Status::NotFound) {
@@ -249,8 +272,6 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRead(IAsyncContext* ctxt, S
       return;
     }
     // issue request to cold log
-    faster_hc_t * faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
-
     context->stage = ReadOperationStage::COLD_LOG_READ;
     Status status = faster_hc->cold_store.Read(*context.get(),
                                               AsyncContinuePendingRead,
@@ -263,6 +284,13 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRead(IAsyncContext* ctxt, S
   }
 
   if (context->stage == ReadOperationStage::COLD_LOG_READ) {
+    if (faster_hc->hot_store.UseReadCache() && result == Status::Ok) {
+      // try to insert to read cache
+      auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(context->record);
+      auto& hot_store = faster_hc->hot_store;
+      Status rc_status = hot_store.read_cache_->Insert(hot_store.thread_ctx(), *context.get(), record, true);
+      assert(rc_status == Status::Ok || rc_status == Status::Aborted);
+    }
     // call user-provided callback
     context->caller_callback(context->caller_context, result);
     return;

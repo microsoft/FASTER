@@ -186,11 +186,28 @@ class AsyncHotColdReadContext : public HotColdContext<K> {
                         AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
     : HotColdContext<key_t>(faster_hc_, caller_context_, caller_callback_, monotonic_serial_num_)
     , stage{ stage_ }
+    , entry{ HashBucketEntry::kInvalidEntry }
+    , atomic_entry{ nullptr }
+    , record{ nullptr }
   {}
+ public:
+  virtual ~AsyncHotColdReadContext() {
+    if (record) {
+      delete[] record;
+    }
+  }
+  void set_index_entry(HashBucketEntry entry_, AtomicHashBucketEntry* atomic_entry_) {
+    entry = entry_;
+    atomic_entry = atomic_entry_;
+  }
+ protected:
   /// The deep-copy constructor.
   AsyncHotColdReadContext(AsyncHotColdReadContext& other_, IAsyncContext* caller_context_)
     : HotColdContext<key_t>(other_, caller_context_)
     , stage{ other_.stage }
+    , entry{ other_.entry }
+    , atomic_entry{ other_.atomic_entry }
+    , record{ other_.record }
   {}
  public:
   virtual uint32_t key_size() const = 0;
@@ -201,6 +218,10 @@ class AsyncHotColdReadContext : public HotColdContext<K> {
   virtual void GetAtomic(const void* rec) = 0;
 
   ReadOperationStage stage;
+  HashBucketEntry entry;
+  AtomicHashBucketEntry* atomic_entry;
+
+  uint8_t* record;
 };
 
 /// Context that holds user context for Read request
@@ -235,6 +256,16 @@ class HotColdReadContext : public AsyncHotColdReadContext <typename RC::key_t, t
   inline read_context_t& read_context() {
     return *static_cast<read_context_t*>(HotColdContext<key_t>::caller_context);
   }
+  inline void copy_if_cold_log_record(const void* rec) {
+    if (this->stage == ReadOperationStage::COLD_LOG_READ) {
+      // Copy record to this context to be inserted later to Read Cache
+      // TODO: Use SectorAlignedMemory to "move" the record from the AsyncIOContext to here
+      // and avoid copying
+      const record_t* record_ = reinterpret_cast<const record_t*>(rec);
+      this->record = new uint8_t[record_->size()];
+      memcpy(this->record, record_, record_->size());
+    }
+  }
  public:
   /// Propagates calls to caller context
   inline uint32_t key_size() const final {
@@ -247,11 +278,14 @@ class HotColdReadContext : public AsyncHotColdReadContext <typename RC::key_t, t
     return hc_context_helper<false>::is_key_equal(read_context(), other);
   }
   inline void Get(const void* rec) {
+    copy_if_cold_log_record(rec);
     return hc_context_helper<false>::template Get<read_context_t, record_t>(read_context(), rec);
   }
   inline void GetAtomic(const void* rec) {
+    copy_if_cold_log_record(rec);
     return hc_context_helper<false>::template GetAtomic<read_context_t, record_t>(read_context(), rec);
   }
+
 };
 
 // Forward class declarations

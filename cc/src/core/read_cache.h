@@ -69,12 +69,10 @@ class ReadCache {
   Address SkipAndInvalidate(C& pending_context);
 
   template <class C>
-  Status Insert(ExecutionContext& exec_context, C& pending_context, record_t* record, Address insert_address);
+  Status Insert(ExecutionContext& exec_context, C& pending_context,
+                record_t* record, bool is_cold_log_record = false);
 
-  void Evict(Address from_head_address, Address to_head_address);
-
-  Status Checkpoint(CheckpointState<file_t>& checkpoint);
-
+  // Eviction-related methods
   // Called from ReadCachePersistentMemoryMalloc, when head address is shifted
   static void EvictCallback(void* readcache, Address from_head_address, Address to_head_address) {
     typedef ReadCache<K, V, D, H> readcache_t;
@@ -117,16 +115,15 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
     return Status::NotFound;
   }
 
-  Address rc_address;
-  const record_t* record;
+  if (address.in_readcache()) {
+    Address rc_address = address.readcache_address();
 
-  while (address.in_readcache()) {
-    rc_address = address.readcache_address();
+    const record_t* record = reinterpret_cast<const record_t*>(read_cache_.Get(rc_address));
+    ReadCacheRecordInfo rc_record_info = ReadCacheRecordInfo{ record->header };
 
-    record = reinterpret_cast<const record_t*>(read_cache_.Get(rc_address));
-    assert(!record->header.tombstone);
+    assert(!rc_record_info.tombstone); // read cache does not store tombstones
 
-    if (!record->header.invalid && pending_context.is_key_equal(record->key())) {
+    if (!rc_record_info.invalid && pending_context.is_key_equal(record->key())) {
       if (rc_address >= read_cache_.safe_head_address.load()) {
         pending_context.Get(record);
         return Status::Ok;
@@ -134,7 +131,8 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
       assert(rc_address >= read_cache_.head_address.load());
     }
 
-    address = record->header.previous_address();
+    address = rc_record_info.previous_address();
+    assert(!address.in_readcache());
   }
   // not handled by read cache
   return Status::NotFound;
@@ -146,10 +144,11 @@ inline Address ReadCache<K, V, D, H>::Skip(C& pending_context) const {
   Address address = pending_context.entry.address();
   const record_t* record;
 
-  while (address.in_readcache()) {
+  if (address.in_readcache()) {
     assert(address.readcache_address() >= read_cache_.begin_address.load());
     record = reinterpret_cast<const record_t*>(read_cache_.Get(address.readcache_address()));
-    address = record->header.previous_address();
+    address = ReadCacheRecordInfo{ record->header }.previous_address();
+    assert(!address.in_readcache());
   }
   return address;
 }
@@ -158,10 +157,11 @@ template <class K, class V, class D, class H>
 inline Address ReadCache<K, V, D, H>::Skip(Address address) {
   const record_t* record;
 
-  while (address.in_readcache()) {
+  if (address.in_readcache()) {
     assert(address.readcache_address() >= read_cache_.begin_address.load());
     record = reinterpret_cast<const record_t*>(read_cache_.Get(address.readcache_address()));
-    address = record->header.previous_address();
+    address = ReadCacheRecordInfo{ record->header }.previous_address();
+    assert(!address.in_readcache());
   }
   return address;
 }
@@ -172,10 +172,11 @@ inline Address ReadCache<K, V, D, H>::Skip(C& pending_context) {
   Address address = pending_context.entry.address();
   record_t* record;
 
-  while (address.in_readcache()) {
+  if (address.in_readcache()) {
     assert(address.readcache_address() >= read_cache_.begin_address.load());
     record = reinterpret_cast<record_t*>(read_cache_.Get(address.readcache_address()));
-    address = record->header.previous_address();
+    address = ReadCacheRecordInfo{ record->header }.previous_address();
+    assert(!address.in_readcache());
   }
   return address;
 }
@@ -187,7 +188,7 @@ inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(C& pending_context) {
   Address address = pending_context.entry.address();
   record_t* record;
 
-  while (address.in_readcache()) {
+  if (address.in_readcache()) {
     assert(address.readcache_address() >= read_cache_.begin_address.load());
     record = reinterpret_cast<record_t*>(read_cache_.Get(address.readcache_address()));
     if (pending_context.is_key_equal(record->key())) {
@@ -195,36 +196,52 @@ inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(C& pending_context) {
       record->header.invalid = true;
     }
     address = record->header.previous_address();
+    assert(!address.in_readcache());
   }
   return address;
 }
 
 template <class K, class V, class D, class H>
 template <class C>
-inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& pending_context, record_t* record, Address insert_address) {
+inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& pending_context,
+                                            record_t* record, bool is_cold_log_record) {
   // Store previous info wrt expected hash bucket entry
-  HashBucketEntry expected_entry = pending_context.entry;
-  AtomicHashBucketEntry* atomic_entry = pending_context.atomic_entry;
+  HashBucketEntry orig_expected_entry = pending_context.entry;
+  AtomicHashBucketEntry* orig_atomic_entry = pending_context.atomic_entry;
 
-  Status index_status = hash_index_->FindEntry(exec_context, pending_context);
-  assert(index_status == Status::Ok); // record should exist
-  // TODO: change this for hot-cold -- can also be Status::NotFound
+  Status index_status = hash_index_->FindOrCreateEntry(exec_context, pending_context);
+  assert(index_status == Status::Ok);
+
+  bool new_index_entry = (pending_context.entry.address() == Address::kInvalidAddress);
+  assert(is_cold_log_record || !new_index_entry);
 
   // find first non-read cache address
   Address hlog_address = Skip(pending_context);
   assert(!hlog_address.in_readcache());
-  assert(hlog_address != HashBucketEntry::kInvalidEntry);
+  assert(is_cold_log_record || hlog_address != Address::kInvalidAddress);
 
-  // Restore expected hash bucket entry info to perform the hash bucket CAS
-  pending_context.set_index_entry(expected_entry, atomic_entry);
+  if (!is_cold_log_record || !new_index_entry) {
+    // Restore expected hash bucket entry info to perform the hash bucket CAS
+    pending_context.set_index_entry(orig_expected_entry, orig_atomic_entry);
+  }
+  // NOTE: it is possible for orig_expected_entry to be invalid (i.e., empty)
+  // and the current hash index entry to be valid. This can happen when
+  // a concurrent hot-cold compaction takes place, and GCs the hash index after
+  // trimming the log.
 
   // Create new record
-  record_t* new_record = reinterpret_cast<record_t*>(read_cache_.Get(insert_address));
+  Address new_address = (*block_allocate_callback_)(faster_, record->size());
+  record_t* new_record = reinterpret_cast<record_t*>(read_cache_.Get(new_address));
   memcpy(new_record, record, record->size());
-  new_record->header.previous_address_ = hlog_address.control();
+  // Replace header
+  ReadCacheRecordInfo record_info {
+    static_cast<uint16_t>(exec_context.version),
+    is_cold_log_record, false, false, hlog_address.control()
+  };
+  new(new_record) record_t{ record_info.ToRecordInfo() };
 
   // Try to update hash index
-  index_status = hash_index_->TryUpdateEntry(exec_context, pending_context, insert_address, true);
+  index_status = hash_index_->TryUpdateEntry(exec_context, pending_context, new_address, true);
   assert(index_status == Status::Ok || index_status == Status::Aborted);
   if (index_status == Status::Aborted) {
     new_record->header.invalid = true;
@@ -234,7 +251,8 @@ inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& p
 
 template <class K, class V, class D, class H>
 inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_head_address) {
-  // NOTE: Currently eviction process is single threaded -- might want to make it multithreaded in the future
+  // NOTE: Currently eviction process is single threaded
+  // TODO: might want to make it multithreaded in the future
   typedef ReadCacheEvictContext<K, V> rc_evict_context_t;
   static std::atomic<bool> eviction_in_progress{ false };
 
@@ -260,20 +278,16 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
 
   while (address < to_head_address) {
     record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(address));
+    ReadCacheRecordInfo rc_record_info{ record->header };
     uint32_t record_size = record->size();
 
-    if (record->header.IsNull()) {
+    if (rc_record_info.IsNull()) {
       // reached end of the page -- move to next page!
       address = Address{ address.page() + 1, 0 };
       continue;
     }
-    /*if (record->header.invalid) {
-      // ignore invalid records
-      address += record_size;
-      continue;
-    }*/
     // Assume (for now) that only a single entry per hash bucket lies in read cache
-    assert(!record->header.previous_address().in_readcache());
+    assert(!rc_record_info.previous_address().in_readcache());
 
     rc_evict_context_t context{ record };
     Status index_status = hash_index_->FindEntry(exec_context, context);
@@ -303,8 +317,8 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
       // If a to-be-evicted read cache entry points to a trimmed hlog address, try to elide the bucket entry
       // NOTE: there is still a chance that read-cache entry points to an invalid hlog address (race condition)
       //       this is handled by FASTER's Internal* methods
-      Address updated_address = (record->header.previous_address() >= faster_hlog_begin_address)
-                                  ? record->header.previous_address()
+      Address updated_address = (rc_record_info.previous_address() >= faster_hlog_begin_address)
+                                  ? rc_record_info.previous_address()
                                   : HashBucketEntry::kInvalidEntry;
 
       index_status = hash_index_->TryUpdateEntry(exec_context, context, updated_address);

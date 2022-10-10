@@ -22,9 +22,11 @@ class RecordInfo {
     , tombstone{ tombstone_ }
     , previous_address_{ previous_address.control() } {
   }
-
   RecordInfo(const RecordInfo& other)
     : control_{ other.control_ } {
+  }
+  RecordInfo(uint64_t control)
+    : control_{ control } {
   }
 
   inline bool IsNull() const {
