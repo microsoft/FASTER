@@ -89,7 +89,7 @@ template <class K, class V, class D, class H = HashIndex<D>, class OH = H>
 class FasterKv {
  public:
   typedef FasterKv<K, V, D, H, OH> faster_t;
-  typedef FasterKv<K, V, D, OH> other_faster_t;
+  typedef FasterKv<K, V, D, OH, H> other_faster_t;
   friend class FasterKvHC<K, V, D>;
 
   // Make friend all templated instances of this class
@@ -198,7 +198,7 @@ class FasterKv {
   bool Compact(uint64_t untilAddress);
   bool CompactWithLookup(uint64_t until_address, bool shift_begin_address,
                           int n_threads = kNumCompactionThreads,
-                          other_faster_t* dest_store = nullptr,
+                          bool to_other_store = false,
                           bool checkpoint = false);
 
   /// Truncating the head of the log.
@@ -247,7 +247,7 @@ class FasterKv {
 
   template<class F>
   inline void InternalCompact(CompactionThreadsContext<F>* ct_ctx,
-                            other_faster_t* dest_store, int thread_idx);
+                              bool to_other_store, int thread_idx);
 
   template<class C>
   inline Address TraceBackForKeyMatchCtxt(const C& ctxt, Address from_address,
@@ -283,7 +283,7 @@ class FasterKv {
 
   template<class CIC>
   inline Status ConditionalInsert(CIC& context, AsyncCallback callback,
-                                  Address min_start_offset, void* dest_store);
+                                  Address min_start_offset, bool to_other_store);
 
   template<class C>
   inline OperationStatus InternalConditionalInsert(C& pending_context);
@@ -394,6 +394,7 @@ inline Guid FasterKv<K, V, D, H, OH>::StartSession(Guid guid) {
     guid = Guid::Create();
   }
   thread_ctx().Initialize(state.phase, state.version, guid, 0);
+  epoch_.ProtectAndDrain();
   Refresh();
   ++num_active_sessions;
   return thread_ctx().guid;
@@ -411,6 +412,7 @@ inline uint64_t FasterKv<K, V, D, H, OH>::ContinueSession(const Guid& session_id
     throw std::runtime_error{ "Can continue only in REST phase!" };
   }
   thread_ctx().Initialize(state.phase, state.version, session_id, iter->second);
+  epoch_.ProtectAndDrain();
   Refresh();
   ++num_active_sessions;
   return iter->second;
@@ -418,6 +420,11 @@ inline uint64_t FasterKv<K, V, D, H, OH>::ContinueSession(const Guid& session_id
 
 template <class K, class V, class D, class H, class OH>
 inline void FasterKv<K, V, D, H, OH>::Refresh() {
+  if (!epoch_.IsProtected()) {
+    log_warn("[FasterKv=%p] Thread [%lu] called Refresh(), with no active session",
+              static_cast<void*>(this), Thread::id());
+  }
+
   hash_index_.CompletePending();
   epoch_.ProtectAndDrain();
   // We check if we are in normal mode
@@ -1696,13 +1703,13 @@ inline Address FasterKv<K, V, D, H, OH>::BlockAllocate(uint32_t record_size) {
   Address retval = hlog.Allocate(record_size, page);
   while(retval < hlog.read_only_address.load()) {
     Refresh();
-    if (other_store_) other_store_->Refresh();
+    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
     // Don't overrun the hlog's tail offset.
     bool page_closed = (retval == Address::kInvalidAddress);
     while(page_closed) {
       page_closed = !hlog.NewPage(page);
       Refresh();
-      if (other_store_) other_store_->Refresh();
+      if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
     }
     retval = hlog.Allocate(record_size, page);
   }
@@ -1721,12 +1728,12 @@ inline Address FasterKv<K, V, D, H, OH>::BlockAllocateReadCache(uint32_t record_
   Address retval = read_cache_->read_cache_.Allocate(record_size, page);
   while (retval < read_cache_->read_cache_.read_only_address.load()) {
     Refresh();
-    if (other_store_) other_store_->Refresh();
+    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
     bool page_closed = (retval == Address::kInvalidAddress);
     while (page_closed) {
       page_closed = !read_cache_->read_cache_.NewPage(page);
       Refresh();
-    if (other_store_) other_store_->Refresh();
+    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
     }
     retval = read_cache_->read_cache_.Allocate(record_size, page);
   }
@@ -3047,7 +3054,7 @@ inline std::ostream& operator << (std::ostream& out, const FixedPageAddress addr
 /// scanning the entire log from head to tail.
 template <class K, class V, class D, class H, class OH>
 bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool shift_begin_address,
-                                            int n_threads, other_faster_t* dest_store_, bool checkpoint) {
+                                            int n_threads, bool to_other_store, bool checkpoint) {
   // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
 
   if (hlog.begin_address.load() >= until_address) {
@@ -3056,13 +3063,9 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
   if (until_address > hlog.safe_read_only_address.control()) {
     throw std::invalid_argument {"Can compact only until hlog.safe_read_only_address"};
   }
+  assert(!to_other_store || (other_store_ != nullptr));
 
-  bool dest_store_differs = (dest_store_ != nullptr);
-  other_faster_t* dest_store = (dest_store_ != nullptr) ? dest_store_
-                                                        : reinterpret_cast<other_faster_t*>(this);
-  assert(dest_store != nullptr);
-
-  if (!epoch_.IsProtected() || !dest_store->epoch_.IsProtected()) {
+  if (!epoch_.IsProtected() || (to_other_store && !other_store_->epoch_.IsProtected())) {
     throw std::invalid_argument {"Thread should have an active FASTER session"};
   }
 
@@ -3079,9 +3082,9 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
   // Spawn the threads first
   for (int idx = 0; idx < n_threads - 1; ++idx) {
     threads.emplace_back(&FasterKv<K, V, D, H, OH>::InternalCompact<faster_t>,
-                        this, &threads_context, dest_store_, idx);
+                        this, &threads_context, to_other_store, idx);
   }
-  InternalCompact(&threads_context, dest_store_, -1); // participate in the compaction
+  InternalCompact(&threads_context, to_other_store, -1); // participate in the compaction
 
   // Wait for threads
   // NOTE: since we have an active session, we *must* periodically refresh
@@ -3096,7 +3099,7 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
       }
     }
     Refresh();
-    if (dest_store_differs) dest_store->Refresh();
+    if (to_other_store) other_store_->Refresh();
     std::this_thread::yield();
   }
   assert(remaining == 0);
@@ -3144,15 +3147,21 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     };
 
     // Init checkpointing
-    dest_store->Refresh();
+    if (!to_other_store) {
+      Refresh();
+    } else {
+      other_store_->Refresh();
+    }
     bool success;
     do {
-      success = dest_store->Checkpoint(index_persist_callback, hlog_persist_callback, token);
+      if (!to_other_store) {
+        success = Checkpoint(index_persist_callback, hlog_persist_callback, token);
+      } else {
+        success = other_store_->Checkpoint(index_persist_callback, hlog_persist_callback, token);
+      }
       if (!success) {
         Refresh();
-        if (dest_store_differs) {
-          dest_store->Refresh();
-        }
+        if (to_other_store) other_store_->Refresh();
         std::this_thread::yield();
       }
     } while (!success);
@@ -3162,8 +3171,8 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     size_t num_threads_active = num_active_sessions.load();
     while (hlog_num_threads_persisted < num_threads_active) {
       CompletePending(false);
-      if (dest_store_differs) {
-        dest_store->CompletePending(false);
+      if (to_other_store) {
+        other_store_->CompletePending(false);
       }
       std::this_thread::yield();
     }
@@ -3174,7 +3183,7 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
       return false;
     }
 
-    if (!dest_store_differs && shift_begin_address) {
+    if (!to_other_store && shift_begin_address) {
       // Wait until all threads move to REST phase
       // This ensures that initiating a log truncation operation will be successful
       auto callback = [](IAsyncContext* ctxt) {
@@ -3212,9 +3221,7 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
                                   complete_callback, true);
       if (!success) {
         Refresh();
-        if (dest_store_differs) {
-          dest_store->Refresh();
-        }
+        if (to_other_store) other_store_->Refresh();
         std::this_thread::yield();
       }
     } while(!success);
@@ -3222,8 +3229,8 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     // block until truncation & hash index update finishes
     while(!log_truncated || !gc_completed) {
       CompletePending(false);
-      if (dest_store_differs) {
-        dest_store->CompletePending(false);
+      if (to_other_store) {
+        other_store_->CompletePending(false);
       }
       std::this_thread::yield();
     }
@@ -3235,17 +3242,10 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 template <class K, class V, class D, class H, class OH>
 template <class F>
 inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F>* ct_ctx,
-                                                other_faster_t* dest_store, int thread_idx) {
+                                                bool to_other_store, int thread_idx) {
   constexpr int io_check_freq = 16;
   typedef CompactionConditionalInsertContext<K, V> ci_context_t;
   typedef std::unordered_set<uint64_t> pending_records_t;
-
-  bool dest_store_differs = (dest_store != nullptr);
-  // live records will be copied to this store's tail
-  if (dest_store == nullptr) {
-    dest_store = reinterpret_cast<other_faster_t*>(this);
-  }
-  assert(dest_store != nullptr);
 
   // Callback for ConditionalInsert request
   auto ci_callback = [](IAsyncContext* ctxt, Status result) {
@@ -3270,8 +3270,8 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F
   // Start session for each thread that was spawned
   if (thread_idx >= 0) {
     StartSession();
-    if (dest_store_differs) {
-      dest_store->StartSession();
+    if (to_other_store) {
+      other_store_->StartSession();
     }
   }
 
@@ -3297,7 +3297,7 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F
       }
       continue;
     }
-    if (record->header.tombstone && !dest_store_differs)  {
+    if (record->header.tombstone && !to_other_store)  {
       goto complete_pending; // do not compact tombstones
     }
 
@@ -3310,8 +3310,8 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F
 
       // Insert record if not exists already in (recordAddress, tailAddress] range
       ci_context_t ci_context{ record, record_address, &pending_records };
-      Status status = ConditionalInsert(ci_context, ci_callback, record_address,
-                                        static_cast<void*>(dest_store));
+      Status status = ConditionalInsert(ci_context, ci_callback,
+                                        record_address, to_other_store);
       assert(status == Status::Ok || status == Status::Aborted || status == Status::Pending);
 
       if (status != Status::Pending) {
@@ -3325,8 +3325,8 @@ complete_pending:
     if (!pending_records.empty()) {
       // Try to complete pending requests
       CompletePending(false);
-      if (dest_store_differs) {
-        dest_store->CompletePending(false);
+      if (to_other_store) {
+        other_store_->CompletePending(false);
       }
       if (record == nullptr) {
         std::this_thread::yield();
@@ -3335,9 +3335,7 @@ complete_pending:
     if (num_iter % io_check_freq == 0) {
       // Periodically refresh epoch
       Refresh();
-      if (dest_store_differs) {
-        dest_store->Refresh();
-      }
+      if (to_other_store) other_store_->Refresh();
     }
 
     ++num_iter;
@@ -3349,17 +3347,23 @@ complete_pending:
   assert(pending_records.empty());
 
   if (thread_idx >= 0) {
-    // This thread was spawned only for compaction and should have finished all activity
-    assert(dest_store->thread_ctx().retry_requests.empty());
-    assert(dest_store->thread_ctx().pending_ios.empty());
-    assert(dest_store->thread_ctx().io_responses.empty());
+    // This thread was spawned *only* for compaction and should have finished all activity
+    if (to_other_store) { // hot-cold compaction
+      assert(other_store_->thread_ctx().retry_requests.empty());
+      assert(other_store_->thread_ctx().pending_ios.empty());
+      assert(other_store_->thread_ctx().io_responses.empty());
+    } else { // single log / cold-colc compaction
+      assert(thread_ctx().retry_requests.empty());
+      assert(thread_ctx().pending_ios.empty());
+      assert(thread_ctx().io_responses.empty());
+    }
   }
 
   // Stop session for each spawned thread
   if (thread_idx >= 0) {
     StopSession();
-    if (dest_store_differs) {
-      dest_store->StopSession();
+    if (to_other_store) {
+      other_store_->StopSession();
     }
     // Mark thread as finished
     ct_ctx->done[thread_idx].store(true);
@@ -3370,7 +3374,7 @@ complete_pending:
 template <class K, class V, class D, class H, class OH>
 template <class CIC>
 inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCallback callback,
-                                                  Address min_search_offset, void* dest_store) {
+                                                  Address min_search_offset, bool to_other_store) {
   typedef CIC conditional_insert_context_t;
   typedef PendingConditionalInsertContext<CIC> pending_ci_context_t;
   static_assert(std::is_base_of<value_t, typename pending_ci_context_t::value_t>::value,
@@ -3378,7 +3382,7 @@ inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCal
   static_assert(alignof(value_t) == alignof(typename pending_ci_context_t::value_t),
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
-  pending_ci_context_t pending_context{ context, callback, min_search_offset, dest_store };
+  pending_ci_context_t pending_context{ context, callback, min_search_offset, to_other_store };
 
   // Set initial start address to last entry of hash chain
   // Status index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
@@ -3434,9 +3438,7 @@ inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCal
 template <class K, class V, class D, class H, class OH>
 template <class C>
 inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pending_context) {
-
-  other_faster_t* dest_store = static_cast<other_faster_t*>(pending_context.dest_store);
-  bool dest_store_differs = (dest_store != reinterpret_cast<other_faster_t*>(this));
+  bool to_other_store = pending_context.to_other_store;
 
   Address min_search_offset = pending_context.min_search_offset;
   assert(!min_search_offset.in_readcache());
@@ -3446,8 +3448,8 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
   if(thread_ctx().phase != Phase::REST) {
     HeavyEnter();
   }
-  if(dest_store_differs && dest_store->thread_ctx().phase != Phase::REST) {
-    dest_store->HeavyEnter();
+  if(to_other_store && other_store_->thread_ctx().phase != Phase::REST) {
+    other_store_->HeavyEnter();
   }
 
   Address begin_address = hlog.begin_address.load();
@@ -3562,7 +3564,7 @@ create_record:
   }
 
   // Append entry to the log
-  if (!dest_store_differs) {
+  if (!to_other_store) {
     // Case: Single log compaction, or Hot-Cold RMW conditional insert
     assert(!pending_context.is_tombstone());
     // Create record
@@ -3600,10 +3602,10 @@ create_record:
     OperationStatus op_status;
     if (!pending_context.is_tombstone()) {
       async_pending_upsert_context_t* upsert_context = pending_context.WrapInUpsertContext();
-      op_status = dest_store->InternalUpsert(*upsert_context);
+      op_status = other_store_->InternalUpsert(*upsert_context);
     } else {
       async_pending_delete_context_t* delete_context = pending_context.WrapInDeleteContext();
-      op_status = dest_store->InternalDelete(*delete_context, true);
+      op_status = other_store_->InternalDelete(*delete_context, true);
     }
     assert(op_status == OperationStatus::SUCCESS || op_status == OperationStatus::INDEX_ENTRY_ON_DISK);
     return op_status;

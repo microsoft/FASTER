@@ -18,7 +18,7 @@ class FasterKvHC {
 public:
 
   typedef FasterKv<K, V, D, HashIndex<D>, FasterIndex<D>> hot_faster_store_t;
-  typedef FasterKv<K, V, D, FasterIndex<D>> cold_faster_store_t;
+  typedef FasterKv<K, V, D, FasterIndex<D>, HashIndex<D>> cold_faster_store_t;
 
   typedef FasterKvHC<K, V, D> faster_hc_t;
   typedef AsyncHotColdReadContext<K, V> async_hc_read_context_t;
@@ -43,6 +43,7 @@ public:
   , cold_log_compaction_log_perc_{ cold_log_compaction_log_perc }
   {
     hot_store.SetOtherStore(&cold_store);
+    cold_store.SetOtherStore(&hot_store);
 
     // Calculate disk size for hot & cold logs
     if (hot_log_perc < 0 || hot_log_perc > 1) {
@@ -362,8 +363,7 @@ inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
     hc_rmw_ci_context_t ci_context{ &hc_rmw_context, rmw_rcu };
     hc_rmw_context.ci_context = &ci_context;
     Status ci_status = hot_store.ConditionalInsert(ci_context, AsyncContinuePendingRmwConditionalInsert,
-                                                  hc_rmw_context.expected_hlog_address,
-                                                  static_cast<void*>(&hot_store));
+                                                  hc_rmw_context.expected_hlog_address, false);
     if (ci_status == Status::Aborted || ci_status == Status::NotFound) {
       // add to retry rmw queue
       hc_rmw_context.prepare_for_retry();
@@ -417,8 +417,7 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, St
       bool rmw_rcu = (result == Status::Ok);
       hc_rmw_ci_context_t ci_context{ context.get(), rmw_rcu };
       Status ci_status = faster_hc->hot_store.ConditionalInsert(ci_context, AsyncContinuePendingRmwConditionalInsert,
-                                                                context->expected_hlog_address,
-                                                                static_cast<void*>(&faster_hc->hot_store));
+                                                                context->expected_hlog_address, false);
       if (ci_status == Status::Pending) {
         context.async = true;
         return;
@@ -527,11 +526,9 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       assert(until_address % hot_store.hlog.kPageSize == 0);
       // perform hot-cold compaction
       StartSession();
-      cold_store.StartSession();
       if (!CompactHotLog(until_address, true)) {
         log_error("Compact HOT: *not* successful! :(");
       }
-      cold_store.StopSession();
       StopSession();
     }
     if (cold_store.Size() > cold_log_disk_size_limit_) {

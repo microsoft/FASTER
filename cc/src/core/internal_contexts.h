@@ -516,12 +516,12 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
  protected:
   AsyncPendingConditionalInsertContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_,
-                                        Address min_search_offset_, void* dest_store_)
+                                        Address min_search_offset_, bool to_other_store_)
     : PendingContext<key_t>(OperationType::ConditionalInsert, caller_context_, caller_callback_)
     , min_search_offset{ min_search_offset_ }
     , orig_min_search_offset{ min_search_offset_ }
     , expected_hlog_address{ Address::kInvalidAddress }
-    , dest_store{ dest_store_ }
+    , to_other_store{ to_other_store_ }
     , io_context{ nullptr } {
   }
   /// The deep copy constructor.
@@ -530,7 +530,7 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
     , min_search_offset{ other.min_search_offset }
     , orig_min_search_offset{ other.orig_min_search_offset }
     , expected_hlog_address{ other.expected_hlog_address }
-    , dest_store{ other.dest_store }
+    , to_other_store{ other.to_other_store }
     , io_context{ other.io_context } {
   }
 
@@ -552,7 +552,7 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
   Address orig_min_search_offset;
   /// Keeps latest hlog address, as found by hash index entry (after skipping read cache)
   Address expected_hlog_address;
-  void* dest_store;
+  bool to_other_store;
 
   AsyncIOContext* io_context;
 };
@@ -574,9 +574,9 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
   typedef PendingDeleteContext<CIC, true> pending_delete_context_t;
 
   PendingConditionalInsertContext(conditional_insert_context_t& caller_context_, AsyncCallback caller_callback_,
-                                  Address min_search_offset_, void* dest_store_)
+                                  Address min_search_offset_, bool to_other_store_)
     : AsyncPendingConditionalInsertContext<key_t>(caller_context_, caller_callback_,
-                                                  min_search_offset_, dest_store_) {
+                                                  min_search_offset_, to_other_store_) {
   }
   /// The deep copy constructor.
   PendingConditionalInsertContext(PendingConditionalInsertContext& other, IAsyncContext* caller_context_)
