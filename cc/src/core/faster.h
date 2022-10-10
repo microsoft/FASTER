@@ -149,8 +149,10 @@ class FasterKv {
 
     log_debug("Read cache is %d", use_readcache);
     if (use_readcache) {
-      read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, hlog, "", log_size,
+      read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, hlog,
+                                                  BlockAllocateReadCacheCallback, "", log_size,
                                                   log_mutable_fraction, pre_allocate_log);
+      read_cache_->SetFasterInstance(static_cast<void*>(this));
     }
   }
 
@@ -256,6 +258,7 @@ class FasterKv {
                                       Address min_address, uint8_t side);
 
   inline Address BlockAllocate(uint32_t record_size);
+  static Address BlockAllocateReadCacheCallback(void* faster, uint32_t record_size);
   inline Address BlockAllocateReadCache(uint32_t record_size);
 
   inline Status HandleOperationStatus(ExecutionContext& ctx,
@@ -1704,6 +1707,12 @@ inline Address FasterKv<K, V, D, H, OH>::BlockAllocate(uint32_t record_size) {
     retval = hlog.Allocate(record_size, page);
   }
   return retval;
+}
+
+template <class K, class V, class D, class H, class OH>
+Address FasterKv<K, V, D, H, OH>::BlockAllocateReadCacheCallback(void* faster, uint32_t record_size) {
+  faster_t* self = reinterpret_cast<faster_t*>(faster);
+  return self->BlockAllocateReadCache(record_size);
 }
 
 template <class K, class V, class D, class H, class OH>
