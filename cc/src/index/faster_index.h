@@ -53,7 +53,11 @@ class FasterIndex : public IHashIndex<D> {
 
   // 256k rows x 8 entries each = 2M entries
   // 16MB in-mem index (w/o overflow) [2M x 8 bytes each]
-  int kHashIndexNumEntries = 2048 * (1 << 10);
+  const uint64_t kHashIndexNumEntries = 256 * 1024;
+  // Stick to 768 MB for now -- can use remaining (~256 MB) for read cache.
+  const uint64_t kInMemSize = 768 * (1024 * 1024);
+  // 90% of 768MB (~691 MB) constitute the mutable region
+  const double dMutablePercentage = 0.75;
 
   FasterIndex(disk_t& disk, LightEpoch& epoch, gc_state_t& gc_state, grow_state_t& grow_state)
     : disk_{ disk }
@@ -65,9 +69,13 @@ class FasterIndex : public IHashIndex<D> {
       std::string& root_path = disk.root_path;
       if (!root_path.empty()) {
         root_path += "cold_index";
-        assert(std::experimental::filesystem::create_directories(root_path));
+        if (!std::experimental::filesystem::create_directories(root_path)) {
+          log_error("create_directories @ %s failed", root_path.c_str());
+          throw std::runtime_error{ "Cannot create cold-index directory" };
+        }
       }
-      store_ = std::make_unique<store_t>(kHashIndexNumEntries, 192 * (1 << 20), root_path, 0.4, false);
+      store_ = std::make_unique<store_t>(kHashIndexNumEntries, kInMemSize,
+                                          root_path, dMutablePercentage);
   }
 
   void Initialize(uint64_t new_size) {
@@ -216,8 +224,7 @@ template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context) {
   pending_context.index_op_type = IndexOperationType::Retrieve;
-  pending_context.entry = HashBucketEntry::kInvalidEntry;
-
+  //pending_context.entry = HashBucketEntry::kInvalidEntry;
   return RmwIndexEntry(exec_context, pending_context, Address::kInvalidAddress, false);
 }
 

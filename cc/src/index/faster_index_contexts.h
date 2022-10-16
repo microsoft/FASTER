@@ -1,5 +1,6 @@
 #include "../core/async.h"
 #include "../core/async_result_types.h"
+#include "../core/utility.h"
 
 namespace FASTER {
 namespace index {
@@ -39,9 +40,6 @@ struct alignas(Constants::kCacheLineBytes) HashIndexChunkEntry {
   HashIndexChunkEntry() {
     std::memset(&entries, 0, sizeof(HashIndexChunkEntry));
   }
-  /*HashIndexChunkEntry(const HashIndexChunkEntry& other) {
-    std::memcpy(&entries, &other.entries, sizeof(HashIndexChunkEntry));
-  }*/
   inline static constexpr uint32_t size() {
     return static_cast<uint32_t>(sizeof(HashIndexChunkEntry));
   }
@@ -66,6 +64,7 @@ class FasterIndexContext : public IAsyncContext {
     , io_id{ io_id_ }
     , thread_io_responses{ thread_io_responses_ }
     , result{ Status::Corruption }
+    , expected_entry{ entry_ }
     , entry{ entry_ }
     , key_{ key }
     , pos_{ pos } {
@@ -77,9 +76,15 @@ class FasterIndexContext : public IAsyncContext {
     , io_id{ other.io_id }
     , thread_io_responses{ other.thread_io_responses }
     , result{ other.result }
+    , expected_entry{ other.expected_entry }
     , entry{ other.entry }
     , key_{ other.key_ }
     , pos_{ other.pos_ } {
+  }
+
+  /// The implicit and explicit interfaces require a key() accessor.
+  inline const HashIndexChunkKey& key() const {
+    return key_;
   }
 
  public:
@@ -93,7 +98,9 @@ class FasterIndexContext : public IAsyncContext {
   concurrent_queue<AsyncIndexIOContext*>* thread_io_responses;
   /// Result of the operation
   Status result;
-  /// Value found in the hash bucket entry
+  // Value expected to be found in the bucket
+  HashBucketEntry expected_entry;
+  /// Value actually *found* in the hash bucket entry
   HashBucketEntry entry;
 
  protected:
@@ -115,11 +122,6 @@ class FasterIndexReadContext : public FasterIndexContext {
   /// Copy (and deep-copy) constructor.
   FasterIndexReadContext(const FasterIndexReadContext& other, IAsyncContext* caller_context_)
     : FasterIndexContext(other, caller_context_) {
-  }
-
-  /// The implicit and explicit interfaces require a key() accessor.
-  inline const HashIndexChunkKey& key() const {
-    return key_;
   }
 
   inline void Get(const HashIndexChunkEntry& value) {
@@ -161,10 +163,6 @@ class FasterIndexRmwContext : public FasterIndexContext {
     , force_{ other.force_ } {
   }
 
-  /// The implicit and explicit interfaces require a key() accessor.
-  inline const HashIndexChunkKey& key() const {
-    return key_;
-  }
   inline static constexpr uint32_t value_size() {
     return sizeof(HashIndexChunkEntry);
   }
@@ -195,29 +193,30 @@ class FasterIndexRmwContext : public FasterIndexContext {
   }
 
  private:
+  inline bool is_find_or_create_entry_request() {
+    return record_address() == Address::kInvalidAddress;
+  }
+
   inline void UpdateEntry(HashIndexChunkEntry& value) {
     // (Try to) update single hash bucket entry
     AtomicHashBucketEntry* atomic_entry = &value.entries[pos_.index].entries[pos_.tag];
-    if (record_address() != Address::kInvalidAddress) {
+    HashBucketEntry local_expected_entry{ expected_entry };
+
+    if (!is_find_or_create_entry_request()) {
       if (!force_) { // TryUpdateEntry
-        if (atomic_entry->compare_exchange_strong(entry, desired_entry_)) {
-          entry = desired_entry_;
-          result = Status::Ok;
-        } else {
-          result = Status::Aborted;
-        }
+        bool success = atomic_entry->compare_exchange_strong(local_expected_entry, desired_entry_);
+        result = success ? Status::Ok : Status::Aborted;
+        entry = success ? desired_entry_ : local_expected_entry;
       } else { // UpdateEntry
         atomic_entry->store(desired_entry_);
         entry = desired_entry_;
         result = Status::Ok;
       }
     } else { // FindOrCreateEntry
-      assert(entry == HashBucketEntry::kInvalidEntry);
       assert(desired_entry_.address() == Address::kInvalidAddress);
-      if (atomic_entry->compare_exchange_strong(entry, desired_entry_)) {
-        // atomic entry was updated successfully; update local entry copy
-        entry = desired_entry_;
-      }
+      bool sucess = atomic_entry->compare_exchange_strong(local_expected_entry, desired_entry_);
+      // update entry with latest bucket value
+      entry = sucess ? desired_entry_ : local_expected_entry;
       result = Status::Ok;
     }
     // NOTE: this->entry has the most recent value of atomic_entry
