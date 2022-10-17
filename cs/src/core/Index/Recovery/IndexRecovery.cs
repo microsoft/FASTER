@@ -16,6 +16,11 @@ namespace FASTER.core
         internal ICheckpointManager checkpointManager;
         internal bool disposeCheckpointManager;
 
+        /// <summary>
+        /// CheckpointManager
+        /// </summary>
+        public ICheckpointManager CheckpointManager => checkpointManager;
+
         // Derived class exposed API
         internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
         {
