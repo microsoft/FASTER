@@ -13,6 +13,8 @@ using namespace FASTER::core;
 namespace FASTER {
 namespace index {
 
+typedef void(*RefreshCallback)(void* faster);
+
 template<class D>
 class IHashIndex {
  public:
@@ -24,6 +26,7 @@ class IHashIndex {
   ~IHashIndex() { }
 
   void Initialize(uint64_t new_size);
+  void SetRefreshCallback(void* faster, RefreshCallback callback);
 
   template <class C>
   Status FindEntry(ExecutionContext& exec_context, C& pending_context) const;

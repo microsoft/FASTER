@@ -164,7 +164,7 @@ class FasterKv {
   Guid StartSession(Guid guid = Guid());
   uint64_t ContinueSession(const Guid& guid);
   void StopSession();
-  void Refresh();
+  void Refresh(bool from_callback = false);
 
   /// Store interface
   template <class RC>
@@ -261,6 +261,8 @@ class FasterKv {
   static Address BlockAllocateReadCacheCallback(void* faster, uint32_t record_size);
   inline Address BlockAllocateReadCache(uint32_t record_size);
 
+  static void DoRefreshCallback(void* faster);
+
   inline Status HandleOperationStatus(ExecutionContext& ctx,
                                       pending_context_t& pending_context,
                                       OperationStatus internal_status, bool& async);
@@ -331,6 +333,12 @@ class FasterKv {
     assert(other_store_ == nullptr); // set only once
     other_store_ = other_store;
   }
+ public:
+  void SetRefreshCallback(void* faster, RefreshCallback refresh_callback) {
+    assert(refresh_callback_store_ == nullptr);
+    refresh_callback_ = refresh_callback;
+    refresh_callback_store_ = faster;
+  }
 
  private:
   LightEpoch epoch_;
@@ -378,6 +386,9 @@ class FasterKv {
   // Required for the Epoch framework to work properly
   other_faster_t* other_store_;
 
+  void* refresh_callback_store_;
+  RefreshCallback refresh_callback_;
+
   /// Space for two contexts per thread, stored inline.
   ThreadContext thread_contexts_[Thread::kMaxNumThreads];
 };
@@ -419,14 +430,20 @@ inline uint64_t FasterKv<K, V, D, H, OH>::ContinueSession(const Guid& session_id
 }
 
 template <class K, class V, class D, class H, class OH>
-inline void FasterKv<K, V, D, H, OH>::Refresh() {
+inline void FasterKv<K, V, D, H, OH>::Refresh(bool from_callback) {
   if (!epoch_.IsProtected()) {
     log_warn("[FasterKv=%p] Thread [%lu] called Refresh(), with no active session",
               static_cast<void*>(this), Thread::id());
   }
-
-  hash_index_.CompletePending();
   epoch_.ProtectAndDrain();
+  if (from_callback) {
+    if (other_store_ && other_store_->epoch_.IsProtected()) {
+      other_store_->Refresh();
+    }
+  } else {
+    // avoid inf recursion
+    hash_index_.Refresh();
+  }
   // We check if we are in normal mode
   SystemState new_state = system_state_.load();
   if(thread_ctx().phase == Phase::REST && new_state.phase == Phase::REST) {
@@ -574,8 +591,8 @@ inline Status FasterKv<K, V, D, H, OH>::Delete(DC& context, AsyncCallback callba
 template <class K, class V, class D, class H, class OH>
 inline bool FasterKv<K, V, D, H, OH>::CompletePending(bool wait) {
   do {
-    disk.TryComplete();
     hash_index_.CompletePending();
+    disk.TryComplete();
 
     bool done = true;
     if(thread_ctx().phase != Phase::WAIT_PENDING && thread_ctx().phase != Phase::IN_PROGRESS) {
@@ -1704,12 +1721,14 @@ inline Address FasterKv<K, V, D, H, OH>::BlockAllocate(uint32_t record_size) {
   while(retval < hlog.read_only_address.load()) {
     Refresh();
     if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+    if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
     // Don't overrun the hlog's tail offset.
     bool page_closed = (retval == Address::kInvalidAddress);
     while(page_closed) {
       page_closed = !hlog.NewPage(page);
       Refresh();
       if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+      if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
     }
     retval = hlog.Allocate(record_size, page);
   }
@@ -1729,17 +1748,24 @@ inline Address FasterKv<K, V, D, H, OH>::BlockAllocateReadCache(uint32_t record_
   while (retval < read_cache_->read_cache_.read_only_address.load()) {
     Refresh();
     if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+    if (refresh_callback_) refresh_callback_(refresh_callback_store_);
     bool page_closed = (retval == Address::kInvalidAddress);
     while (page_closed) {
       page_closed = !read_cache_->read_cache_.NewPage(page);
       Refresh();
-    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+      if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+      if (refresh_callback_) refresh_callback_(refresh_callback_store_);
     }
     retval = read_cache_->read_cache_.Allocate(record_size, page);
   }
   return retval;
 }
 
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::DoRefreshCallback(void* faster) {
+  faster_t* self = reinterpret_cast<faster_t*>(faster);
+  self->Refresh(true);
+}
 
 template <class K, class V, class D, class H, class OH>
 void FasterKv<K, V, D, H, OH>::AsyncGetFromDisk(Address address, uint32_t num_records,
@@ -1750,6 +1776,7 @@ void FasterKv<K, V, D, H, OH>::AsyncGetFromDisk(Address address, uint32_t num_re
       disk.TryComplete();
       std::this_thread::yield();
       epoch_.ProtectAndDrain();
+      if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->epoch_.ProtectAndDrain();
     }
   }
   ++num_pending_ios;

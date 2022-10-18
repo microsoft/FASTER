@@ -81,6 +81,9 @@ class FasterIndex : public IHashIndex<D> {
   void Initialize(uint64_t new_size) {
     this->resize_info.version = 0;
   }
+  void SetRefreshCallback(void* faster, RefreshCallback callback) {
+    store_->SetRefreshCallback(faster, callback);
+  }
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
   // The caller can use the "expected_entry" to CAS its desired address into the entry.

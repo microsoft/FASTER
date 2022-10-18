@@ -75,6 +75,9 @@ class HashIndex : public IHashIndex<D> {
     table_[0].Initialize(new_size, disk_.log().alignment());
     overflow_buckets_allocator_[0].Initialize(disk_.log().alignment(), epoch_);
   }
+  void SetRefreshCallback(void* faster, RefreshCallback callback) {
+    throw std::runtime_error{ "This should never be called" };
+  }
 
   // Find the hash bucket entry, if any, corresponding to the specified hash.
   // The caller can use the "expected_entry" to CAS its desired address into the entry.
