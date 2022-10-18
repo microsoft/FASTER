@@ -7,6 +7,7 @@ set (FASTER_HEADERS
   core/auto_ptr.h
   core/checkpoint_locks.h
   core/checkpoint_state.h
+  core/config.h
   core/constants.h
   core/faster_hc.h
   core/faster.h
@@ -34,12 +35,12 @@ set (FASTER_HEADERS
   device/null_disk.h
   environment/file.h
   environment/file_common.h
+  index/faster_index.h
+  index/faster_index_contexts.h
   index/hash_bucket.h
   index/hash_table.h
   index/index.h
   index/mem_index.h
-  index/faster_index.h
-  index/faster_index_contexts.h
 )
 
 if (MSVC)

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <experimental/filesystem>
-
 #include "../core/async.h"
 #include "../core/async_result_types.h"
 #include "../core/checkpoint_state.h"
@@ -55,7 +53,8 @@ class FasterIndex : public IHashIndex<D> {
   // 16MB in-mem index (w/o overflow) [2M x 8 bytes each]
   const uint64_t kHashIndexNumEntries = 256 * 1024;
   // Stick to 768 MB for now -- can use remaining (~256 MB) for read cache.
-  const uint64_t kInMemSize = 768 * (1024 * 1024);
+  //const uint64_t kInMemSize = 768_MiB;
+  const uint64_t kInMemSize = 16_GiB;
   // 90% of 768MB (~691 MB) constitute the mutable region
   const double dMutablePercentage = 0.75;
 
@@ -64,22 +63,25 @@ class FasterIndex : public IHashIndex<D> {
     , epoch_{ epoch }
     , gc_state_{ &gc_state }
     , grow_state_{ &grow_state }
-    , serial_num_{ 0 } {
+    , serial_num_{ 0 }
+    , index_root_path_{ disk.root_path } {
 
-      std::string& root_path = disk.root_path;
-      if (!root_path.empty()) {
-        root_path += "cold_index";
-        if (!std::experimental::filesystem::create_directories(root_path)) {
-          log_error("create_directories @ %s failed", root_path.c_str());
-          throw std::runtime_error{ "Cannot create cold-index directory" };
-        }
+      if (index_root_path_.back() == FASTER::environment::kPathSeparator[0]) {
+        index_root_path_.pop_back();
       }
-      store_ = std::make_unique<store_t>(kHashIndexNumEntries, kInMemSize,
-                                          root_path, dMutablePercentage);
+      index_root_path_ += "index_";
+      log_error("FasterIndex will be stored @ ", index_root_path_.c_str());
   }
 
   void Initialize(uint64_t new_size) {
     this->resize_info.version = 0;
+
+    if(new_size != kHashIndexNumEntries) {
+      log_warn("FasterIndex # entries (%lu) is different than default (%lu)",
+                new_size, kHashIndexNumEntries);
+    }
+    store_ = std::make_unique<store_t>(new_size, kInMemSize,
+                                  index_root_path_, dMutablePercentage);
   }
   void SetRefreshCallback(void* faster, RefreshCallback callback) {
     store_->SetRefreshCallback(faster, callback);
@@ -189,6 +191,7 @@ class FasterIndex : public IHashIndex<D> {
 
   std::unique_ptr<store_t> store_;
   std::atomic<uint64_t> serial_num_;
+  std::string index_root_path_;
 };
 
 template <class D, class HID>

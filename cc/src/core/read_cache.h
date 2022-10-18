@@ -39,15 +39,15 @@ class ReadCache {
 
   ReadCache(LightEpoch& epoch, hash_index_t& hash_index, faster_hlog_t& faster_hlog,
             ReadCacheBlockAllocateCallback block_allocate_callback,
-            const std::string& filename, uint64_t log_size,
-            double log_mutable_fraction, bool pre_allocate_log)
+            ReadCacheConfig& config)
     : epoch_{ &epoch }
     , hash_index_{ &hash_index }
-    , disk_{ filename, epoch, "" }
+    , disk_{ "", epoch, "" }
     , faster_hlog_{ &faster_hlog }
     , faster_{ nullptr }
     , block_allocate_callback_{ block_allocate_callback }
-    , read_cache_{ true, log_size, epoch, disk_, disk_.log(), log_mutable_fraction, pre_allocate_log, EvictCallback} {
+    , read_cache_{ true, config.mem_size, epoch, disk_, disk_.log(), config.mutable_fraction,
+                  config.pre_allocate_log, EvictCallback} {
     // hash index should be entirely in memory
     assert(hash_index_->IsSync());
     // required when evict callback is called

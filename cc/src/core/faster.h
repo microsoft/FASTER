@@ -16,6 +16,7 @@
 #include <unordered_set>
 
 #include "common/log.h"
+#include "common/utils.h"
 #include "device/file_system_disk.h"
 #include "index/mem_index.h"
 #include "index/faster_index.h"
@@ -26,6 +27,7 @@
 #include "checkpoint_state.h"
 #include "constants.h"
 #include "compact.h"
+#include "config.h"
 #include "gc_state.h"
 #include "grow_state.h"
 #include "guid.h"
@@ -120,21 +122,26 @@ class FasterKv {
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
   typedef AsyncPendingConditionalInsertContext<key_t> async_pending_ci_context_t;
 
-  FasterKv(uint64_t table_size, uint64_t log_size, const std::string& filename,
-           double log_mutable_fraction = 0.9, bool use_readcache = false,
+  FasterKv(uint64_t table_size, uint64_t log_mem_size, const std::string& filename,
+           double log_mutable_fraction = 0.9, ReadCacheConfig rc_config = ReadCacheConfig(),
+           HlogCompactionConfig compaction_config = HlogCompactionConfig(),
            bool pre_allocate_log = false, const std::string& config = "")
     : min_table_size_{ table_size }
     , disk{ filename, epoch_, config }
-    , hlog{ filename.empty() /*hasNoBackingStorage*/, log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
+    , hlog{ filename.empty() /*hasNoBackingStorage*/, log_mem_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
     , grow_state_{ &hlog }
     , hash_index_{ disk, epoch_, gc_state_, grow_state_ }
     , read_cache_{ nullptr }
-    , other_store_{ nullptr }
     , num_pending_ios{ 0 }
     , num_compaction_truncs{ 0 }
     , next_hlog_begin_address{ Address::kInvalidAddress }
-    , num_active_sessions{ 0 } {
+    , num_active_sessions{ 0 }
+    , other_store_{ nullptr }
+    , refresh_callback_store_{ nullptr }
+    , refresh_callback_{ nullptr }
+    , compaction_config_{ compaction_config }
+    , auto_compaction_active_{ false } {
     log_init();
 
     if(!Utility::IsPowerOfTwo(table_size)) {
@@ -146,12 +153,14 @@ class FasterKv {
 
     log_debug("Hash Index Size: %lu", table_size);
     hash_index_.Initialize(table_size);
+    if (!hash_index_.IsSync()) {
+      hash_index_.SetRefreshCallback(static_cast<void*>(this), DoRefreshCallback);
+    }
 
-    log_debug("Read cache is %d", use_readcache);
-    if (use_readcache) {
+    log_debug("Read cache is %d", rc_config.enabled);
+    if (rc_config.enabled) {
       read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, hlog,
-                                                  BlockAllocateReadCacheCallback, "", log_size,
-                                                  log_mutable_fraction, pre_allocate_log);
+                                                  BlockAllocateReadCacheCallback, rc_config);
       read_cache_->SetFasterInstance(static_cast<void*>(this));
     }
   }
