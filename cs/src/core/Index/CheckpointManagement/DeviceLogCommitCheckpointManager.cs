@@ -20,8 +20,15 @@ namespace FASTER.core
         const byte logTokenCount = 1;
         const byte flogCommitCount = 1;
 
-        private readonly INamedDeviceFactory deviceFactory;
-        private readonly ICheckpointNamingScheme checkpointNamingScheme;
+        /// <summary>
+        /// deviceFactory
+        /// </summary>
+        protected readonly INamedDeviceFactory deviceFactory;
+
+        /// <summary>
+        /// checkpointNamingScheme
+        /// </summary>
+        protected readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
 
         private readonly bool removeOutdated;
@@ -161,6 +168,7 @@ namespace FASTER.core
         #endregion
 
         #region ICheckpointManager
+
         /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
@@ -209,7 +217,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
+        public virtual unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
             var device = NextLogCheckpointDevice(logToken);
 
@@ -233,7 +241,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog)
+        public virtual unsafe void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog)
         {
             deltaLog.Allocate(out int length, out long physicalAddress);
             if (length < commitMetadata.Length)
@@ -261,7 +269,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
+        public virtual byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             byte[] metadata = null;
             if (deltaLog != null && scanDelta)
@@ -419,7 +427,7 @@ namespace FASTER.core
         /// <param name="address"></param>
         /// <param name="buffer"></param>
         /// <param name="size"></param>
-        private unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
+        protected unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
         {
             if (bufferPool == null)
                 bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
@@ -445,7 +453,7 @@ namespace FASTER.core
         /// <param name="address"></param>
         /// <param name="buffer"></param>
         /// <param name="size"></param>
-        private unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
+        protected unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
         {
             if (bufferPool == null)
                 bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
