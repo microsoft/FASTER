@@ -134,6 +134,7 @@ class FasterKv {
     , hash_index_{ disk, epoch_, gc_state_, grow_state_ }
     , read_cache_{ nullptr }
     , num_pending_ios{ 0 }
+    , is_compaction_live_{ false }
     , num_compaction_truncs{ 0 }
     , next_hlog_begin_address{ Address::kInvalidAddress }
     , num_active_sessions{ 0 }
@@ -162,6 +163,23 @@ class FasterKv {
       read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, hlog,
                                                   BlockAllocateReadCacheCallback, rc_config);
       read_cache_->SetFasterInstance(static_cast<void*>(this));
+    }
+
+    log_debug("Auto compaction is %d", compaction_config.enabled);
+    if (compaction_config.enabled) {
+      auto_compaction_active_.store(true);
+      compaction_thread_ = std::move(std::thread(&FasterKv::AutoCompactHlog, this));
+    }
+  }
+
+  ~FasterKv() {
+    while (system_state_.phase() != Phase::REST) {
+      std::this_thread::yield();
+    }
+    if (compaction_thread_.joinable()) {
+      // shut down compaction thread
+      auto_compaction_active_.store(false);
+      compaction_thread_.join();
     }
   }
 
@@ -324,6 +342,9 @@ class FasterKv {
   Address LogScanForValidity(Address from, faster_t* temp);
   bool ContainsKeyInMemory(IndexContext<key_t, value_t> key, Address offset);
 
+  // Auto-compaction daemon
+  void AutoCompactHlog();
+
   /// Access the current and previous (thread-local) execution contexts.
   const ExecutionContext& thread_ctx() const {
     return thread_contexts_[Thread::id()].cur();
@@ -382,6 +403,8 @@ class FasterKv {
   /// Global count of pending I/Os, used for throttling.
   std::atomic<uint64_t> num_pending_ios;
 
+  std::atomic<bool> is_compaction_live_;
+
   /// Global count of number of truncations after compaction
   std::atomic<uint64_t> num_compaction_truncs;
 
@@ -400,6 +423,12 @@ class FasterKv {
 
   /// Space for two contexts per thread, stored inline.
   ThreadContext thread_contexts_[Thread::kMaxNumThreads];
+
+  /// Hlog auto-compaction
+  HlogCompactionConfig compaction_config_;
+
+  std::thread compaction_thread_;
+  std::atomic<bool> auto_compaction_active_;
 };
 
 // Implementations.
@@ -3105,10 +3134,16 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     throw std::invalid_argument {"Thread should have an active FASTER session"};
   }
 
+  bool expected = false;
+  is_compaction_live_.compare_exchange_strong(expected, true);
+  if (expected) {
+    throw std::runtime_error{ "Cannot perform two parallel compaction operations" };
+  }
   if (shift_begin_address) {
     // used to avoid inserting soon-to-be-compacted records to Read Cache
     next_hlog_begin_address.store(until_address);
   }
+
 
   std::deque<std::thread> threads;
   LogPageIterator<faster_t> iter(&hlog, hlog.begin_address.load(),
@@ -3135,7 +3170,9 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
       }
     }
     Refresh();
-    if (to_other_store) other_store_->Refresh();
+    if (to_other_store) {
+      other_store_->Refresh();
+    }
     std::this_thread::yield();
   }
   assert(remaining == 0);
@@ -3271,6 +3308,8 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
       std::this_thread::yield();
     }
   }
+
+  is_compaction_live_.store(false);
   return true;
 }
 
@@ -3388,7 +3427,7 @@ complete_pending:
       assert(other_store_->thread_ctx().retry_requests.empty());
       assert(other_store_->thread_ctx().pending_ios.empty());
       assert(other_store_->thread_ctx().io_responses.empty());
-    } else { // single log / cold-colc compaction
+    } else { // single log / cold-cold compaction
       assert(thread_ctx().retry_requests.empty());
       assert(thread_ctx().pending_ios.empty());
       assert(thread_ctx().io_responses.empty());
@@ -3824,6 +3863,45 @@ bool FasterKv<K, V, D, H, OH>::ContainsKeyInMemory(IndexContext<key_t, value_t> 
   return false;
 }
 
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
+  uint64_t hlog_size_threshold = static_cast<uint64_t>(
+    compaction_config_.hlog_size_budget * compaction_config_.trigger_perc);
+
+  while (auto_compaction_active_.load()) {
+    if (Size() < hlog_size_threshold) {
+      std::this_thread::sleep_for(compaction_config_.check_interval);
+      continue;
+    }
+
+    uint64_t begin_address = hlog.begin_address.control();
+    uint64_t tail_address = hlog.GetTailAddress().control();
+
+    /// calculate until address
+    // start with compaction percentage
+    uint64_t until_address = begin_address + static_cast<uint64_t>(Size() * compaction_config_.compact_perc);
+    // respect user-imposed limit
+    until_address = std::min(until_address, begin_address + compaction_config_.max_compacted_size);
+    // do not compact in-memory region
+    until_address = std::min(until_address, hlog.safe_head_address.control());
+    // round down address to page bounds
+    until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
+    assert(until_address <= hlog.safe_read_only_address.control());
+    assert(until_address % hlog.kPageSize == 0);
+
+    // perform log compaction
+    log_error("Auto-compaction: [%lu %lu] -> [%lu %lu] {%lu}",
+              begin_address, tail_address, until_address, tail_address, Size());
+    StartSession();
+    bool success = CompactWithLookup(until_address, true, compaction_config_.num_threads);
+    StopSession();
+
+    log_error("Auto-compaction: Size: %.3f GB", static_cast<double>(Size()) / (1 << 30));
+    if (!success) {
+      log_error("Hlog compaction was not successfull :( -- retry!");
+    }
+  }
+}
 
 }
 } // namespace FASTER::core

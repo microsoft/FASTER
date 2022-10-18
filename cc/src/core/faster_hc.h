@@ -127,10 +127,14 @@ public:
     return hot_store.Size() + cold_store.Size();
   }
   inline void DumpDistribution() {
-    printf("\n\nHOT LOG\n==========\n");
+    log_info("\n\nHOT  LOG\n==========");
     hot_store.DumpDistribution();
-    printf("\n\nCOLD LOG\n==========");
-    cold_store.DumpDistribution();
+    log_info("\n\nCOLD LOG\n==========");
+    log_info("--- not implemented ---");
+    //cold_store.DumpDistribution();
+  }
+  inline bool IsCompactionLive() {
+    return hot_store.IsCompactionLive() || cold_store.IsCompactionLive();
   }
 
  public:
@@ -155,13 +159,6 @@ public:
   uint64_t cold_log_disk_size_;
 
   // compaction-related
-  /*
-  const std::chrono::milliseconds compaction_check_interval_ = 250ms;
-  uint64_t hot_log_disk_size_limit_;
-  uint64_t cold_log_disk_size_limit_;
-  double hot_log_compaction_log_perc_;
-  double cold_log_compaction_log_perc_;
-  */
   HCCompactionConfig hc_compaction_config_;
   std::thread compaction_thread_;
   std::atomic<bool> is_compaction_active_;
@@ -600,7 +597,7 @@ inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
 
   async_hc_rmw_context_t* ctxt;
   while (retry_rmw_requests.try_pop(ctxt)) {
-    log_debug("RMW RETRY");
+    //log_debug("RMW RETRY");
     CallbackContext<async_hc_rmw_context_t> context{ ctxt };
     // Get hash bucket entry
     hc_index_context_t index_context{ context.get() };
