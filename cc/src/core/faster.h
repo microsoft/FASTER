@@ -763,6 +763,7 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
           } else {
             assert(pending_context->index_op_result == Status::Aborted);
             // Request was aborted: try to mark record as invalid
+            assert(index_io_context->record_address != Address::kInvalidAddress);
             Address record_address = index_io_context->record_address;
             if (record_address >= hlog.head_address.load()) {
               record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));

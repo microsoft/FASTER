@@ -63,6 +63,7 @@ class FasterIndex : public IHashIndex<D> {
     , epoch_{ epoch }
     , gc_state_{ &gc_state }
     , grow_state_{ &grow_state }
+    , table_size_{ 0 }
     , serial_num_{ 0 }
     , index_root_path_{ disk.root_path } {
 
@@ -70,18 +71,21 @@ class FasterIndex : public IHashIndex<D> {
         index_root_path_.pop_back();
       }
       index_root_path_ += "index_";
-      log_error("FasterIndex will be stored @ ", index_root_path_.c_str());
+      log_error("FasterIndex will be stored @ %s", index_root_path_.c_str());
   }
 
   void Initialize(uint64_t new_size) {
     this->resize_info.version = 0;
 
-    if(new_size != kHashIndexNumEntries) {
+    assert(table_size_ == 0);
+    table_size_ = new_size;
+
+    if(table_size_ != kHashIndexNumEntries) {
       log_warn("FasterIndex # entries (%lu) is different than default (%lu)",
-                new_size, kHashIndexNumEntries);
+                table_size_, kHashIndexNumEntries);
     }
-    store_ = std::make_unique<store_t>(new_size, kInMemSize,
-                                  index_root_path_, dMutablePercentage);
+    store_ = std::make_unique<store_t>(table_size_, kInMemSize,
+                                      index_root_path_, dMutablePercentage);
   }
   void SetRefreshCallback(void* faster, RefreshCallback callback) {
     store_->SetRefreshCallback(faster, callback);
@@ -189,6 +193,8 @@ class FasterIndex : public IHashIndex<D> {
   gc_state_t* gc_state_;
   grow_state_t* grow_state_;
 
+  uint64_t table_size_;
+
   std::unique_ptr<store_t> store_;
   std::atomic<uint64_t> serial_num_;
   std::string index_root_path_;
@@ -206,7 +212,7 @@ template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context, C& pending_context) const {
   key_hash_t hash{ pending_context.get_key_hash() };
-  HashIndexChunkKey key{ hash.chunk_id(kHashIndexNumEntries) };
+  HashIndexChunkKey key{ hash.chunk_id(table_size_) };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
 
   // TODO: avoid incrementing io_id for every request if possible
@@ -216,14 +222,22 @@ inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context
 
   // TODO: replace serial_num with thread-local (possibly inside )
   Status status = store_->Read(context, AsyncEntryOperationDiskCallback, 0);
-  if (status != Status::Pending) {
-    pending_context.index_op_result = context.result;
-    pending_context.set_index_entry(context.entry, nullptr);
-    return status;
+  assert(status == Status::Ok ||
+        status == Status::NotFound ||
+        status == Status::Pending);
+
+  if (status == Status::Pending) {
+    // Request went pending
+    exec_context.pending_ios.insert({ io_id, hash.to_keyhash() });
+    return Status::Pending;
   }
-  // Request went pending
-  exec_context.pending_ios.insert({ io_id, hash.to_keyhash() });
-  return Status::Pending;
+
+  // if hash chunk not found, then entry is also not found
+  // if found, then entry might have been found or not!
+  status = (status == Status::NotFound) ? Status::NotFound : context.result;
+  pending_context.set_index_entry(context.entry, nullptr);
+  pending_context.clear_index_op();
+  return status;
 }
 
 template <class D, class HID>
@@ -255,7 +269,7 @@ template <class C>
 inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context, C& pending_context,
                                                 Address new_address, bool force_update) {
   key_hash_t hash{ pending_context.get_key_hash() };
-  HashIndexChunkKey key{ hash.chunk_id(kHashIndexNumEntries) };
+  HashIndexChunkKey key{ hash.chunk_id(table_size_) };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
 
   // FIXME: avoid incrementing io_id for every request if possible
@@ -269,14 +283,21 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
                                 key, pos, force_update, pending_context.entry, desired_entry };
 
   Status status = store_->Rmw(context, AsyncEntryOperationDiskCallback, ++serial_num_);
-  if (status != Status::Pending) {
-    pending_context.index_op_result = context.result;
-    pending_context.set_index_entry(context.entry, nullptr);
-    return status;
+  assert(status == Status::Ok || status == Status::Pending);
+
+  if (status == Status::Pending) {
+    exec_context.pending_ios.insert({ io_id, hash.to_keyhash() });
+    return Status::Pending;
   }
-  // Request went pending
-  exec_context.pending_ios.insert({ io_id, hash.to_keyhash() });
-  return Status::Pending;
+
+  assert(context.result == Status::Ok || context.result == Status::Aborted);
+  // if FindOrCreateEntry, entry was found or created; either way it's a success
+  // if TryUpdateEntry, entry might have changed (Aborted), or now updated to desired entry (Ok)
+  status = (pending_context.index_op_type == IndexOperationType::Retrieve)
+              ? status : context.result;
+  pending_context.set_index_entry(context.entry, nullptr);
+  pending_context.clear_index_op();
+  return status;
 }
 
 template <class D, class HID>
@@ -330,6 +351,9 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
   }
   ++gc_state_->thread_count;
 
+  log_debug("FasterIndex-GC: %lu/%lu [START...]", chunk + 1, gc_state_->num_chunks);
+  log_debug("FasterIndex-GC: begin-address: %lu", gc_state_->new_begin_address.control());
+
   uint8_t version = store_->hash_index_.resize_info.version;
   auto& current_table = store_->hash_index_.table_[version];
 
@@ -362,13 +386,18 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
     }
   }
 
+  log_debug("FasterIndex-GC: %lu/%lu [DONE!]", chunk + 1, gc_state_->num_chunks);
+
   --gc_state_->thread_count;
   if (gc_state_->next_chunk.load() >= gc_state_->num_chunks && gc_state_->thread_count == 0) {
     // last thread after garbage collection is finished
     // truncate log -- no need to define/wait for callbacks
     Address new_begin_address = gc_state_->min_address.load();
+    log_debug("FasterIndex-GC: Min address [%lu]", new_begin_address.control());
     assert(new_begin_address >= store_->hlog.begin_address.load());
-    store_->ShiftBeginAddress(new_begin_address, nullptr, nullptr);
+    if (new_begin_address > store_->hlog.begin_address.load()) {
+      store_->ShiftBeginAddress(new_begin_address, nullptr, nullptr);
+    }
   }
 
   return true;

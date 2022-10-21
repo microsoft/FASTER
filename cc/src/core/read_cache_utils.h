@@ -101,6 +101,7 @@ class ReadCacheEvictContext : public IAsyncContext {
     entry = entry_;
     atomic_entry = atomic_entry_;
   }
+  inline void clear_index_op() { }
 
  protected:
   /// Copies this context into a passed-in pointer if the operation goes

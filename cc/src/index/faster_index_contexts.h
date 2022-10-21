@@ -150,9 +150,9 @@ class FasterIndexRmwContext : public FasterIndexContext {
   FasterIndexRmwContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
                         concurrent_queue<AsyncIndexIOContext*>* thread_io_responses,
                         HashIndexChunkKey key, HashIndexChunkPos pos, bool force,
-                        HashBucketEntry expected_entry_, HashBucketEntry desired_entry)
+                        HashBucketEntry expected_entry, HashBucketEntry desired_entry)
     : FasterIndexContext(op_type, caller_context, io_id,
-                        thread_io_responses, expected_entry_, key, pos)
+                        thread_io_responses, expected_entry, key, pos)
     , desired_entry_{ desired_entry }
     , force_{ force } {
   }
