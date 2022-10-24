@@ -58,20 +58,16 @@ class FasterIndex : public IHashIndex<D> {
   // 90% of 768MB (~691 MB) constitute the mutable region
   const double dMutablePercentage = 0.75;
 
-  FasterIndex(disk_t& disk, LightEpoch& epoch, gc_state_t& gc_state, grow_state_t& grow_state)
+  FasterIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
+              gc_state_t& gc_state, grow_state_t& grow_state)
     : disk_{ disk }
     , epoch_{ epoch }
     , gc_state_{ &gc_state }
     , grow_state_{ &grow_state }
     , table_size_{ 0 }
     , serial_num_{ 0 }
-    , index_root_path_{ disk.root_path } {
-
-      if (index_root_path_.back() == FASTER::environment::kPathSeparator[0]) {
-        index_root_path_.pop_back();
-      }
-      index_root_path_ += "index_";
-      log_error("FasterIndex will be stored @ %s", index_root_path_.c_str());
+    , index_root_path_{ root_path + "index_" } {
+      log_info("FasterIndex will be stored @ %s", index_root_path_.c_str());
   }
 
   void Initialize(uint64_t new_size) {
@@ -133,8 +129,8 @@ class FasterIndex : public IHashIndex<D> {
   void StopSession() {
     store_->StopSession();
   }
-  void CompletePending() {
-    store_->CompletePending(false);
+  bool CompletePending() {
+    return store_->CompletePending(false);
   }
   void Refresh() {
     store_->Refresh();
@@ -180,7 +176,7 @@ class FasterIndex : public IHashIndex<D> {
 
   template <class C>
   Status RmwIndexEntry(ExecutionContext& exec_context, C& pending_context,
-                      Address new_address, bool force_update);
+                      Address new_address, HashBucketEntry expected_entry, bool force_update);
 
 
   inline void MarkRequestAsPending(ExecutionContext& exec_context, key_hash_t hash) {
@@ -244,8 +240,9 @@ template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context) {
   pending_context.index_op_type = IndexOperationType::Retrieve;
-  //pending_context.entry = HashBucketEntry::kInvalidEntry;
-  return RmwIndexEntry(exec_context, pending_context, Address::kInvalidAddress, false);
+  // should replace with desired entry (i.e., Address::kInvalidAddress) *only* if entry is expected to be empty
+  return RmwIndexEntry(exec_context, pending_context, Address::kInvalidAddress,
+                      HashBucketEntry::kInvalidEntry, false);
 }
 
 template <class D, class HID>
@@ -253,7 +250,7 @@ template <class C>
 inline Status FasterIndex<D, HID>::TryUpdateEntry(ExecutionContext& exec_context, C& pending_context,
                                                 Address new_address, bool readcache) {
   pending_context.index_op_type = IndexOperationType::Update;
-  return RmwIndexEntry(exec_context, pending_context, new_address, false);
+  return RmwIndexEntry(exec_context, pending_context, new_address, pending_context.entry, false);
 }
 
 template <class D, class HID>
@@ -261,13 +258,14 @@ template <class C>
 inline Status FasterIndex<D, HID>::UpdateEntry(ExecutionContext& exec_context, C& pending_context,
                                               Address new_address) {
   pending_context.index_op_type = IndexOperationType::Update;
-  return RmwIndexEntry(exec_context, pending_context, new_address, true);
+  return RmwIndexEntry(exec_context, pending_context, new_address, pending_context.entry, true);
 }
 
 template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context, C& pending_context,
-                                                Address new_address, bool force_update) {
+                                                Address new_address, HashBucketEntry expected_entry,
+                                                bool force_update) {
   key_hash_t hash{ pending_context.get_key_hash() };
   HashIndexChunkKey key{ hash.chunk_id(table_size_) };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
@@ -280,7 +278,7 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
   //fprintf(stderr, "DESIRED = %llu\n", HashBucketEntry{desired_entry}.control_);
   FasterIndexRmwContext context{ OperationType::RMW, pending_context, io_id,
                                 &exec_context.index_io_responses,
-                                key, pos, force_update, pending_context.entry, desired_entry };
+                                key, pos, force_update, expected_entry, desired_entry };
 
   Status status = store_->Rmw(context, AsyncEntryOperationDiskCallback, ++serial_num_);
   assert(status == Status::Ok || status == Status::Pending);

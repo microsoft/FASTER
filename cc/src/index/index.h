@@ -58,7 +58,7 @@ class IHashIndex {
   // used in the FASTER index (i.e., cold index).
   void StartSession();
   void StopSession();
-  void CompletePending();
+  bool CompletePending();
   void Refresh();
 
   // Checkpointing methods

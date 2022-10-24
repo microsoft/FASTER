@@ -63,8 +63,10 @@ class HashIndex : public IHashIndex<D> {
   template <class Di, class HIDi>
   friend class FasterIndex;
 
-  HashIndex(disk_t& disk, LightEpoch& epoch, gc_state_t& gc_state, grow_state_t& grow_state)
-    : disk_{ disk }
+  HashIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
+            gc_state_t& gc_state, grow_state_t& grow_state)
+    : root_path_{ root_path }
+    , disk_{ disk }
     , epoch_{ epoch }
     , gc_state_{ &gc_state }
     , grow_state_{ &grow_state } {
@@ -114,7 +116,9 @@ class HashIndex : public IHashIndex<D> {
   // Hash index ops do not go pending
   void StartSession() { };
   void StopSession() { };
-  void CompletePending() { };
+  bool CompletePending() {
+    return true;
+  };
   void Refresh() { };
 
   // Checkpointing methods
@@ -198,6 +202,7 @@ class HashIndex : public IHashIndex<D> {
   void ClearTentativeEntries();
 
  private:
+  std::string root_path_;
   disk_t& disk_;
   LightEpoch& epoch_;
   gc_state_t* gc_state_;
@@ -489,9 +494,13 @@ inline AtomicHashBucketEntry* HashIndex<D, HID>::FindTentativeEntry(key_hash_t h
         assert(expected_entry == HashBucketEntry::kInvalidEntry);
         return atomic_entry;
       }
+      if (!HasOverflowBucket) {
+        // possible if two threads contest for the same entry
+        // (i.e., tentative flag is set for the entry that matches the tag)
+        continue;
+      }
 
       // We didn't find any free slots, so allocate new bucket.
-      assert(HasOverflowBucket);
       if (TryAllocateNextBucket(bucket, version)) {
         assert(expected_entry == HashBucketEntry::kInvalidEntry);
         return &bucket->entries[0];
@@ -544,9 +553,8 @@ inline bool HashIndex<D, HID>::GarbageCollect(RC* read_cache) {
     // No chunk left to clean.
     return false;
   }
-
-  log_debug("MemIndex-GC: %llu/%llu [START...]", chunk, gc_state_->num_chunks);
-  log_debug("MemIndex-GC: begin-address: %llu", gc_state_->new_begin_address.control());
+  log_debug("MemIndex-GC: %lu/%lu [START...]", chunk + 1, gc_state_->num_chunks);
+  log_debug("MemIndex-GC: begin-address: %lu", gc_state_->new_begin_address.control());
 
   uint8_t version = this->resize_info.version;
   uint64_t upper_bound;
@@ -587,8 +595,7 @@ inline bool HashIndex<D, HID>::GarbageCollect(RC* read_cache) {
       }
     }
   }
-
-  log_debug("MemIndex-GC: %llu/%llu [DONE!]", chunk, gc_state_->num_chunks);
+  log_debug("MemIndex-GC: %lu/%lu [DONE!]", chunk + 1, gc_state_->num_chunks);
 
   // Done with this chunk--did some work.
   return true;

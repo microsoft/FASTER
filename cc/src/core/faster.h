@@ -131,7 +131,7 @@ class FasterKv {
     , hlog{ filename.empty() /*hasNoBackingStorage*/, log_mem_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
     , grow_state_{ &hlog }
-    , hash_index_{ disk, epoch_, gc_state_, grow_state_ }
+    , hash_index_{ filename, disk, epoch_, gc_state_, grow_state_ }
     , read_cache_{ nullptr }
     , num_pending_ios{ 0 }
     , is_compaction_live_{ false }
@@ -628,9 +628,10 @@ inline Status FasterKv<K, V, D, H, OH>::Delete(DC& context, AsyncCallback callba
 
 template <class K, class V, class D, class H, class OH>
 inline bool FasterKv<K, V, D, H, OH>::CompletePending(bool wait) {
+  bool hash_index_done;
   do {
-    hash_index_.CompletePending();
     disk.TryComplete();
+    hash_index_done = hash_index_.CompletePending();
 
     bool done = true;
     if(thread_ctx().phase != Phase::WAIT_PENDING && thread_ctx().phase != Phase::IN_PROGRESS) {
@@ -640,7 +641,7 @@ inline bool FasterKv<K, V, D, H, OH>::CompletePending(bool wait) {
     Refresh();
     CompleteRetryRequests(thread_ctx());
 
-    done = (thread_ctx().pending_ios.empty() && thread_ctx().retry_requests.empty());
+    done = (thread_ctx().pending_ios.empty() && thread_ctx().retry_requests.empty() && hash_index_done);
 
     if(thread_ctx().phase != Phase::REST) {
       CompleteIndexPendingRequests(prev_thread_ctx());
