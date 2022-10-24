@@ -353,6 +353,7 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
 
   log_debug("FasterIndex-GC: %lu/%lu [START...]", chunk + 1, gc_state_->num_chunks);
   log_debug("FasterIndex-GC: begin-address: %lu", gc_state_->new_begin_address.control());
+  log_debug("FasterIndex-GC: global-min-address: %lu", gc_state_->min_address.load());
 
   uint8_t version = store_->hash_index_.resize_info.version;
   auto& current_table = store_->hash_index_.table_[version];
@@ -374,28 +375,33 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
       AtomicHashBucketEntry& atomic_entry = bucket->entries[entry_idx];
       hash_bucket_entry_t expected_entry{ atomic_entry.load() };
 
-      if (!expected_entry.unused() && expected_entry.address() != Address::kInvalidAddress) {
-        while (min_address > expected_entry.address().control()) {
-          // try updating min address with smaller address
-          if (gc_state_->min_address.compare_exchange_strong(min_address, expected_entry.address().control())) {
-            break;
-          }
-          // retry with new min_address value
-        }
+      if (expected_entry.unused() ||
+          expected_entry.address() == Address::kInvalidAddress ||
+          min_address < expected_entry.address().control()) {
+        continue;
       }
+      min_address = expected_entry.address().control();
     }
   }
+  log_debug("FasterIndex-GC: %lu/%lu [local_min_addr=%lu] [DONE!]",
+            chunk + 1, gc_state_->num_chunks, min_address);
 
-  log_debug("FasterIndex-GC: %lu/%lu [DONE!]", chunk + 1, gc_state_->num_chunks);
+  // Update global min address if local min address is smaller
+  uint64_t global_min_address = gc_state_->min_address.load();
+  while (global_min_address > min_address) {
+    gc_state_->min_address.compare_exchange_strong(global_min_address, min_address);
+  }
 
   --gc_state_->thread_count;
   if (gc_state_->next_chunk.load() >= gc_state_->num_chunks && gc_state_->thread_count == 0) {
     // last thread after garbage collection is finished
     // truncate log -- no need to define/wait for callbacks
+    Address begin_address = store_->hlog.begin_address.load();
     Address new_begin_address = gc_state_->min_address.load();
     log_debug("FasterIndex-GC: Min address [%lu]", new_begin_address.control());
     assert(new_begin_address >= store_->hlog.begin_address.load());
-    if (new_begin_address > store_->hlog.begin_address.load()) {
+
+    if (new_begin_address > begin_address) {
       store_->ShiftBeginAddress(new_begin_address, nullptr, nullptr);
     }
   }
