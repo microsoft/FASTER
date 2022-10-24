@@ -224,6 +224,10 @@ inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& p
     // Restore expected hash bucket entry info to perform the hash bucket CAS
     pending_context.set_index_entry(orig_expected_entry, orig_atomic_entry);
   }
+  if (pending_context.atomic_entry == nullptr) {
+    return Status::Aborted;
+  }
+
   // NOTE: it is possible for orig_expected_entry to be invalid (i.e., empty)
   // and the current hash index entry to be valid. This can happen when
   // a concurrent hot-cold compaction takes place, and GCs the hash index after
@@ -257,7 +261,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
   static std::atomic<bool> eviction_in_progress{ false };
 
   // Evict one page at a time -- first page is smaller than the remaining ones
-  log_error("EVICT %llu %llu", to_head_address.control(), from_head_address.control());
+  log_debug("ReadCache EVICT: [%lu] -> [%lu]", to_head_address.control(), from_head_address.control());
 
   bool active = false;
   if (!eviction_in_progress.compare_exchange_strong(active, true)) {
@@ -332,7 +336,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     assert(address.offset() + record_size <= Address::kMaxOffset);
     address += record_size;
   }
-  log_error("EVICT DONE %llu %llu", to_head_address.control(), from_head_address.control());
+  log_debug("ReadCache EVICT: DONE!");
 
   eviction_in_progress.store(false);
 }
