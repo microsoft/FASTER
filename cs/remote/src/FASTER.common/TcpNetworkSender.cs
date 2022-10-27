@@ -53,7 +53,7 @@ namespace FASTER.common
             : base(maxSizeSettings)
         {
             this.socket = socket;
-            this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
+            this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize), s => s.Dispose());
             this.responseObject = null;
         }
 
@@ -68,7 +68,7 @@ namespace FASTER.common
             : base(serverBufferSize)
         {
             this.socket = socket;
-            this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
+            this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize), s => s.Dispose());
             this.responseObject = null;
         }
 
