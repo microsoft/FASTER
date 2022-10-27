@@ -20,6 +20,7 @@ namespace FASTER.libdpr
     public class DprWorker<TStateObject>
         where TStateObject : IStateObject
     {
+        public const int DPR_HEADER_SIZE = DprBatchHeader.FixedLenSize;
         private readonly SimpleObjectPool<LightDependencySet> dependencySetPool;
         private readonly IDprFinder dprFinder;
         private readonly Worker me;
@@ -52,6 +53,10 @@ namespace FASTER.libdpr
             nextCommit = new TaskCompletionSource<long>();
         }
 
+        /// <summary>
+        /// Add the given attachment to the DprWorker. Should only be invoked before connecting to the cluster.
+        /// </summary>
+        /// <param name="attachment"> the attachment to add </param>
         public void AddAttachment(IStateObjectAttachment attachment)
         {
             attachments.Add(attachment);

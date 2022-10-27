@@ -8,7 +8,7 @@ namespace FASTER.libdpr
     ///     header | deps (WorkerVersion[]) | versionTracking (long[])
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 28)]
-    internal unsafe struct DprBatchHeader
+    public unsafe struct DprBatchHeader
     {
         public const int FixedLenSize = 28;
         [FieldOffset(0)] internal fixed byte data[FixedLenSize];
