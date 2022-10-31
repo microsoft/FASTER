@@ -21,7 +21,7 @@ namespace FASTER.libdpr
     /// </summary>
     public class RespGraphDprFinderServer : IDisposable
     {
-        private readonly RespGraphDprFinderBackend backend;
+        private readonly GraphDprFinderBackend backend;
         private readonly string ip;
         private readonly int port;
         private Thread processThread;
@@ -35,7 +35,7 @@ namespace FASTER.libdpr
         /// <param name="ip">ip address of server</param>
         /// <param name="port">port to listen on the server</param>
         /// <param name="backend">backend of the server</param>
-        public RespGraphDprFinderServer(string ip, int port, RespGraphDprFinderBackend backend)
+        public RespGraphDprFinderServer(string ip, int port, GraphDprFinderBackend backend)
         {
             this.ip = ip;
             this.port = port;

@@ -18,7 +18,7 @@ namespace DprCounters
             var localDevice1 = new LocalMemoryDevice(1 << 20, 1 << 20, 1);
             var localDevice2 = new LocalMemoryDevice(1 << 20, 1 << 20, 1);
             var device = new PingPongDevice(localDevice1, localDevice2);
-            using var dprFinderServer = new RespGraphDprFinderServer("127.0.0.1", 15721, new RespGraphDprFinderBackend(device));
+            using var dprFinderServer = new RespGraphDprFinderServer("127.0.0.1", 15721, new GraphDprFinderBackend(device));
             dprFinderServer.StartServer();
             
             // Start two counter servers

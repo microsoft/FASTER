@@ -135,7 +135,7 @@ namespace FASTER.libdpr
     ///     The implementation relies on state objects to persist dependencies and avoids incurring additional storage
     ///     round-trips on the commit critical path.
     /// </summary>
-    public class RespGraphDprFinderBackend
+    public class GraphDprFinderBackend
     {
         // Used to send add/delete worker requests to processing thread
         private readonly ConcurrentQueue<(Worker, Action<(long, long)>)> addQueue =
@@ -162,7 +162,6 @@ namespace FASTER.libdpr
         // Only used during DprFinder recovery
         private readonly RecoveryState recoveryState;
         private PrecomputedSyncResponse syncResponse;
-        private readonly ConcurrentDictionary<Worker, long> versionTable = new ConcurrentDictionary<Worker, long>();
         private readonly HashSet<WorkerVersion> visited = new HashSet<WorkerVersion>();
         private readonly ClusterState volatileClusterState;
 
@@ -171,7 +170,7 @@ namespace FASTER.libdpr
         ///     EnhancedDprFinderBackend state, the constructor will attempt to recover from it.
         /// </summary>
         /// <param name="persistentStorage"> persistent storage backing this dpr finder </param>
-        public RespGraphDprFinderBackend(PingPongDevice persistentStorage)
+        public GraphDprFinderBackend(PingPongDevice persistentStorage)
         {
             this.persistentStorage = persistentStorage;
             // see if a previously persisted state is available
@@ -181,6 +180,8 @@ namespace FASTER.libdpr
             else
                 volatileClusterState = new ClusterState();
 
+            foreach (var worker in volatileClusterState.worldLinePrefix.Keys)
+                currentCut.Add(worker, 0);
             syncResponse = new PrecomputedSyncResponse(volatileClusterState);
             recoveryState = new RecoveryState(this);
         }
@@ -275,7 +276,7 @@ namespace FASTER.libdpr
                 while (addQueue.TryDequeue(out var entry))
                 {
                     var result = ProcessAddWorker(entry.Item1);
-                    callbacks.Add(() => entry.Item2(result));
+                    callbacks.Add(() => entry.Item2?.Invoke(result));
                 }
 
                 while (deleteQueue.TryDequeue(out var entry))
@@ -347,8 +348,6 @@ namespace FASTER.libdpr
                 list.Clear();
                 list.AddRange(deps);
                 maxVersion = Math.Max(wv.Version, maxVersion);
-                // wv may be duplicate as workers retry sending dependencies. Need to guard against this.
-                versionTable.AddOrUpdate(wv.Worker, wv.Version, (w, old) => Math.Max(old, wv.Version));
                 if (!precedenceGraph.TryAdd(wv, list))
                     objectPool.Return(list);
                 else
@@ -363,7 +362,7 @@ namespace FASTER.libdpr
         public void MarkWorkerAccountedFor(Worker worker, long earliestPresentVersion)
         {
             // Should only be invoked if recovery is underway. However, a new worker may send a blind graph resend. 
-            if (!recoveryState.RecoveryComplete()) return;
+            if (recoveryState.RecoveryComplete()) return;
             // Lock here because can be accessed from multiple threads. No need to lock once all workers are accounted
             // for as then only the graph traversal thread will update current cut
             lock (currentCut)
@@ -393,8 +392,6 @@ namespace FASTER.libdpr
             // Before adding a worker, make sure all workers have already reported all (if any) locally outstanding 
             // checkpoints. We require this to be able to process the request.
             if (!recoveryState.RecoveryComplete()) throw new InvalidOperationException();
-
-            versionTable.TryAdd(worker, 0);
             (long, long) result;
             if (volatileClusterState.worldLinePrefix.TryAdd(worker, 0))
             {
@@ -445,7 +442,6 @@ namespace FASTER.libdpr
             cutChanged = true;
             volatileClusterState.worldLinePrefix.Remove(worker);
             volatileClusterState.worldLinePrefix.Remove(worker);
-            versionTable.TryRemove(worker, out _);
         }
 
         /// <summary></summary>
@@ -472,22 +468,21 @@ namespace FASTER.libdpr
         // of failure) from previous on-disk state.
         private class RecoveryState
         {
-            private readonly RespGraphDprFinderBackend backend;
+            private readonly GraphDprFinderBackend backend;
             private readonly CountdownEvent countdown;
             private bool recoveryComplete;
 
             private readonly ConcurrentDictionary<Worker, byte> workersUnaccontedFor =
                 new ConcurrentDictionary<Worker, byte>();
 
-            internal RecoveryState(RespGraphDprFinderBackend backend)
+            internal RecoveryState(GraphDprFinderBackend backend)
             {
                 this.backend = backend;
                 // Check if the cluster is empty
                 if (backend.volatileClusterState.worldLinePrefix.Count == 0)
                 {
-                    // If so, we do not need to recover anything, simply finish writing out the empty cut and mark
+                    // If so, we do not need to recover anything, simply mark
                     // this backend as fully recovered for future operations
-                    backend.GetPrecomputedResponse().UpdateCut(backend.currentCut);
                     recoveryComplete = true;
                     return;
                 }

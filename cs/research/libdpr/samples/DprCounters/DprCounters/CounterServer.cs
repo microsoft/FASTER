@@ -71,7 +71,7 @@ namespace DprCounters
                 {
                     conn = socket.Accept();
                 }
-                catch (SocketException e)
+                catch (SocketException)
                 {
                     return;
                 }
