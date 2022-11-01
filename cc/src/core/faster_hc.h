@@ -29,13 +29,22 @@ public:
   typedef K key_t;
   typedef V value_t;
 
-  constexpr static ReadCacheConfig default_rc_config{ 256_MiB, 0.9, false, true };
+  constexpr static ReadCacheConfig default_rc_config{ 256_MiB, 0.85, false, true };
+  constexpr static HCCompactionConfig default_hc_compaction_config{
+    // hot-log compaction policy
+    // check every 250ms, trigger at 80% of 1GB, compact min(20% of total size, 256MB), 4 threads
+    HlogCompactionConfig { 250ms, 0.8, 0.2, 256_MiB, 1_GiB, 4, true },
+    // cold-log compaction policy
+    // check every 250ms, trigger at 90% of 8GB, compact min(10% of total size, 1GB), 4 threads
+    HlogCompactionConfig { 250ms, 0.9, 0.1, 1_GiB, 8_GiB, 4, true }
+  };
+
 
   FasterKvHC(uint64_t hot_log_table_size, uint64_t hot_log_mem_size, const std::string& hot_log_filename,
             uint64_t cold_log_table_size, uint64_t cold_log_mem_size, const std::string& cold_log_filename,
             double hot_log_mutable_perc = 0.6, double cold_log_mutable_perc = 0,
             ReadCacheConfig rc_config = default_rc_config,
-            HCCompactionConfig hc_compaction_config = HCCompactionConfig())
+            HCCompactionConfig hc_compaction_config = default_hc_compaction_config)
   : hot_store{ hot_log_table_size, hot_log_mem_size, hot_log_filename, hot_log_mutable_perc, rc_config }
   , cold_store{ cold_log_table_size, cold_log_mem_size, cold_log_filename, cold_log_mutable_perc }
   , hc_compaction_config_{ hc_compaction_config }
@@ -497,13 +506,19 @@ inline bool FasterKvHC<K, V, D>::Checkpoint(IndexPersistenceCallback index_persi
 template<class K, class V, class D>
 inline bool FasterKvHC<K, V, D>::CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
   uint64_t tail_address = hot_store.hlog.GetTailAddress().control();
-  log_error("Auto-compact HOT: {%.2lf GB} [%lu %lu] -> [%lu %lu]",
+  log_error("Compact HOT: {%.2lf GB} {Goal %.2lf GB} [%lu %lu] -> [%lu %lu]",
             static_cast<double>(hot_store.Size()) / (1 << 30),
+            static_cast<double>(tail_address - until_address) / (1 << 30),
             hot_store.hlog.begin_address.control(), tail_address,
             until_address, tail_address);
 
+  if (until_address > hot_store.hlog.safe_read_only_address.control()) {
+    throw std::invalid_argument{ "Can only compact until safe read-only region" };
+  }
+
   bool success = hot_store.CompactWithLookup(until_address, shift_begin_address, n_threads, true);
-  log_error("Auto-compact HOT: {%.2lf GB} Done!",
+  log_error("Compact HOT [success=%d]: {Goal %.2lf} {Actual %.2lf GB} Done!", success,
+            static_cast<double>(tail_address - until_address) / (1 << 30),
             static_cast<double>(hot_store.Size()) / (1 << 30));
   return success;
 }
@@ -511,13 +526,19 @@ inline bool FasterKvHC<K, V, D>::CompactHotLog(uint64_t until_address, bool shif
 template<class K, class V, class D>
 inline bool FasterKvHC<K, V, D>::CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
   uint64_t tail_address = cold_store.hlog.GetTailAddress().control();
-  log_error("Auto-compact COLD: {%.2lf GB} [%lu %lu] -> [%lu %lu]",
+  log_error("Compact COLD: {%.2lf GB} {Goal %.2lf GB} [%lu %lu] -> [%lu %lu]",
             static_cast<double>(cold_store.Size()) / (1 << 30),
+            static_cast<double>(tail_address - until_address) / (1 << 30),
             cold_store.hlog.begin_address.control(), tail_address,
-            until_address, until_address);
+            until_address, tail_address);
+
+  if (until_address > cold_store.hlog.safe_read_only_address.control()) {
+    throw std::invalid_argument{ "Can only compact until safe read-only region" };
+  }
 
   bool success = cold_store.CompactWithLookup(until_address, shift_begin_address, n_threads);
-  log_error("Auto-compact COLD: {%.2lf GB} Done!",
+  log_error("Compact COLD [success=%d]: {Goal %.2lf} {Actual %.2lf GB} Done!", success,
+            static_cast<double>(tail_address - until_address) / (1 << 30),
             static_cast<double>(cold_store.Size()) / (1 << 30));
   return success;
 }
@@ -547,46 +568,52 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
 
     if (hot_store.Size() >= hot_log_size_threshold) {
       uint64_t begin_address = hot_store.hlog.begin_address.control();
+      uint64_t safe_head_address = hot_store.hlog.safe_head_address.control();
       // calculate until address
       uint64_t until_address = begin_address + (
                   static_cast<uint64_t>(hot_store.Size() * hot_compaction_config.compact_perc));
       // respect user-imposed limit
       until_address = std::min(until_address, begin_address + hot_compaction_config.max_compacted_size);
       // do not compact in-memory regions
-      until_address = std::min(until_address, hot_store.hlog.safe_head_address.control());
+      until_address = std::min(until_address, safe_head_address);
       // round down address to page bounds
       until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
       assert(until_address <= hot_store.hlog.safe_read_only_address.control());
       assert(until_address % hot_store.hlog.kPageSize == 0);
 
       // perform hot-cold compaction
-      StartSession();
-      if (!CompactHotLog(until_address, true, hot_compaction_config.num_threads)) {
-        log_error("Compact HOT: *not* successful! :(");
+      if (until_address < safe_head_address) {
+        StartSession();
+        if (!CompactHotLog(until_address, true, hot_compaction_config.num_threads)) {
+          log_error("Compact HOT: *not* successful! :(");
+        }
+        StopSession();
       }
-      StopSession();
     }
 
     if (cold_store.Size() >= cold_log_size_threshold) {
       uint64_t begin_address = cold_store.hlog.begin_address.control();
+      uint64_t safe_head_address = cold_store.hlog.safe_head_address.control();
       // calculate until address
       uint64_t until_address = begin_address + (
                     static_cast<uint64_t>(cold_store.Size() * cold_compaction_config.compact_perc));
       // respect user-imposed limit
       until_address = std::min(until_address, begin_address + cold_compaction_config.max_compacted_size);
       // do not compact in-memory regions
-      until_address = std::min(until_address, cold_store.hlog.safe_head_address.control());
+      until_address = std::min(until_address, safe_head_address);
       // round down address to page bounds
       until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
       assert(until_address <= cold_store.hlog.safe_read_only_address.control());
       assert(until_address % cold_store.hlog.kPageSize == 0);
 
       // perform cold-cold compaction
-      cold_store.StartSession();
-      if (!CompactColdLog(until_address, true, cold_compaction_config.num_threads)) {
-        log_error("Compact COLD: *not* successful! :(");
+      if (until_address < safe_head_address) {
+        cold_store.StartSession();
+        if (!CompactColdLog(until_address, true, cold_compaction_config.num_threads)) {
+          log_error("Compact COLD: *not* successful! :(");
+        }
+        cold_store.StopSession();
       }
-      cold_store.StopSession();
     }
   }
 }

@@ -11,6 +11,17 @@
 namespace FASTER {
 namespace core {
 
+// kB, MB, GB literal helpers
+constexpr uint64_t operator""_KiB(unsigned long long const x) {
+  return static_cast<uint64_t>(x * (1 << 10));
+}
+constexpr uint64_t operator""_MiB(unsigned long long const x) {
+  return static_cast<uint64_t>(x * (1 << 20));
+}
+constexpr uint64_t operator""_GiB(unsigned long long const x) {
+  return static_cast<uint64_t>(x * (1 << 30));
+}
+
 class Utility {
  public:
   static inline uint64_t Rotr64(uint64_t x, std::size_t n) {
