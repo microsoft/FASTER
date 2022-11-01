@@ -52,7 +52,7 @@ namespace FASTER.libdpr
 
         internal Type commandType;
         internal WorkerVersion wv;
-        internal Worker w;
+        internal WorkerId w;
         internal long worldLine;
         internal List<WorkerVersion> deps;
     }
@@ -196,7 +196,7 @@ namespace FASTER.libdpr
                     if (ProcessRedisBulkString(readHead, buf))
                     {
                         var workerId = BitConverter.ToInt64(buf, stringStart);
-                        currentCommand.w = new Worker(workerId);
+                        currentCommand.w = new WorkerId(workerId);
                         commandParserState = CommandParserState.NONE;
                         size = -1;
                         return true;

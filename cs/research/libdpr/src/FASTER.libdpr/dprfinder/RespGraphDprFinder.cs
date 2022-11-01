@@ -12,7 +12,7 @@ namespace FASTER.libdpr
     public sealed class RespGraphDprFinder : IDprFinder, IDisposable
     {
         private readonly DprFinderSocketReaderWriter socket;
-        private readonly Dictionary<Worker, long> lastKnownCut = new Dictionary<Worker, long>();
+        private readonly Dictionary<WorkerId, long> lastKnownCut = new Dictionary<WorkerId, long>();
         private readonly DprFinderResponseParser parser = new DprFinderResponseParser();
         private readonly byte[] recvBuffer = new byte[1 << 20];
         private ClusterState lastKnownClusterState;
@@ -51,9 +51,9 @@ namespace FASTER.libdpr
         }
 
         /// <inheritdoc />
-        public long SafeVersion(Worker worker)
+        public long SafeVersion(WorkerId workerId)
         {
-            return lastKnownCut.TryGetValue(worker, out var result) ? result : 0;
+            return lastKnownCut.TryGetValue(workerId, out var result) ? result : 0;
         }
 
         /// <inheritdoc/>
@@ -104,17 +104,17 @@ namespace FASTER.libdpr
         }
         
         /// <inheritdoc/>
-        public void ResendGraph(Worker worker, IStateObject stateObject)
+        public void ResendGraph(WorkerId workerId, IStateObject stateObject)
         {
             lock (socket)
             {
-                var acks = socket.SendGraphReconstruction(worker, stateObject);
+                var acks = socket.SendGraphReconstruction(workerId, stateObject);
                 socket.WaitForAcks(acks);
             }
         }
         
         /// <inheritdoc/>
-        public long NewWorker(Worker id, IStateObject stateObject)
+        public long NewWorker(WorkerId id, IStateObject stateObject)
         {
             if (stateObject != null)
                 ResendGraph(id, stateObject);
@@ -129,7 +129,7 @@ namespace FASTER.libdpr
         }
 
         /// <inheritdoc/>
-        public void DeleteWorker(Worker id)
+        public void DeleteWorker(WorkerId id)
         {
             lock (socket)
             {

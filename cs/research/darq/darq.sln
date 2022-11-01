@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "darq", "darq\darq.csproj", "{B6949D0A-D49C-4B88-BEEC-FFEA1CD018CB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.libdpr", "..\libdpr\src\FASTER.libdpr\FASTER.libdpr.csproj", "{6595C1EF-2710-4E64-AD31-9B784F186468}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.common", "..\..\remote\src\FASTER.common\FASTER.common.csproj", "{435381D2-9117-4E71-98D4-8DFD9971AB11}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.core", "..\..\src\core\FASTER.core.csproj", "{EC0B4D5B-8DB6-45BA-8FD8-F1BF0A18CEA0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B6949D0A-D49C-4B88-BEEC-FFEA1CD018CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B6949D0A-D49C-4B88-BEEC-FFEA1CD018CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B6949D0A-D49C-4B88-BEEC-FFEA1CD018CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B6949D0A-D49C-4B88-BEEC-FFEA1CD018CB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6595C1EF-2710-4E64-AD31-9B784F186468}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6595C1EF-2710-4E64-AD31-9B784F186468}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6595C1EF-2710-4E64-AD31-9B784F186468}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6595C1EF-2710-4E64-AD31-9B784F186468}.Release|Any CPU.Build.0 = Release|Any CPU
+		{435381D2-9117-4E71-98D4-8DFD9971AB11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{435381D2-9117-4E71-98D4-8DFD9971AB11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{435381D2-9117-4E71-98D4-8DFD9971AB11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{435381D2-9117-4E71-98D4-8DFD9971AB11}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EC0B4D5B-8DB6-45BA-8FD8-F1BF0A18CEA0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EC0B4D5B-8DB6-45BA-8FD8-F1BF0A18CEA0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EC0B4D5B-8DB6-45BA-8FD8-F1BF0A18CEA0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EC0B4D5B-8DB6-45BA-8FD8-F1BF0A18CEA0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

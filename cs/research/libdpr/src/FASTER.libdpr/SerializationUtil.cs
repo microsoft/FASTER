@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using FASTER.core;
 
 namespace FASTER.libdpr
 {
@@ -13,12 +14,12 @@ namespace FASTER.libdpr
             {
                 var end = b + buffer.Length;
                 var head = b;
-                if (!Utility.TryWriteBytes(new Span<byte>(head, (int) (end - head)), worldLine)) return 0;
+                if (!BitConverter.TryWriteBytes(new Span<byte>(head, (int) (end - head)), worldLine)) return 0;
                 head += sizeof(long);
-                if (!Utility.TryWriteBytes(new Span<byte>(head, (int) (end - head)), checkpointed.Worker.guid))
+                if (!BitConverter.TryWriteBytes(new Span<byte>(head, (int) (end - head)), checkpointed.WorkerId.guid))
                     return 0;
                 head += sizeof(long);
-                if (!Utility.TryWriteBytes(new Span<byte>(head, (int) (end - head)), checkpointed.Version))
+                if (!BitConverter.TryWriteBytes(new Span<byte>(head, (int) (end - head)), checkpointed.Version))
                     return 0;
                 head += sizeof(long);
                 // skip 4 bytes of size field for now;
@@ -30,9 +31,9 @@ namespace FASTER.libdpr
                 {
                     numDeps++;
                     head += sizeof(long);
-                    if (!Utility.TryWriteBytes(new Span<byte>(head, (int) (end - head)), wv.Worker.guid)) return 0;
+                    if (!BitConverter.TryWriteBytes(new Span<byte>(head, (int) (end - head)), wv.WorkerId.guid)) return 0;
                     head += sizeof(long);
-                    if (!Utility.TryWriteBytes(new Span<byte>(head, (int) (end - head)), wv.Version)) return 0;
+                    if (!BitConverter.TryWriteBytes(new Span<byte>(head, (int) (end - head)), wv.Version)) return 0;
                 }
 
                 *sizeField = numDeps;

@@ -71,7 +71,7 @@ namespace FASTER.libdpr
                 // Populate header with relevant request information
                 if (headerBytes.Length >= DprBatchHeader.FixedLenSize)
                 {
-                    dprHeader.srcWorkerId = Worker.INVALID;
+                    dprHeader.SrcWorkerIdId = WorkerId.INVALID;
                     dprHeader.worldLine = worldLine;
                     dprHeader.version = version;
                     dprHeader.numClientDeps = 0;
@@ -119,8 +119,8 @@ namespace FASTER.libdpr
                 Debug.Assert(responseHeader.worldLine == worldLine);
                 
                 // Add largest worker-version as dependency for future ops
-                if (!responseHeader.srcWorkerId.Equals(Worker.INVALID))
-                    deps.Update(responseHeader.srcWorkerId, responseHeader.version);
+                if (!responseHeader.SrcWorkerIdId.Equals(WorkerId.INVALID))
+                    deps.Update(responseHeader.SrcWorkerIdId, responseHeader.version);
                 else
                 {
                     fixed (byte* d = responseHeader.data)
@@ -129,7 +129,7 @@ namespace FASTER.libdpr
                         for (var i = 0; i < responseHeader.numClientDeps; i++)
                         {
                             ref var wv = ref Unsafe.AsRef<WorkerVersion>(depsHead);
-                            deps.Update(wv.Worker, wv.Version);
+                            deps.Update(wv.WorkerId, wv.Version);
                             depsHead += sizeof(WorkerVersion);
                         }
                     }
@@ -139,15 +139,15 @@ namespace FASTER.libdpr
                 core.Utility.MonotonicUpdate(ref this.version, responseHeader.version, out _);
 
                 // Remove deps only if this is a response header from a server session
-                if (!responseHeader.srcWorkerId.Equals(Worker.INVALID))
+                if (!responseHeader.SrcWorkerIdId.Equals(WorkerId.INVALID))
                 {
                     // Update dependency tracking
                     var depsHead = h + responseHeader.ClientDepsOffset;
                     for (var i = 0; i < responseHeader.numClientDeps; i++)
                     {
                         ref var wv = ref Unsafe.AsRef<WorkerVersion>(depsHead);
-                        if (wv.Worker.Equals(responseHeader.srcWorkerId)) continue;
-                        deps.TryRemove(wv.Worker, wv.Version);
+                        if (wv.WorkerId.Equals(responseHeader.SrcWorkerIdId)) continue;
+                        deps.TryRemove(wv.WorkerId, wv.Version);
                         depsHead += sizeof(WorkerVersion);
                     }
                 }

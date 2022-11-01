@@ -7,27 +7,27 @@ namespace FASTER.libdpr
     /// </summary>
     public class DictionaryDprStateSnapshot : IDprStateSnapshot
     {
-        private readonly Dictionary<Worker, long> dprTableSnapshot;
+        private readonly Dictionary<WorkerId, long> dprTableSnapshot;
         private readonly long worldLine;
 
         /// <summary>
         ///     Constructs a new DprStateSnapshot backed by the given dictionary
         /// </summary>
         /// <param name="dprTableSnapshot"> dictionary that encodes the DPR state </param>
-        public DictionaryDprStateSnapshot(Dictionary<Worker, long> dprTableSnapshot, long worldLine)
+        public DictionaryDprStateSnapshot(Dictionary<WorkerId, long> dprTableSnapshot, long worldLine)
         {
             this.dprTableSnapshot = dprTableSnapshot;
             this.worldLine = worldLine;
         }
 
         /// <inheritdoc />
-        public long SafeVersion(Worker worker)
+        public long SafeVersion(WorkerId workerId)
         {
             if (dprTableSnapshot == null) return 0;
 
             lock (dprTableSnapshot)
             {
-                return !dprTableSnapshot.TryGetValue(worker, out var safeVersion) ? 0 : safeVersion;
+                return !dprTableSnapshot.TryGetValue(workerId, out var safeVersion) ? 0 : safeVersion;
             }
         }
         

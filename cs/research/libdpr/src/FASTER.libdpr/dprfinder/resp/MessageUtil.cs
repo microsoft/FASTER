@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Net.Sockets;
 using System.Text;
 using FASTER.common;
+using FASTER.core;
 
 namespace FASTER.libdpr
 {
@@ -48,7 +49,7 @@ namespace FASTER.libdpr
             socket.Send(OkResponse);
         }
 
-        internal int SendGraphReconstruction(Worker worker, IStateObject stateObject)
+        internal int SendGraphReconstruction(WorkerId workerId, IStateObject stateObject)
         {
             var buf = reusableMessageBuffers.Checkout();
             var head = 0;
@@ -71,28 +72,28 @@ namespace FASTER.libdpr
             if (numRequests == 0) return 0;
             head += RespUtil.WriteRedisArrayHeader(2, buf, head);
             head += RespUtil.WriteRedisBulkString("GraphResent", buf, head);
-            var committedVersion = new WorkerVersion(worker, minVersion == long.MaxValue ? 0 : minVersion);
+            var committedVersion = new WorkerVersion(workerId, minVersion == long.MaxValue ? 0 : minVersion);
             head += RespUtil.WriteRedisBulkString(committedVersion, buf, head);
             socket.Send(buf, 0, head, SocketFlags.None);
             return 1;
         }
 
-        internal void SendAddWorkerCommand(Worker worker)
+        internal void SendAddWorkerCommand(WorkerId workerId)
         {
             var buf = reusableMessageBuffers.Checkout();
             var head = RespUtil.WriteRedisArrayHeader(2, buf, 0);
             head += RespUtil.WriteRedisBulkString("AddWorker", buf, head);
-            head += RespUtil.WriteRedisBulkString(worker.guid, buf, head);
+            head += RespUtil.WriteRedisBulkString(workerId.guid, buf, head);
             socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
         }
 
-        internal void SendDeleteWorkerCommand(Worker worker)
+        internal void SendDeleteWorkerCommand(WorkerId workerId)
         {
             var buf = reusableMessageBuffers.Checkout();
             var head = RespUtil.WriteRedisArrayHeader(2, buf, 0);
             head += RespUtil.WriteRedisBulkString("DeleteWorker", buf, head);
-            head += RespUtil.WriteRedisBulkString(worker.guid, buf, head);
+            head += RespUtil.WriteRedisBulkString(workerId.guid, buf, head);
             socket.Send(buf, 0, head, SocketFlags.None);
             reusableMessageBuffers.Return(buf);
         }
@@ -144,7 +145,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte)'\r';
             buf[head++] = (byte)'\n';
 
-            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), maxVersion);
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), maxVersion);
             head += sizeof(long);
             Array.Copy(serializedState.Item1, 0, buf, head, serializedState.Item2);
             head += serializedState.Item2;
@@ -170,9 +171,9 @@ namespace FASTER.libdpr
             buf[head++] = (byte)'\r';
             buf[head++] = (byte)'\n';
 
-            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item1);
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item1);
             head += sizeof(long);
-            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item2);
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), result.Item2);
             head += sizeof(long);
 
             buf[head++] = (byte)'\r';

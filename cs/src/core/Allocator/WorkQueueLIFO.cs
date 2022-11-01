@@ -14,7 +14,7 @@ namespace FASTER.core
     /// Shared work queue that ensures one worker at any given time. Uses LIFO ordering of work.
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    class WorkQueueLIFO<T> : IDisposable
+    public class WorkQueueLIFO<T> : IDisposable
     {
         const int kMaxQueueSize = 1 << 30;
         readonly ConcurrentStack<T> _queue;
@@ -30,6 +30,9 @@ namespace FASTER.core
             _disposed = false;
         }
 
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
             _disposed = true;

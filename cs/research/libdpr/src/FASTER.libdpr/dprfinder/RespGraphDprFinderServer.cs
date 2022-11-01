@@ -116,7 +116,7 @@ namespace FASTER.libdpr
                     backend.NewCheckpoint(command.worldLine, command.wv, command.deps);
                     break;
                 case DprFinderCommand.Type.GRAPH_RESENT:
-                    backend.MarkWorkerAccountedFor(command.wv.Worker, command.wv.Version);
+                    backend.MarkWorkerAccountedFor(command.wv.WorkerId, command.wv.Version);
                     socket.SendOk();
                     break;
                 case DprFinderCommand.Type.SYNC:

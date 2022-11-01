@@ -3,6 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -114,7 +115,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        internal static string PrettySize(long value)
+        public static string PrettySize(long value)
         {
             char[] suffix = new char[] { 'K', 'M', 'G', 'T', 'P' };
             double v = value;

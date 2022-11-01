@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FASTER.core;
 
 namespace FASTER.libdpr
 {
@@ -81,7 +82,7 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val);
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val);
             head += sizeof(long);
 
             buf[head++] = (byte) '\r';
@@ -103,9 +104,9 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.Worker.guid);
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.WorkerId.guid);
             head += sizeof(long);
-            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.Version);
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), val.Version);
             head += sizeof(long);
 
             buf[head++] = (byte) '\r';
@@ -131,13 +132,13 @@ namespace FASTER.libdpr
             buf[head++] = (byte) '\r';
             buf[head++] = (byte) '\n';
 
-            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), count);
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), count);
             head += sizeof(int);
             foreach (var wv in val)
             {
-                Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.Worker.guid);
+                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.WorkerId.guid);
                 head += sizeof(long);
-                Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.Version);
+                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), wv.Version);
                 head += sizeof(long);
             }
 
@@ -162,28 +163,28 @@ namespace FASTER.libdpr
             return head - offset;
         }
 
-        internal static int DictionarySerializedSize(IDictionary<Worker, long> dict)
+        internal static int DictionarySerializedSize(IDictionary<WorkerId, long> dict)
         {
             return sizeof(int) + dict.Count * 2 * sizeof(long);
         }
 
-        internal static int SerializeDictionary(IDictionary<Worker, long> dict, byte[] buf, int head)
+        internal static int SerializeDictionary(IDictionary<WorkerId, long> dict, byte[] buf, int head)
         {
             if (head + DictionarySerializedSize(dict) > buf.Length) return 0;
-            Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), dict.Count);
+            BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(int)), dict.Count);
             head += sizeof(int);
             foreach (var entry in dict)
             {
-                Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), entry.Key.guid);
+                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), entry.Key.guid);
                 head += sizeof(long);
-                Utility.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), entry.Value);
+                BitConverter.TryWriteBytes(new Span<byte>(buf, head, sizeof(long)), entry.Value);
                 head += sizeof(long);
             }
 
             return head;
         }
 
-        public static int ReadDictionaryFromBytes(byte[] buf, int head, IDictionary<Worker, long> result)
+        public static int ReadDictionaryFromBytes(byte[] buf, int head, IDictionary<WorkerId, long> result)
         {
             var size = BitConverter.ToInt32(buf, head);
             head += sizeof(int);
@@ -193,7 +194,7 @@ namespace FASTER.libdpr
                 head += sizeof(long);
                 var val = BitConverter.ToInt64(buf, head);
                 head += sizeof(long);
-                result[new Worker(workerId)] = val;
+                result[new WorkerId(workerId)] = val;
             }
 
             return head;

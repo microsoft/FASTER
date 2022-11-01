@@ -92,7 +92,7 @@ namespace FASTER.libdpr
             lock (toRemove)
             {
                 foreach (var entry in versionMappings)
-                    if (dprState.SafeVersion(entry.Key.Worker) >= entry.Key.Version)
+                    if (dprState.SafeVersion(entry.Key.WorkerId) >= entry.Key.Version)
                         toRemove.Add(entry.Key);
 
                 foreach (var wv in toRemove)
@@ -122,7 +122,7 @@ namespace FASTER.libdpr
                 incompleteOperations.Clear();
 
                 foreach (var entry in versionMappings)
-                    if (dprState.SafeVersion(entry.Key.Worker) < entry.Key.Version)
+                    if (dprState.SafeVersion(entry.Key.WorkerId) < entry.Key.Version)
                     {
                         listPool.Return(entry.Value.list);
                         toRemove.Add(entry.Key);

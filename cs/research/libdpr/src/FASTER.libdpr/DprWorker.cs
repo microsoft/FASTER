@@ -17,13 +17,12 @@ namespace FASTER.libdpr
     /// StateObject implementation.
     /// </summary>
     /// <typeparam name="TStateObject"> type of state object</typeparam>
-    public class DprWorker<TStateObject>
-        where TStateObject : IStateObject
+    public class DprWorker<TStateObject> where TStateObject : IStateObject
     {
         public const int DPR_HEADER_SIZE = DprBatchHeader.FixedLenSize;
         private readonly SimpleObjectPool<LightDependencySet> dependencySetPool;
         private readonly IDprFinder dprFinder;
-        private readonly Worker me;
+        private readonly WorkerId me;
         private readonly ConcurrentDictionary<long, LightDependencySet> versions;
         private readonly EpochProtectedVersionScheme versionScheme;
         private long worldLine = 0;
@@ -41,7 +40,7 @@ namespace FASTER.libdpr
         /// <param name="dprFinder"> interface to the cluster's DPR finder component </param>
         /// <param name="me"> unique id of the DPR server </param>
         /// <param name="stateObject"> underlying state object </param>
-        public DprWorker(IDprFinder dprFinder, Worker me, TStateObject stateObject)
+        public DprWorker(IDprFinder dprFinder, WorkerId me, TStateObject stateObject)
         {
             this.dprFinder = dprFinder;
             this.me = me;
@@ -64,7 +63,7 @@ namespace FASTER.libdpr
 
         /// <summary></summary>
         /// <returns> Worker ID of this DprServer instance </returns>
-        public Worker Me() => me;
+        public WorkerId Me() => me;
 
         private Task BeginRestore(long newWorldLine, long version)
         {
@@ -266,7 +265,7 @@ namespace FASTER.libdpr
 
             ref var responseObj =
                 ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchHeader>(outputHeaderBytes));
-            responseObj.srcWorkerId = Me();
+            responseObj.SrcWorkerIdId = Me();
             // Use negative to signal that there was a mismatch, which would prompt error handling on client side
             // Must be negative to distinguish from a normal response message in current version
             responseObj.worldLine = -worldLine;
@@ -332,15 +331,15 @@ namespace FASTER.libdpr
             // could get processed at a future version instead due to thread timing. However, this is not a correctness
             // issue, nor do we lose much precision as batch-level dependency tracking is already an approximation.
             var deps = versions[versionScheme.CurrentState().Version];
-            if (!inputHeader.srcWorkerId.Equals(Worker.INVALID))
-                deps.Update(inputHeader.srcWorkerId, inputHeader.version);
+            if (!inputHeader.SrcWorkerIdId.Equals(WorkerId.INVALID))
+                deps.Update(inputHeader.SrcWorkerIdId, inputHeader.version);
             fixed (byte* d = inputHeader.data)
             {
                 var depsHead = d + inputHeader.ClientDepsOffset;
                 for (var i = 0; i < inputHeader.numClientDeps; i++)
                 {
                     ref var wv = ref Unsafe.AsRef<WorkerVersion>(depsHead);
-                    deps.Update(wv.Worker, wv.Version);
+                    deps.Update(wv.WorkerId, wv.Version);
                     depsHead += sizeof(WorkerVersion);
                 }
             }
@@ -379,7 +378,7 @@ namespace FASTER.libdpr
             versionScheme.Leave();
 
             // Populate response
-            outputHeader.srcWorkerId = Me();
+            outputHeader.SrcWorkerIdId = Me();
             outputHeader.worldLine = wl;
             outputHeader.version = versionScheme.CurrentState().Version;
             outputHeader.numClientDeps = 0;
