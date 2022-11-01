@@ -8,21 +8,23 @@
 using namespace FASTER;
 
 /// Disk's log uses 64 MB segments.
-typedef FASTER::device::FileSystemDisk<handler_t, 67108864L> disk_t;
+typedef FASTER::device::FileSystemDisk<handler_t, 64_MiB> disk_t;
 
-// <# hash index entries, read cache enabled>
-class PagingTestParam : public ::testing::TestWithParam<std::pair<uint32_t, bool>> {
+// <# hash index entries, read cache, auto-compaction>
+using params_type = std::tuple<uint32_t, bool, bool>;
+
+class PagingTestParam : public ::testing::TestWithParam<params_type> {
 };
 INSTANTIATE_TEST_CASE_P(
   PagingTests,
   PagingTestParam,
   ::testing::Values(
-    std::pair<uint32_t, bool>(2048, true),
-    std::pair<uint32_t, bool>((1 << 20), true),
-    std::pair<uint32_t, bool>(2048, false),
-    std::pair<uint32_t, bool>((1 << 20), false))
+    std::make_tuple(2048, false, false),
+    std::make_tuple((1 << 20), false, false),
+    std::make_tuple(2048, true, true),
+    std::make_tuple((1 << 20), true, true)
+  )
 );
-
 
 TEST_P(PagingTestParam, UpsertRead_Serial) {
   class Key {
@@ -198,15 +200,25 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
   };
 
   std::experimental::filesystem::create_directories("logs");
+  typedef FasterKv<Key, Value, disk_t> store_t;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
-  // 8 pages!
-  FasterKv<Key, Value, disk_t> store{ table_size, 268435456, "logs", 0.5, readcache };
+  auto args = GetParam();
+  uint32_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
+  bool auto_compaction = std::get<2>(args);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = true;
+
+  HlogCompactionConfig compaction_config{
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+
+  store_t store{ table_size, 256_MiB , "logs", 0.5,
+                rc_config, compaction_config };
 
   Guid session_id = store.StartSession();
 
-  constexpr size_t kNumRecords = 250000;
+  constexpr size_t kNumRecords = 250'000;
   static std::atomic<uint64_t> records_read{ 0 };
   static std::atomic<uint64_t> records_updated{ 0 };
 
@@ -483,11 +495,21 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
   };
 
   std::experimental::filesystem::create_directories("logs");
+  typedef FasterKv<Key, Value, disk_t> store_t;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
-  // 8 pages!
-  FasterKv<Key, Value, disk_t> store{ table_size, 256 * (1 << 20), "logs", 0.5, readcache };
+  auto args = GetParam();
+  uint32_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
+  bool auto_compaction = std::get<2>(args);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = true;
+
+  HlogCompactionConfig compaction_config{
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+
+  store_t store{ table_size, 256_MiB , "logs", 0.5,
+                rc_config, compaction_config };
 
   static constexpr size_t kNumRecords = 250000;
   static constexpr size_t kNumThreads = 2;
@@ -640,7 +662,8 @@ TEST_P(PagingTestParam, Rmw) {
       return static_cast<uint32_t>(sizeof(Key));
     }
     inline KeyHash GetHash() const {
-      return KeyHash{ Utility::GetHashCode(key_) };
+      FasterHashHelper<uint64_t> hash_fn;
+      return KeyHash{ hash_fn(key_) };
     }
 
     /// Comparison operators.
@@ -735,11 +758,21 @@ TEST_P(PagingTestParam, Rmw) {
   };
 
   std::experimental::filesystem::create_directories("logs");
+  typedef FasterKv<Key, Value, disk_t> store_t;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
-  // 8 pages!
-  FasterKv<Key, Value, disk_t> store{ table_size, 256 * (1 << 20), "logs", 0.5, readcache };
+  auto args = GetParam();
+  uint32_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
+  bool auto_compaction = std::get<2>(args);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = true;
+
+  HlogCompactionConfig compaction_config{
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+
+  store_t store{ table_size, 256_MiB , "logs", 0.5,
+                rc_config, compaction_config };
 
   constexpr size_t kNumRecords = 200000;
 
@@ -914,10 +947,21 @@ TEST_P(PagingTestParam, Rmw_Large) {
   };
 
   std::experimental::filesystem::create_directories("logs");
+  typedef FasterKv<Key, Value, disk_t> store_t;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
-  FasterKv<Key, Value, disk_t> store { table_size, 256 * (1 << 20), "logs", 0.5, readcache };
+  auto args = GetParam();
+  uint32_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
+  bool auto_compaction = std::get<2>(args);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = true;
+
+  HlogCompactionConfig compaction_config{
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+
+  store_t store{ table_size, 256_MiB , "logs", 0.5,
+                rc_config, compaction_config };
 
   constexpr size_t kNumRecords = 50000;
   static std::atomic<uint64_t> records_touched{ 0 };
@@ -995,7 +1039,8 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
       return static_cast<uint32_t>(sizeof(Key));
     }
     inline KeyHash GetHash() const {
-      return KeyHash{ Utility::GetHashCode(key_) };
+      FasterHashHelper<uint64_t> hash_fn;
+      return KeyHash{ hash_fn(key_) };
     }
 
     /// Comparison operators.
@@ -1006,7 +1051,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
       return key_ != other.key_;
     }
 
-   private:
+   public:
     uint64_t key_;
   };
 
@@ -1027,8 +1072,9 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
     friend class RmwContext;
     friend class ReadContext;
 
-   private:
+  public:
     std::atomic<uint64_t> counter_;
+   private:
     uint8_t junk_[1016];
   };
   static_assert(sizeof(Value) == 1024, "sizeof(Value) != 1024");
@@ -1120,7 +1166,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
   };
 
   static constexpr size_t kNumRecords = 150000;
-  static constexpr size_t kNumThreads = 2;
+  static constexpr size_t kNumThreads = 8;
 
   auto rmw_worker = [](FasterKv<Key, Value, disk_t>* store_, uint64_t incr) {
     Guid session_id = store_->StartSession();
@@ -1131,7 +1177,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
       };
 
       if(idx % 256 == 0) {
-        store_->Refresh();
+        store_->CompletePending(false);
       }
 
       RmwContext context{ Key{ idx }, incr };
@@ -1155,7 +1201,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
       };
 
       if(idx % 256 == 0) {
-        store_->Refresh();
+        store_->CompletePending(false);
       }
 
       ReadContext context{ Key{ thread_idx* (kNumRecords / kNumThreads) + idx } };
@@ -1181,7 +1227,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
       };
 
       if(idx % 256 == 0) {
-        store_->Refresh();
+        store_->CompletePending(false);
       }
 
       ReadContext context{ Key{ thread_idx* (kNumRecords / kNumThreads) + idx } };
@@ -1198,11 +1244,21 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
   };
 
   std::experimental::filesystem::create_directories("logs");
+  typedef FasterKv<Key, Value, disk_t> store_t;
 
-  // 8 pages!
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
-  FasterKv<Key, Value, disk_t> store{ table_size, 256 * (1 << 20), "logs", 0.5, readcache };
+  auto args = GetParam();
+  uint32_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
+  bool auto_compaction = std::get<2>(args);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = true;
+
+  HlogCompactionConfig compaction_config{
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+
+  store_t store{ table_size, 256_MiB , "logs", 0.5,
+                rc_config, compaction_config };
 
   // Initial RMW.
   std::deque<std::thread> threads{};
@@ -1254,6 +1310,8 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     inline KeyHash GetHash() const {
       std::hash<uint64_t> hash_fn;
       return KeyHash{ hash_fn(key_) };
+
+      //return KeyHash{ Utility::GetHashCode(key_) };
     }
 
     /// Comparison operators.
@@ -1264,7 +1322,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
       return key_ != other.key_;
     }
 
-   private:
+   public:
     uint64_t key_;
   };
 
@@ -1285,8 +1343,9 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     friend class RmwContext;
     friend class ReadContext;
 
-   private:
+   public:
     std::atomic<uint64_t> counter_;
+   private:
     uint8_t junk_[8016];
   };
   static_assert(sizeof(Value) == 8024, "sizeof(Value) != 8024");
@@ -1344,13 +1403,15 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext(Key key)
-      : key_{ key } {
+    ReadContext(Key key, void* store = nullptr)
+      : key_{ key }
+      , store_{ store }{
     }
 
     /// Copy (and deep-copy) constructor.
     ReadContext(const ReadContext& other)
-      : key_{ other.key_ } {
+      : key_{ other.key_ }
+      , store_{ other.store_ } {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
@@ -1375,10 +1436,11 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     Key key_;
    public:
     uint64_t counter;
+    void* store_;
   };
 
-  static constexpr size_t kNumRecords = 50000;
-  static constexpr size_t kNumThreads = 2;
+  static constexpr size_t kNumRecords = 40000;
+  static constexpr size_t kNumThreads = 8;
 
   auto rmw_worker = [](FasterKv<Key, Value, disk_t>* store_, uint64_t incr) {
     Guid session_id = store_->StartSession();
@@ -1389,7 +1451,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
       };
 
       if(idx % 256 == 0) {
-        store_->Refresh();
+        store_->CompletePending(false);
       }
 
       RmwContext context{ Key{ idx }, incr };
@@ -1413,7 +1475,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
       };
 
       if(idx % 256 == 0) {
-        store_->Refresh();
+        store_->CompletePending(false);
       }
 
       ReadContext context{ Key{ thread_idx* (kNumRecords / kNumThreads) + idx } };
@@ -1439,10 +1501,10 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
       };
 
       if(idx % 256 == 0) {
-        store_->Refresh();
+        store_->CompletePending(false);
       }
 
-      ReadContext context{ Key{ thread_idx* (kNumRecords / kNumThreads) + idx } };
+      ReadContext context{ Key{ thread_idx* (kNumRecords / kNumThreads) + idx }, store_ };
       Status result = store_->Read(context, callback, 1);
       if(result == Status::Ok) {
         ASSERT_EQ(13 * kNumThreads, context.counter);
@@ -1456,10 +1518,21 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
   };
 
   std::experimental::filesystem::create_directories("logs");
+  typedef FasterKv<Key, Value, disk_t> store_t;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
-  FasterKv<Key, Value, disk_t> store { table_size, 256 * (1 << 20), "logs", 0.5, readcache };
+  auto args = GetParam();
+  uint32_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
+  bool auto_compaction = std::get<2>(args);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = true;
+
+  HlogCompactionConfig compaction_config{
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+
+  store_t store{ table_size, 256_MiB , "logs", 0.5,
+                rc_config, compaction_config };
 
   // Initial RMW.
   std::deque<std::thread> threads{};

@@ -6,11 +6,10 @@
 #include "gtest/gtest.h"
 
 #include "core/faster.h"
-
 #include "device/null_disk.h"
 
-#include "helper.h"
 #include "test_types.h"
+#include "utils.h"
 
 using namespace FASTER::core;
 using FASTER::test::FixedSizeKey;
@@ -36,7 +35,7 @@ typedef FASTER::environment::QueueIoHandler handler_t;
 #endif
 
 // Parameterized test definition for in-memory tests
-// bool value indicates whether or not to perform shift begin address after compaction
+// <shift_begin_address, n_threads>
 class CompactLookupParameterizedInMemTestFixture : public ::testing::TestWithParam<std::pair<bool, int>> {
 };
 INSTANTIATE_TEST_CASE_P(
@@ -50,6 +49,7 @@ INSTANTIATE_TEST_CASE_P(
 );
 
 // Parameterized test definition for on-disk tests
+// <shift_begin_address, checkpoint, n_threads>
 class CompactLookupParameterizedOnDiskTestFixture : public ::testing::TestWithParam<std::tuple<bool, bool, int>> {
 };
 INSTANTIATE_TEST_CASE_P(
@@ -286,7 +286,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemHalfLive) {
   // In memory hybrid log
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
-  faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
+  faster_t store { 2048, 1_GiB, "", 0.0625 };
   int numRecords = 200000;
 
   bool shift_begin_address = GetParam().first;
@@ -567,9 +567,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemConcurrentOps) {
         Status result = store.Delete(context, callback, idx / 3);
         ASSERT_EQ(Status::Ok, result);
       }
-      store.CompletePending(true);
-      store.StopSession();
     }
+    store.CompletePending(true);
+    store.StopSession();
   };
 
   std::thread upset_worker (upsert_worker_func);
@@ -1199,7 +1199,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLive) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(
-        until_address, shift_begin_address, n_threads, nullptr, checkpoint));
+        until_address, shift_begin_address, n_threads, false, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1272,7 +1272,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(
-      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
+      until_address, shift_begin_address, n_threads, false, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1361,6 +1361,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
     uint64_t key = keys[idx];
     assert(1 <= key && key <= num_records);
     auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<RmwContext<Key, Value>> context{ ctxt };
       ASSERT_EQ(Status::Ok, result);
     };
     RmwContext<Key, Value> context{ Key(key), Value(1) };
@@ -1376,7 +1377,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(
-      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
+      until_address, shift_begin_address, n_threads, false, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.CompletePending(true);
@@ -1414,6 +1415,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
     assert(1 <= key && key <= num_records);
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<RmwContext<Key, Value>> context{ ctxt };
       ASSERT_EQ(Status::Ok, result);
     };
     RmwContext<Key, Value> context{ Key(key), Value(-1) };
@@ -1509,7 +1511,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(
-      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
+      until_address, shift_begin_address, n_threads, false, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -1618,7 +1620,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(
-      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
+      until_address, shift_begin_address, n_threads, false, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
   store.StopSession();
@@ -1716,7 +1718,6 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
     store.StartSession();
 
     while (!stop.load()) {
-      // Reads should return newer values for non-deleted entries
       for (size_t idx : keys) {
         auto callback = [](IAsyncContext* ctxt, Status result) {
           CallbackContext<ReadContext<Key, LargeValue>> context(ctxt);
@@ -1926,7 +1927,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
 
   std::experimental::filesystem::create_directories("tmp_store");
 
-  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store { (1 << 20), (1 << 20) * 192, "tmp_store", 0.4 };
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
   bool shift_begin_address = std::get<0>(GetParam());
@@ -2046,7 +2047,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(
-      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
+      until_address, shift_begin_address, n_threads, false, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 
@@ -2344,7 +2345,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(
-      until_address, shift_begin_address, n_threads, nullptr, checkpoint));
+      until_address, shift_begin_address, n_threads, false, checkpoint));
   if (shift_begin_address)
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
 

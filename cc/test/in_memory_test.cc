@@ -63,23 +63,23 @@ void run_threads(size_t num_threads, Callable worker, Args... args) {
   }
 }
 
-// <# hash index entries, read cache enabled>
-class InMemTestParam : public ::testing::TestWithParam<std::pair<uint32_t, bool>> {
+// <# hash index entries, placeholder>
+class InMemTestParam : public ::testing::TestWithParam<std::tuple<uint32_t, bool>> {
 };
 INSTANTIATE_TEST_CASE_P(
   InMemTests,
   InMemTestParam,
   ::testing::Values(
-    std::pair<uint32_t, bool>(128, true),
-    std::pair<uint32_t, bool>((1 << 10), true),
-    std::pair<uint32_t, bool>(128, false),
-    std::pair<uint32_t, bool>((1 << 10), false))
+    std::make_tuple( 128, false),
+    std::make_tuple(2048, false)
+  )
 );
 
 
 TEST_P(InMemTestParam, UpsertRead) {
   using Key = FixedSizeKey<uint8_t>;
   using Value = SimpleAtomicValue<uint8_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -160,10 +160,10 @@ TEST_P(InMemTestParam, UpsertRead) {
     uint8_t output;
   };
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store { table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   store.StartSession();
 
@@ -226,6 +226,7 @@ TEST_P(InMemTestParam, UpsertRead_DummyHash) {
 
   using Key = FixedSizeKey<uint16_t, DummyHash>;
   using Value = SimpleAtomicValue<uint16_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -306,10 +307,10 @@ TEST_P(InMemTestParam, UpsertRead_DummyHash) {
     uint16_t output;
   };
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   store.StartSession();
 
@@ -363,6 +364,8 @@ TEST_P(InMemTestParam, UpsertRead_Concurrent) {
     uint8_t value_[31];
     std::atomic<uint8_t> length_;
   };
+
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -467,10 +470,10 @@ TEST_P(InMemTestParam, UpsertRead_Concurrent) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto upsert_worker = [&store](size_t thread_idx) {
     store.StartSession();
@@ -625,6 +628,8 @@ TEST_P(InMemTestParam, UpsertRead_ResizeValue_Concurrent) {
     }
   };
 
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
+
   class UpsertContext : public IAsyncContext {
    public:
     typedef Key key_t;
@@ -740,10 +745,10 @@ TEST_P(InMemTestParam, UpsertRead_ResizeValue_Concurrent) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto upsert_worker = [&store](size_t thread_idx, uint32_t value_length) {
     store.StartSession();
@@ -795,6 +800,7 @@ TEST_P(InMemTestParam, UpsertRead_ResizeValue_Concurrent) {
 TEST_P(InMemTestParam, Rmw) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = SimpleAtomicValue<uint32_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -883,10 +889,10 @@ TEST_P(InMemTestParam, Rmw) {
     int32_t output;
   };
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   store.StartSession();
 
@@ -941,6 +947,7 @@ TEST_P(InMemTestParam, Rmw) {
 TEST_P(InMemTestParam, Rmw_Concurrent) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = SimpleAtomicValue<int64_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -1034,10 +1041,10 @@ TEST_P(InMemTestParam, Rmw_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto rmw_worker = [&store](size_t thread_idx, int64_t multiplier) {
     store.StartSession();
@@ -1203,6 +1210,7 @@ TEST_P(InMemTestParam, Rmw_ResizeValue_Concurrent) {
       return reinterpret_cast<int8_t*>(this + 1);
     }
   };
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -1337,10 +1345,10 @@ TEST_P(InMemTestParam, Rmw_ResizeValue_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto rmw_worker = [&store](size_t thread_idx, int8_t incr, uint32_t value_length) {
     store.StartSession();
@@ -1432,6 +1440,7 @@ TEST_P(InMemTestParam, Rmw_GrowString_Concurrent) {
       return reinterpret_cast<char*>(this + 1);
     }
   };
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -1535,10 +1544,11 @@ TEST_P(InMemTestParam, Rmw_GrowString_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto rmw_worker = [&store](size_t _, char start_letter){
     store.StartSession();
@@ -1611,6 +1621,7 @@ TEST_P(InMemTestParam, ConcurrentDelete) {
 
   using Key = FixedSizeKey<KeyData, HashFn>;
   using Value = SimpleAtomicValue<int64_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    private:
@@ -1716,10 +1727,11 @@ TEST_P(InMemTestParam, ConcurrentDelete) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   // Rmw.
   run_threads(kNumThreads, [&store](size_t thread_idx) {
@@ -1782,6 +1794,7 @@ TEST_P(InMemTestParam, ConcurrentDelete) {
 TEST_P(InMemTestParam, GrowHashTable) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = SimpleAtomicValue<int64_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -1877,10 +1890,11 @@ TEST_P(InMemTestParam, GrowHashTable) {
 
   static std::atomic<bool> grow_done{ false };
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto rmw_worker = [&store](size_t thread_idx, int64_t multiplier) {
     store.StartSession();
@@ -1971,7 +1985,8 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
         return static_cast<uint32_t>(sizeof(Key) + key_length_);
       }
       inline KeyHash GetHash() const {
-        return KeyHash(Utility::HashBytesUint8(buffer(), key_length_));
+        FasterHashHelper<uint8_t> hash_fn;
+        return KeyHash{ hash_fn(buffer(), key_length_) };
       }
 
       /// Comparison operators.
@@ -2003,7 +2018,8 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
         return Key::size(key_length_);
       }
       inline KeyHash GetHash() const {
-        return KeyHash(Utility::HashBytesUint8(key_data_, key_length_));
+        FasterHashHelper<uint8_t> hash_fn;
+        return KeyHash{ hash_fn(key_data_, key_length_) };
       }
       inline void write_deep_key_at(Key* dst) const {
         Key::Create(dst, key_length_, key_data_);
@@ -2022,6 +2038,8 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
   };
 
   using Value = SimpleAtomicValue<uint8_t>;
+
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class UpsertContext : public IAsyncContext {
   public:
@@ -2106,10 +2124,10 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
       uint8_t output;
   };
 
-  uint32_t table_size = GetParam().first;
-  bool readcache = GetParam().second;
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ table_size, (1 << 30), "", 0.4, readcache };
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   store.StartSession();
 
@@ -2129,6 +2147,8 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
     UpsertContext context{ key, idx };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
+
+    free(key);
   }
   // Read.
   for(uint32_t idx = 1; idx < 256; ++idx) {
@@ -2148,6 +2168,8 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
     ASSERT_EQ(Status::Ok, result);
     // All upserts should have inserts (non-atomic).
     ASSERT_EQ(23, context.output);
+
+    free(key);
   }
   // Update.
   for(uint32_t idx = 1; idx < 256; ++idx) {
@@ -2165,6 +2187,8 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
     UpsertContext context{ key, idx };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
+
+    free(key);
   }
   // Read again.
   for(uint32_t idx = 1; idx < 256; ++idx) {
@@ -2184,6 +2208,8 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
     ASSERT_EQ(Status::Ok, result);
     // All upserts should have updates (atomic).
     ASSERT_EQ(42, context.output);
+
+    free(key);
   }
 
   store.StopSession();

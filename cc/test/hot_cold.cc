@@ -14,6 +14,7 @@
 #include "device/null_disk.h"
 
 #include "test_types.h"
+#include "utils.h"
 
 using namespace FASTER::core;
 
@@ -22,10 +23,7 @@ using FASTER::test::FixedSizeKey;
 using FASTER::test::VariableSizeKey;
 using FASTER::test::VariableSizeShallowKey;
 // Values
-using FASTER::test::SimpleAtomicValue;
-using FASTER::test::SimpleAtomicMediumValue;
 using FASTER::test::SimpleAtomicLargeValue;
-using MediumValue = SimpleAtomicMediumValue<uint64_t>;
 using LargeValue = SimpleAtomicLargeValue<uint64_t>;
 // Used by variable length key contexts
 using FASTER::test::GenLock;
@@ -39,15 +37,30 @@ typedef FASTER::environment::QueueIoHandler handler_t;
 #endif
 
 // Parameterized test definition
-// bool value indicates whether or not to perform automatic or manual compaction
-class HotColdParameterizedTestFixture : public ::testing::TestWithParam<bool> {
+// <# hash index buckets, auto compaction, read-cache>
+using param_types = std::tuple<uint32_t, bool, bool>;
+
+class HotColdParameterizedTestParam : public ::testing::TestWithParam<param_types> {
 };
 INSTANTIATE_TEST_CASE_P(
   HotColdTests,
-  HotColdParameterizedTestFixture,
-  ::testing::Values(false, true)
+  HotColdParameterizedTestParam,
+  ::testing::Values(
+    // Small hash hot & cold indices
+    std::make_tuple(2048, false, false),
+    std::make_tuple(2048, false, true),
+    std::make_tuple(2048, true, false),
+    std::make_tuple(2048, true, true),
+    // Large hot & cold indices
+    std::make_tuple((1 << 22), false, false),
+    std::make_tuple((1 << 22), false, true),
+    std::make_tuple((1 << 22), true, false),
+    std::make_tuple((1 << 22), true, true)
+  )
 );
 
+static std::string root_path{ "test_store/" };
+static constexpr uint64_t kCompletePendingInterval = 128;
 
 /// Upsert context required to insert data for unit testing.
 template <class K, class V>
@@ -219,40 +232,8 @@ class DeleteContext : public IAsyncContext {
   key_t key_;
 };
 
-// Megabyte & Gigabyte literal helpers
-constexpr uint64_t operator""_MiB(unsigned long long const x ) {
-  return static_cast<uint64_t>(x * (1 << 20));
-}
-constexpr uint64_t operator""_GiB(unsigned long long const x ) {
-  return static_cast<uint64_t>(x * (1 << 30));
-}
-// Dir creation / deletion helpers
-void CreateLogDirs (std::string root, std::string& hot_log_dir, std::string& cold_log_dir) {
-  assert(!root.empty());
-  std::experimental::filesystem::remove_all(root);
-  std::experimental::filesystem::create_directories(root);
 
-  if (root.back() != FASTER::environment::kPathSeparator[0]) {
-    root += FASTER::environment::kPathSeparator;
-  }
-  hot_log_dir = root + "hot_log";
-  cold_log_dir = root + "cold_log";
-
-  if(!std::experimental::filesystem::create_directories(hot_log_dir) ||
-     !std::experimental::filesystem::create_directories(cold_log_dir) ){
-      throw std::runtime_error {"Could not create test directories"};
-    }
-}
-
-void RemoveDirs (const std::string& root, const std::string& hot_log_dir, const std::string& cold_log_dir) {
-  // These throw exception on OS errors
-  std::experimental::filesystem::remove_all(hot_log_dir);
-  std::experimental::filesystem::remove_all(cold_log_dir);
-  std::experimental::filesystem::remove_all(root);
-}
-
-
-TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
+TEST_P(HotColdParameterizedTestParam, UpsertRead) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = LargeValue;
 
@@ -260,14 +241,28 @@ TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
   typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
 
   std::string hot_fp, cold_fp;
-  CreateLogDirs("temp_store", hot_fp, cold_fp);
+  CreateNewLogDir(root_path, hot_fp, cold_fp);
 
-  bool auto_compaction = GetParam();
-  faster_hc_t store { 1_GiB, 0.25,            // 256 MB hot log, 768 cold log
-                      192_MiB, 1024, hot_fp,  // [hot]  192 MB mem size, 512 entries in hash index
-                      192_MiB, 2048, cold_fp, // [cold] 192 MB mem size, 512 entries in hash index
-                      0.4, 0,                 // 64 MB mutable hot log, minimum mutable cold (i.e. 64 MB)
-                      auto_compaction };      // automatic or manual compaction
+  auto args = GetParam();
+  uint32_t table_size  = std::get<0>(args);
+  bool auto_compaction = std::get<1>(args);
+  bool rc_enabled = std::get<2>(args);
+
+  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+            table_size, auto_compaction, rc_enabled);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = rc_enabled;
+
+  HCCompactionConfig hc_compaction_config;
+  hc_compaction_config.hot_store = HlogCompactionConfig{
+    250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
+  hc_compaction_config.cold_store = HlogCompactionConfig{
+    250ms, 0.9, 0.1, 128_MiB, 1_GiB, 4, auto_compaction };
+
+  faster_hc_t store{ table_size, 192_MiB, hot_fp,
+                      table_size, 192_MiB, cold_fp,
+                      0.4, 0, rc_config, hc_compaction_config };
 
   uint32_t num_records = 100000; // ~800 MB of data
   store.StartSession();
@@ -302,7 +297,7 @@ TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
     if (result == Status::Ok) {
       ASSERT_EQ(idx, context.output.value);
     }
-    if (idx % 25 == 0) {
+    if (idx % kCompletePendingInterval == 0) {
       store.CompletePending(false);
     }
   }
@@ -317,7 +312,7 @@ TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
 
-    if (idx % 24 == 0) {
+    if (idx % kCompletePendingInterval == 0) {
       store.CompletePending(false);
     }
   }
@@ -325,7 +320,7 @@ TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
+    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true, 4);
     ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
   }
 
@@ -351,7 +346,7 @@ TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
     };
     ReadContext<Key, Value> context{ Key(key), num_records };
     Status result = store.Read(context, callback, 1);
-    ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+    ASSERT_TRUE(result == Status::Ok || result == Status::NotFound || result == Status::Pending);
     if (result == Status::Ok) {
       if (key % 2 == 1) ASSERT_EQ(key, context.output.value);
       else ASSERT_EQ(key * 2, context.output.value);
@@ -361,7 +356,7 @@ TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
       ASSERT_TRUE(key > num_records);
     }
 
-    if (idx % 25 == 0) {
+    if (idx % kCompletePendingInterval == 0) {
       store.CompletePending(false);
     }
   }
@@ -369,14 +364,14 @@ TEST_P(HotColdParameterizedTestFixture, UpsertRead) {
   if (!auto_compaction) {
     // perform cold-cold compaction
     uint64_t cold_size = store.cold_store.Size();
-    store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true);
+    store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true, 4);
   }
 
   store.StopSession();
-  RemoveDirs("temp_store", hot_fp, cold_fp);
+  RemoveDir(root_path);
 }
 
-TEST_P(HotColdParameterizedTestFixture, UpsertDelete) {
+TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = LargeValue;
 
@@ -384,14 +379,28 @@ TEST_P(HotColdParameterizedTestFixture, UpsertDelete) {
   typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
 
   std::string hot_fp, cold_fp;
-  CreateLogDirs("temp_store", hot_fp, cold_fp);
+  CreateNewLogDir(root_path, hot_fp, cold_fp);
 
-  bool auto_compaction = GetParam();
-  faster_hc_t store { 1_GiB, 0.25,            // 256 MB hot log, 768 cold log
-                      192_MiB, 1024, hot_fp,  // [hot]  192 MB mem size, 512 entries in hash index
-                      192_MiB, 2048, cold_fp, // [cold] 192 MB mem size, 512 entries in hash index
-                      0.4, 0,                 // 64 MB mutable hot log, minimum mutable cold (i.e. 64 MB)
-                      auto_compaction };      // automatic or manual compaction
+  auto args = GetParam();
+  uint32_t table_size  = std::get<0>(args);
+  bool auto_compaction = std::get<1>(args);
+  bool rc_enabled = std::get<2>(args);
+
+  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+            table_size, auto_compaction, rc_enabled);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = rc_enabled;
+
+  HCCompactionConfig hc_compaction_config;
+  hc_compaction_config.hot_store = HlogCompactionConfig{
+    250ms, 0.8, 0.1, 256_MiB, 4, auto_compaction };
+  hc_compaction_config.cold_store = HlogCompactionConfig{
+    250ms, 0.9, 0.1, 768_MiB, 4, auto_compaction };
+
+  faster_hc_t store{ table_size, 192_MiB, hot_fp,
+                      table_size, 192_MiB, cold_fp,
+                      0.4, 0, rc_config, hc_compaction_config };
 
   uint32_t num_records = 100000; // ~800 MB of data
   store.StartSession();
@@ -409,7 +418,7 @@ TEST_P(HotColdParameterizedTestFixture, UpsertDelete) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
+    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true, 1);
     ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
   }
   // Read both existent and non-existent keys
@@ -434,7 +443,7 @@ TEST_P(HotColdParameterizedTestFixture, UpsertDelete) {
       ASSERT_TRUE(idx % 2 == 0);
       ASSERT_EQ(Status::NotFound, result);
     }
-    if (idx % 25 == 0) {
+    if (idx % kCompletePendingInterval == 0) {
       store.CompletePending(false);
     }
   }
@@ -453,19 +462,20 @@ TEST_P(HotColdParameterizedTestFixture, UpsertDelete) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
+    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true, 1);
     ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
   }
 
   // Read all keys -- all should return NOT_FOUND
   for(size_t idx = 1; idx <= num_records; idx++) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<ReadContext<Key, Value>> context{ ctxt };
       ASSERT_EQ(Status::NotFound, result);
     };
     ReadContext<Key, Value> context{ Key(idx) };
     Status result = store.Read(context, callback, 1);
     ASSERT_TRUE(result == Status::NotFound || result == Status::Pending);
-    if (idx % 25 == 0) {
+    if (idx % kCompletePendingInterval == 0) {
       store.CompletePending(false);
     }
   }
@@ -474,14 +484,14 @@ TEST_P(HotColdParameterizedTestFixture, UpsertDelete) {
   if (!auto_compaction) {
     // perform cold-cold compaction
     uint64_t cold_size = store.cold_store.Size();
-    store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true);
+    store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true, 1);
   }
 
   store.StopSession();
-  RemoveDirs("temp_store", hot_fp, cold_fp);
+  RemoveDir(root_path);
 }
 
-TEST_P(HotColdParameterizedTestFixture, Rmw) {
+TEST_P(HotColdParameterizedTestParam, Rmw) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = LargeValue;
 
@@ -489,14 +499,28 @@ TEST_P(HotColdParameterizedTestFixture, Rmw) {
   typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
 
   std::string hot_fp, cold_fp;
-  CreateLogDirs("temp_store", hot_fp, cold_fp);
+  CreateNewLogDir(root_path, hot_fp, cold_fp);
 
-  bool auto_compaction = GetParam();
-  faster_hc_t store { 1_GiB, 0.25,            // 256 MB hot log, 768 cold log
-                      192_MiB, 2048, hot_fp,  // [hot]  192 MB mem size, 512 entries in hash index
-                      192_MiB, 2048, cold_fp, // [cold] 192 MB mem size, 512 entries in hash index
-                      0.4, 0,                 // 64 MB mutable hot log, minimum mutable cold (i.e. 64 MB)
-                      auto_compaction };      // automatic or manual compaction
+  auto args = GetParam();
+  uint32_t table_size  = std::get<0>(args);
+  bool auto_compaction = std::get<1>(args);
+  bool rc_enabled = std::get<2>(args);
+
+  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+            table_size, auto_compaction, rc_enabled);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = rc_enabled;
+
+  HCCompactionConfig hc_compaction_config;
+  hc_compaction_config.hot_store = HlogCompactionConfig{
+    250ms, 0.8, 0.1, 256_MiB, 4, auto_compaction };
+  hc_compaction_config.cold_store = HlogCompactionConfig{
+    250ms, 0.9, 0.1, 768_MiB, 4, auto_compaction };
+
+  faster_hc_t store{ table_size, 192_MiB, hot_fp,
+                      table_size, 192_MiB, cold_fp,
+                      0.4, 0, rc_config, hc_compaction_config };
 
   uint32_t num_records = 20000; // ~160 MB of data
   store.StartSession();
@@ -535,13 +559,19 @@ TEST_P(HotColdParameterizedTestFixture, Rmw) {
     assert(1 <= key && key <= num_records);
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<RmwContext<Key, Value>> context{ ctxt };
       ASSERT_EQ(Status::Ok, result);
     };
     RmwContext<Key, Value> context{ Key(key), Value(1) };
     Status result = store.Rmw(context, callback, 1);
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+
+    if (idx % kCompletePendingInterval == 0) {
+      store.CompletePending(false);
+    }
   }
   store.CompletePending(true);
+
   // Read.
   for(size_t idx = 1; idx <= num_records; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -555,7 +585,7 @@ TEST_P(HotColdParameterizedTestFixture, Rmw) {
     if (result == Status::Ok) {
       ASSERT_EQ(context.output.value, 9);
     }
-    if (idx % 25 == 0) {
+    if (idx % kCompletePendingInterval == 0) {
       store.CompletePending(false);
     }
   }
@@ -582,11 +612,16 @@ TEST_P(HotColdParameterizedTestFixture, Rmw) {
     assert(1 <= key && key <= num_records);
 
     auto callback = [](IAsyncContext* ctxt, Status result) {
+      CallbackContext<RmwContext<Key, Value>> context{ ctxt };
       ASSERT_EQ(Status::Ok, result);
     };
     RmwContext<Key, Value> context{ Key(key), Value(-1) };
     Status result = store.Rmw(context, callback, 1);
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+
+    if (idx % kCompletePendingInterval == 0) {
+      store.CompletePending(false);
+    }
   }
   store.CompletePending(true);
 
@@ -611,7 +646,9 @@ TEST_P(HotColdParameterizedTestFixture, Rmw) {
     };
     ReadContext<Key, Value> context{ Key(key), num_records };
     Status result = store.Read(context, callback, 1);
-    ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+
+    ASSERT_TRUE(result == Status::Ok || result == Status::Pending ||
+                result == Status::NotFound);
     if (result == Status::Ok) {
       ASSERT_TRUE(1 <= key && key <= num_records);
       ASSERT_EQ(context.output.value, 1);
@@ -620,13 +657,13 @@ TEST_P(HotColdParameterizedTestFixture, Rmw) {
       ASSERT_TRUE(key > num_records);
     }
 
-    if (idx % 25 == 0) {
+    if (idx % kCompletePendingInterval == 0) {
       store.CompletePending(false);
     }
   }
 
   store.StopSession();
-  RemoveDirs("temp_store", hot_fp, cold_fp);
+  RemoveDir(root_path);
 }
 
 
@@ -634,7 +671,7 @@ TEST_P(HotColdParameterizedTestFixture, Rmw) {
 /// compaction algorithm. Concurrent to the compaction, upserts, RMWs, and deletes
 /// are performed in 1/4 of the keys, respectively. After compaction, it
 /// checks that updated/RMW-ed keys have the new value, while deleted keys do not exist.
-TEST_P(HotColdParameterizedTestFixture, ConcurrentOps) {
+TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = LargeValue;
 
@@ -642,14 +679,29 @@ TEST_P(HotColdParameterizedTestFixture, ConcurrentOps) {
   typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
 
   std::string hot_fp, cold_fp;
-  CreateLogDirs("temp_store", hot_fp, cold_fp);
+  CreateNewLogDir(root_path, hot_fp, cold_fp);
 
-  auto auto_compaction = GetParam();
-  faster_hc_t store { 1_GiB, 0.25,            // 256 MB hot log, 768 cold log
-                      192_MiB, 2048, hot_fp,  // [hot]  192 MB mem size, 512 entries in hash index
-                      192_MiB, 2048, cold_fp, // [cold] 192 MB mem size, 512 entries in hash index
-                      0.4, 0,                 // 64 MB mutable hot log, minimum mutable cold (i.e. 64 MB)
-                      auto_compaction };      // automatic or manual compaction
+  auto args = GetParam();
+  uint32_t table_size  = std::get<0>(args);
+  bool auto_compaction = std::get<1>(args);
+  bool rc_enabled = std::get<2>(args);
+
+  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+            table_size, auto_compaction, rc_enabled);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = rc_enabled;
+
+  HCCompactionConfig hc_compaction_config;
+  hc_compaction_config.hot_store = HlogCompactionConfig{
+    250ms, 0.8, 0.1, 256_MiB, 4, auto_compaction };
+  hc_compaction_config.cold_store = HlogCompactionConfig{
+    250ms, 0.9, 0.1, 768_MiB, 4, auto_compaction };
+
+  faster_hc_t store{ table_size, 192_MiB, hot_fp,
+                      table_size, 192_MiB, cold_fp,
+                      0.4, 0, rc_config, hc_compaction_config };
+
   static constexpr int num_records = 100000;
 
   store.StartSession();
@@ -667,9 +719,7 @@ TEST_P(HotColdParameterizedTestFixture, ConcurrentOps) {
   // Thread that performs Upsert ops
   auto upsert_worker_func = [&store]() {
     store.StartSession();
-    for (size_t idx = 1; idx <= num_records; ++idx) {
-      if (idx % 4 != 0) continue;
-
+    for (size_t idx = 4; idx <= num_records; idx += 4) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         ASSERT_TRUE(false);
       };
@@ -683,15 +733,18 @@ TEST_P(HotColdParameterizedTestFixture, ConcurrentOps) {
   // Thread that performs RMW ops
   auto rmw_worker_func = [&store]() {
     store.StartSession();
-    for (size_t idx = 1; idx <= num_records; ++idx) {
-      if (idx % 4 != 1) continue;
-
+    for (size_t idx = 1; idx <= num_records; idx += 4) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<RmwContext<Key, Value>> context{ ctxt };
         ASSERT_EQ(Status::Ok, result);
       };
       RmwContext<Key, Value> context{ Key(idx), Value(1) };
       Status result = store.Rmw(context, callback, idx / 4);
       ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
+
+      if (idx % kCompletePendingInterval == 0) {
+        store.CompletePending(false);
+      }
     }
     store.CompletePending(true);
     store.StopSession();
@@ -699,9 +752,7 @@ TEST_P(HotColdParameterizedTestFixture, ConcurrentOps) {
   // Thread that performs Delete ops
   auto delete_worker_func = [&store]() {
     store.StartSession();
-    for (size_t idx = 1; idx <= num_records; ++idx) {
-      if (idx % 4 != 2) continue;
-
+    for (size_t idx = 2; idx <= num_records; idx += 4) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         ASSERT_TRUE(false);
       };
@@ -719,6 +770,7 @@ TEST_P(HotColdParameterizedTestFixture, ConcurrentOps) {
   upset_worker.join();
   rmw_worker.join();
   delete_worker.join();
+
   store.StartSession();
 
   if (!auto_compaction) {
@@ -778,15 +830,16 @@ TEST_P(HotColdParameterizedTestFixture, ConcurrentOps) {
       ASSERT_TRUE(key % 4 == 2 || key > num_records); // deleted or non-existing
     }
 
-    if (idx % 25 == 0) {
+    if (idx % kCompletePendingInterval == 0) {
       store.CompletePending(false);
     }
   }
   store.StopSession();
-  RemoveDirs("temp_store", hot_fp, cold_fp);
+
+  RemoveDir(root_path);
 }
 
-TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
+TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
   using Key = VariableSizeKey;
   using ShallowKey = VariableSizeShallowKey;
   using Value = LargeValue;
@@ -954,15 +1007,30 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
   typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
 
   std::string hot_fp, cold_fp;
-  CreateLogDirs("temp_store", hot_fp, cold_fp);
+  CreateNewLogDir(root_path, hot_fp, cold_fp);
 
-  auto auto_compaction = GetParam();
-  faster_hc_t store { 1_GiB, 0.25,            // 256 MB hot log, 768 cold log
-                      192_MiB, 2048, hot_fp,  // [hot]  192 MB mem size, 512 entries in hash index
-                      192_MiB, 2048, cold_fp, // [cold] 192 MB mem size, 512 entries in hash index
-                      0.4, 0,                 // 64 MB mutable hot log, minimum mutable cold (i.e. 64 MB)
-                      auto_compaction };      // automatic or manual compaction
-  int num_records = auto_compaction ? 10000 : 17500;
+  auto args = GetParam();
+  uint32_t table_size  = std::get<0>(args);
+  bool auto_compaction = std::get<1>(args);
+  bool rc_enabled = std::get<2>(args);
+
+  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+            table_size, auto_compaction, rc_enabled);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = rc_enabled;
+
+  HCCompactionConfig hc_compaction_config;
+  hc_compaction_config.hot_store = HlogCompactionConfig{
+    250ms, 0.8, 0.1, 256_MiB, 4, auto_compaction };
+  hc_compaction_config.cold_store = HlogCompactionConfig{
+    250ms, 0.9, 0.1, 768_MiB, 4, auto_compaction };
+
+  faster_hc_t store{ table_size, 192_MiB, hot_fp,
+                      table_size, 192_MiB, cold_fp,
+                      0.4, 0, rc_config, hc_compaction_config };
+
+  int num_records = 17500;
 
   store.StartSession();
 
@@ -1141,10 +1209,10 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthKey) {
   store.CompletePending(true);
   store.StopSession();
 
-  std::experimental::filesystem::remove_all("tmp_store");
+  RemoveDir(root_path);
 }
 
-TEST_P(HotColdParameterizedTestFixture, VariableLengthValue) {
+TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
   using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContextVLV;
@@ -1310,15 +1378,30 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthValue) {
   typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
 
   std::string hot_fp, cold_fp;
-  CreateLogDirs("temp_store", hot_fp, cold_fp);
+  CreateNewLogDir(root_path, hot_fp, cold_fp);
 
-  auto auto_compaction = GetParam();
-  faster_hc_t store { 1_GiB, 0.25,            // 256 MB hot log, 768 cold log
-                      192_MiB, 2048, hot_fp,  // [hot]  192 MB mem size, 512 entries in hash index
-                      192_MiB, 2048, cold_fp, // [cold] 192 MB mem size, 512 entries in hash index
-                      0.4, 0,                 // 64 MB mutable hot log, minimum mutable cold (i.e. 64 MB)
-                      auto_compaction };      // automatic or manual compaction
-  int num_records = auto_compaction ? 10000 : 17500;
+  auto args = GetParam();
+  uint32_t table_size  = std::get<0>(args);
+  bool auto_compaction = std::get<1>(args);
+  bool rc_enabled = std::get<2>(args);
+
+  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+            table_size, auto_compaction, rc_enabled);
+
+  ReadCacheConfig rc_config;
+  rc_config.enabled = rc_enabled;
+
+  HCCompactionConfig hc_compaction_config;
+  hc_compaction_config.hot_store = HlogCompactionConfig{
+    250ms, 0.8, 0.1, 256_MiB, 4, auto_compaction };
+  hc_compaction_config.cold_store = HlogCompactionConfig{
+    250ms, 0.9, 0.1, 768_MiB, 4, auto_compaction };
+
+  faster_hc_t store{ table_size, 192_MiB, hot_fp,
+                      table_size, 192_MiB, cold_fp,
+                      0.4, 0, rc_config, hc_compaction_config };
+
+  int num_records = 17500;
 
   store.StartSession();
 
@@ -1342,10 +1425,6 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthValue) {
   for(uint32_t idx = 1; idx <= num_records; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context{ ctxt };
-      //fprintf(stderr, "INFO: %d %llu\n", result, context->key().key);
-      //if (result != Status::Ok) {
-      //  fprintf(stderr, "ERR: %d %llu\n", result, context->key().key);
-      //}
       ASSERT_EQ(Status::Ok, result);
 
       ASSERT_EQ(context->output_length, context->key().key);
@@ -1425,11 +1504,16 @@ TEST_P(HotColdParameterizedTestFixture, VariableLengthValue) {
     }
   }
   store.StopSession();
-  std::experimental::filesystem::remove_all("tmp_store");
+
+  RemoveDir(root_path);
 }
 
 
 int main(int argc, char** argv) {
+  rlim_t new_stack_size = 64_MiB;
+  if (!set_stack_size(new_stack_size)) {
+    log_warn("Could not set stack size to %lu bytes", new_stack_size);
+  }
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
