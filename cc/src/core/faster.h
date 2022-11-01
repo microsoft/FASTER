@@ -134,7 +134,6 @@ class FasterKv {
     , hash_index_{ filename, disk, epoch_, gc_state_, grow_state_ }
     , read_cache_{ nullptr }
     , num_pending_ios{ 0 }
-    , is_compaction_live_{ false }
     , num_compaction_truncs{ 0 }
     , next_hlog_begin_address{ Address::kInvalidAddress }
     , num_active_sessions{ 0 }
@@ -241,6 +240,9 @@ class FasterKv {
   }
   inline void DumpDistribution() {
     hash_index_.DumpDistribution();
+  }
+  inline bool IsCompactionLive() const {
+    return next_hlog_begin_address.load() != Address::kInvalidAddress;
   }
 
  private:
@@ -402,8 +404,6 @@ class FasterKv {
 
   /// Global count of pending I/Os, used for throttling.
   std::atomic<uint64_t> num_pending_ios;
-
-  std::atomic<bool> is_compaction_live_;
 
   /// Global count of number of truncations after compaction
   std::atomic<uint64_t> num_compaction_truncs;
@@ -789,34 +789,6 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
 
             result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
                                           pending_context.async);
-
-            //fprintf(stderr, "RETRIEVE: %d\n", pending_context->index_op_result);
-            //async_pending_ci_context_t* pending_ci_context = \
-            //  static_cast<async_pending_ci_context_t*>(index_io_context->caller_context);
-            /*
-            OperationStatus internal_status;
-            if (pending_ci_context->start_search_entry == HashBucketEntry::kInvalidEntry) {
-              // Set starting entry and start CI request
-              pending_ci_context->start_search_entry = pending_ci_context->entry;
-              //pending_ci_context->entry = HashBucketEntry::kInvalidEntry;
-              internal_status = OperationStatus::RETRY_NOW;
-            } else {
-              CallbackContext<AsyncIOContext> io_context{ pending_ci_context->io_context };
-              assert(io_context.get() != nullptr);
-              // Continue CI request
-              internal_status = InternalContinuePendingConditionalInsert(context, *io_context.get());
-            }
-
-            if (internal_status == OperationStatus::RETRY_NOW) {
-              result = HandleOperationStatus(context, *pending_context.get(), internal_status,
-                                            pending_context.async);
-            } else if(internal_status == OperationStatus::NOT_FOUND) {
-              result = Status::NotFound;
-            } else {
-              assert(internal_status == OperationStatus::ABORTED);
-              result = Status::Aborted;
-            }
-            */
           }
         } else if (pending_context->index_op_type == IndexOperationType::Update) {
           //fprintf(stderr, "UPDATE: %d\n", pending_context->index_op_result);
@@ -1683,6 +1655,8 @@ inline Status FasterKv<K, V, D, H, OH>::HandleOperationStatus(ExecutionContext& 
   case OperationStatus::INDEX_ENTRY_ON_DISK:
     // Keep track of pending requests due to async index retrievals
     async = true;
+    // FIXME: Just increasing the number of pending ios hang FASTER
+    // Yet, throttling should be performed somehow -- maybe from FasterKvHC?
     //++num_pending_ios;
     return Status::Pending;
   case OperationStatus::SUCCESS_UNMARK:
@@ -1971,49 +1945,6 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingConditionalInse
   pending_context->min_search_offset = pending_context->expected_hlog_address;
 
   return OperationStatus::RETRY_NOW;
-
-  /*
-  // Find a hash bucket entry to store the updated value in.
-  Status index_status;
-  if (pending_context->index_op_type == IndexOperationType::None) {
-    index_status = hash_index_.FindOrCreateEntry(thread_ctx(), *pending_context);
-    if (index_status == Status::Pending) {
-      // Store AsyncIOContext for when resuming this request, after index op is finished
-      assert(!hash_index_.IsSync());
-      pending_context->io_context = &io_context;
-      return OperationStatus::INDEX_ENTRY_ON_DISK;
-    }
-  } else {
-    assert(pending_context->index_op_type == IndexOperationType::Retrieve);
-
-    index_status = pending_context->index_op_result;
-    pending_context->clear_index_op();      // async index op done
-    pending_context->io_context = nullptr;  // clear stored AsyncIOContext
-  }
-  assert(index_status == Status::Ok);
-
-  HashBucketEntry expected_entry{ pending_context->entry };
-  assert(!hash_index_.IsSync() ^ (pending_context->atomic_entry != nullptr));
-
-  // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
-  Address address = expected_entry.address();
-
-  if (UseReadCache()) {
-    address = read_cache_->Skip(*pending_context);
-  }
-  assert(!address.in_readcache());
-
-  //fprintf(stderr, "MMMM %10llu <- %10llu \n", pending_context->min_search_offset.control(),
-  //                  pending_context->start_search_entry.address().control());
-  pending_context->min_search_offset = pending_context->start_search_entry.address();
-  if (address != Address::kInvalidAddress) {
-    // TODO: check that this is indeed correct
-    //pending_context->start_search_entry = expected_entry;
-    pending_context->start_search_entry = address;
-  }
-  */
-
-  // return OperationStatus::RETRY_NOW;
 }
 
 
@@ -3065,6 +2996,8 @@ bool FasterKv<K, V, D, H, OH>::ShiftBeginAddress(Address address,
     ++num_compaction_truncs;
   }
   hlog.begin_address.store(address);
+  log_debug("ShiftBeginAddress: [after-compaction=%d] log truncated to %lu",
+            after_compaction, address.control());
 
   if (after_compaction) {
     next_hlog_begin_address.store(Address::kInvalidAddress);
@@ -3124,7 +3057,7 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
                                             int n_threads, bool to_other_store, bool checkpoint) {
   // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
 
-  if (hlog.begin_address.load() >= until_address) {
+  if (hlog.begin_address.load() > until_address) {
     throw std::invalid_argument {"Invalid until address; should be larger than hlog.begin_address"};
   }
   if (until_address > hlog.safe_read_only_address.control()) {
@@ -3136,16 +3069,10 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     throw std::invalid_argument {"Thread should have an active FASTER session"};
   }
 
-  bool expected = false;
-  is_compaction_live_.compare_exchange_strong(expected, true);
-  if (expected) {
-    throw std::runtime_error{ "Cannot perform two parallel compaction operations" };
-  }
   if (shift_begin_address) {
     // used to avoid inserting soon-to-be-compacted records to Read Cache
     next_hlog_begin_address.store(until_address);
   }
-
 
   std::deque<std::thread> threads;
   LogPageIterator<faster_t> iter(&hlog, hlog.begin_address.load(),
@@ -3311,7 +3238,6 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     }
   }
 
-  is_compaction_live_.store(false);
   return true;
 }
 
@@ -3320,7 +3246,9 @@ template <class K, class V, class D, class H, class OH>
 template <class F>
 inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F>* ct_ctx,
                                                 bool to_other_store, int thread_idx) {
-  constexpr int io_check_freq = 16;
+  static constexpr uint32_t kRefreshInterval = 64;
+  static constexpr uint32_t kCompletePendingInterval = 512;
+
   typedef CompactionConditionalInsertContext<K, V> ci_context_t;
   typedef std::unordered_set<uint64_t> pending_records_t;
 
@@ -3399,7 +3327,7 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F
     }
 
 complete_pending:
-    if (!pending_records.empty()) {
+    if (num_iter % kCompletePendingInterval && !pending_records.empty()) {
       // Try to complete pending requests
       CompletePending(false);
       if (to_other_store) {
@@ -3409,7 +3337,7 @@ complete_pending:
         std::this_thread::yield();
       }
     }
-    if (num_iter % io_check_freq == 0) {
+    if (num_iter % kRefreshInterval == 0) {
       // Periodically refresh epoch
       Refresh();
       if (to_other_store) other_store_->Refresh();
@@ -3460,35 +3388,7 @@ inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCal
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
   pending_ci_context_t pending_context{ context, callback, min_search_offset, to_other_store };
-
-  // Set initial start address to last entry of hash chain
-  // Status index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
-  // assert(index_status == Status::Ok || index_status == Status::Pending);
-
-  // TODO: this should only be executed when index_status == OK
-  // Address address = pending_context.entry.address();
-  // if (UseReadCache()) {
-  //   address = read_cache_->Skip(pending_context);
-  // }
-  // assert(!address.in_readcache());
-
-  //log_info("ADDR %llu %llu %d",
-  //        address.control(), hlog.begin_address.load().control(),
-  //        address.control() < hlog.begin_address.load().control());
-
-
   OperationStatus internal_status = InternalConditionalInsert(pending_context);
-
-  /* OperationStatus internal_status;
-  if (index_status == Status::Ok) {
-    pending_context.start_search_entry = address;
-    pending_context.entry = HashBucketEntry::kInvalidEntry;
-    //assert(pending_context.start_search_entry.address() != Address::kInvalidAddress);
-    // perform op
-    internal_status = InternalConditionalInsert(pending_context);
-  } else {
-    internal_status = OperationStatus::INDEX_ENTRY_ON_DISK;
-  } */
 
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
@@ -3676,6 +3576,7 @@ create_record:
     // Case: hot-cold compaction
     // Upsert/Deletes on cold log should not go pending since upserts only go pending when during checkpointing
     // TODO: handle case where go pending (e.g. cold index request goes pending -- may need to define some callback)
+    // memory leaks here
     OperationStatus op_status;
     if (!pending_context.is_tombstone()) {
       async_pending_upsert_context_t* upsert_context = pending_context.WrapInUpsertContext();

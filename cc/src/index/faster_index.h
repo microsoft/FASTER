@@ -52,11 +52,15 @@ class FasterIndex : public IHashIndex<D> {
   // 256k rows x 8 entries each = 2M entries
   // 16MB in-mem index (w/o overflow) [2M x 8 bytes each]
   const uint64_t kHashIndexNumEntries = 256 * 1024;
+  // ~4M rows x 8 entries each = ~32M entries
+  // 256 MB in-mem index (w/o overflow) [32M x 8 bytes each]
+  //const uint64_t kHashIndexNumEntries = 4 * 1024 * 1024;
   // Stick to 768 MB for now -- can use remaining (~256 MB) for read cache.
   //const uint64_t kInMemSize = 768_MiB;
-  const uint64_t kInMemSize = 16_GiB;
+  const uint64_t kInMemSize = 9_GiB;
   // 90% of 768MB (~691 MB) constitute the mutable region
   const double dMutablePercentage = 0.75;
+  //const double dMutablePercentage = 0.85;
 
   FasterIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
               gc_state_t& gc_state, grow_state_t& grow_state)
@@ -189,9 +193,11 @@ class FasterIndex : public IHashIndex<D> {
   gc_state_t* gc_state_;
   grow_state_t* grow_state_;
 
-  uint64_t table_size_;
-
+ public:
   std::unique_ptr<store_t> store_;
+
+ private:
+  uint64_t table_size_;
   std::atomic<uint64_t> serial_num_;
   std::string index_root_path_;
 };

@@ -14,7 +14,7 @@ namespace FASTER {
 namespace core {
 
 struct ReadCacheConfig {
-  uint64_t mem_size = 256 * (1 << 20);
+  uint64_t mem_size = 256_MiB;
   double mutable_fraction = 0.5;
   bool pre_allocate_log = false;
 
@@ -25,10 +25,10 @@ static_assert(sizeof(ReadCacheConfig) == 24);
 struct HlogCompactionConfig {
   std::chrono::milliseconds check_interval = 250ms;
   double trigger_perc = 0.8;
-  double compact_perc = 0.1;
+  double compact_perc = 0.2;
   uint64_t max_compacted_size;
   uint64_t hlog_size_budget;
-  uint8_t num_threads = 8;
+  uint8_t num_threads = 4;
 
   bool enabled = false;
 };
