@@ -16,7 +16,7 @@ class HashIndexChunkKey {
     return static_cast<uint32_t>(sizeof(HashIndexChunkKey));
   }
   inline core::KeyHash GetHash() const {
-    std::hash<uint64_t> hash_fn;
+    FasterHashHelper<uint64_t> hash_fn;
     return core::KeyHash{ hash_fn(key) };
   }
 

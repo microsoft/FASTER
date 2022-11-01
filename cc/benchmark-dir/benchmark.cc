@@ -74,7 +74,8 @@ class Key {
     return static_cast<uint32_t>(sizeof(Key));
   }
   inline KeyHash GetHash() const {
-    return KeyHash{ Utility::GetHashCode(key_) };
+    FasterHashHelper<uint64_t> hash_fn;
+    return KeyHash{ hash_fn(key_) };
   }
 
   /// Comparison operators.

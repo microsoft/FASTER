@@ -13,7 +13,7 @@ namespace test {
 
 using namespace FASTER::core;
 
-template<class T, class HashFn = std::hash<T>>
+template<class T, class HashFn = FasterHashHelper<T>>
 class FixedSizeKey {
  public:
   FixedSizeKey(T value)
@@ -177,8 +177,9 @@ class VariableSizeKey : NonCopyable, NonMovable {
     return static_cast<uint32_t>(sizeof(VariableSizeKey) + key_length_ * sizeof(uint32_t));
   }
   inline KeyHash GetHash() const {
-    return KeyHash(Utility::HashBytes(
-      reinterpret_cast<const uint16_t*>(buffer()), key_length_ * 2));
+    FasterHashHelper<uint16_t> hash_fn;
+    return KeyHash{ hash_fn(
+      reinterpret_cast<const uint16_t*>(buffer()), key_length_ * 2) };
   }
 
   /// Comparison operators.
@@ -210,8 +211,9 @@ class VariableSizeShallowKey {
     return VariableSizeKey::size(key_length_);
   }
   inline KeyHash GetHash() const {
-    return KeyHash(Utility::HashBytes(
-      reinterpret_cast<const uint16_t*>(key_data_), key_length_ * 2));
+    FasterHashHelper<uint16_t> hash_fn;
+    return KeyHash{ hash_fn(
+      reinterpret_cast<const uint16_t*>(key_data_), key_length_ * 2) };
   }
   inline void write_deep_key_at(VariableSizeKey* dst) const {
     VariableSizeKey::Create(dst, key_length_, key_data_);

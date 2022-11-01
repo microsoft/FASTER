@@ -681,8 +681,8 @@ TEST(CLASS, Serial_VariableLengthKey) {
       return reinterpret_cast<const uint32_t*>(this + 1);
     }
     inline KeyHash GetHash() const {
-      return KeyHash{ Utility::HashBytes(
-                        reinterpret_cast<const uint16_t*>(buffer()), len_ * 2) };
+      FasterHashHelper<uint16_t> hash_fn;
+      return KeyHash{ hash_fn(reinterpret_cast<const uint16_t*>(buffer()), len_ * 2) };
     }
 
     /// Comparison operators.
