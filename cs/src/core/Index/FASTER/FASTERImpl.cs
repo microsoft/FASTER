@@ -2743,7 +2743,7 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
             }
 
-            // Update prevHighestKeyHashAddress to the latest address we've checked; recSrc.LatestLogicalAddress can be updated by VerifyReadCacheSplicePoint.
+            // Update prevHighestKeyHashAddress to the latest address we've checked
             prevHighestKeyHashAddress = latestLogicalAddress;
 #endregion
 
