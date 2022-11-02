@@ -54,12 +54,9 @@ namespace FASTER.darq
     public class DarqStateObject : IStateObject, IDisposable
     {
         internal DarqSettings settings;
-
         internal FasterLog log;
-
         // TODO(Tianyu): repopulate this on recovery
         internal ConcurrentDictionary<long, byte> incompleteMessages = new();
-
         private FasterLogSettings logSetting;
 
         public DarqStateObject(DarqSettings settings)
@@ -187,9 +184,6 @@ namespace FASTER.darq
 
         private ThreadLocalObjectPool<StepRequestHandle> stepRequestPool;
 
-        // TODO(Tianyu): Figure out an elegant way to only return Worker registration after persistence?
-        private ConcurrentQueue<TaskCompletionSource<long>> registrationQueue;
-
         public Darq(IDprFinder dprFinder, WorkerId me, DarqSettings darqSettings) : base(dprFinder, me,
             new DarqStateObject(darqSettings))
         {
@@ -202,8 +196,6 @@ namespace FASTER.darq
 
             stepQueue = new WorkQueueLIFO<StepRequestHandle>(StepSequential);
             stepRequestPool = new ThreadLocalObjectPool<StepRequestHandle>(() => new StepRequestHandle());
-
-            registrationQueue = new ConcurrentQueue<TaskCompletionSource<long>>();
         }
 
 
@@ -318,8 +310,8 @@ namespace FASTER.darq
             // TODO(Tianyu): This defers registration to until the next checkpoint for thread-safety. But due to quarkiness
             // of the simple state object implementation it won't be persisted until the checkpoint after that. This should
             // be fixed
-            var tcs = new TaskCompletionSource<long>();
-            registrationQueue.Enqueue(tcs);
+            var tcs = new TaskCompletionSource<long>();            
+            versionScheme.GetUnderlyingEpoch().BumpCurrentEpoch(() => tcs.SetResult(Interlocked.Increment(ref incarnation.value)));
             return tcs.Task.GetAwaiter().GetResult();
         }
 

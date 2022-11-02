@@ -19,18 +19,18 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Rider.SolutionAnalysis.Framework..NETFramework,Version=v4.6.1": "false",
-    "Rider.SolutionAnalysis.Framework..NETStandard,Version=v2.0": "false",
-    "Rider.SolutionAnalysis.Framework..NETStandard,Version=v2.1": "false",
-    "Rider.SolutionAnalysis.Framework.net6.0": "false",
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "WebServerToolWindowFactoryState": "false",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Rider.SolutionAnalysis.Framework..NETFramework,Version=v4.6.1&quot;: &quot;false&quot;,
+    &quot;Rider.SolutionAnalysis.Framework..NETStandard,Version=v2.0&quot;: &quot;false&quot;,
+    &quot;Rider.SolutionAnalysis.Framework..NETStandard,Version=v2.1&quot;: &quot;false&quot;,
+    &quot;Rider.SolutionAnalysis.Framework.net6.0&quot;: &quot;false&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -40,6 +40,7 @@
       <option name="presentableId" value="Default" />
       <updated>1667324458832</updated>
       <workItem from="1667324460024" duration="7639000" />
+      <workItem from="1667399620033" duration="4283000" />
     </task>
     <servers />
   </component>

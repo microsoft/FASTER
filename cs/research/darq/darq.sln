@@ -8,6 +8,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.common", "..\..\remo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.core", "..\..\src\core\FASTER.core.csproj", "{EC0B4D5B-8DB6-45BA-8FD8-F1BF0A18CEA0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.client", "..\..\remote\src\FASTER.client\FASTER.client.csproj", "{27CF2EE1-3FB1-4C0A-9354-F58EB2961157}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.server", "..\..\remote\src\FASTER.server\FASTER.server.csproj", "{02C46B10-DF7E-469B-A8CD-B7AE7F504A24}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +34,13 @@ Global
 		{EC0B4D5B-8DB6-45BA-8FD8-F1BF0A18CEA0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EC0B4D5B-8DB6-45BA-8FD8-F1BF0A18CEA0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EC0B4D5B-8DB6-45BA-8FD8-F1BF0A18CEA0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{27CF2EE1-3FB1-4C0A-9354-F58EB2961157}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{27CF2EE1-3FB1-4C0A-9354-F58EB2961157}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{27CF2EE1-3FB1-4C0A-9354-F58EB2961157}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{27CF2EE1-3FB1-4C0A-9354-F58EB2961157}.Release|Any CPU.Build.0 = Release|Any CPU
+		{02C46B10-DF7E-469B-A8CD-B7AE7F504A24}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{02C46B10-DF7E-469B-A8CD-B7AE7F504A24}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{02C46B10-DF7E-469B-A8CD-B7AE7F504A24}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{02C46B10-DF7E-469B-A8CD-B7AE7F504A24}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

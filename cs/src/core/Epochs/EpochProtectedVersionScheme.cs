@@ -266,6 +266,11 @@ namespace FASTER.core
             currentMachine = null;
         }
 
+
+        /// <summary> Get the underlying epoch framework. For advanced use cases only </summary>
+        /// <returns> the underlying epoch framework </returns>
+        public LightEpoch GetUnderlyingEpoch() => epoch;
+
         /// <summary></summary>
         /// <returns> the current state</returns>
         public VersionSchemeState CurrentState() => state;

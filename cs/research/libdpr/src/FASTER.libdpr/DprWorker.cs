@@ -24,7 +24,7 @@ namespace FASTER.libdpr
         private readonly IDprFinder dprFinder;
         private readonly WorkerId me;
         private readonly ConcurrentDictionary<long, LightDependencySet> versions;
-        private readonly EpochProtectedVersionScheme versionScheme;
+        protected readonly EpochProtectedVersionScheme versionScheme;
         private long worldLine = 0;
         private long lastCheckpointMilli, lastRefreshMilli;
         private Stopwatch sw = Stopwatch.StartNew();
@@ -64,6 +64,15 @@ namespace FASTER.libdpr
         /// <summary></summary>
         /// <returns> Worker ID of this DprServer instance </returns>
         public WorkerId Me() => me;
+
+        // TODO: The following two methods are technically only meaningful under protection
+        /// <summary></summary>
+        /// <returns> WorldLine of current DprWorker </returns>
+        public long WorldLine() => worldLine;
+        
+        /// <summary></summary>
+        /// <returns> Version of current DprWorker </returns>
+        public long Version() => versionScheme.CurrentState().Version;
 
         private Task BeginRestore(long newWorldLine, long version)
         {
