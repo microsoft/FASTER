@@ -119,11 +119,13 @@ namespace FASTER.test.LockTests
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(LockTestCategory)]
+        //[Repeat(100)]
         public async ValueTask SameKeyInsertAndCTTTest()
         {
             Populate(evict: true);
             Functions functions = new();
-            using var session = fkv.NewSession(functions);
+            using var readSession = fkv.NewSession(functions);
+            using var upsertSession = fkv.NewSession(functions);
             var iter = 0;
 
             await DoTwoThreadRandomKeyTest(numKeys,
@@ -132,7 +134,7 @@ namespace FASTER.test.LockTests
                     int output = 0;
                     var sleepFlag = (iter % 5 == 0) ? LockFunctionFlags.None : LockFunctionFlags.SleepAfterEventOperation;
                     Input input = new() { flags = LockFunctionFlags.WaitForEvent | sleepFlag, sleepRangeMs = 10 };
-                    var status = session.Upsert(key, input, key + valueAdd * 2, ref output);
+                    var status = upsertSession.Upsert(key, input, key + valueAdd * 2, ref output);
 
                     // Don't test for .Found because we are doing random keys so may upsert one we have already seen, even on iter == 0
                     //Assert.IsTrue(status.Found, $"Key = {key}, status = {status}");
@@ -145,7 +147,7 @@ namespace FASTER.test.LockTests
                     ReadOptions readOptions = default;
 
                     // This will copy to ReadCache, and the test is trying to cause a race with the above Upsert.
-                    var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref readOptions, out _);
+                    var status = readSession.Read(ref key, ref functions.readCacheInput, ref output, ref readOptions, out _);
 
                     // If the Upsert completed before the Read started, we may Read() the Upserted value.
                     if (status.IsCompleted)
@@ -156,14 +158,15 @@ namespace FASTER.test.LockTests
                     else
                     {
                         Assert.IsTrue(status.IsPending, $"Key = {key}, status = {status}");
-                        session.CompletePending(wait: true);
-                        // Output is not clear here and we are testing only threading aspects, so don't verify
+                        readSession.CompletePending(wait: true);
+
+                        // Output is indeterminate as we will retry on Pending if the upserted value was inserted, so don't verify
                     }
                 },
                 key =>
                 {
                     int output = default;
-                    var status = session.Read(ref key, ref output);
+                    var status = readSession.Read(ref key, ref output);
                     Assert.IsTrue(status.Found, $"Key = {key}, status = {status}");
                     Assert.AreEqual(key + valueAdd * 2, output, $"Key = {key}");
                     functions.mres.Reset();
