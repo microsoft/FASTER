@@ -5,6 +5,8 @@
 
 #include <experimental/filesystem>
 
+#include "test_types.h"
+
 using namespace FASTER;
 
 /// Disk's log uses 64 MB segments.
@@ -1569,4 +1571,142 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
   for(auto& thread : threads) {
     thread.join();
   }
+}
+
+TEST(PagingTests, UnsafeBufferResize) {
+  using K = FASTER::test::FixedSizeKey<uint64_t>;
+  using V = FASTER::test::SimpleAtomicLargeValue<uint64_t>;
+
+  /// Upsert context required to insert data for unit testing.
+  class UpsertContext : public IAsyncContext {
+   public:
+    typedef K key_t;
+    typedef V value_t;
+    UpsertContext(K key, V value)
+      : key_(key)
+      , value_(value)
+    {}
+
+    /// Copy (and deep-copy) constructor.
+    UpsertContext(const UpsertContext& other)
+      : key_(other.key_)
+      , value_(other.value_)
+    {}
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const K& key() const {
+      return key_;
+    }
+    inline static constexpr uint32_t value_size() {
+      return V::size();
+    }
+    /// Non-atomic and atomic Put() methods.
+    inline void Put(V& value) {
+      value.value = value_.value;
+    }
+    inline bool PutAtomic(V& value) {
+      value.atomic_value.store(value_.value);
+      return true;
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    K key_;
+    V value_;
+  };
+
+  /// Context to read a key when unit testing.
+  class ReadContext : public IAsyncContext {
+   public:
+    typedef K key_t;
+    typedef V value_t;
+
+    ReadContext(K key)
+      : key_(key)
+    {}
+
+    /// Copy (and deep-copy) constructor.
+    ReadContext(const ReadContext& other)
+      : key_(other.key_)
+    {}
+
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const K& key() const {
+      return key_;
+    }
+
+    inline void Get(const V& value) {
+      output = value.value;
+    }
+    inline void GetAtomic(const V& value) {
+      output = value.atomic_value.load();
+    }
+
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
+
+   private:
+    K key_;
+   public:
+    V output;
+  };
+
+
+  typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
+  typedef FasterKv<K, V, disk_t> faster_t;
+
+  std::experimental::filesystem::create_directories("logs/");
+  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  faster_t store { 2048, 512_MiB, "logs/", 0.8 };
+  int numRecords = 50'000;
+
+  store.StartSession();
+  for (size_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      // request will be sync -- callback won't be called
+      ASSERT_TRUE(false);
+    };
+    UpsertContext context{ K(idx), V(idx) };
+    Status result = store.Upsert(context, callback, 1);
+    ASSERT_EQ(Status::Ok, result);
+  }
+  store.CompletePending(true);
+
+  log_debug("Calling UnsafeBufferResize...");
+  store.hlog.UnsafeBufferResize(192_MiB, 0.4);
+  log_debug("Done!");
+
+  // Check that all entries are present
+  for (size_t idx = 1; idx <= numRecords; ++idx) {
+    auto callback = [](IAsyncContext* ctxt, Status result) {
+      ASSERT_EQ(Status::Ok, result);
+
+      CallbackContext<ReadContext> context(ctxt);
+      ASSERT_TRUE(context->key().key > 0);
+      ASSERT_EQ(context->key(), context->output.value);
+    };
+    ReadContext context{ K(idx) };
+    Status result = store.Read(context, callback, 1);
+    EXPECT_TRUE(result == Status::Ok || result == Status::Pending);
+    if (result == Status::Ok) {
+      ASSERT_EQ(idx, context.output.value);
+    }
+
+    if (idx % 20 == 0) {
+      // occasionally complete pending I/O requests
+      store.CompletePending(false);
+    }
+  }
+  store.CompletePending(true);
+  store.StopSession();
+
+  std::experimental::filesystem::remove_all("logs/");
 }

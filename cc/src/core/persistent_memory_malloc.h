@@ -261,53 +261,11 @@ class PersistentMemoryMalloc {
     , buffer_size_{ 0 }
     , pages_{ nullptr }
     , page_status_{ nullptr }
-    , pre_allocate_log_{ pre_allocate_log } {
+    , pre_allocate_log_{ pre_allocate_log }
+    , has_no_backing_storage_{ has_no_backing_storage } {
     assert(start_address.page() <= Address::kMaxPage);
 
-    if(log_size % kPageSize != 0) {
-      throw std::invalid_argument{ "Log size must be a multiple of 32 MB" };
-    }
-    if(log_size / kPageSize > UINT32_MAX) {
-      throw std::invalid_argument{ "Log size must be <= 128 PB" };
-    }
-    buffer_size_ = static_cast<uint32_t>(log_size / kPageSize);
-
-    if(buffer_size_ <= kNumHeadPages + 1) {
-      throw std::invalid_argument{ "Must have at least 2 non-head pages" };
-    }
-    // The latest N pages should be mutable.
-    // If mutable fraction is 0, then allocate minimum size possible (i.e. 2 mutable pages)
-    num_mutable_pages_ = (log_mutable_fraction > 0) ? static_cast<uint32_t>(log_mutable_fraction * buffer_size_) : 2;
-    if(num_mutable_pages_ <= 1) {
-      // Need at least two mutable pages: one to write to, and one to open up when the previous
-      // mutable page is full.
-      throw std::invalid_argument{ "Must have at least 2 mutable pages" };
-    }
-    // Make sure we have at least 'kNumHeadPages' immutable pages.
-    // Otherwise, we will not be able to dump log to disk when our in-memory log is full.
-    // If the user is certain that we will never need to dump anything to disk
-    // (this is the case in compaction), skip this check.
-    if(!has_no_backing_storage && buffer_size_ - num_mutable_pages_ < kNumHeadPages) {
-      throw std::invalid_argument{ "Must have at least 'kNumHeadPages' immutable pages" };
-    }
-
-    page_status_ = new FullPageStatus[buffer_size_];
-
-    pages_ = new uint8_t* [buffer_size_];
-    for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
-      if (pre_allocate_log_) {
-        pages_[idx] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
-        std::memset(pages_[idx], 0, kPageSize);
-        // Mark the page as accessible.
-        page_status_[idx].status.store(FlushStatus::Flushed, CloseStatus::Open);
-      } else {
-        pages_[idx] = nullptr;
-      }
-    }
-
-    PageOffset tail_page_offset = tail_page_offset_.load();
-    AllocatePage(tail_page_offset.page());
-    AllocatePage(tail_page_offset.page() + 1);
+    InitializeBuffer(log_size, log_mutable_fraction);
   }
 
   PersistentMemoryMalloc(bool has_no_backing_storage, uint64_t log_size, LightEpoch& epoch, disk_t& disk_, log_file_t& file_,
@@ -328,17 +286,7 @@ class PersistentMemoryMalloc {
   }
 
   virtual ~PersistentMemoryMalloc() {
-    if(pages_) {
-      for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
-        if(pages_[idx]) {
-          aligned_free(pages_[idx]);
-        }
-      }
-      delete[] pages_;
-    }
-    if(page_status_) {
-      delete[] page_status_;
-    }
+    FreeBuffer();
   }
 
   inline const uint8_t* Page(uint32_t page) const {
@@ -394,6 +342,83 @@ class PersistentMemoryMalloc {
 
   /// Used by applications to make the current state of the database immutable quickly
   Address ShiftReadOnlyToTail();
+
+  /// Used by application to resize hlog's buffer size
+  /// WARNING: This is an *unsafe* operation: no other concurrent ops should be performed concurrently
+  inline void UnsafeBufferResize(uint64_t log_size, double log_mutable_perc) {
+    if (!epoch_->IsProtected()) {
+      throw std::runtime_error{ "UnsafeBufferResize(): Thread has no active session" };
+    }
+
+    // Move one page forward
+    uint32_t last_page = tail_page_offset_.load().page();
+    while( !NewPage(last_page) ) {
+      epoch_->ProtectAndDrain();
+    }
+
+    // Get updated tail address
+    Address tail_address = GetTailAddress();
+    if (last_page + 1 != tail_address.page()) {
+      throw std::runtime_error{ "UnsafeBufferResize(): last_page + 1 != tail_address" };
+    }
+
+    // Make all buffer pages immutable
+    while(read_only_address.load() != tail_address) {
+      epoch_->ProtectAndDrain();
+      //std::this_thread::yield();
+
+      ShiftReadOnlyToTail();
+    }
+    // Wait until safe only address is changed to tail address
+    while(tail_address > safe_read_only_address.load()) {
+      disk->TryComplete();
+      epoch_->ProtectAndDrain();
+    }
+
+    // Wait until all in-mem pages are flushed to disk
+    bool all_flushed;
+    do {
+      epoch_->ProtectAndDrain();
+      disk->TryComplete();
+
+      all_flushed = true;
+      for (size_t idx = 0; idx < buffer_size_ && all_flushed; idx++) {
+        all_flushed &= (page_status_[idx].status.load().Ready() || !pages_[idx]);
+      }
+    } while(!all_flushed);
+
+    // Shift head address to tail address
+    Address desired_head_address{ tail_address.page(), 0 };
+    if(flushed_until_address.load() < desired_head_address) {
+      throw std::runtime_error{ "flushed_until_address < tail_address" };
+    }
+
+    Address old_head_address;
+    bool success = MonotonicUpdate(head_address, desired_head_address, old_head_address);
+    if (!success) {
+      throw std::runtime_error{ "MonotonicUpdate for head_address not successfull" };
+    }
+    OnPagesClosed_Context context{ this, desired_head_address, false };
+    IAsyncContext* context_copy;
+    Status result = context.DeepCopy(context_copy);
+    assert(result == Status::Ok);
+    epoch_->BumpCurrentEpoch(OnPagesClosed, context_copy);
+
+    // Wait until safe only address is changed to tail address
+    while(tail_address > safe_head_address.load()) {
+      epoch_->ProtectAndDrain();
+    }
+
+    fprintf(stderr, "SHA = %lu\n", safe_head_address.load().control());
+    fprintf(stderr, "HA  = %lu\n", head_address.load().control());
+    fprintf(stderr, "SRO = %lu\n", safe_read_only_address.load().control());
+    fprintf(stderr, "RO  = %lu\n", read_only_address.load().control());
+    fprintf(stderr, "TA  = %lu\n", GetTailAddress().control());
+
+    // Resize buffer
+    FreeBuffer();
+    InitializeBuffer(log_size, log_mutable_perc);
+  }
 
   void Truncate(GcState::truncate_callback_t callback);
 
@@ -545,6 +570,71 @@ class PersistentMemoryMalloc {
     }
   }
 
+  inline void InitializeBuffer(uint64_t log_size, double log_mutable_fraction) {
+    assert(!pages_ && !page_status_);
+
+    if(log_size % kPageSize != 0) {
+      throw std::invalid_argument{ "Log size must be a multiple of 32 MB" };
+    }
+    if(log_size / kPageSize > UINT32_MAX) {
+      throw std::invalid_argument{ "Log size must be <= 128 PB" };
+    }
+    buffer_size_ = static_cast<uint32_t>(log_size / kPageSize);
+
+    if(buffer_size_ <= kNumHeadPages + 1) {
+      throw std::invalid_argument{ "Must have at least 2 non-head pages" };
+    }
+    // The latest N pages should be mutable.
+    // If mutable fraction is 0, then allocate minimum size possible (i.e. 2 mutable pages)
+    num_mutable_pages_ = (log_mutable_fraction > 0) ? static_cast<uint32_t>(log_mutable_fraction * buffer_size_) : 2;
+    if(num_mutable_pages_ <= 1) {
+      // Need at least two mutable pages: one to write to, and one to open up when the previous
+      // mutable page is full.
+      throw std::invalid_argument{ "Must have at least 2 mutable pages" };
+    }
+    // Make sure we have at least 'kNumHeadPages' immutable pages.
+    // Otherwise, we will not be able to dump log to disk when our in-memory log is full.
+    // If the user is certain that we will never need to dump anything to disk
+    // (this is the case in compaction), skip this check.
+    if(!has_no_backing_storage_ && buffer_size_ - num_mutable_pages_ < kNumHeadPages) {
+      throw std::invalid_argument{ "Must have at least 'kNumHeadPages' immutable pages" };
+    }
+
+    page_status_ = new FullPageStatus[buffer_size_];
+
+    pages_ = new uint8_t* [buffer_size_];
+    for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
+      if (pre_allocate_log_) {
+        pages_[idx] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
+        std::memset(pages_[idx], 0, kPageSize);
+        // Mark the page as accessible.
+        page_status_[idx].status.store(FlushStatus::Flushed, CloseStatus::Open);
+      } else {
+        pages_[idx] = nullptr;
+      }
+    }
+
+    PageOffset tail_page_offset = tail_page_offset_.load();
+    AllocatePage(tail_page_offset.page());
+    AllocatePage(tail_page_offset.page() + 1);
+  }
+
+  inline void FreeBuffer() {
+    if(pages_) {
+      for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
+        if(pages_[idx]) {
+          aligned_free(pages_[idx]);
+        }
+      }
+      delete[] pages_;
+      pages_ = nullptr;
+    }
+    if(page_status_) {
+      delete[] page_status_;
+      page_status_ = nullptr;
+    }
+  }
+
  public:
   uint32_t sector_size;
 
@@ -579,6 +669,8 @@ class PersistentMemoryMalloc {
 
  private:
   bool pre_allocate_log_;
+
+  bool has_no_backing_storage_;
 
   /// -- the latest N pages should be mutable.
   uint32_t num_mutable_pages_;
