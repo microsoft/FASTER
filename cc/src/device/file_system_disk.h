@@ -140,6 +140,9 @@ class FileSystemSegmentBundle {
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
+      if (result != core::Status::Ok) {
+        throw std::runtime_error{ std::string("Cannot open file: ") + filename };
+      }
     }
   }
 
