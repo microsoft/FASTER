@@ -58,7 +58,7 @@ namespace FASTER.client
                 *(int*) head = -(offset - sizeof(int));
                 head += sizeof(int);
 
-                ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, WireFormat.DarqWrite);
+                ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, WireFormat.DarqProcessor);
                 head += sizeof(BatchHeader);
 
                 // Set DprHeader size
@@ -109,7 +109,7 @@ namespace FASTER.client
             curr += entryBatchSize;
             offset = (int) (curr - networkSender.GetResponseObjectHead());
             numMessages++;
-            var result = new TaskCompletionSource<StepResponse>();
+            var result = new TaskCompletionSource<StepStatus>();
             outstandingStepQueue.Enqueue(result);
             if (forceFlush) Flush();
             return result.Task;
@@ -147,13 +147,11 @@ namespace FASTER.client
                 var src = b + offset;
                 var batchHeader = *(BatchHeader*) src;
                 src += sizeof(BatchHeader);
-                var dprOffset = *(int*) src;
-                src += sizeof(int);
 
-                var dprHeaderSize = *(int*) (src + dprOffset);
-                var dprHeader = new ReadOnlySpan<byte>(src + dprOffset + sizeof(int), dprHeaderSize);
+                var dprHeader = new ReadOnlySpan<byte>(src, DprBatchHeader.FixedLenSize);
+                src += DprBatchHeader.FixedLenSize;
 
-                if (dprSession.TryUpdateDependencies(dprHeader, out var versionVector) != DprBatchStatus.OK)
+                if (dprSession.ReceiveHeader(dprHeader, out _) != DprBatchStatus.OK)
                     // TODO(Tianyu): Implement
                     throw new NotImplementedException();
 
@@ -172,11 +170,7 @@ namespace FASTER.client
                                 throw new NotImplementedException();
                             var request = outstandingStepQueue.Dequeue();
                             Interlocked.Decrement(ref numOutstanding);
-                            request.SetResult(new StepResponse
-                            {
-                                status = stepStatus,
-                                version = versionVector[i].Version
-                            });
+                            request.SetResult(stepStatus);
                             break;
                         case MessageType.DarqRegisterProcessor:
                             Debug.Assert(outstandingRegistrationRequest != null);
@@ -279,15 +273,15 @@ namespace FASTER.client
         private readonly INetworkSender networkSender;
         private bool disposed;
         private int maxBuffered;
-        private DprClientSession session;
+        private DprSession session;
         private bool rolledBack = false;
 
-        public DarqProcessorReadClient(DprClientSession session, string address, int port, int maxBuffered)
+        public DarqProcessorReadClient(DprSession session, string address, int port, int maxBuffered)
         {
             maxSizeSettings = new MaxSizeSettings();
             networkSender = new TcpNetworkSender(GetSendSocket(address, port), maxSizeSettings);
             this.maxBuffered = maxBuffered;
-            messagePool = new SimpleObjectPool<DarqMessage>(() => new DarqMessage(messagePool), 2 * maxBuffered);
+            messagePool = new SimpleObjectPool<DarqMessage>(() => new DarqMessage(messagePool),  null, 2 * maxBuffered);
             pendingMessages = new ElasticCircularBuffer<DarqMessage>();
             this.session = session;
         }
@@ -313,7 +307,7 @@ namespace FASTER.client
             *(int*) head = -(offset - sizeof(int));
             head += sizeof(int);
 
-            ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, WireFormat.DARQRead);
+            ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, WireFormat.DarqSubscribe);
 
             networkSender.SendResponse(0, offset);
         }
@@ -334,7 +328,7 @@ namespace FASTER.client
 
                 var dprHeaderSize = *(int*) (src + dprOffset);
                 var dprHeader = new ReadOnlySpan<byte>(src + dprOffset + sizeof(int), dprHeaderSize);
-                var status = session.TryUpdateDependencies(dprHeader, out var versionVector);
+                var status = session.ReceiveHeader(dprHeader, out var wv);
                 if (status == DprBatchStatus.IGNORE)
                     return;
                 if (status == DprBatchStatus.ROLLBACK)
@@ -358,7 +352,7 @@ namespace FASTER.client
                     src += sizeof(int);
                     Debug.Assert(type is DarqMessageType.IN or DarqMessageType.SELF);
                     var m = messagePool.Checkout();
-                    m.Reset(type, lsn, nextLsn, versionVector[i], new ReadOnlySpan<byte>(src, len));
+                    m.Reset(type, lsn, nextLsn, wv, new ReadOnlySpan<byte>(src, len));
                     pendingMessages.Enqueue(m);
                     src += len;
                 }
@@ -470,7 +464,7 @@ namespace FASTER.client
         {
             this.address = address;
             this.port = port;
-            session = new DprClientSession();
+            session = new DprSession();
             this.maxOutstandingSteps = maxOutstandingSteps;
             this.maxReadBuffer = maxReadBuffer;
         }
@@ -481,12 +475,12 @@ namespace FASTER.client
             StartProcessingAsync(processor).GetAwaiter().GetResult();
         }
         
-        public unsafe ValueTask<StepResponse> Step(StepRequest request)
+        public unsafe ValueTask<StepStatus> Step(StepRequest request)
         {
-            return new ValueTask<StepResponse>(writeClient.Step(request, incarnation, false));
+            return new ValueTask<StepStatus>(writeClient.Step(request, incarnation, false));
         }
 
-        public DprClientSession StartUsingDprSessionExternally()
+        public DprSession StartUsingDprSessionExternally()
         {
             return session;
         }
@@ -518,7 +512,7 @@ namespace FASTER.client
                     // This is a special rollback signal
                     if (m.GetLsn() == -1 && m.GetNextLsn() == -1)
                     {
-                        session = session.RecoverFromRollback();
+                        session = new DprSession(session);
                         readClient = new DarqProcessorReadClient(session, address, port, maxReadBuffer);
                         writeClient = new DarqProcessorWriteClient(session, address, port, maxOutstandingSteps);
                         readClient.StartReceivePush();

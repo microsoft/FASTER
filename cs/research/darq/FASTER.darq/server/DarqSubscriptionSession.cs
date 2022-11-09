@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using FASTER.common;
+using FASTER.darq;
 using FASTER.libdpr;
 
 namespace FASTER.server
@@ -13,19 +14,18 @@ namespace FASTER.server
         readonly HeaderReaderWriter hrw;
         int readHead;
         int seqNo, msgnum, start;
-        private DprServer<Darq> dprServer;
+        private Darq dprServer;
         private ManualResetEventSlim terminationStart, terminationComplete;
         private Thread pushThread;
         private unsafe byte* dcurr, dend;
         private unsafe int *dprResponseOffset;
-        private DprBatchVersionTracker tracker;
         // TODO(Tianyu): Hacky
         private static int MAX_BATCH_SIZE = 1 << 10;
         // TODO(Tianyu): Hacky
         private byte[] tempBuffer = new byte[1 << 12];
 
 
-        public DarqSubscriptionSession(INetworkSender networkSender, DprServer<Darq> dprServer) : base(networkSender)
+        public DarqSubscriptionSession(INetworkSender networkSender, Darq dprServer) : base(networkSender)
         {
             this.dprServer = dprServer;
         }
@@ -98,7 +98,7 @@ namespace FASTER.server
         {
             pushThread = new Thread(async () =>
             {
-                using var it = dprServer.StateObject().StartScan();
+                using var it = dprServer.StartScan();
                 while (!terminationStart.IsSet)
                 {
                     ResetSendBuffer();
@@ -106,7 +106,7 @@ namespace FASTER.server
                     if (msgnum != 0)
                         SendCurrentBuffer();
                     else
-                        dprServer.SignalLocalBatchFinish(null, tracker);
+                        dprServer.FinishProcessing();
 
                     if (terminationStart.IsSet) break;
                     
@@ -136,7 +136,7 @@ namespace FASTER.server
             dcurr += BatchHeader.Size;
             dprResponseOffset = (int*) dcurr;
             dcurr += sizeof(int);
-            tracker = dprServer.RequestLocalBatchBegin();
+            dprServer.BeginProcessing();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -147,17 +147,15 @@ namespace FASTER.server
             // reserve a size field for DPR header;
             var dprHeaderSizeField = (int*) dcurr;
             dcurr += sizeof(int);
-            tracker.MarkOperationRangesVersion(0, msgnum, dprServer.StateObject().VersionScheme().CurrentState().Version);
-            var respSize = dprServer.SignalLocalBatchFinish(new Span<byte>(dcurr, (int) (dend - dcurr)), tracker);
-            Debug.Assert(respSize > 0);
-            dcurr += respSize;
+            dprServer.FinishProcessingAndSend(new Span<byte>(dcurr, (int) (dend - dcurr)));
+            dcurr += DprBatchHeader.FixedLenSize;
             // Write size
-            *dprHeaderSizeField = respSize;
+            *dprHeaderSizeField = DprBatchHeader.FixedLenSize;
             Debug.Assert(dcurr < dend);
 
             var d = networkSender.GetResponseObjectHead();
             var dstart = d + sizeof(int);
-            ((BatchHeader*) dstart)->SetNumMessagesProtocol(msgnum - start, WireFormat.DARQRead);
+            ((BatchHeader*) dstart)->SetNumMessagesProtocol(msgnum - start, WireFormat.DarqSubscribe);
             ((BatchHeader*) dstart)->SeqNo = seqNo++;
             int payloadSize = (int) (dcurr - d);
             // Set packet size in header

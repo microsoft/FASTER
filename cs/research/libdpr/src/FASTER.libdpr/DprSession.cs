@@ -16,7 +16,8 @@ namespace FASTER.libdpr
     /// </summary>
     public class DprSession
     {
-        private long version, worldLine, terminalWorldLine;
+        private long version, worldLine;
+        private long terminalWorldLine;
         private readonly LightDependencySet deps;
         
         /// <summary>
@@ -28,6 +29,8 @@ namespace FASTER.libdpr
         /// WorldLine of the session
         /// </summary>
         public long WorldLine => worldLine;
+
+        public long TerminalWorldLine => terminalWorldLine;
 
         /// <summary>
         /// Create a DPR session working on the supplied worldLine (or 1 by default, in a cluster that has never failed)
@@ -71,7 +74,7 @@ namespace FASTER.libdpr
                 // Populate header with relevant request information
                 if (headerBytes.Length >= DprBatchHeader.FixedLenSize)
                 {
-                    dprHeader.SrcWorkerIdId = WorkerId.INVALID;
+                    dprHeader.SrcWorkerId = WorkerId.INVALID;
                     dprHeader.worldLine = worldLine;
                     dprHeader.version = version;
                     dprHeader.numClientDeps = 0;
@@ -100,12 +103,12 @@ namespace FASTER.libdpr
         /// <param name="version"> version of the message </param>
         /// <returns> status of the batch. If status is ROLLBACK, this session must be rolled-back </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe DprBatchStatus ReceiveHeader(ReadOnlySpan<byte> dprMessage, out long version)
+        public unsafe DprBatchStatus ReceiveHeader(ReadOnlySpan<byte> dprMessage, out WorkerVersion version)
         {
             fixed (byte* h = dprMessage)
             {
                 ref var responseHeader = ref Unsafe.AsRef<DprBatchHeader>(h);
-                version = responseHeader.version;
+                version = new WorkerVersion(responseHeader.SrcWorkerId, responseHeader.version);
                 // Server uses negative worldLine to signal that the client is lower in worldline
                 if (responseHeader.worldLine < 0)
                 {
@@ -119,8 +122,8 @@ namespace FASTER.libdpr
                 Debug.Assert(responseHeader.worldLine == worldLine);
                 
                 // Add largest worker-version as dependency for future ops
-                if (!responseHeader.SrcWorkerIdId.Equals(WorkerId.INVALID))
-                    deps.Update(responseHeader.SrcWorkerIdId, responseHeader.version);
+                if (!responseHeader.SrcWorkerId.Equals(WorkerId.INVALID))
+                    deps.Update(responseHeader.SrcWorkerId, responseHeader.version);
                 else
                 {
                     fixed (byte* d = responseHeader.data)
@@ -139,14 +142,14 @@ namespace FASTER.libdpr
                 core.Utility.MonotonicUpdate(ref this.version, responseHeader.version, out _);
 
                 // Remove deps only if this is a response header from a server session
-                if (!responseHeader.SrcWorkerIdId.Equals(WorkerId.INVALID))
+                if (!responseHeader.SrcWorkerId.Equals(WorkerId.INVALID))
                 {
                     // Update dependency tracking
                     var depsHead = h + responseHeader.ClientDepsOffset;
                     for (var i = 0; i < responseHeader.numClientDeps; i++)
                     {
                         ref var wv = ref Unsafe.AsRef<WorkerVersion>(depsHead);
-                        if (wv.WorkerId.Equals(responseHeader.SrcWorkerIdId)) continue;
+                        if (wv.WorkerId.Equals(responseHeader.SrcWorkerId)) continue;
                         deps.TryRemove(wv.WorkerId, wv.Version);
                         depsHead += sizeof(WorkerVersion);
                     }

@@ -246,7 +246,7 @@ namespace FASTER.darq
                     if (result == ProcessResult.TERMINATED)
                         break;
 
-                    // darq.StateObject().RefreshSafeReadTail();
+                    // FASTER.darq.StateObject().RefreshSafeReadTail();
                     var iteratorWait = iterator.WaitAsync().AsTask();
                     if (await Task.WhenAny(iteratorWait, Task.Delay(10)) == iteratorWait)
                     {

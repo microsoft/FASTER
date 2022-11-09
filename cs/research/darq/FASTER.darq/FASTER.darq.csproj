@@ -4,9 +4,11 @@
         <TargetFramework>net6.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <RootNamespace>darq</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\..\..\remote\src\FASTER.server\FASTER.server.csproj" />
       <ProjectReference Include="..\..\libdpr\src\FASTER.libdpr\FASTER.libdpr.csproj" />
     </ItemGroup>
 

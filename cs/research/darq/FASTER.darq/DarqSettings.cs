@@ -1,4 +1,5 @@
 ﻿using FASTER.core;
+using FASTER.libdpr;
 
 namespace FASTER.darq
 {
@@ -7,6 +8,12 @@ namespace FASTER.darq
     /// </summary>
     public class DarqSettings
     {
+        /// <summary>
+        ///  The DPRFinder for the cluster this DARQ should connect to, or null if you will only use DARQ
+        ///  non-speculatively and do not wish to connect to a DPR cluster
+        /// </summary>
+        public IDprFinder DprFinder = null;
+        
         /// <summary>
         /// Device used for underlying log
         /// </summary>

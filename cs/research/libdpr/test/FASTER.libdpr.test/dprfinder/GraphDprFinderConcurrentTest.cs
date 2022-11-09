@@ -9,7 +9,7 @@ namespace FASTER.libdpr
 {
     internal class SimulatedWorker
     {
-        private Worker me;
+        private WorkerId me;
         private List<SimulatedWorker> cluster;
         private long worldLine, version, lastChecked;
         private Dictionary<WorkerVersion, List<WorkerVersion>> versions;
@@ -18,7 +18,7 @@ namespace FASTER.libdpr
         private Random random;
         private bool finished = false;
 
-        public SimulatedWorker(Worker me, List<SimulatedWorker> cluster, Func<GraphDprFinderBackend> backend, double depProb)
+        public SimulatedWorker(WorkerId me, List<SimulatedWorker> cluster, Func<GraphDprFinderBackend> backend, double depProb)
         {
             this.me = me;
             worldLine = 1;
@@ -83,7 +83,7 @@ namespace FASTER.libdpr
                 return;
             }
 
-            var deserializedCut = new Dictionary<Worker, long>();
+            var deserializedCut = new Dictionary<WorkerId, long>();
             RespUtil.ReadDictionaryFromBytes(responseObject.serializedResponse, offset, deserializedCut);
             responseObject.rwLatch.ExitReadLock();
             
@@ -96,7 +96,7 @@ namespace FASTER.libdpr
                 if (!versions.TryGetValue(new WorkerVersion(me, v), out var deps)) continue;
                 foreach (var dep in deps)
                 {
-                    Assert.LessOrEqual(dep.Version,  cluster[(int) dep.Worker.guid].version);
+                    Assert.LessOrEqual(dep.Version,  cluster[(int) dep.WorkerId.guid].version);
                 }
             }
             lastChecked = persistedUntil;
@@ -193,7 +193,7 @@ namespace FASTER.libdpr
             var tested = new SimulatedDprFinder(localDevice1, localDevice2);
             var cluster = new List<SimulatedWorker>();
             for (var i = 0; i < 3; i++)
-                cluster.Add(new SimulatedWorker(new Worker(i), cluster, tested.GetDprFinder, 0.5));
+                cluster.Add(new SimulatedWorker(new WorkerId(i), cluster, tested.GetDprFinder, 0.5));
             tested.Simulate(0.0, 1000, cluster);
         }
         
@@ -205,7 +205,7 @@ namespace FASTER.libdpr
             var tested = new SimulatedDprFinder(localDevice1, localDevice2);
             var cluster = new List<SimulatedWorker>();
             for (var i = 0; i < 30; i++)
-                cluster.Add(new SimulatedWorker(new Worker(i), cluster, tested.GetDprFinder, 0.75));
+                cluster.Add(new SimulatedWorker(new WorkerId(i), cluster, tested.GetDprFinder, 0.75));
             tested.Simulate(0.0, 30000, cluster);
         }
         
@@ -217,7 +217,7 @@ namespace FASTER.libdpr
             var tested = new SimulatedDprFinder(localDevice1, localDevice2);
             var cluster = new List<SimulatedWorker>();
             for (var i = 0; i < 10; i++)
-                cluster.Add(new SimulatedWorker(new Worker(i), cluster, tested.GetDprFinder, 0.75));
+                cluster.Add(new SimulatedWorker(new WorkerId(i), cluster, tested.GetDprFinder, 0.75));
             tested.Simulate(0.05, 1000, cluster);
         }
     }

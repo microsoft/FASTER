@@ -7,6 +7,11 @@
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/DecompilerCache/decompiler/c3b0f7d4199d4eb59c04605841b5535ea23898/e7/5064ff68/ValueType.cs" root0="SKIP_HIGHLIGHTING" />
+    <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/261ff39eae55674d8b4d2e679529b516bd6f5db252df1381a16ca6ef377966/ConcurrentQueue.cs" root0="SKIP_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/FASTER.darq/client/ColocatedDarqProcessorClient.cs" root0="FORCE_HIGHLIGHTING" />
+  </component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
   </component>
@@ -41,6 +46,14 @@
       <updated>1667324458832</updated>
       <workItem from="1667324460024" duration="7639000" />
       <workItem from="1667399620033" duration="4283000" />
+      <workItem from="1667409468624" duration="822000" />
+      <workItem from="1667411183495" duration="1113000" />
+      <workItem from="1667413822133" duration="93000" />
+      <workItem from="1667499068772" duration="4974000" />
+      <workItem from="1667582921282" duration="2372000" />
+      <workItem from="1667832676110" duration="6485000" />
+      <workItem from="1667844979385" duration="5121000" />
+      <workItem from="1668002427903" duration="5965000" />
     </task>
     <servers />
   </component>

@@ -22,19 +22,19 @@ namespace DprCounters
             dprFinderServer.StartServer();
             
             // Start two counter servers
-            var cluster = new Dictionary<Worker, IPEndPoint>();
+            var cluster = new Dictionary<WorkerId, IPEndPoint>();
 
-            var w0 = new Worker(0);
+            var w0 = new WorkerId(0);
             cluster.Add(w0, new IPEndPoint(IPAddress.Parse("127.0.0.1"), 15722));
-            var w0Server = new CounterServer("127.0.0.1", 15722, new Worker(0), "worker0/",
+            var w0Server = new CounterServer("127.0.0.1", 15722, new WorkerId(0), "worker0/",
                 new RespGraphDprFinder("127.0.0.1", 15721));
             var w0Thread = new Thread(w0Server.RunServer);
             w0Thread.Start();
 
 
-            var w1 = new Worker(1);
+            var w1 = new WorkerId(1);
             cluster.Add(w1, new IPEndPoint(IPAddress.Parse("127.0.0.1"), 15723));
-            var w1Server = new CounterServer("127.0.0.1", 15723, new Worker(1), "worker1/",
+            var w1Server = new CounterServer("127.0.0.1", 15723, new WorkerId(1), "worker1/",
                 new RespGraphDprFinder("127.0.0.1", 15721));
             var w1Thread = new Thread(w1Server.RunServer);
             w1Thread.Start();

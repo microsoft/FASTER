@@ -24,7 +24,7 @@ namespace DprCounters
         /// <param name="me"> id of worker in DPR cluster </param>
         /// <param name="checkpointDir"> directory name to write checkpoint files to </param>
         /// <param name="dprFinder"> DprFinder for the cluster </param>
-        public CounterServer(string ip, int port, Worker me, string checkpointDir, IDprFinder dprFinder)
+        public CounterServer(string ip, int port, WorkerId me, string checkpointDir, IDprFinder dprFinder)
         {
             // Each DPR worker should be backed by one state object. The state object exposes some methods 
             // for the DPR logic to invoke when necessary, but DPR does not otherwise mediate user interactions

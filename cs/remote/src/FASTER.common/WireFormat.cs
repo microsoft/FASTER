@@ -24,8 +24,9 @@ namespace FASTER.common
         /// </summary>
         WebSocket = 2,
         
-        DarqRead,
-        DarqWrite,
+        DarqSubscribe,
+        DarqProducer,
+        DarqProcessor,
 
         /// <summary>
         /// ASCII wire format (non-binary protocol)

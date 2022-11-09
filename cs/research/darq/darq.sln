@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "darq", "darq\darq.csproj", "{B6949D0A-D49C-4B88-BEEC-FFEA1CD018CB}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.darq", "FASTER.darq\FASTER.darq.csproj", "{B6949D0A-D49C-4B88-BEEC-FFEA1CD018CB}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FASTER.libdpr", "..\libdpr\src\FASTER.libdpr\FASTER.libdpr.csproj", "{6595C1EF-2710-4E64-AD31-9B784F186468}"
 EndProject

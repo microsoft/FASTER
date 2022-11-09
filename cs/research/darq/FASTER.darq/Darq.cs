@@ -55,7 +55,6 @@ namespace FASTER.darq
     {
         internal DarqSettings settings;
         internal FasterLog log;
-        // TODO(Tianyu): repopulate this on recovery
         internal ConcurrentDictionary<long, byte> incompleteMessages = new();
         private FasterLogSettings logSetting;
 
@@ -184,8 +183,8 @@ namespace FASTER.darq
 
         private ThreadLocalObjectPool<StepRequestHandle> stepRequestPool;
 
-        public Darq(IDprFinder dprFinder, WorkerId me, DarqSettings darqSettings) : base(dprFinder, me,
-            new DarqStateObject(darqSettings))
+        public Darq(WorkerId me, DarqSettings darqSettings) : base(me,
+            new DarqStateObject(darqSettings), darqSettings.DprFinder)
         {
             dvc = new DeduplicationVector();
             incarnation = new LongValueAttachment();
@@ -208,7 +207,6 @@ namespace FASTER.darq
         {
             StateObject().incompleteMessages.TryAdd(addr, 0);
         }
-
 
         public unsafe bool EnqueueInputBatch(IReadOnlySpanBatch entries, WorkerId inputId, long inputLsn)
         {
@@ -307,10 +305,8 @@ namespace FASTER.darq
 
         public long RegisterNewProcessor()
         {
-            // TODO(Tianyu): This defers registration to until the next checkpoint for thread-safety. But due to quarkiness
-            // of the simple state object implementation it won't be persisted until the checkpoint after that. This should
-            // be fixed
             var tcs = new TaskCompletionSource<long>();            
+            // TODO(Tianyu): Can this deadlock against itself?
             versionScheme.GetUnderlyingEpoch().BumpCurrentEpoch(() => tcs.SetResult(Interlocked.Increment(ref incarnation.value)));
             return tcs.Task.GetAwaiter().GetResult();
         }

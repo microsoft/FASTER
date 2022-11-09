@@ -17,7 +17,7 @@ namespace FASTER.client
     {
         IDprFinder GetNewDprFinder();
 
-        (string, int) GetWorker(Worker worker);
+        (string, int) GetWorker(WorkerId worker);
     }
 
     public class RollbackException : FasterException
@@ -33,16 +33,16 @@ namespace FASTER.client
     [Serializable]
     public class HardCodedClusterInfo : IDarqClusterInfo
     {
-        private Dictionary<Worker, (string, int)> workerMap;
+        private Dictionary<WorkerId, (string, int)> workerMap;
         private string dprFinderIp;
         private int dprFinderPort = -1;
 
         public HardCodedClusterInfo()
         {
-            workerMap = new Dictionary<Worker, (string, int)>();
+            workerMap = new Dictionary<WorkerId, (string, int)>();
         }
 
-        public HardCodedClusterInfo AddWorker(Worker worker, string ip, int port)
+        public HardCodedClusterInfo AddWorker(WorkerId worker, string ip, int port)
         {
             workerMap.Add(worker, (ip, port));
             return this;
@@ -61,15 +61,15 @@ namespace FASTER.client
         {
             if (dprFinderPort == -1 || dprFinderIp == null)
                 throw new FasterException("DprFinder location not set!");
-            return new EnhancedDprFinder(dprFinderIp, dprFinderPort);
+            return new RespGraphDprFinder(dprFinderIp, dprFinderPort);
         }
 
-        public (string, int) GetWorker(Worker worker)
+        public (string, int) GetWorker(WorkerId worker)
         {
             return workerMap[worker];
         }
 
-        public IEnumerable<(Worker, string, int)> GetWorkers() =>
+        public IEnumerable<(WorkerId, string, int)> GetWorkers() =>
             workerMap.Select(e => (e.Key, e.Value.Item1, e.Value.Item2));
     }
 
@@ -79,19 +79,19 @@ namespace FASTER.client
     public class DarqProducerClient : IDisposable
     {
         private IDarqClusterInfo darqClusterInfo;
-        private ConcurrentDictionary<Worker, SingleDarqProducerClient> clients;
-        private DprClientSession dprSession;
+        private ConcurrentDictionary<WorkerId, SingleDarqProducerClient> clients;
+        private DprSession dprSession;
 
         /// <summary>
         /// Creates a new DarqProducerClient
         /// </summary>
         /// <param name="darqClusterInfo"> Cluster information </param>
         /// <param name="session"> The DprClientSession to use (optional) </param>
-        public DarqProducerClient(IDarqClusterInfo darqClusterInfo, DprClientSession session = null)
+        public DarqProducerClient(IDarqClusterInfo darqClusterInfo, DprSession session = null)
         {
             this.darqClusterInfo = darqClusterInfo;
-            clients = new ConcurrentDictionary<Worker, SingleDarqProducerClient>();
-            dprSession = session ?? new DprClientSession();
+            clients = new ConcurrentDictionary<WorkerId, SingleDarqProducerClient>();
+            dprSession = session ?? new DprSession();
         }
 
         public void Dispose()
@@ -114,7 +114,7 @@ namespace FASTER.client
         /// </param>
         /// <param name="waitCommit">whether to wait until the enqueue is committed to complete the async task </param>
         /// <returns></returns>
-        public Task EnqueueMessageAsync(Worker darqId, ReadOnlySpan<byte> message, long producerId, long lsn,
+        public Task EnqueueMessageAsync(WorkerId darqId, ReadOnlySpan<byte> message, long producerId, long lsn,
             bool forceFlush = true, bool waitCommit = false)
         {
             var singleClient = clients.GetOrAdd(darqId, w =>
@@ -133,7 +133,7 @@ namespace FASTER.client
             return task;
         }
 
-        public void EnqueueMessageWithCallback(Worker darqId, ReadOnlySpan<byte> message, long producerId, long lsn,
+        public void EnqueueMessageWithCallback(WorkerId darqId, ReadOnlySpan<byte> message, long producerId, long lsn,
             Action<long> callback,
             bool forceFlush = true, bool waitCommit = false)
         {
@@ -170,9 +170,9 @@ namespace FASTER.client
 
     internal class SingleDarqProducerClient : IDisposable, INetworkMessageConsumer
     {
-        private DprClientSession dprClientSession;
+        private DprSession dprClientSession;
         private readonly INetworkSender networkSender;
-        private Worker target;
+        private WorkerId target;
 
         // TODO(Tianyu): Change to something else for DARQ
         private readonly MaxSizeSettings maxSizeSettings;
@@ -188,7 +188,7 @@ namespace FASTER.client
 
         private long rolledbackWorldline = -1;
 
-        public SingleDarqProducerClient(DprClientSession dprClientSession, Worker target, string address, int port)
+        public SingleDarqProducerClient(DprSession dprClientSession, WorkerId target, string address, int port)
         {
             this.dprClientSession = dprClientSession;
             this.target = target;
@@ -219,7 +219,7 @@ namespace FASTER.client
                 *(int*) head = -(offset - sizeof(int));
                 head += sizeof(int);
 
-                ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, WireFormat.DARQWrite);
+                ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, WireFormat.DarqProducer);
                 head += sizeof(BatchHeader);
 
                 // Set DprHeader size
@@ -228,7 +228,7 @@ namespace FASTER.client
 
                 // populate DPR header
                 var headerBytes = new Span<byte>(head, reservedDprHeaderSpace);
-                if (dprClientSession.SnapshotDependencies(headerBytes) < 0)
+                if (dprClientSession.ComputeHeaderForSend(headerBytes) < 0)
                     // TODO(Tianyu): Handle size mismatch by probably copying into a new array and up-ing reserved space in the future
                     throw new NotImplementedException();
                 if (!networkSender.SendResponse(0, offset))
@@ -261,7 +261,6 @@ namespace FASTER.client
 
         public Task EnqueueMessageAsync(ReadOnlySpan<byte> message, long producerId, long lsn, bool waitCommit = false)
         {
-            
             var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
             EnqueueMessageWithCallback(message, producerId, lsn, v => tcs.SetResult(null), waitCommit);
             return tcs.Task;
@@ -330,29 +329,23 @@ namespace FASTER.client
                 var count = ((BatchHeader*) src)->NumMessages;
                 src += BatchHeader.Size;
 
-                var dprOffset = *(int*) src;
-                src += sizeof(int);
-
-                var dprHeaderSize = *(int*) (src + dprOffset);
-                var dprHeader = new ReadOnlySpan<byte>(src + dprOffset + sizeof(int), dprHeaderSize);
+                var dprHeader = new ReadOnlySpan<byte>(src, DprBatchHeader.FixedLenSize);
+                src += DprBatchHeader.FixedLenSize;
 
                 // TODO(Tianyu): handle here
-                if (dprClientSession.TryUpdateDependencies(dprHeader, out var versionVector) != DprBatchStatus.OK)
+                if (dprClientSession.ReceiveHeader(dprHeader, out var wv) != DprBatchStatus.OK)
                 {
-                    rolledbackWorldline = dprClientSession.terminalWorldLine;
+                    rolledbackWorldline = dprClientSession.TerminalWorldLine;
                     return;
                 }
-
-                Debug.Assert(versionVector.Count == count);
-
+                
                 for (int i = 0; i < count; i++)
                 {
                     switch ((MessageType) (*src++))
                     {
                         case MessageType.DarqEnqueue:
-                            var wv = versionVector[i];
                             // Pretty sure don't actually need to check for Math.Max here because requests are serviced in order?
-                            callbackQueue.Dequeue()(versionVector[i].Version);
+                            callbackQueue.Dequeue()(wv.Version);
                             break;
                         default:
                             throw new FasterException("Unexpected return type");

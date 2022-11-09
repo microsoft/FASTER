@@ -14,7 +14,7 @@ namespace DprCounters
     public class CounterClient
     {
         private DprSession session;
-        private Dictionary<Worker, IPEndPoint> cluster;
+        private Dictionary<WorkerId, IPEndPoint> cluster;
         private byte[] serializationBuffer = new byte[1 << 15];
         private long serialNum = 0;
         private ClientVersionTracker versionTracker = new();
@@ -25,7 +25,7 @@ namespace DprCounters
         /// </summary>
         /// <param name="session"> dpr session </param>
         /// <param name="cluster"> static cluster mapping </param>
-        public CounterClient(IDprFinder dprFinder, Dictionary<Worker, IPEndPoint> cluster)
+        public CounterClient(IDprFinder dprFinder, Dictionary<WorkerId, IPEndPoint> cluster)
         {
             this.dprFinder = dprFinder;
             this.session = new DprSession();
@@ -39,7 +39,7 @@ namespace DprCounters
         /// <param name="amount"> amount to increment counter by</param>
         /// <param name="result"> result </param>
         /// <returns>unique id for operation </returns>
-        public long Increment(Worker worker, long amount, out long result)
+        public long Increment(WorkerId worker, long amount, out long result)
         {
             var id = serialNum++;
             // Add unique id to tracking

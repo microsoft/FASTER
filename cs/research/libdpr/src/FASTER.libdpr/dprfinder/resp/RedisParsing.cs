@@ -206,7 +206,6 @@ namespace FASTER.libdpr
                 case CommandParserState.ARG_WV:
                     if (ProcessRedisBulkString(readHead, buf))
                     {
-                        // TODO(Tianyu): Call WorkerVersion relevant methods instead of hard-coded deserialization
                         Debug.Assert(size == sizeof(WorkerVersion));
                         var workerId = BitConverter.ToInt64(buf, stringStart);
                         var version = BitConverter.ToInt64(buf, stringStart + sizeof(long));

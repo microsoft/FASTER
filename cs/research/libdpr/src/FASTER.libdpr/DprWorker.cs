@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -19,12 +20,12 @@ namespace FASTER.libdpr
     /// <typeparam name="TStateObject"> type of state object</typeparam>
     public class DprWorker<TStateObject> where TStateObject : IStateObject
     {
-        public const int DPR_HEADER_SIZE = DprBatchHeader.FixedLenSize;
         private readonly SimpleObjectPool<LightDependencySet> dependencySetPool;
         private readonly IDprFinder dprFinder;
         private readonly WorkerId me;
         private readonly ConcurrentDictionary<long, LightDependencySet> versions;
         protected readonly EpochProtectedVersionScheme versionScheme;
+        private long maxLocallyCommitted;
         private long worldLine = 0;
         private long lastCheckpointMilli, lastRefreshMilli;
         private Stopwatch sw = Stopwatch.StartNew();
@@ -37,10 +38,10 @@ namespace FASTER.libdpr
         /// <summary>
         /// Creates a new DprServer.
         /// </summary>
-        /// <param name="dprFinder"> interface to the cluster's DPR finder component </param>
+        /// <param name="dprFinder"> interface to the cluster's DPR finder component, or null if not connecting to a DPR finder </param>
         /// <param name="me"> unique id of the DPR server </param>
         /// <param name="stateObject"> underlying state object </param>
-        public DprWorker(IDprFinder dprFinder, WorkerId me, TStateObject stateObject)
+        public DprWorker(WorkerId me, TStateObject stateObject, IDprFinder dprFinder)
         {
             this.dprFinder = dprFinder;
             this.me = me;
@@ -51,6 +52,10 @@ namespace FASTER.libdpr
             depSerializationArray = new byte[2 * LightDependencySet.MaxClusterSize * sizeof(long)];
             nextCommit = new TaskCompletionSource<long>();
         }
+
+        /// <summary></summary>
+        /// <returns> A task that completes when the next commit is recoverable</returns>
+        public Task<long> NextCommit() => nextCommit.Task;
 
         /// <summary>
         /// Add the given attachment to the DprWorker. Should only be invoked before connecting to the cluster.
@@ -116,7 +121,6 @@ namespace FASTER.libdpr
                     var success = versions.TryAdd(vNew, deps);
                     Debug.Assert(success);
                     tcs.SetResult(null);
-
                     worldLine = newWorldLine;
                 }, Math.Max(version, versionScheme.CurrentState().Version) + 1);
             }
@@ -167,9 +171,10 @@ namespace FASTER.libdpr
                 // Perform checkpoint with a callback to report persistence and clean-up leftover tracking state
                 stateObject.PerformCheckpoint(vOld, new Span<byte>(metadataBuffer, 0, length), () =>
                 {
+                    Utility.MonotonicUpdate(ref maxLocallyCommitted, vOld, out _);
                     versions.TryRemove(vOld, out var deps);
                     var workerVersion = new WorkerVersion(me, vOld);
-                    dprFinder.ReportNewPersistentVersion(worldLine, workerVersion, deps);
+                    dprFinder?.ReportNewPersistentVersion(worldLine, workerVersion, deps);
                     dependencySetPool.Return(deps);
                 });
 
@@ -189,11 +194,27 @@ namespace FASTER.libdpr
         /// </summary>
         public void ConnectToCluster()
         {
-            var v = dprFinder.NewWorker(me, stateObject);
-            // This worker is recovering from some failure and we need to load said checkpoint
-            if (v != 0)
-                BeginRestore(dprFinder.SystemWorldLine(), v).GetAwaiter().GetResult();
-            dprFinder.Refresh();
+            if (dprFinder == null)
+            {
+                // Without DPR, simply pick the latest version to recover to
+                var v = stateObject.GetUnprunedVersions().Select(t =>
+                {
+                    SerializationUtil.DeserializeCheckpointMetadata(new Span<byte>(t.Item1, t.Item2, t.Item1.Length - t.Item2),
+                        out _, out var wv, out _);
+                    return wv.Version;
+                }).FirstOrDefault();
+
+                if (v != 0)
+                    BeginRestore(dprFinder.SystemWorldLine(), v).GetAwaiter().GetResult();
+            }
+            else
+            {
+                var v = dprFinder.NewWorker(me, stateObject);
+                // This worker is recovering from some failure and we need to load said checkpoint
+                if (v != 0)
+                    BeginRestore(dprFinder.SystemWorldLine(), v).GetAwaiter().GetResult();
+                dprFinder.Refresh();
+            }
         }
 
         /// <summary></summary>
@@ -211,6 +232,13 @@ namespace FASTER.libdpr
             Debug.Assert(size > 0);
             return new ReadOnlySpan<byte>(depSerializationArray, 0, size);
         }
+        
+        /// <summary></summary>
+        /// <returns> Get the largest version number that is considered committed (will be recovered to) of this DPR Worker</returns>
+        public long CommittedVersion()
+        {
+            return dprFinder?.SafeVersion(Me()) ?? maxLocallyCommitted;
+        }
 
         /// <summary>
         /// Check whether this DprWorker is due to refresh its view of the cluster or need to perform a checkpoint ---
@@ -224,7 +252,7 @@ namespace FASTER.libdpr
         public void TryRefreshAndCheckpoint(long checkpointPeriodMilli, long refreshPeriodMilli)
         {
             var currentTime = sw.ElapsedMilliseconds;
-            var lastCommitted = dprFinder.SafeVersion(me);
+            var lastCommitted = CommittedVersion();
 
             if (dprFinder != null && lastRefreshMilli + refreshPeriodMilli < currentTime)
             {
@@ -246,7 +274,7 @@ namespace FASTER.libdpr
             }
 
             // Can prune dependency information of committed versions
-            var newCommitted = dprFinder.SafeVersion(me);
+            var newCommitted = CommittedVersion();
             if (lastCommitted != newCommitted)
             {
                 var oldTask = nextCommit;
@@ -274,7 +302,7 @@ namespace FASTER.libdpr
 
             ref var responseObj =
                 ref MemoryMarshal.GetReference(MemoryMarshal.Cast<byte, DprBatchHeader>(outputHeaderBytes));
-            responseObj.SrcWorkerIdId = Me();
+            responseObj.SrcWorkerId = Me();
             // Use negative to signal that there was a mismatch, which would prompt error handling on client side
             // Must be negative to distinguish from a normal response message in current version
             responseObj.worldLine = -worldLine;
@@ -309,10 +337,10 @@ namespace FASTER.libdpr
 
             // Wait for worker version to catch up to largest in batch (minimum version where all operations
             // can be safely executed), taking checkpoints if necessary.
-            while (inputHeader.version > versionScheme.CurrentState().Version)
+            while (dprFinder != null && inputHeader.version > versionScheme.CurrentState().Version)
             {
                 if (BeginCheckpoint(inputHeader.version))
-                    core.Utility.MonotonicUpdate(ref lastCheckpointMilli, sw.ElapsedMilliseconds, out _);
+                    Utility.MonotonicUpdate(ref lastCheckpointMilli, sw.ElapsedMilliseconds, out _);
                 Thread.Yield();
             }
 
@@ -321,7 +349,7 @@ namespace FASTER.libdpr
             versionScheme.Enter();
             // If the worker world-line is behind, wait for worker to recover up to the same point as the client,
             // so client operation is not lost in a rollback that the client has already observed.
-            while (inputHeader.worldLine > worldLine)
+            while (dprFinder != null && inputHeader.worldLine > worldLine)
             {
                 versionScheme.Leave();
                 BeginRestore(inputHeader.worldLine, dprFinder.SafeVersion(me)).GetAwaiter().GetResult();
@@ -340,8 +368,8 @@ namespace FASTER.libdpr
             // could get processed at a future version instead due to thread timing. However, this is not a correctness
             // issue, nor do we lose much precision as batch-level dependency tracking is already an approximation.
             var deps = versions[versionScheme.CurrentState().Version];
-            if (!inputHeader.SrcWorkerIdId.Equals(WorkerId.INVALID))
-                deps.Update(inputHeader.SrcWorkerIdId, inputHeader.version);
+            if (!inputHeader.SrcWorkerId.Equals(WorkerId.INVALID))
+                deps.Update(inputHeader.SrcWorkerId, inputHeader.version);
             fixed (byte* d = inputHeader.data)
             {
                 var depsHead = d + inputHeader.ClientDepsOffset;
@@ -387,7 +415,7 @@ namespace FASTER.libdpr
             versionScheme.Leave();
 
             // Populate response
-            outputHeader.SrcWorkerIdId = Me();
+            outputHeader.SrcWorkerId = Me();
             outputHeader.worldLine = wl;
             outputHeader.version = versionScheme.CurrentState().Version;
             outputHeader.numClientDeps = 0;
