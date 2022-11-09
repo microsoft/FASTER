@@ -333,8 +333,11 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
       // context.entry should reflect current hash index entry -- retry!
     }
 
-    assert(address.offset() + record_size <= Address::kMaxOffset);
-    address += record_size;
+    if (address.offset() + record_size <= Address::kMaxOffset) {
+      address += record_size;
+    } else {
+      address = Address{ address.page() + 1, 0 };
+    }
   }
   log_debug("ReadCache EVICT: DONE!");
 
