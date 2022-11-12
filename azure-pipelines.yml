@@ -26,16 +26,16 @@ jobs:
         buildPlatform: 'x64'
         buildConfiguration: 'Release'
 
-steps:
+  steps:
   - task: UseDotNet@2
-    displayName: Use .NET 7.0
-    inputs:
-      packageType: 'sdk'
-      version: '7.0.x'
+     displayName: Use .NET 7.0
+     inputs:
+       packageType: 'sdk'
+       version: '7.0.x'
 
   - task: NodeTool@0
     inputs:
-      versionSpec: 13.x
+       versionSpec: 13.x
 
   - script : npm install -g azurite
     displayName: Install Azurite
