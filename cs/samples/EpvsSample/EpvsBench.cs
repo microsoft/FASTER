@@ -19,20 +19,20 @@ namespace EpvsSample
 
         internal class Worker
         {
-            private byte[] scratchPad;
+            readonly byte[] scratchPad;
 
-            private HashAlgorithm hasher;
+            readonly HashAlgorithm hasher;
 
             // private long scratchPad;
-            private EpvsBench parent;
-            private List<int> versionChangeIndexes;
-            private int numOps, versionChangeDelay, numaStyle, threadId;
+            readonly EpvsBench parent;
+            readonly List<int> versionChangeIndexes;
+            readonly int numOps, versionChangeDelay, numaStyle, threadId;
 
-            private byte syncMode;
+            readonly byte syncMode;
 
             internal Worker(EpvsBench parent, Options options, Random random, int threadId)
             {
-                hasher = new SHA256Managed();
+                hasher = SHA256.Create();
                 scratchPad = new byte[hasher.HashSize / 8];
                 this.parent = parent;
                 versionChangeIndexes = new List<int>();
