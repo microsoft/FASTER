@@ -138,6 +138,12 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
+  - task: UseDotNet@2
+    displayName: Use .NET 7.0
+    inputs:
+      packageType: 'sdk'
+      version: '7.0.x'
+
   - bash: |
       sudo npm install -g azurite
       sudo mkdir azurite
