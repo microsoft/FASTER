@@ -27,9 +27,21 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
+  - task: UseDotNet@2
+    displayName: Use .NET 6.0
+    inputs:
+      packageType: 'sdk'
+      version: '6.0.x'
+
+  - task: UseDotNet@2
+    displayName: Use .NET 7.0
+    inputs:
+      packageType: 'sdk'
+      version: '7.0.x'
+
   - task: NodeTool@0
     inputs:
-       versionSpec: 13.x
+      versionSpec: 13.x
 
   - script : npm install -g azurite
     displayName: Install Azurite
@@ -132,6 +144,18 @@ jobs:
         buildConfiguration: 'Release'
 
   steps:
+  - task: UseDotNet@2
+    displayName: Use .NET 6.0
+    inputs:
+      packageType: 'sdk'
+      version: '6.0.x'
+
+  - task: UseDotNet@2
+    displayName: Use .NET 7.0
+    inputs:
+      packageType: 'sdk'
+      version: '7.0.x'
+
   - bash: |
       sudo npm install -g azurite
       sudo mkdir azurite
