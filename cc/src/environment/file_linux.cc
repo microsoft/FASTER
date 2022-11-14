@@ -165,6 +165,7 @@ Status QueueFile::Write(size_t offset, uint32_t length, const uint8_t* buffer,
                         IAsyncContext& context, AsyncIOCallback callback) {
   DCHECK_ALIGNMENT(offset, length, buffer);
 #ifdef IO_STATISTICS
+  ++write_count_;
   bytes_written_ += length;
 #endif
   return ScheduleOperation(FileOperationType::Write, const_cast<uint8_t*>(buffer), offset, length,

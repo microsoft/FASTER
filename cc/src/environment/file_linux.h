@@ -29,6 +29,7 @@ class File {
     , filename_{}
     , owner_{ false }
 #ifdef IO_STATISTICS
+    , write_count_{ 0 }
     , bytes_written_ { 0 }
     , read_count_{ 0 }
     , bytes_read_{ 0 }
@@ -42,6 +43,7 @@ class File {
     , filename_{ filename }
     , owner_{ false }
 #ifdef IO_STATISTICS
+    , write_count_{ 0 }
     , bytes_written_ { 0 }
     , read_count_{ 0 }
     , bytes_read_{ 0 }
@@ -56,6 +58,7 @@ class File {
     , filename_{ std::move(other.filename_) }
     , owner_{ other.owner_ }
 #ifdef IO_STATISTICS
+    , write_count_{ other.write_count_ }
     , bytes_written_ { other.bytes_written_ }
     , read_count_{ other.read_count_ }
     , bytes_read_{ other.bytes_read_ }
@@ -77,6 +80,7 @@ class File {
     filename_ = std::move(other.filename_);
     owner_ = other.owner_;
 #ifdef IO_STATISTICS
+    write_count_ = other.write_count_;
     bytes_written_ = other.bytes_written_;
     read_count_ = other.read_count_;
     bytes_read_ = other.bytes_read_;
@@ -107,6 +111,9 @@ class File {
   }
 
 #ifdef IO_STATISTICS
+  uint64_t write_count() const {
+    return write_count_.load();
+  }
   uint64_t bytes_written() const {
     return bytes_written_.load();
   }
@@ -132,6 +139,7 @@ class File {
 
 #ifdef IO_STATISTICS
  protected:
+  std::atomic<uint64_t> write_count_;
   std::atomic<uint64_t> bytes_written_;
   std::atomic<uint64_t> read_count_;
   std::atomic<uint64_t> bytes_read_;
