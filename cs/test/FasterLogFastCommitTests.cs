@@ -28,7 +28,7 @@ namespace FASTER.test
             
             var filename = path + "fastCommit" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename, deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true, TryRecoverLatest = false};
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true, TryRecoverLatest = false, SegmentSizeBits = 26};
             log = new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];
@@ -103,7 +103,7 @@ namespace FASTER.test
             
             var filename = path + "boundedGrowth" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename, deleteOnClose: true);
-            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true};
+            var logSettings = new FasterLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true, SegmentSizeBits = 26 };
             log = new FasterLog(logSettings);
 
             byte[] entry = new byte[entryLength];

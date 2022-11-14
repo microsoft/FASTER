@@ -55,7 +55,7 @@ namespace FASTER.test
     internal class FasterLogTestBase
     {
         protected const int entryLength = 100;
-        protected const int numEntries = 100000; //1000000;
+        protected const int numEntries = 10000; //1000000;
         protected const int numSpanEntries = 500; // really slows down if go too many
         protected FasterLog log;
         protected IDevice device;
