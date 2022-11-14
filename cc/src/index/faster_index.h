@@ -309,9 +309,15 @@ void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, S
   CallbackContext<FasterIndexContext> context{ ctxt };
   // Result here is wrt to FASTER operation (i.e., Read / Rmw) result
   assert(result == Status::Ok || result == Status::NotFound);
+  if (result == Status::Ok) {
   assert(context->result == Status::Ok ||
         context->result == Status::NotFound ||
         context->result == Status::Aborted);
+  } else {
+    // Only in Reads: if no hash chunk exists, context->result was not set
+    assert(context->result == Status::Corruption);
+    context->result = Status::NotFound;
+  }
 
   // FIXME: store this inside FasterIndexReadContext
   AsyncIndexIOContext index_io_context{ context->caller_context, context->thread_io_responses,
