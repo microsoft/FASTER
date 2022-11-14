@@ -18,7 +18,7 @@
     <dependencies>
 		<group targetFramework="netstandard2.0">
 			<dependency id="System.Runtime.CompilerServices.Unsafe" version="6.0.0" />
-			<dependency id="System.Memory" version="4.5.4" />
+			<dependency id="System.Memory" version="4.5.5" />
 		</group>
 		<group targetFramework="netstandard2.1">
 			<dependency id="System.Runtime.CompilerServices.Unsafe" version="6.0.0" />
