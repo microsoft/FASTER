@@ -50,6 +50,7 @@ enum class OperationStatus : uint8_t {
   RETRY_LATER,
   RECORD_ON_DISK,
   INDEX_ENTRY_ON_DISK,
+  ASYNC_TO_COLD_STORE,
   SUCCESS_UNMARK,
   NOT_FOUND_UNMARK,
   CPR_SHIFT_DETECTED,
@@ -544,8 +545,8 @@ class AsyncPendingConditionalInsertContext : public PendingContext<K> {
 
   // Used to provide a context for InternalUpsert/InternalDelete
   // methods used when performing hot-cold compaction
-  virtual async_pending_upsert_context_t* WrapInUpsertContext() = 0;
-  virtual async_pending_delete_context_t* WrapInDeleteContext() = 0;
+  virtual async_pending_upsert_context_t* ConvertToUpsertContext() = 0;
+  virtual async_pending_delete_context_t* ConvertToDeleteContext() = 0;
 
  public:
   Address min_search_offset;
@@ -623,7 +624,7 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
     return conditional_insert_context().Insert(dest, alloc_size);
   }
 
-  inline async_pending_upsert_context_t* WrapInUpsertContext() final {
+  inline async_pending_upsert_context_t* ConvertToUpsertContext() final {
     pending_upsert_context_t context{ conditional_insert_context(), PendingContext<key_t>::caller_callback };
     // Deep copy context to heap
     IAsyncContext* context_copy;
@@ -632,7 +633,7 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
     return static_cast<async_pending_upsert_context_t*>(context_copy);
   }
 
-  inline async_pending_delete_context_t* WrapInDeleteContext() final {
+  inline async_pending_delete_context_t* ConvertToDeleteContext() final {
     pending_delete_context_t context{ conditional_insert_context(), PendingContext<key_t>::caller_callback };
     // Deep copy context to heap
     IAsyncContext* context_copy;

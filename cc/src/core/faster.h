@@ -16,7 +16,6 @@
 #include <unordered_set>
 
 #include "common/log.h"
-#include "common/utils.h"
 #include "device/file_system_disk.h"
 #include "index/mem_index.h"
 #include "index/faster_index.h"
@@ -1655,9 +1654,13 @@ inline Status FasterKv<K, V, D, H, OH>::HandleOperationStatus(ExecutionContext& 
   case OperationStatus::INDEX_ENTRY_ON_DISK:
     // Keep track of pending requests due to async index retrievals
     async = true;
-    // FIXME: Just increasing the number of pending ios hang FASTER
-    // Yet, throttling should be performed somehow -- maybe from FasterKvHC?
-    //++num_pending_ios;
+    return Status::Pending;
+  case OperationStatus::ASYNC_TO_COLD_STORE:
+    // hot-cold only: live record upserted/deleted at cold store
+    assert(pending_context.type == OperationType::ConditionalInsert);
+    async = false;
+    // callback will be called when op finishes on other store
+    pending_context.caller_callback = nullptr;
     return Status::Pending;
   case OperationStatus::SUCCESS_UNMARK:
     checkpoint_locks_.get_lock(pending_context.get_key_hash()).unlock_old();
@@ -3402,10 +3405,12 @@ inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCal
     status = Status::NotFound;
   } else {
     assert(internal_status == OperationStatus::RECORD_ON_DISK ||
-            internal_status == OperationStatus::INDEX_ENTRY_ON_DISK);
+          internal_status == OperationStatus::INDEX_ENTRY_ON_DISK ||
+          internal_status == OperationStatus::ASYNC_TO_COLD_STORE);
     bool async;
     status = HandleOperationStatus(thread_ctx(), pending_context, internal_status, async);
   }
+
   // TODO FIX THIS
   //thread_ctx().serial_num = monotonic_serial_num;
   return status;
@@ -3575,18 +3580,40 @@ create_record:
   else {
     // Case: hot-cold compaction
     // Upsert/Deletes on cold log should not go pending since upserts only go pending when during checkpointing
-    // TODO: handle case where go pending (e.g. cold index request goes pending -- may need to define some callback)
-    // memory leaks here
-    OperationStatus op_status;
+    // ---> And no two hot-cold compactions can take place simultaneously
     if (!pending_context.is_tombstone()) {
-      async_pending_upsert_context_t* upsert_context = pending_context.WrapInUpsertContext();
-      op_status = other_store_->InternalUpsert(*upsert_context);
+      async_pending_upsert_context_t* upsert_context = pending_context.ConvertToUpsertContext();
+      OperationStatus op_status = other_store_->InternalUpsert(*upsert_context);
+      assert(op_status == OperationStatus::SUCCESS || op_status == OperationStatus::INDEX_ENTRY_ON_DISK);
+
+      if (op_status == OperationStatus::SUCCESS) {
+        // free upsert context(s) before returning
+        CallbackContext<async_pending_upsert_context_t> upsert_ctxt{ upsert_context };
+        if (!pending_context.from_deep_copy()) {
+          // free if ConditionalInsert did not go pending; otherwise it will be freed by CompleteIoPendingRequests
+          CallbackContext<IAsyncContext> upsert_caller_ctxt{ upsert_context->caller_context };
+        }
+        return op_status;
+      } else {
+        return OperationStatus::ASYNC_TO_COLD_STORE;
+      }
     } else {
-      async_pending_delete_context_t* delete_context = pending_context.WrapInDeleteContext();
-      op_status = other_store_->InternalDelete(*delete_context, true);
+      async_pending_delete_context_t* delete_context = pending_context.ConvertToDeleteContext();
+      OperationStatus op_status = other_store_->InternalDelete(*delete_context, true);
+      assert(op_status == OperationStatus::SUCCESS || op_status == OperationStatus::INDEX_ENTRY_ON_DISK);
+
+      if (op_status == OperationStatus::SUCCESS) {
+        // free delete context(s) before returning
+        CallbackContext<async_pending_delete_context_t> delete_ctxt{ delete_context };
+        if (!pending_context.from_deep_copy()) {
+          // free if ConditionalInsert did not go pending; otherwise it will be freed by CompleteIoPendingRequests
+          CallbackContext<IAsyncContext> delete_caller_ctxt{ delete_context->caller_context };
+        }
+        return op_status;
+      } else {
+        return OperationStatus::ASYNC_TO_COLD_STORE;
+      }
     }
-    assert(op_status == OperationStatus::SUCCESS || op_status == OperationStatus::INDEX_ENTRY_ON_DISK);
-    return op_status;
   }
 }
 
