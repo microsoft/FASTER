@@ -153,6 +153,10 @@ namespace FASTER.core
             List<int> segids = new();
             foreach (System.IO.FileInfo item in di.GetFiles(bareName + "*"))
             {
+                if (item.Name == bareName)
+                {
+                    continue;
+                }
                 segids.Add(int.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
             }
             segids.Sort();
