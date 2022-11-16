@@ -60,7 +60,7 @@ namespace FASTER.server
             terminationStart = new ManualResetEventSlim();
             terminationComplete = new CountdownEvent(2);
             darq.ConnectToCluster();
-            responseQueue = options.DarqSettings.Speculative ? new() : null;
+            responseQueue = darq.Speculative ?  new() : null;
             provider = new DarqProvider(darq, responseQueue);
             server = new FasterServerTcp(options.Address, options.Port);
             server.Register(WireFormat.DarqSubscribe, provider);
@@ -95,7 +95,7 @@ namespace FASTER.server
 
             responseThread = new Thread(async () =>
             {
-                while (!terminationStart.IsSet && !responseQueue.IsEmpty)
+                while (!terminationStart.IsSet && responseQueue != null && !responseQueue.IsEmpty)
                 {
                    // TODO(Tianyu): current implementation may have response buffers in the queue with versions
                    // out-of-order, resulting in some responses getting sent later than necessary

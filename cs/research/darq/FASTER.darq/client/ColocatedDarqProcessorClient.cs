@@ -48,7 +48,7 @@ namespace FASTER.darq
             public unsafe ValueTask<StepStatus> Step(StepRequest request)
             {
                 Span<byte> header = default;
-                // If step results in a version mismatch, rely on the scan to trigger a rollback for simplicty
+                // If step results in a version mismatch, rely on the scan to trigger a rollback for simplicity
                 if (parent.unsafeMode)
                 {
                     // TODO(Tianyu): magic number
@@ -211,7 +211,7 @@ namespace FASTER.darq
         {
             capabilities = new Capabilities(this, new DprSession(darq.WorldLine()));
             processor.OnRestart(capabilities);
-            iterator = darq.StartScan();
+            iterator = darq.StartScan(true);
         }
 
         /// <inheritdoc/>

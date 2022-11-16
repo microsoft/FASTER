@@ -80,11 +80,12 @@ namespace FASTER.server
                 {
                     case MessageType.DarqStartPush:
                     {
+                        var speculative = (*src++) == 1;
                         var t = new ManualResetEventSlim();
                         if (Interlocked.CompareExchange(ref terminationStart, t, null) == null)
                         {
                             terminationComplete = new ManualResetEventSlim();
-                            StartPushEntries();
+                            StartPushEntries(speculative);
                         }
                         break;
                     }
@@ -94,11 +95,11 @@ namespace FASTER.server
             }
         }
 
-        private void StartPushEntries()
+        private void StartPushEntries(bool speculative)
         {
             pushThread = new Thread(async () =>
             {
-                using var it = dprServer.StartScan();
+                using var it = dprServer.StartScan(speculative);
                 while (!terminationStart.IsSet)
                 {
                     ResetSendBuffer();

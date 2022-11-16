@@ -91,7 +91,7 @@ namespace FASTER.darq
                 RemoveOutdatedCommits = false,
                 LogCommitPolicy = null,
                 TryRecoverLatest = false,
-                AutoRefreshSafeTailAddress = settings.Speculative,
+                AutoRefreshSafeTailAddress = true,
                 AutoCommit = false,
                 TolerateDeviceFailure = false
             };
@@ -178,7 +178,6 @@ namespace FASTER.darq
     {
         private readonly DeduplicationVector dvc;
         private readonly LongValueAttachment incarnation, largestSteppedLsn;
-
         private WorkQueueLIFO<StepRequestHandle> stepQueue;
 
         private ThreadLocalObjectPool<StepRequestHandle> stepRequestPool;
@@ -197,7 +196,10 @@ namespace FASTER.darq
             stepRequestPool = new ThreadLocalObjectPool<StepRequestHandle>(() => new StepRequestHandle());
         }
 
-
+        public long ReplayEnd => largestSteppedLsn.value;
+        
+        public bool Speculative => dprFinder != null;
+        
         public void Dispose()
         {
             StateObject().Dispose();
@@ -252,29 +254,31 @@ namespace FASTER.darq
 
             // Validation of input batch
             var numTotalEntries = stepRequestHandle.stepMessages.TotalEntries();
-            // The last entry of the step must be a completion record that steps some previous message
+            // Validate if The last entry of the step is a completion record that steps some previous message
             var lastEntry = stepRequestHandle.stepMessages.Get(numTotalEntries - 1);
             fixed (byte* h = lastEntry)
             {
                 var end = h + lastEntry.Length;
                 var messageType = (DarqMessageType)(*h);
-                Debug.Assert(messageType == DarqMessageType.COMPLETION);
-                Debug.Assert(lastEntry.Length % sizeof(long) == 1);
-                for (var head = h + sizeof(DarqMessageType); head < end; head += sizeof(long))
+                if (messageType == DarqMessageType.COMPLETION)
                 {
-                    var completedLsn = *(long*)head;
-                    if (!StateObject().incompleteMessages.TryRemove(completedLsn, out _))
+                    Debug.Assert(lastEntry.Length % sizeof(long) == 1);
+                    for (var head = h + sizeof(DarqMessageType); head < end; head += sizeof(long))
                     {
-                        // This means we are trying to step something twice. Roll back all previous steps before
-                        // failing this step
-                        for (var rollbackHead = h + sizeof(DarqMessageType);
-                             rollbackHead < head;
-                             rollbackHead += sizeof(long))
-                            StateObject().incompleteMessages.TryAdd(*(long*)rollbackHead, 0);
-                        stepRequestHandle.status = StepStatus.INVALID;
-                        stepRequestHandle.done.Set();
-                        Console.WriteLine($"step unexpectedly failed on lsn {completedLsn}");
-                        return;
+                        var completedLsn = *(long*)head;
+                        if (!StateObject().incompleteMessages.TryRemove(completedLsn, out _))
+                        {
+                            // This means we are trying to step something twice. Roll back all previous steps before
+                            // failing this step
+                            for (var rollbackHead = h + sizeof(DarqMessageType);
+                                 rollbackHead < head;
+                                 rollbackHead += sizeof(long))
+                                StateObject().incompleteMessages.TryAdd(*(long*)rollbackHead, 0);
+                            stepRequestHandle.status = StepStatus.INVALID;
+                            stepRequestHandle.done.Set();
+                            Console.WriteLine($"step unexpectedly failed on lsn {completedLsn}");
+                            return;
+                        }
                     }
                 }
             }
@@ -311,6 +315,6 @@ namespace FASTER.darq
             return tcs.Task.GetAwaiter().GetResult();
         }
 
-        public DarqScanIterator StartScan() => new DarqScanIterator(StateObject().log, largestSteppedLsn.value, StateObject().settings.Speculative);
+        public DarqScanIterator StartScan(bool speculative) => new DarqScanIterator(StateObject().log, largestSteppedLsn.value, speculative);
     }
 }

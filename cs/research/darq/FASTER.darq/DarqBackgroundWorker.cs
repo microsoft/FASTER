@@ -10,7 +10,7 @@ namespace FASTER.client
 {
     public class DarqBackgroundWorker : IDisposable
     {
-        private Darq darqServer;
+        private Darq darq;
         private SimpleObjectPool<DarqMessage> messagePool;
         private ManualResetEventSlim terminationStart, terminationComplete;
         private IDarqClusterInfo clusterInfo;
@@ -25,17 +25,17 @@ namespace FASTER.client
         /// <summary>
         /// Constructs a new ColocatedDarqProcessorClient
         /// </summary>
-        /// <param name="darqServer">DARQ DprServer that this consumer attaches to </param>
+        /// <param name="darq">DARQ DprServer that this consumer attaches to </param>
         /// <param name="clusterInfo"> information about the DARQ cluster </param>
-        public DarqBackgroundWorker(Darq darqServer, IDarqClusterInfo clusterInfo, int batchSize = 16)
+        public DarqBackgroundWorker(Darq darq, IDarqClusterInfo clusterInfo, int batchSize = 16)
         {
-            this.darqServer = darqServer;
+            this.darq = darq;
             this.clusterInfo = clusterInfo;
             messagePool = new SimpleObjectPool<DarqMessage>(() => new DarqMessage(messagePool), null, 1 << 15);
             this.batchSize = batchSize;
         }
 
-        public long ProcessingLag => darqServer.StateObject().log.TailAddress - processedUpTo;
+        public long ProcessingLag => darq.StateObject().log.TailAddress - processedUpTo;
 
         public void Dispose()
         {
@@ -50,8 +50,8 @@ namespace FASTER.client
             status = DprBatchStatus.OK;
             try
             {
-                darqServer.BeginProcessing();
-                if (darqServer.WorldLine() > clientSession.WorldLine)
+                darq.BeginProcessing();
+                if (darq.WorldLine() > clientSession.WorldLine)
                 {
                     status = DprBatchStatus.ROLLBACK;
                     return true;
@@ -69,7 +69,7 @@ namespace FASTER.client
                     return true;
                 }
 
-                var wv = new WorkerVersion(darqServer.Me(), darqServer.Version());
+                var wv = new WorkerVersion(darq.Me(), darq.Version());
                 // Copy out the entry before dropping protection
                 message = messagePool.Checkout();
                 message.Reset(type, lsn, processedUpTo, wv,
@@ -78,7 +78,7 @@ namespace FASTER.client
             }
             finally
             {
-                darqServer.FinishProcessing();
+                darq.FinishProcessing();
             }
 
             return true;
@@ -96,13 +96,13 @@ namespace FASTER.client
                 var lsn = m.GetLsn();
                 if (++numBatched < batchSize)
                 {
-                    producerClient.EnqueueMessageWithCallback(dest, body, darqServer.Me().guid, lsn,
+                    producerClient.EnqueueMessageWithCallback(dest, body, darq.Me().guid, lsn,
                         _ => { completionTrackerLocal.RemoveEntry(lsn); }, forceFlush: false);
                 }
                 else
                 {
                     numBatched = 0;
-                    producerClient.EnqueueMessageWithCallback(dest, body, darqServer.Me().guid, lsn,
+                    producerClient.EnqueueMessageWithCallback(dest, body, darq.Me().guid, lsn,
                         _ => { completionTrackerLocal.RemoveEntry(lsn); }, forceFlush: true);
                 }
             }
@@ -152,12 +152,12 @@ namespace FASTER.client
                     throw new NotImplementedException();
             }
 
-            if (completionTracker.GetTruncateHead() > darqServer.StateObject().log.BeginAddress)
+            if (completionTracker.GetTruncateHead() > darq.StateObject().log.BeginAddress)
             {
                 Console.WriteLine($"Truncating log until {completionTracker.GetTruncateHead()}");
-                darqServer.BeginProcessing();
-                darqServer.TruncateUntil(completionTracker.GetTruncateHead());
-                darqServer.FinishProcessing();
+                darq.BeginProcessing();
+                darq.TruncateUntil(completionTracker.GetTruncateHead());
+                darq.FinishProcessing();
             }
 
             return true;
@@ -165,10 +165,10 @@ namespace FASTER.client
 
         private void Reset()
         {
-            clientSession = new DprSession(darqServer.WorldLine());
+            clientSession = new DprSession(darq.WorldLine());
             producerClient = new DarqProducerClient(clusterInfo, clientSession);
             completionTracker = new DarqCompletionTracker();
-            iterator = darqServer.StartScan();
+            iterator = darq.StartScan(darq.Speculative);
         }
 
         public async Task StartProcessing()
@@ -182,7 +182,7 @@ namespace FASTER.client
                 terminationComplete = new ManualResetEventSlim();
 
                 Reset();
-                Console.WriteLine($"Starting background send from address {darqServer.StateObject().log.BeginAddress}");
+                Console.WriteLine($"Starting background send from address {darq.StateObject().log.BeginAddress}");
                 while (!terminationStart.IsSet)
                 {
                     while (TryConsumeNext())

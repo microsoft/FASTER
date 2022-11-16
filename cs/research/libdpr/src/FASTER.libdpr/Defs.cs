@@ -7,9 +7,6 @@ namespace FASTER.libdpr
     /// </summary>
     public struct WorkerId
     {
-        /// <summary>
-        ///     Reserved Worker id for cluster management
-        /// </summary>
         public static readonly WorkerId INVALID = new WorkerId(-1);
 
         /// <summary>

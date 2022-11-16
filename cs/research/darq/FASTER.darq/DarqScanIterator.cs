@@ -66,7 +66,9 @@ namespace FASTER.libdpr
                                 var completedLsn = *completed++;
                                 replayMessages.Remove(completedLsn);
                             }
-
+                            break;
+                        case DarqMessageType.CHECKPOINT:
+                            stateMessagesToReplay.Clear();
                             break;
                         default:
                             throw new NotImplementedException();
@@ -118,6 +120,7 @@ namespace FASTER.libdpr
                         // These have already been replayed or should not be replayed
                         case DarqMessageType.SELF:
                         case DarqMessageType.COMPLETION:
+                        case DarqMessageType.CHECKPOINT:
                             iterator.UnsafeRelease();
                             continue;
                         default:

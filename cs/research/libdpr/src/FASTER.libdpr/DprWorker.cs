@@ -21,7 +21,7 @@ namespace FASTER.libdpr
     public class DprWorker<TStateObject> where TStateObject : IStateObject
     {
         private readonly SimpleObjectPool<LightDependencySet> dependencySetPool;
-        private readonly IDprFinder dprFinder;
+        protected readonly IDprFinder dprFinder;
         private readonly WorkerId me;
         private readonly ConcurrentDictionary<long, LightDependencySet> versions;
         protected readonly EpochProtectedVersionScheme versionScheme;

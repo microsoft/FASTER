@@ -10,7 +10,8 @@ namespace FASTER.darq
     {
         /// <summary>
         ///  The DPRFinder for the cluster this DARQ should connect to, or null if you will only use DARQ
-        ///  non-speculatively and do not wish to connect to a DPR cluster
+        ///  non-speculatively and do not wish to connect to a DPR cluster. If a non-null DPRFinder is supplied,
+        ///  DARQ will operate in speculative mode.
         /// </summary>
         public IDprFinder DprFinder = null;
         
@@ -72,11 +73,6 @@ namespace FASTER.darq
         /// will result in data loss otherwise,
         /// </summary>
         public bool DeleteOnClose = false;
-
-        /// <summary>
-        /// Whether this DARQ runs in speculative mode.
-        /// </summary>
-        public bool Speculative = false;
 
         /// <summary>
         /// Create default configuration settings for DARQ. You need to create and specify LogDevice 

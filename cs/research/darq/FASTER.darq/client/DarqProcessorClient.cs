@@ -300,6 +300,9 @@ namespace FASTER.client
             var curr = networkSender.GetResponseObjectHead() + offset;
             *curr = (byte) MessageType.DarqStartPush;
             curr += sizeof(byte);
+            *curr = 1;
+            curr += sizeof(byte);
+            
             offset = (int) (curr - networkSender.GetResponseObjectHead());
             numMessages++;
             var head = networkSender.GetResponseObjectHead();

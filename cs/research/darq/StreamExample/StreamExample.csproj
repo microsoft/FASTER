@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net6.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="CommandLineParser" Version="2.9.1" />
+      <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+      <PackageReference Include="Newtonsoft.Json" Version="13.0.2-beta3" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\..\remote\src\FASTER.client\FASTER.client.csproj" />
+      <ProjectReference Include="..\..\..\remote\src\FASTER.common\FASTER.common.csproj" />
+      <ProjectReference Include="..\..\..\remote\src\FASTER.server\FASTER.server.csproj" />
+      <ProjectReference Include="..\..\..\src\core\FASTER.core.csproj" />
+      <ProjectReference Include="..\..\libdpr\src\FASTER.libdpr\FASTER.libdpr.csproj" />
+      <ProjectReference Include="..\FASTER.darq\FASTER.darq.csproj" />
+    </ItemGroup>
+
+</Project>
