@@ -55,12 +55,11 @@ namespace FASTER.server
         {
             this.options = options;
             darq = new Darq(options.me, options.DarqSettings);
-            if (options.RunBackgroundThread)
-                backgroundWorker = new DarqBackgroundWorker(darq, options.ClusterInfo);
+            backgroundWorker = new DarqBackgroundWorker(darq, options.ClusterInfo);
             terminationStart = new ManualResetEventSlim();
             terminationComplete = new CountdownEvent(2);
             darq.ConnectToCluster();
-            responseQueue = darq.Speculative ?  new() : null;
+            responseQueue = darq.Speculative ? new() : null;
             provider = new DarqProvider(darq, responseQueue);
             server = new FasterServerTcp(options.Address, options.Port);
             server.Register(WireFormat.DarqSubscribe, provider);
@@ -97,17 +96,17 @@ namespace FASTER.server
             {
                 while (!terminationStart.IsSet && responseQueue != null && !responseQueue.IsEmpty)
                 {
-                   // TODO(Tianyu): current implementation may have response buffers in the queue with versions
-                   // out-of-order, resulting in some responses getting sent later than necessary
-                   while (responseQueue.TryPeek(out var response))
-                   {
-                       if (response.version <= darq.CommittedVersion())
-                           // TODO(Tianyu): Figure out how to handle errors
-                           response.networkSender.SendResponse(response.buf, 0, response.size, response);
-                       responseQueue.TryDequeue(out _);
-                   }
+                    // TODO(Tianyu): current implementation may have response buffers in the queue with versions
+                    // out-of-order, resulting in some responses getting sent later than necessary
+                    while (responseQueue.TryPeek(out var response))
+                    {
+                        if (response.version <= darq.CommittedVersion())
+                            // TODO(Tianyu): Figure out how to handle errors
+                            response.networkSender.SendResponse(response.buf, 0, response.size, response);
+                        responseQueue.TryDequeue(out _);
+                    }
 
-                   await darq.NextCommit();
+                    await darq.NextCommit();
                 }
 
                 terminationComplete.Signal();

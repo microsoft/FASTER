@@ -463,7 +463,7 @@ namespace FASTER.client
 
         private int maxOutstandingSteps, maxReadBuffer;
 
-        public DarqProcessorClient(string address, int port, int maxOutstandingSteps, int maxReadBuffer)
+        public DarqProcessorClient(string address, int port, int maxOutstandingSteps = 1 << 10, int maxReadBuffer = 1 << 10)
         {
             this.address = address;
             this.port = port;

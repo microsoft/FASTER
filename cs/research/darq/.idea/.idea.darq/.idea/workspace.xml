@@ -15,7 +15,6 @@
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/DecompilerCache/decompiler/c3b0f7d4199d4eb59c04605841b5535ea23898/e7/5064ff68/ValueType.cs" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/261ff39eae55674d8b4d2e679529b516bd6f5db252df1381a16ca6ef377966/ConcurrentQueue.cs" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$APPLICATION_CONFIG_DIR$/resharper-host/SourcesCache/7cb7424fd293afbd058d95c82aaf7b12b3cf57037576ecc8fd333ccfad7ad/Encoding.cs" root0="SKIP_HIGHLIGHTING" />
-    <setting file="file://$PROJECT_DIR$/DarqCaS/CaSProcessor.cs" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/FASTER.darq/client/ColocatedDarqProcessorClient.cs" root0="FORCE_HIGHLIGHTING" />
   </component>
   <component name="MarkdownSettingsMigration">
@@ -30,18 +29,19 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Rider.SolutionAnalysis.Framework..NETFramework,Version=v4.6.1&quot;: &quot;false&quot;,
-    &quot;Rider.SolutionAnalysis.Framework..NETStandard,Version=v2.0&quot;: &quot;false&quot;,
-    &quot;Rider.SolutionAnalysis.Framework..NETStandard,Version=v2.1&quot;: &quot;false&quot;,
-    &quot;Rider.SolutionAnalysis.Framework.net6.0&quot;: &quot;false&quot;,
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Rider.SolutionAnalysis.Framework..NETFramework,Version=v4.6.1": "false",
+    "Rider.SolutionAnalysis.Framework..NETStandard,Version=v2.0": "false",
+    "Rider.SolutionAnalysis.Framework..NETStandard,Version=v2.1": "false",
+    "Rider.SolutionAnalysis.Framework.net6.0": "false",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "full.screen.before.presentation.mode": "false",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RunManager" selected=".NET Project.DarqCaS">
     <configuration name="DarqCaS" type="DotNetProject" factoryName=".NET Project">
       <option name="EXE_PATH" value="" />
@@ -103,6 +103,8 @@
       <workItem from="1668449246831" duration="1983000" />
       <workItem from="1668451368475" duration="6077000" />
       <workItem from="1668612688936" duration="3807000" />
+      <workItem from="1668701584232" duration="2074000" />
+      <workItem from="1668708014203" duration="776000" />
     </task>
     <servers />
   </component>

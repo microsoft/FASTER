@@ -26,8 +26,6 @@ namespace FASTER.server
         
         public DarqSettings DarqSettings;
         
-        public bool RunBackgroundThread = true;
-
         public int commitIntervalMilli = 25;
         public int refreshIntervalMilli = 10;
     }
