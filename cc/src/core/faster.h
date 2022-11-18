@@ -1815,7 +1815,6 @@ void FasterKv<K, V, D, H, OH>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Sta
   context.async = true;
 
   pending_context->result = result;
-  // TODO: result can also be IOError -- call user callback with IOError Status
   if(result == Status::Ok) {
     record_t* record = reinterpret_cast<record_t*>(context->record.GetValidPointer());
     // Size of the record we read from disk (might not have read the entire record, yet).
@@ -1851,6 +1850,12 @@ void FasterKv<K, V, D, H, OH>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Sta
         context->thread_io_responses->push(context.get());
       }
     }
+  } else if (result == Status::IOError) {
+    log_warn("AsyncGetFromDiskCallback: received *IOError* status from request callback");
+    pending_context->caller_callback(pending_context->caller_context, Status::IOError);
+  } else {
+    // not reached
+    assert(false);
   }
 }
 
