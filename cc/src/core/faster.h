@@ -132,10 +132,10 @@ class FasterKv {
     , grow_state_{ &hlog }
     , hash_index_{ filename, disk, epoch_, gc_state_, grow_state_ }
     , read_cache_{ nullptr }
-    , num_pending_ios{ 0 }
-    , num_compaction_truncs{ 0 }
-    , next_hlog_begin_address{ Address::kInvalidAddress }
-    , num_active_sessions{ 0 }
+    , num_pending_ios_{ 0 }
+    , num_compaction_truncs_{ 0 }
+    , next_hlog_begin_address_{ Address::kInvalidAddress }
+    , num_active_sessions_{ 0 }
     , other_store_{ nullptr }
     , refresh_callback_store_{ nullptr }
     , refresh_callback_{ nullptr }
@@ -240,8 +240,8 @@ class FasterKv {
   inline void DumpDistribution() {
     hash_index_.DumpDistribution();
   }
-  inline bool IsCompactionLive() const {
-    return next_hlog_begin_address.load() != Address::kInvalidAddress;
+  inline uint32_t NumActiveSessions() const {
+    return num_active_sessions_.load();
   }
 
  private:
@@ -402,16 +402,16 @@ class FasterKv {
   typename hash_index_t::grow_state_t grow_state_;
 
   /// Global count of pending I/Os, used for throttling.
-  std::atomic<uint64_t> num_pending_ios;
+  std::atomic<uint64_t> num_pending_ios_;
 
   /// Global count of number of truncations after compaction
-  std::atomic<uint64_t> num_compaction_truncs;
+  std::atomic<uint64_t> num_compaction_truncs_;
 
   /// Hlog begin address after the compaction & log trimming is finished
-  AtomicAddress next_hlog_begin_address;
+  AtomicAddress next_hlog_begin_address_;
 
   /// Number of active sessions
-  std::atomic<size_t> num_active_sessions;
+  std::atomic<size_t> num_active_sessions_;
 
   // Pointer to other FasterKv instance (if hot-cold); else nullptr
   // Required for the Epoch framework to work properly
@@ -444,7 +444,7 @@ inline Guid FasterKv<K, V, D, H, OH>::StartSession(Guid guid) {
   thread_ctx().Initialize(state.phase, state.version, guid, 0);
   epoch_.ProtectAndDrain();
   Refresh();
-  ++num_active_sessions;
+  ++num_active_sessions_;
   return thread_ctx().guid;
 }
 
@@ -462,7 +462,7 @@ inline uint64_t FasterKv<K, V, D, H, OH>::ContinueSession(const Guid& session_id
   thread_ctx().Initialize(state.phase, state.version, session_id, iter->second);
   epoch_.ProtectAndDrain();
   Refresh();
-  ++num_active_sessions;
+  ++num_active_sessions_;
   return iter->second;
 }
 
@@ -511,7 +511,7 @@ inline void FasterKv<K, V, D, H, OH>::StopSession() {
   hash_index_.StopSession();
 
   epoch_.Unprotect();
-  --num_active_sessions;
+  --num_active_sessions_;
 }
 
 template <class K, class V, class D, class H, class OH>
@@ -526,7 +526,7 @@ inline Status FasterKv<K, V, D, H, OH>::Read(RC& context, AsyncCallback callback
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
   pending_read_context_t pending_context{ context, callback, abort_if_tombstone,
-                                          Address::kInvalidAddress, num_compaction_truncs.load() };
+                                          Address::kInvalidAddress, num_compaction_truncs_.load() };
   OperationStatus internal_status = InternalRead(pending_context);
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
@@ -705,8 +705,8 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIoPendingRequests(ExecutionContext
       // Re-scan newly introduced log range (i.e. [expected_entry->address, tailAddress])
       assert(!read_pending_context->expected_hlog_address.in_readcache());
       read_pending_context->min_search_offset = read_pending_context->expected_hlog_address;
-      read_pending_context->num_compaction_truncs = num_compaction_truncs.load();
-      // TODO: check if retrying is done properly wrt execution contexts (i.e. like RMW)
+      read_pending_context->num_compaction_truncs = num_compaction_truncs_.load();
+      // Retry reqeust with updated info
       result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
                                      pending_context.async);
     }
@@ -1809,7 +1809,7 @@ void FasterKv<K, V, D, H, OH>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Sta
   pending_context_t* pending_context = static_cast<pending_context_t*>(context->caller_context);
 
   /// This I/O is finished.
-  --faster->num_pending_ios;
+  --faster->num_pending_ios_;
   /// Always "goes async": context is freed by the issuing thread, when processing thread I/O
   /// responses.
   context.async = true;
@@ -1866,7 +1866,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
 
   async_pending_read_context_t* pending_context = static_cast<async_pending_read_context_t*>(
         io_context.caller_context);
-  log_truncated = pending_context->num_compaction_truncs < num_compaction_truncs.load();
+  log_truncated = pending_context->num_compaction_truncs < num_compaction_truncs_.load();
 
   OperationStatus op_status;
   if (pending_context->min_search_offset != Address::kInvalidAddress &&
@@ -1886,7 +1886,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
 
       // Try to insert record to read cache
       // NOTE: Insert only if record will be valid after any potential concurrent log trimming operation
-      if (UseReadCache() && io_context.address >= next_hlog_begin_address.load()) {
+      if (UseReadCache() && io_context.address >= next_hlog_begin_address_.load()) {
         Status rc_status = read_cache_->Insert(context, *pending_context, record);
         assert(rc_status == Status::Ok || rc_status == Status::Aborted);
       }
@@ -3001,14 +3001,14 @@ bool FasterKv<K, V, D, H, OH>::ShiftBeginAddress(Address address,
     return false;
   }
   if (after_compaction) {
-    ++num_compaction_truncs;
+    ++num_compaction_truncs_;
   }
   hlog.begin_address.store(address);
   log_debug("ShiftBeginAddress: [after-compaction=%d] log truncated to %lu",
             after_compaction, address.control());
 
   if (after_compaction) {
-    next_hlog_begin_address.store(Address::kInvalidAddress);
+    next_hlog_begin_address_.store(Address::kInvalidAddress);
   }
   // Each active thread will notify the epoch when all pending I/Os have completed.
   epoch_.ResetPhaseFinished();
@@ -3079,7 +3079,7 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 
   if (shift_begin_address) {
     // used to avoid inserting soon-to-be-compacted records to Read Cache
-    next_hlog_begin_address.store(until_address);
+    next_hlog_begin_address_.store(until_address);
   }
 
   std::deque<std::thread> threads;
@@ -3178,7 +3178,7 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 
     // wait until checkpoint has finished
     // NOTE: sessions cannot be started/stopped during checkpointing
-    size_t num_threads_active = num_active_sessions.load();
+    size_t num_threads_active = num_active_sessions_.load();
     while (hlog_num_threads_persisted < num_threads_active) {
       CompletePending(false);
       if (to_other_store) {
