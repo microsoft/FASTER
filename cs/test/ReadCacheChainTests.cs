@@ -227,7 +227,7 @@ namespace FASTER.test.ReadCacheTests
             Assert.AreEqual(expectedKey, storedKey);
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
+        static void ClearCountsOnError(ClientSession<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -495,7 +495,7 @@ namespace FASTER.test.ReadCacheTests
             CreateChain();
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            using var luContext = session.GetLockableUnsafeContext();
+            var luContext = session.LockableUnsafeContext;
 
             Dictionary<int, LockType> locks = new()
             {
@@ -504,7 +504,8 @@ namespace FASTER.test.ReadCacheTests
                 { highChainKey, LockType.Exclusive }
             };
 
-            luContext.ResumeThread();
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
 
             try
             {
@@ -531,12 +532,13 @@ namespace FASTER.test.ReadCacheTests
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
             {
-                luContext.SuspendThread();
+                luContext.EndLockable();
+                luContext.EndUnsafe();
             }
 
             Assert.IsFalse(fht.LockTable.IsActive);
@@ -556,7 +558,7 @@ namespace FASTER.test.ReadCacheTests
             //CreateChain();
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            using var luContext = session.GetLockableUnsafeContext();
+            var luContext = session.LockableUnsafeContext;
 
             Dictionary<int, LockType> locks = new()
             {
@@ -565,7 +567,9 @@ namespace FASTER.test.ReadCacheTests
                 { highChainKey, LockType.Exclusive }
             };
 
-            luContext.ResumeThread();
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
+
             try
             {
                 // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
@@ -607,12 +611,13 @@ namespace FASTER.test.ReadCacheTests
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
             {
-                luContext.SuspendThread();
+                luContext.EndLockable();
+                luContext.EndUnsafe();
             }
 
             Assert.IsFalse(fht.LockTable.IsActive);
@@ -718,7 +723,7 @@ namespace FASTER.test.ReadCacheTests
             fht.Log.FlushAndEvict(true);
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> luContext)
+        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -903,7 +908,7 @@ namespace FASTER.test.ReadCacheTests
             fht.Log.FlushAndEvict(true);
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty>> luContext)
+        static void ClearCountsOnError(ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;

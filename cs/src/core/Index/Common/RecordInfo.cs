@@ -11,7 +11,7 @@ using System.Threading;
 namespace FASTER.core
 {
     // RecordInfo layout (64 bits total):
-    // [--][InNewVersion][Filler][Dirty][Tentative][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    // [-][Modified][InNewVersion][Filler][Dirty][Tentative][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     //     where X = exclusive lock, S = shared lock, R = readcache, A = address, - = unused
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
@@ -46,9 +46,9 @@ namespace FASTER.core
         const int kDirtyBitOffset = kSealedBitOffset + 1;
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
+        const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
         // If these become used, start with the highest number
-        internal const int kUnusedBit2Offset = kInNewVersionBitOffset + 1;
-        internal const int kUnusedBit1Offset = kUnusedBit2Offset + 1;
+        internal const int kUnusedBitOffset = kModifiedBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
@@ -57,20 +57,21 @@ namespace FASTER.core
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kFillerBitMask = 1L << kFillerBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
-        internal const long kUnused2BitMask = 1L << kUnusedBit2Offset;
-        internal const long kUnused1BitMask = 1L << kUnusedBit1Offset;
+        const long kModifiedBitMask = 1L << kModifiedBitOffset;
+        internal const long kUnused1BitMask = 1L << kUnusedBitOffset;
 
         [FieldOffset(0)]
         private long word;
 
-        public static void WriteInfo(ref RecordInfo info, bool inNewVersion, bool tombstone, bool dirty, long previousAddress)
+        public static void WriteInfo(ref RecordInfo info, bool inNewVersion, bool tombstone, long previousAddress)
         {
             info.word = default;
             info.Tombstone = tombstone;
             info.SetValid();
-            info.Dirty = dirty;
+            info.Dirty = false;
             info.PreviousAddress = previousAddress;
             info.InNewVersion = inNewVersion;
+            info.Modified = false;
         }
 
         public bool Equals(RecordInfo other) => this.word == other.word;
@@ -252,6 +253,35 @@ namespace FASTER.core
             return true;
         }
 
+
+        /// <summary>
+        /// Reset modified bit in RecordInfo
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ResetModifiedAtomic() => ResetModifiedAtomic(spinCount: -1);
+
+        /// <summary>
+        /// Try to reset the modified bit of the RecordInfo
+        /// </summary>
+        /// <returns>Whether the modified bit was reset successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool ResetModifiedAtomic(int spinCount = 1)
+        {
+            while (true)
+            {
+                long expected_word = word;
+                if (IsIntermediateWord(expected_word))
+                    return false;
+                if ((expected_word & kModifiedBitMask) == 0)
+                    return true;
+                if (expected_word == Interlocked.CompareExchange(ref word, expected_word & (~kModifiedBitMask), expected_word))
+                    break;
+                if (spinCount > 0 && --spinCount <= 0) return false;
+                Thread.Yield();
+            }
+            return true;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyLocksFrom(RecordInfo other)
         {
@@ -379,6 +409,16 @@ namespace FASTER.core
             }
         }
 
+        public bool Modified
+        {
+            get => (word & kModifiedBitMask) > 0;
+            set
+            {
+                if (value) word |= kModifiedBitMask;
+                else word &= ~kModifiedBitMask;
+            }
+        }
+
         public bool Filler
         {
             get => (word & kFillerBitMask) > 0;
@@ -399,6 +439,9 @@ namespace FASTER.core
             }
         }
 
+        public void SetDirtyAndModified() => word |= (kDirtyBitMask | kModifiedBitMask);
+        public void SetModified() => word |= kModifiedBitMask;
+        public void ClearModified() => word &= (~kModifiedBitMask);
         public void SetDirty() => word |= kDirtyBitMask;
         public void SetTombstone() => word |= kTombstoneBitMask;
         public void SetValid() => word |= kValidBitMask;
@@ -446,7 +489,6 @@ namespace FASTER.core
         }
 
         internal bool Unused1 { get => (word & kUnused1BitMask) != 0; set => word = value ? word | kUnused1BitMask : word & ~kUnused1BitMask; }
-        internal bool Unused2 { get => (word & kUnused2BitMask) != 0; set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask; }
 
         public override string ToString() => word.ToString();
     }

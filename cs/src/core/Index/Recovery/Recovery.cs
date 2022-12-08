@@ -137,17 +137,69 @@ namespace FASTER.core
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        private void FindRecoveryInfo(long requestedVersion, out HybridLogCheckpointInfo recoveredHlcInfo,
-            out IndexCheckpointInfo recoveredICInfo)
+        /// <summary>
+        /// GetLatestCheckpointTokens
+        /// </summary>
+        /// <param name="hlogToken"></param>
+        /// <param name="indexToken"></param>
+        public void GetLatestCheckpointTokens(out Guid hlogToken, out Guid indexToken)
         {
+            GetClosestHybridLogCheckpointInfo(-1, out hlogToken, out var recoveredHlcInfo, out var _);
+            GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out indexToken, out var _);
+        }
 
-            logger?.LogInformation("********* Primary Recovery Information ********");
+        /// <summary>
+        /// Get HLog latest version
+        /// </summary>
+        /// <returns></returns>
+        public long GetLatestCheckpointVersion()
+        {
+            GetClosestHybridLogCheckpointInfo(-1, out var hlogToken, out var _, out var _);
+            if (hlogToken == default)
+                return -1;
+            HybridLogCheckpointInfo current = new();
+            current.Recover(hlogToken, checkpointManager, hlog.LogPageSizeBits,
+                out var _, false);
+            return current.info.nextVersion;
+        }
 
-            HybridLogCheckpointInfo current, closest = default;
-            Guid closestToken = default;
+        /// <summary>
+        /// Get size of snapshot files for token
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public long GetSnapshotFileSizes(Guid token)
+        {
+            HybridLogCheckpointInfo current = new();
+            current.Recover(token, checkpointManager, hlog.LogPageSizeBits,
+                out var _, false);
+            return current.info.finalLogicalAddress;
+        }
+
+        /// <summary>
+        /// Get size of index file for token
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public long GetIndexFileSize(Guid token)
+        {
+            IndexCheckpointInfo recoveredICInfo = new IndexCheckpointInfo();
+            recoveredICInfo.Recover(token, checkpointManager);
+            return (long)recoveredICInfo.info.num_ht_bytes;
+        }
+
+        private void GetClosestHybridLogCheckpointInfo(
+            long requestedVersion,
+            out Guid closestToken,
+            out HybridLogCheckpointInfo closest,
+            out byte[] cookie)
+        {
+            HybridLogCheckpointInfo current;
             long closestVersion = long.MaxValue;
-            byte[] cookie = default;
-            
+            closest = default;
+            closestToken = default;
+            cookie = default;
+
             // Traverse through all current tokens to find either the largest version or the version that's closest to
             // but smaller than the requested version. Need to iterate through all unpruned versions because file system
             // is not guaranteed to return tokens in order of freshness.
@@ -156,7 +208,7 @@ namespace FASTER.core
                 try
                 {
                     current = new HybridLogCheckpointInfo();
-                    current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits, 
+                    current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits,
                         out var currCookie, false);
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
                     // This is larger than intended version, cannot recover to this.
@@ -171,7 +223,7 @@ namespace FASTER.core
                         cookie = currCookie;
                         break;
                     }
-                    
+
                     // Otherwise, write it down and wait to see if there's a closer one;
                     if (distanceToTarget < closestVersion)
                     {
@@ -193,20 +245,11 @@ namespace FASTER.core
 
                 logger?.LogInformation("HybridLog Checkpoint: {hybridLogToken}", hybridLogToken);
             }
+        }
 
-            recoveredHlcInfo = closest;
-            recoveredCommitCookie = cookie;
-            if (recoveredHlcInfo.IsDefault())
-                throw new FasterException("Unable to find valid HybridLog token");
-
-            if (recoveredHlcInfo.deltaLog != null)
-            {
-                recoveredHlcInfo.Dispose();
-                // need to actually scan delta log now
-                recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, out _, true);
-            }
-            recoveredHlcInfo.info.DebugPrint(logger);
-
+        private void GetClosestIndexCheckpointInfo(ref HybridLogCheckpointInfo recoveredHlcInfo, out Guid closestToken, out IndexCheckpointInfo recoveredICInfo)
+        {
+            closestToken = default;
             recoveredICInfo = default;
             foreach (var indexToken in checkpointManager.GetIndexCheckpointTokens())
             {
@@ -229,8 +272,30 @@ namespace FASTER.core
 
                 logger?.LogInformation("Index Checkpoint: {indexToken}", indexToken);
                 recoveredICInfo.info.DebugPrint(logger);
+                closestToken = indexToken;
                 break;
             }
+        }
+
+        private void FindRecoveryInfo(long requestedVersion, out HybridLogCheckpointInfo recoveredHlcInfo,
+            out IndexCheckpointInfo recoveredICInfo)
+        {
+            logger?.LogInformation("********* Primary Recovery Information ********");
+
+            GetClosestHybridLogCheckpointInfo(requestedVersion, out var closestToken, out recoveredHlcInfo, out recoveredCommitCookie);
+
+            if (recoveredHlcInfo.IsDefault())
+                throw new FasterException("Unable to find valid HybridLog token");
+
+            if (recoveredHlcInfo.deltaLog != null)
+            {
+                recoveredHlcInfo.Dispose();
+                // need to actually scan delta log now
+                recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, out _, true);
+            }
+            recoveredHlcInfo.info.DebugPrint(logger);
+
+            GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out _, out recoveredICInfo);
 
             if (recoveredICInfo.IsDefault())
             {
@@ -383,7 +448,7 @@ namespace FASTER.core
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
             _recoveredSessionNameMap = recoveredHLCInfo.info.sessionNameMap;
-            maxSessionID = recoveredHLCInfo.info.maxSessionID;
+            maxSessionID = Math.Max(recoveredHLCInfo.info.maxSessionID, maxSessionID);
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
             recoveredHLCInfo.Dispose();
         }

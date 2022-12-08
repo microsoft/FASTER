@@ -32,7 +32,7 @@ Lock multiple keys:
 ```cs
     using (var luContext = session.GetLockableUnsafeContext())
     {
-        luContext.ResumeThread(out var epoch);
+        luContext.ResumeThread();
 
         luContext.Lock(24, LockType.Shared);
         luContext.Lock(51, LockType.Shared);
@@ -53,7 +53,7 @@ Lock multiple keys:
 ```cs
     using (var luContext = session.GetLockableUnsafeContext())
     {
-        luContext.ResumeThread(out var epoch);
+        luContext.ResumeThread();
 
         luContext.Lock(51, LockType.Shared);
 
@@ -65,8 +65,6 @@ Lock multiple keys:
 
         luContext.SuspendThread();
 ```
-
-TODO: Add sample with `luContext.LocalCurrentEpoch`.
 
 ## Internal Design
 

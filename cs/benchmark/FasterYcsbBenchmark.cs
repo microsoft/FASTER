@@ -121,8 +121,8 @@ namespace FASTER.benchmark
 #endif
 
             var session = store.For(functions).NewSession<Functions>();
-            var uContext = session.GetUnsafeContext();
-            uContext.ResumeThread();
+            var uContext = session.UnsafeContext;
+            uContext.BeginUnsafe();
 
             try
             {
@@ -199,10 +199,9 @@ namespace FASTER.benchmark
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
 
-            uContext.Dispose();
             session.Dispose();
 
             sw.Stop();
@@ -319,7 +318,8 @@ namespace FASTER.benchmark
             if (testLoader.Options.LockImpl == (int)LockImpl.Manual)
             {
                 session = store.For(functions).NewSession<Functions>();
-                luContext = session.GetLockableUnsafeContext();
+                luContext = session.LockableUnsafeContext;
+                luContext.BeginLockable();
 
                 Console.WriteLine("Taking 2 manual locks");
                 luContext.Lock(xlock.key, xlock.kind);
@@ -436,7 +436,7 @@ namespace FASTER.benchmark
             {
                 luContext.Unlock(xlock.key, xlock.kind);
                 luContext.Unlock(slock.key, slock.kind);
-                luContext.Dispose();
+                luContext.EndLockable();
                 session.Dispose();
             }
 
@@ -467,8 +467,8 @@ namespace FASTER.benchmark
             waiter.Wait();
 
             var session = store.For(functions).NewSession<Functions>();
-            var uContext = session.GetUnsafeContext();
-            uContext.ResumeThread();
+            var uContext = session.UnsafeContext;
+            uContext.BeginUnsafe();
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -518,9 +518,8 @@ namespace FASTER.benchmark
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
-            uContext.Dispose();
             session.Dispose();
         }
 

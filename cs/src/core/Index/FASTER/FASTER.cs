@@ -545,7 +545,10 @@ namespace FASTER.core
                 }
 
                 if (valueTasks.Count == 0)
+                {
+                    // Note: The state machine will not advance as long as there are active locking sessions.
                     continue; // we need to re-check loop, so we return only when we are at REST
+                }
 
                 foreach (var task in valueTasks)
                 {

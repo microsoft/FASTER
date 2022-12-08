@@ -468,7 +468,7 @@ namespace FASTER.test.Dispose
             DoFlush(flushMode);
 
             // This is necessary for FlushMode.ReadOnly to test the readonly range in Delete() (otherwise we can't test SingleDeleter there)
-            using var luc = fht.NewSession(new DisposeFunctionsNoSync()).GetLockableUnsafeContext();
+            var luc = fht.NewSession(new DisposeFunctionsNoSync()).LockableUnsafeContext;
 
             void DoDelete(DisposeFunctions functions)
             {

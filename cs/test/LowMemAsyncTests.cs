@@ -21,11 +21,11 @@ namespace FASTER.test.async
         {
             path = TestUtils.MethodTestDir;
             TestUtils.DeleteDirectory(path, wait: true);
-            log = new LocalMemoryDevice(1L << 30, 1L << 25, 1, latencyMs: 20, fileName: path + "/test.log");
+            log = new LocalMemoryDevice(1L << 28, 1L << 25, 1, latencyMs: 20, fileName: path + "/test.log");
             Directory.CreateDirectory(path);
             fht1 = new FasterKV<long, long>
                 (1L << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 12 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 26 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
         }

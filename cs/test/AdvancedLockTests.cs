@@ -119,11 +119,13 @@ namespace FASTER.test.LockTests
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(LockTestCategory)]
+        //[Repeat(100)]
         public async ValueTask SameKeyInsertAndCTTTest()
         {
             Populate(evict: true);
             Functions functions = new();
-            using var session = fkv.NewSession(functions);
+            using var readSession = fkv.NewSession(functions);
+            using var upsertSession = fkv.NewSession(functions);
             var iter = 0;
 
             await DoTwoThreadRandomKeyTest(numKeys,
@@ -132,7 +134,7 @@ namespace FASTER.test.LockTests
                     int output = 0;
                     var sleepFlag = (iter % 5 == 0) ? LockFunctionFlags.None : LockFunctionFlags.SleepAfterEventOperation;
                     Input input = new() { flags = LockFunctionFlags.WaitForEvent | sleepFlag, sleepRangeMs = 10 };
-                    var status = session.Upsert(key, input, key + valueAdd * 2, ref output);
+                    var status = upsertSession.Upsert(key, input, key + valueAdd * 2, ref output);
 
                     // Don't test for .Found because we are doing random keys so may upsert one we have already seen, even on iter == 0
                     //Assert.IsTrue(status.Found, $"Key = {key}, status = {status}");
@@ -145,7 +147,7 @@ namespace FASTER.test.LockTests
                     ReadOptions readOptions = default;
 
                     // This will copy to ReadCache, and the test is trying to cause a race with the above Upsert.
-                    var status = session.Read(ref key, ref functions.readCacheInput, ref output, ref readOptions, out _);
+                    var status = readSession.Read(ref key, ref functions.readCacheInput, ref output, ref readOptions, out _);
 
                     // If the Upsert completed before the Read started, we may Read() the Upserted value.
                     if (status.IsCompleted)
@@ -156,14 +158,15 @@ namespace FASTER.test.LockTests
                     else
                     {
                         Assert.IsTrue(status.IsPending, $"Key = {key}, status = {status}");
-                        session.CompletePending(wait: true);
-                        // Output is not clear here and we are testing only threading aspects, so don't verify
+                        readSession.CompletePending(wait: true);
+
+                        // Output is indeterminate as we will retry on Pending if the upserted value was inserted, so don't verify
                     }
                 },
                 key =>
                 {
                     int output = default;
-                    var status = session.Read(ref key, ref output);
+                    var status = readSession.Read(ref key, ref output);
                     Assert.IsTrue(status.Found, $"Key = {key}, status = {status}");
                     Assert.AreEqual(key + valueAdd * 2, output, $"Key = {key}");
                     functions.mres.Reset();
@@ -230,43 +233,43 @@ namespace FASTER.test.LockTests
 
                 {   // Populate and Lock
                     using var session = fht1.NewSession(new SimpleFunctions<int, int>());
-                    using var luContext = session.GetLockableUnsafeContext();
+                    var luContext = session.LockableUnsafeContext;
                     var firstKeyEnd = incremental ? numKeys / 2 : numKeys;
 
-                    luContext.ResumeThread();
+                    luContext.BeginUnsafe();
                     for (int key = 0; key < firstKeyEnd; key++)
                     {
                         luContext.Upsert(key, getValue(key));
                         if ((key % lockKeyInterval) == 0)
                             luContext.Lock(key, getLockType(key));
                     }
-                    luContext.SuspendThread();
+                    luContext.EndUnsafe();
 
                     fht1.TryInitiateFullCheckpoint(out token, checkpointType);
                     await fht1.CompleteCheckpointAsync();
 
                     if (incremental)
                     {
-                        luContext.ResumeThread();
+                        luContext.BeginUnsafe();
                         for (int key = firstKeyEnd; key < numKeys; key++)
                         {
                             luContext.Upsert(key, getValue(key));
                             if ((key % lockKeyInterval) == 0)
                                 luContext.Lock(key, getLockType(key));
                         }
-                        luContext.SuspendThread();
+                        luContext.EndUnsafe();
 
                         var _result1 = fht1.TryInitiateHybridLogCheckpoint(out var _token1, checkpointType, tryIncremental: true);
                         await fht1.CompleteCheckpointAsync();
                     }
 
-                    luContext.ResumeThread();
+                    luContext.BeginUnsafe();
                     for (int key = 0; key < numKeys; key += lockKeyInterval)
                     {
                         // This also verifies the locks are there--otherwise (in Debug) we'll AssertFail trying to unlock an unlocked record
                         luContext.Unlock(key, getLockType(key));
                     }
-                    luContext.SuspendThread();
+                    luContext.EndUnsafe();
                 }
 
                 if (syncMode == SyncMode.Async)
@@ -276,15 +279,15 @@ namespace FASTER.test.LockTests
 
                 {   // Ensure there are no locks
                     using var session = fht2.NewSession(new SimpleFunctions<int, int>());
-                    using var luContext = session.GetLockableUnsafeContext();
-                    luContext.ResumeThread();
+                    var luContext = session.LockableUnsafeContext;
+                    luContext.BeginUnsafe();
                     for (int key = 0; key < numKeys; key++)
                     {
                         (bool isExclusive, byte isShared) = luContext.IsLocked(key);
                         Assert.IsFalse(isExclusive);
                         Assert.AreEqual(0, isShared);
                     }
-                    luContext.SuspendThread();
+                    luContext.EndUnsafe();
                 }
             }
         }

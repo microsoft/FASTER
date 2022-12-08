@@ -58,8 +58,8 @@ namespace FASTER.test.statemachine
         private void SecondSession()
         {
             s2 = fht.NewSession(f, null);
-            uc2 = s2.GetUnsafeContext();
-            uc2.ResumeThread();
+            uc2 = s2.UnsafeContext;
+            uc2.BeginUnsafe();
 
             ev.Set();
 
@@ -73,8 +73,7 @@ namespace FASTER.test.statemachine
                         ev.Set();
                         break;
                     case "dispose":
-                        uc2.SuspendThread();
-                        uc2.Dispose();
+                        uc2.EndUnsafe();
                         s2.Dispose();
                         ev.Set();
                         return;
@@ -149,30 +148,28 @@ namespace FASTER.test.statemachine
                     case "dispose":
                         if (isProtected)
                         {
-                            luc.SuspendThread();
-                            luc.Dispose();
-
+                            luc.EndUnsafe();
                         }
                         session.Dispose();
                         ev.Set();
                         return;
                     case "getLUC":
-                        luc = session.GetLockableUnsafeContext();
+                        luc = session.LockableUnsafeContext;
                         if (session.IsInPreparePhase())
                         {
-                            luc.Dispose();
                             this.isProtected = false;
                         }
                         else
                         {
-                            luc.ResumeThread();
+                            luc.BeginUnsafe();
+                            luc.BeginLockable();
                             this.isProtected = true;
                         }
                         ev.Set();
                         break;
                     case "DisposeLUC":
-                        luc.SuspendThread();
-                        luc.Dispose();
+                        luc.EndLockable();
+                        luc.EndUnsafe();
                         this.isProtected = false;
                         ev.Set();
                         break;

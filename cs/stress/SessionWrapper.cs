@@ -29,12 +29,12 @@ namespace FASTER.stress
         {
             this.session = session;
             if (testLoader.WantLUC(rng))
-                this.luContext = session.GetLockableUnsafeContext();
+                this.luContext = session.LockableUnsafeContext;
         }
 
         internal ClientSession<TKey, TValue, TInput, TOutput, Empty, IFunctions<TKey, TValue, TInput, TOutput, Empty>> FkvSession => this.session;
 
-        internal bool IsLUC => this.luContext is not null;
+        internal bool IsLUC => !this.luContext.IsNull;
 
         #region Read
 
@@ -81,7 +81,7 @@ namespace FASTER.stress
         {
             try
             {
-                luContext.ResumeThread();   // Retain epoch control through lock, the operation, and unlock
+                luContext.BeginUnsafe();   // Retain epoch control through lock, the operation, and unlock
                 testLoader.MaybeLock(luContext, keyCount, keys, isRmw: false, isAsyncTest: false);
                 TOutput output = default;
                 var status = luContext.Read(ref keys[0], ref output);
@@ -101,7 +101,7 @@ namespace FASTER.stress
             finally
             {
                 testLoader.MaybeUnlock(luContext, keyCount, keys, isRmw: false, isAsyncTest: false);
-                luContext.SuspendThread();
+                luContext.EndUnsafe();
             }
         }
 
@@ -169,7 +169,7 @@ namespace FASTER.stress
         {
             try
             {
-                luContext.ResumeThread();   // Retain epoch control through lock, the operation, and unlock
+                luContext.BeginUnsafe();   // Retain epoch control through lock, the operation, and unlock
                 testLoader.MaybeLock(luContext, keyCount, keys, isRmw: true, isAsyncTest: false);
                 TOutput output = default;
                 var status = luContext.RMW(ref keys[0], ref input, ref output);
@@ -188,7 +188,7 @@ namespace FASTER.stress
             finally
             {
                 testLoader.MaybeUnlock(luContext, keyCount, keys, isRmw: true, isAsyncTest: false);
-                luContext.SuspendThread();
+                luContext.EndUnsafe();
             }
         }
 
@@ -237,13 +237,13 @@ namespace FASTER.stress
         {
             try
             {
-                luContext.ResumeThread();
+                luContext.BeginUnsafe();
                 var status = luContext.Upsert(ref key, ref value);
                 Assert.IsFalse(status.IsPending, status.ToString());
             }
             finally
             {
-                luContext.SuspendThread();
+                luContext.EndUnsafe();
             }
         }
 
@@ -274,13 +274,13 @@ namespace FASTER.stress
         {
             try
             {
-                luContext.ResumeThread();
+                luContext.BeginUnsafe();
                 var status = luContext.Delete(ref key);
                 Assert.IsFalse(status.IsPending, status.ToString());
             }
             finally
             {
-                luContext.SuspendThread();
+                luContext.EndUnsafe();
             }
         }
 
@@ -288,11 +288,7 @@ namespace FASTER.stress
 
         public void Dispose()
         {
-            if (luContext is not null)
-            {
-                luContext.Dispose();
-                luContext = default;
-            }
+            luContext = default;
             session.Dispose();
             session = default;
         }

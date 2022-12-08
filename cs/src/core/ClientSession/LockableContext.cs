@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -12,23 +11,14 @@ namespace FASTER.core
     /// <summary>
     /// Faster Context implementation that allows manual control of record locking and epoch management. For advanced use only.
     /// </summary>
-    public sealed class LockableContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, ILockableContext<Key>, IDisposable
+    public readonly struct LockableContext<Key, Value, Input, Output, Context, Functions> : IFasterContext<Key, Value, Input, Output, Context>, ILockableContext<Key>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
+        readonly InternalFasterSession FasterSession;
 
-        internal readonly InternalFasterSession FasterSession;
-        bool isAcquired;
-
-        ulong TotalLockCount => sharedLockCount + exclusiveLockCount;
-        internal ulong sharedLockCount;
-        internal ulong exclusiveLockCount;
-
-        void CheckAcquired()
-        {
-            if (!isAcquired)
-                throw new FasterException("Method call on unacquired LockableContext");
-        }
+        /// <summary>Indicates whether this struct has been initialized</summary>
+        public bool IsNull => this.clientSession is null;
 
         internal LockableContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
@@ -36,66 +26,22 @@ namespace FASTER.core
             FasterSession = new InternalFasterSession(clientSession);
         }
 
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeResumeThread()
-        {
-            CheckAcquired();
-            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
-        }
+        #region Begin/EndLockable
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeResumeThread(out int resumeEpoch)
-        {
-            CheckAcquired();
-            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(out resumeEpoch);
-        }
+        public void BeginLockable() => clientSession.AcquireLockable();
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeSuspendThread()
-        {
-            CheckAcquired();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            clientSession.UnsafeSuspendThread();
-        }
+        public void EndLockable() => clientSession.ReleaseLockable();
 
-        /// <inheritdoc/>
-        public int LocalCurrentEpoch => clientSession.fht.epoch.LocalCurrentEpoch;
-
-        #region Acquire and Dispose
-        internal void Acquire()
-        {
-            this.clientSession.fht.IncrementNumLockingSessions();
-            if (this.isAcquired)
-                throw new FasterException("Trying to acquire an already-acquired LockableContext");
-            this.isAcquired = true;
-        }
-
-        /// <summary>
-        /// Does not actually dispose of anything; asserts the epoch has been suspended
-        /// </summary>
-        public void Dispose()
-        {
-            CheckAcquired();
-            if (clientSession.fht.epoch.ThisInstanceProtected())
-                throw new FasterException("Disposing LockableContext with a protected epoch; must call UnsafeSuspendThread");
-            if (TotalLockCount > 0)
-                throw new FasterException($"Disposing LockableContext with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
-            this.isAcquired = false;
-            this.clientSession.fht.DecrementNumLockingSessions();
-        }
-        #endregion Acquire and Dispose
+        #endregion Begin/EndLockable
 
         #region Key Locking
 
         /// <inheritdoc/>
         public unsafe void Lock(ref Key key, LockType lockType)
         {
-            CheckAcquired();
+            clientSession.CheckIsAcquiredLockable();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
             try
@@ -110,9 +56,9 @@ namespace FASTER.core
                 Debug.Assert(status == OperationStatus.SUCCESS);
 
                 if (lockType == LockType.Exclusive)
-                    ++this.exclusiveLockCount;
+                    ++clientSession.exclusiveLockCount;
                 else
-                    ++this.sharedLockCount;
+                    ++clientSession.sharedLockCount;
             }
             finally
             {
@@ -126,7 +72,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public void Unlock(ref Key key, LockType lockType)
         {
-            CheckAcquired();
+            clientSession.CheckIsAcquiredLockable();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
             try
@@ -141,9 +87,9 @@ namespace FASTER.core
                 Debug.Assert(status == OperationStatus.SUCCESS);
 
                 if (lockType == LockType.Exclusive)
-                    --this.exclusiveLockCount;
+                    --clientSession.exclusiveLockCount;
                 else
-                    --this.sharedLockCount;
+                    --clientSession.sharedLockCount;
             }
             finally
             {
@@ -157,7 +103,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public (bool exclusive, byte shared) IsLocked(ref Key key)
         {
-            CheckAcquired();
+            clientSession.CheckIsAcquiredLockable();
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread();
             try
@@ -185,7 +131,7 @@ namespace FASTER.core
         /// <summary>
         /// The session id of FasterSession
         /// </summary>
-        public int sessionID { get { return clientSession.ctx.sessionID; } }
+        public int SessionID { get { return clientSession.ctx.sessionID; } }
 
         #endregion Key Locking
 
@@ -539,6 +485,16 @@ namespace FASTER.core
             => DeleteAsync(ref key, userContext, serialNo, token);
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ResetModified(ref Key key)
+            => clientSession.ResetModified(ref key);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsModified(Key key)
+            => clientSession.IsModified(ref key);
+
+        /// <inheritdoc/>
         public void Refresh()
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
@@ -605,14 +561,17 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
-                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+            {
+                recordInfo.SetDirtyAndModified();
+                _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out bool lockFailed)
             {
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 lockFailed = false;
-                recordInfo.SetDirty();
+                recordInfo.SetDirtyAndModified();
                 return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
             }
             #endregion IFunctions - Upserts
@@ -629,7 +588,10 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+            {
+                recordInfo.SetDirtyAndModified();
+                _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+            }
             #endregion InitialUpdater
 
             #region CopyUpdater
@@ -643,7 +605,10 @@ namespace FASTER.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-                => _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+            {
+                recordInfo.SetDirtyAndModified();
+                _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+            }
             #endregion CopyUpdater
 
             #region InPlaceUpdater
@@ -651,6 +616,7 @@ namespace FASTER.core
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
             {
                 lockFailed = false;
+                recordInfo.SetDirtyAndModified();
                 return _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
             }
 
@@ -668,7 +634,7 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             {
-                recordInfo.SetDirty();
+                recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
             }
 
@@ -676,7 +642,7 @@ namespace FASTER.core
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
             {
                 lockFailed = false;
-                recordInfo.SetDirty();
+                recordInfo.SetDirtyAndModified();
                 recordInfo.Tombstone = true;
                 return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
             }
