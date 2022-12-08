@@ -1724,7 +1724,7 @@ namespace FASTER.core
             {
                 return info.Iterators != null &&  info.Iterators.Count != 0;
             }
-            if (_lastPersistedIterators.Count != info.Iterators.Count)
+            if (info.Iterators == null || _lastPersistedIterators.Count != info.Iterators.Count)
                 return true;
             foreach (var item in _lastPersistedIterators)
             {
