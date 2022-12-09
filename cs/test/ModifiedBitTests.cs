@@ -3,30 +3,18 @@
 
 using System;
 using System.IO;
-using System.Threading;
 using FASTER.core;
 using NUnit.Framework;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test.ModifiedTests
 {
-
-    internal class LockableUnsafeComparer : IFasterEqualityComparer<int>
+    internal class ModifiedBitTestComparer : IFasterEqualityComparer<int>
     {
-        internal const int maxSleepMs = 1;
-        readonly Random rng = new(101);
-
         public bool Equals(ref int k1, ref int k2) => k1 == k2;
 
-        public long GetHashCode64(ref int k)
-        {
-            if (maxSleepMs > 0)
-                Thread.Sleep(rng.Next(maxSleepMs));
-            return Utility.GetHashCode(k);
-        }
+        public long GetHashCode64(ref int k) => Utility.GetHashCode(k);
     }
-
-    public enum UpdateOp { Upsert, RMW, Delete }
 
     [TestFixture]
     class ModifiedBitTests
@@ -35,7 +23,7 @@ namespace FASTER.test.ModifiedTests
         const int valueMult = 1_000_000;
 
 
-        LockableUnsafeComparer comparer;
+        ModifiedBitTestComparer comparer;
 
         private FasterKV<int, int> fht;
         private ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int>> session;
@@ -45,10 +33,8 @@ namespace FASTER.test.ModifiedTests
         public void Setup()
         {
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
-
-
-            comparer = new LockableUnsafeComparer();
-            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 }, comparer: comparer, disableLocking: false);
+            comparer = new ModifiedBitTestComparer();
+            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 }, comparer: comparer, disableEphemeralLocking: false);
             session = fht.For(new SimpleFunctions<int, int>()).NewSession<SimpleFunctions<int, int>>();
         }
 
@@ -61,7 +47,6 @@ namespace FASTER.test.ModifiedTests
             fht = null;
             log?.Dispose();
             log = null;
-
         }
 
         void Populate()
@@ -70,25 +55,25 @@ namespace FASTER.test.ModifiedTests
                 Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
         }
 
-        static void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modfied = false)
+        static void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             var (isX, isS) = luContext.IsLocked(key);
             var isM = luContext.IsModified(key);
             Assert.AreEqual(xlock, isX, "xlock mismatch");
             Assert.AreEqual(slock, isS > 0, "slock mismatch");
-            Assert.AreEqual(modfied, isM, "modfied mismatch");
+            Assert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        static void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modfied = false)
+        static void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             var (isX, isS) = luContext.IsLocked(key);
             var isM = luContext.IsModified(key);
             Assert.AreEqual(xlock, isX, "xlock mismatch");
             Assert.AreEqual(slock, isS > 0, "slock mismatch");
-            Assert.AreEqual(modfied, isM, "modfied mismatch");
+            Assert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        static void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int>> session, int key, bool xlock, bool slock, bool modfied = false)
+        static void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int>> session, int key, bool xlock, bool slock, bool modified = false)
         {
             var luContext = session.LockableUnsafeContext;
             luContext.BeginUnsafe();
@@ -97,13 +82,13 @@ namespace FASTER.test.ModifiedTests
             var isM = luContext.IsModified(key);
             Assert.AreEqual(xlock, isX, "xlock mismatch");
             Assert.AreEqual(slock, isS > 0, "slock mismatch");
-            Assert.AreEqual(modfied, isM, "Modified mismatch");
+            Assert.AreEqual(modified, isM, "Modified mismatch");
             luContext.EndLockable();
             luContext.EndUnsafe();
         }
 
         [Test]
-        [Category(SmokeTestCategory)]
+        [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
         public void LockAndNotModify()
         {
             Populate();
@@ -113,34 +98,34 @@ namespace FASTER.test.ModifiedTests
 
             var LC = session.LockableContext;
             LC.BeginLockable();
-            AssertLockandModified(LC, key, xlock: false, slock: false, modfied: false);
+            AssertLockandModified(LC, key, xlock: false, slock: false, modified: false);
 
             LC.Lock(key, LockType.Exclusive);
-            AssertLockandModified(LC, key, xlock: true, slock: false, modfied: false);
+            AssertLockandModified(LC, key, xlock: true, slock: false, modified: false);
 
             LC.Unlock(key, LockType.Exclusive);
-            AssertLockandModified(LC, key, xlock: false, slock: false, modfied: false);
+            AssertLockandModified(LC, key, xlock: false, slock: false, modified: false);
 
             LC.Lock(key, LockType.Shared);
-            AssertLockandModified(LC, key, xlock: false, slock: true, modfied: false);
+            AssertLockandModified(LC, key, xlock: false, slock: true, modified: false);
 
             LC.Unlock(key, LockType.Shared);
-            AssertLockandModified(LC, key, xlock: false, slock: false, modfied: false);
+            AssertLockandModified(LC, key, xlock: false, slock: false, modified: false);
             LC.EndLockable();
         }
 
         [Test]
-        [Category(SmokeTestCategory)]
+        [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
         public void ResetModifyForNonExistingKey()
         {
             Populate();
             int key = numRecords + 100;
             session.ResetModified(key);
-            AssertLockandModified(session, key, xlock: false, slock: false, modfied: false);
+            AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
         }
 
         [Test]
-        [Category(SmokeTestCategory)]
+        [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
         public void ModifyClientSession([Values(true, false)] bool flushToDisk, [Values] UpdateOp updateOp)
         {
             Populate();
@@ -148,7 +133,7 @@ namespace FASTER.test.ModifiedTests
             int key = numRecords - 500;
             int value = 14;
             session.ResetModified(key);
-            AssertLockandModified(session, key, xlock: false, slock: false, modfied: false);
+            AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
 
             if (flushToDisk)
                 this.fht.Log.FlushAndEvict(wait: true);
@@ -185,15 +170,13 @@ namespace FASTER.test.ModifiedTests
             }
 
             if (updateOp == UpdateOp.Delete)
-                AssertLockandModified(session, key, xlock: false, slock: false, modfied: false);
+                AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
             else
-                AssertLockandModified(session, key, xlock: false, slock: false, modfied: true);
-
-
+                AssertLockandModified(session, key, xlock: false, slock: false, modified: true);
         }
 
         [Test]
-        [Category(SmokeTestCategory)]
+        [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
         public void ModifyLUC([Values(true, false)] bool flushToDisk, [Values] UpdateOp updateOp)
         {
             Populate();
@@ -204,7 +187,7 @@ namespace FASTER.test.ModifiedTests
             var luContext = session.LockableUnsafeContext;
             luContext.BeginUnsafe();
             luContext.BeginLockable();
-            AssertLockandModified(luContext, key, xlock: false, slock: false, modfied: false);
+            AssertLockandModified(luContext, key, xlock: false, slock: false, modified: false);
             luContext.EndLockable();
             luContext.EndUnsafe();
 
@@ -214,6 +197,8 @@ namespace FASTER.test.ModifiedTests
             Status status = default;
 
             luContext.BeginUnsafe();
+            luContext.BeginLockable();
+            luContext.Lock(key, LockType.Exclusive);
 
             switch (updateOp)
             {
@@ -229,6 +214,7 @@ namespace FASTER.test.ModifiedTests
                 default:
                     break;
             }
+
             if (flushToDisk)
             {
                 switch (updateOp)
@@ -241,21 +227,26 @@ namespace FASTER.test.ModifiedTests
                         Assert.IsTrue(status.NotFound);
                         break;
                 }
-                (status, var _) = luContext.Read(key);
-                Assert.IsTrue(status.Found || updateOp == UpdateOp.Delete);
             }
 
-            luContext.BeginLockable();
-            if (updateOp == UpdateOp.Delete)
-                AssertLockandModified(luContext, key, xlock: false, slock: false, modfied: false);
-            else
-                AssertLockandModified(luContext, key, xlock: false, slock: false, modfied: true);
+            luContext.Unlock(key, LockType.Exclusive);
+
+            if (flushToDisk)
+            {
+                luContext.Lock(key, LockType.Shared);
+                (status, var _) = luContext.Read(key);
+                Assert.AreEqual(updateOp != UpdateOp.Delete, status.Found, status.ToString());
+                luContext.Unlock(key, LockType.Shared);
+            }
+
+            AssertLockandModified(luContext, key, xlock: false, slock: false, modified: updateOp != UpdateOp.Delete);
+
             luContext.EndLockable();
             luContext.EndUnsafe();
         }
 
         [Test]
-        [Category(SmokeTestCategory)]
+        [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
         public void ModifyUC([Values(true, false)] bool flushToDisk, [Values] UpdateOp updateOp)
         {
             Populate();
@@ -263,13 +254,13 @@ namespace FASTER.test.ModifiedTests
             int key = numRecords - 500;
             int value = 14;
             session.ResetModified(key);
-            AssertLockandModified(session, key, xlock: false, slock: false, modfied: false);
+            AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
 
             if (flushToDisk)
                 this.fht.Log.FlushAndEvict(wait: true);
 
             Status status = default;
-            var unsafeContext = session.LockableUnsafeContext;
+            var unsafeContext = session.UnsafeContext;
 
             unsafeContext.BeginUnsafe();
             switch (updateOp)
@@ -303,14 +294,11 @@ namespace FASTER.test.ModifiedTests
             }
             unsafeContext.EndUnsafe();
 
-            if (updateOp == UpdateOp.Delete)
-                AssertLockandModified(session, key, xlock: false, slock: false, modfied: false);
-            else
-                AssertLockandModified(session, key, xlock: false, slock: false, modfied: true);
+            AssertLockandModified(session, key, xlock: false, slock: false, modified: updateOp != UpdateOp.Delete);
         }
 
         [Test]
-        [Category(SmokeTestCategory)]
+        [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
         public void ModifyLC([Values(true, false)] bool flushToDisk, [Values] UpdateOp updateOp)
         {
             Populate();
@@ -320,7 +308,8 @@ namespace FASTER.test.ModifiedTests
             session.ResetModified(key);
             var LC = session.LockableContext;
             LC.BeginLockable();
-            AssertLockandModified(LC, key, xlock: false, slock: false, modfied: false);
+            AssertLockandModified(LC, key, xlock: false, slock: false, modified: false);
+            LC.Lock(key, LockType.Exclusive);
 
             if (flushToDisk)
                 this.fht.Log.FlushAndEvict(wait: true);
@@ -341,6 +330,7 @@ namespace FASTER.test.ModifiedTests
                 default:
                     break;
             }
+
             if (flushToDisk)
             {
                 switch (updateOp)
@@ -353,18 +343,24 @@ namespace FASTER.test.ModifiedTests
                         Assert.IsTrue(status.NotFound);
                         break;
                 }
-                (status, var _) = LC.Read(key);
-                Assert.IsTrue(status.Found || updateOp == UpdateOp.Delete);
             }
-            if (updateOp == UpdateOp.Delete)
-                AssertLockandModified(LC, key, xlock: false, slock: false, modfied: false);
-            else
-                AssertLockandModified(LC, key, xlock: false, slock: false, modfied: true);
+
+            LC.Unlock(key, LockType.Exclusive);
+
+            if (flushToDisk)
+            {
+                LC.Lock(key, LockType.Shared);
+                (status, var _) = LC.Read(key);
+                Assert.AreEqual(updateOp != UpdateOp.Delete, status.Found, status.ToString());
+                LC.Unlock(key, LockType.Shared);
+            }
+
+            AssertLockandModified(LC, key, xlock: false, slock: false, modified: updateOp != UpdateOp.Delete);
             LC.EndLockable();
         }
 
         [Test]
-        [Category(SmokeTestCategory)]
+        [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
         public void CopyToTailTest()
         {
             Populate();
@@ -376,26 +372,57 @@ namespace FASTER.test.ModifiedTests
             ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail };
 
             luContext.BeginUnsafe();
+            luContext.BeginLockable();
+            AssertLockandModified(luContext, key, xlock: false, slock: false, modified: true);
 
-            // Check Read Copy to Tail resets the modfied
+            luContext.Lock(key, LockType.Shared);
+            AssertLockandModified(luContext, key, xlock: false, slock: true, modified: true);
+
+            // Check Read Copy to Tail resets the modified
             var status = luContext.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());
             luContext.CompletePending(wait: true);
 
-            luContext.BeginLockable();
-            AssertLockandModified(luContext, key, xlock: false, slock: false, modfied: true);
+            luContext.Unlock(key, LockType.Shared);
+            AssertLockandModified(luContext, key, xlock: false, slock: false, modified: true);
 
-            // Check Read Copy to Tail resets the modfied on locked key
+            // Check Read Copy to Tail resets the modified on locked key
             key += 10;
             luContext.Lock(key, LockType.Exclusive);
             status = luContext.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());
             luContext.CompletePending(wait: true);
-            AssertLockandModified(luContext, key, xlock: true, slock: false, modfied: true);
+            AssertLockandModified(luContext, key, xlock: true, slock: false, modified: true);
             luContext.Unlock(key, LockType.Exclusive);
+            AssertLockandModified(luContext, key, xlock: false, slock: false, modified: true);
 
             luContext.EndLockable();
             luContext.EndUnsafe();
+        }
+
+        [Test]
+        [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
+        public void ReadFlagsResetModifiedBit([Values] FlushMode flushMode)
+        {
+            Populate();
+
+            int input = 0, output = 0, key = numRecords / 2;
+            AssertLockandModified(session, key, xlock: false, slock: false, modified: true);
+
+            if (flushMode == FlushMode.ReadOnly)
+                this.fht.hlog.ShiftReadOnlyAddress(fht.Log.TailAddress);
+            else if (flushMode == FlushMode.OnDisk)
+                this.fht.Log.FlushAndEvict(wait: true);
+
+            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail | ReadFlags.ResetModifiedBit };
+
+            // Check that reading the record clears the modified bit, even if it went through CopyToTail
+            var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
+            Assert.AreEqual(flushMode == FlushMode.OnDisk, status.IsPending, status.ToString());
+            if (status.IsPending)
+                session.CompletePending(wait: true);
+
+            AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
         }
     }
 }

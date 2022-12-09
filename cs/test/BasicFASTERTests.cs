@@ -30,10 +30,10 @@ namespace FASTER.test
             TestUtils.DeleteDirectory(path, wait: true);
         }
 
-        private void Setup(long size, LogSettings logSettings, TestUtils.DeviceType deviceType)
+        private void Setup(long size, LogSettings logSettings, TestUtils.DeviceType deviceType, int latencyMs = TestUtils.DefaultLocalMemoryDeviceLatencyMs)
         {
             string filename = path + TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename);
+            log = TestUtils.CreateTestDevice(deviceType, filename, latencyMs: latencyMs);
             logSettings.LogDevice = log;
             fht = new FasterKV<KeyStruct, ValueStruct>(size, logSettings);
             session = fht.For(new Functions()).NewSession<Functions>();
@@ -236,17 +236,18 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public unsafe void TestShiftHeadAddress([Values] TestUtils.DeviceType deviceType)
+        public unsafe void TestShiftHeadAddress([Values] TestUtils.DeviceType deviceType, [Values] TestUtils.BatchMode batchMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;
-            const int RandRange = 10000;
-            const int NumRecs = 200;
+            const int RandRange = 1000000;
+            const int NumRecs = 2000;
 
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            var latencyMs = batchMode == TestUtils.BatchMode.NoBatch ? 0 : TestUtils.DefaultLocalMemoryDeviceLatencyMs;
+            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType, latencyMs: latencyMs);
 
             for (int c = 0; c < NumRecs; c++)
             {
@@ -280,6 +281,7 @@ namespace FASTER.test
             r = new Random(RandSeed);
             sw.Restart();
 
+            const int batchSize = 256;
             for (int c = 0; c < NumRecs; c++)
             {
                 var i = r.Next(RandRange);
@@ -287,18 +289,30 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(foundStatus.IsPending);
+                if (batchMode == TestUtils.BatchMode.NoBatch)
+                {
+                    Status status;
+                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = TestUtils.GetSinglePendingResult(outputs);
+                    Assert.IsTrue(status.Found, status.ToString());
+                    Assert.AreEqual(key1.kfield1, output.value.vfield1);
+                    Assert.AreEqual(key1.kfield2, output.value.vfield2);
+                    outputs.Dispose();
+                }
+                else if (c > 0 && (c % batchSize) == 0)
+                {
+                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    int count = 0;
+                    while (outputs.Next())
+                    {
+                        count++;
+                        Assert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
+                        Assert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
+                    }
+                    outputs.Dispose();
+                    Assert.AreEqual(batchSize + (c == batchSize ? 1 : 0), count);
+                }
             }
-
-            session.CompletePendingWithOutputs(out var outputs, wait: true);
-            int count = 0;
-            while (outputs.Next())
-            {
-                count++;
-                Assert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
-                Assert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
-            }
-            outputs.Dispose();
-            Assert.AreEqual(NumRecs, count);
         }
 
         [Test]
@@ -385,6 +399,7 @@ namespace FASTER.test
                 nums[i] = temp;
             }
 
+            // InitialUpdater
             for (int j = 0; j < nums.Length; ++j)
             {
                 var i = nums[j];
@@ -392,6 +407,8 @@ namespace FASTER.test
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
                 session.RMW(ref key1, ref input, Empty.Default, 0);
             }
+
+            // CopyUpdater
             for (int j = 0; j < nums.Length; ++j)
             {
                 var i = nums[j];
@@ -652,14 +669,14 @@ namespace FASTER.test
             // ReadCache is used when the record is read from disk.
             fht.Log.FlushAndEvict(wait:true);
 
-            // SkipReadCache is primarily for indexing, so a read during index scan does not result in a readcache update.
+            // DisableReadCacheUpdates is primarily for indexing, so a read during index scan does not result in a readcache update.
             // Reading at a normal logical address will not use the readcache, because the "readcache" bit is not set in that logical address.
             // And we cannot get a readcache address, since reads satisfied from the readcache pass kInvalidAddress to functions.
             // Therefore, we test here simply that we do not put it in the readcache when we tell it not to.
 
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            ReadOptions readOptions = new() { StartAddress = readAtAddress, ReadFlags = ReadFlags.DisableReadCacheReads | ReadFlags.DisableReadCacheUpdates };
+            ReadOptions readOptions = new() { StartAddress = readAtAddress, ReadFlags = ReadFlags.DisableReadCacheUpdates };
             status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
             VerifyResult();
 
@@ -669,6 +686,7 @@ namespace FASTER.test
             functions.expectedReadAddress = readAtAddress;
             readOptions.ReadFlags = ReadFlags.None;
             status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
+            Assert.IsTrue(status.IsPending);
             VerifyResult();
 
             Assert.Less(fht.ReadCache.BeginAddress, fht.ReadCache.TailAddress);
@@ -676,6 +694,7 @@ namespace FASTER.test
             // Now this will read from the read cache.
             functions.expectedReadAddress = Constants.kInvalidAddress;
             status = skipReadCacheSession.Read(ref key1, ref input, ref output);
+            Assert.IsFalse(status.IsPending);
             Assert.IsTrue(status.Found);
             VerifyOutput();
         }

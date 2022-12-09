@@ -122,16 +122,14 @@ namespace FASTER.core
     internal struct RecoveryOptions
     {
         internal long headAddress;
-        internal long tailAddress;
+        internal long fuzzyRegionStartAddress;
         internal bool undoNextVersion;
 
-        internal bool clearLocks => this.headAddress != Constants.kInvalidAddress;
-
-        internal RecoveryOptions(bool clearLocks, long headAddress, long tailAddress, bool undoNextVer)
+        internal RecoveryOptions(long headAddress, long fuzzyRegionStartAddress, bool undoNextVersion)
         {
-            this.headAddress = clearLocks ? headAddress : Constants.kInvalidAddress;
-            this.tailAddress = clearLocks ? tailAddress : Constants.kInvalidAddress;
-            this.undoNextVersion = undoNextVer;
+            this.headAddress = headAddress;
+            this.fuzzyRegionStartAddress = fuzzyRegionStartAddress;
+            this.undoNextVersion = undoNextVersion;
         }
     }
 
@@ -372,7 +370,7 @@ namespace FASTER.core
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(recoveredHLCInfo.info.manualLockingActive, headAddress, tailAddress, undoNextVersion);
+            RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
 
             long readOnlyAddress;
             // Make index consistent for version v
@@ -406,7 +404,7 @@ namespace FASTER.core
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(recoveredHLCInfo.info.manualLockingActive, headAddress, tailAddress, undoNextVersion);
+            RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
 
             long readOnlyAddress;
             // Make index consistent for version v
@@ -423,7 +421,7 @@ namespace FASTER.core
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
                 await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot,
-                                           new RecoveryOptions(recoveredHLCInfo.info.manualLockingActive, headAddress, tailAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
+                                           new RecoveryOptions(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
                 // Then recover snapshot into mutable region
                 await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.flushedLogicalAddress,
                                         recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo, cancellationToken).ConfigureAwait(false);
@@ -559,6 +557,9 @@ namespace FASTER.core
                 int pageIndex = hlog.GetPageIndexForPage(page);
                 recoveryStatus.WaitRead(pageIndex);
 
+                // We make an extra pass to clear locks when reading every page back into memory
+                ClearLocksOnPage(page, options);
+
                 ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, page, pageIndex);
             }
 
@@ -579,6 +580,9 @@ namespace FASTER.core
                 // Ensure page has been read into memory
                 int pageIndex = hlog.GetPageIndexForPage(page);
                 await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+
+                // We make an extra pass to clear locks when reading every page back into memory
+                ClearLocksOnPage(page, options);
 
                 ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, page, pageIndex);
             }
@@ -625,36 +629,21 @@ namespace FASTER.core
         {
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
+            var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
 
-            if (options.clearLocks)
-            {
-                if (options.headAddress >= endLogicalAddress)
-                    return false;
-            }
-            else if (recoverFromAddress >= endLogicalAddress)
+            if (recoverFromAddress >= endLogicalAddress)
                 return false;
 
             var pageFromAddress = 0L;
             var pageUntilAddress = hlog.GetPageSize();
-            if (options.clearLocks)
-            {
-                if (options.headAddress > startLogicalAddress)
-                    pageFromAddress = hlog.GetOffsetInPage(options.headAddress);
 
-                if (options.tailAddress < endLogicalAddress)
-                    pageUntilAddress = hlog.GetOffsetInPage(options.tailAddress);
-            }
-            else 
-            {
-                if (recoverFromAddress > startLogicalAddress)
-                    pageFromAddress = hlog.GetOffsetInPage(recoverFromAddress);
+            if (recoverFromAddress > startLogicalAddress)
+                pageFromAddress = hlog.GetOffsetInPage(recoverFromAddress);
 
-                if (untilAddress < endLogicalAddress)
-                    pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
-            }
+            if (untilAddress < endLogicalAddress)
+                pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
 
-            var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
-            if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options.undoNextVersion, options.clearLocks))
+            if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -696,6 +685,9 @@ namespace FASTER.core
                     {
                         // Ensure the page is read from file
                         recoveryStatus.WaitRead(pageIndex);
+
+                        // We make an extra pass to clear locks when reading pages back into memory
+                        ClearLocksOnPage(p, options);
                     }
                     else
                     {
@@ -733,6 +725,9 @@ namespace FASTER.core
                     {
                         // Ensure the page is read from file
                         await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+
+                        // We make an extra pass to clear locks when reading pages back into memory
+                        ClearLocksOnPage(p, options);
                     }
                     else
                     {
@@ -760,8 +755,7 @@ namespace FASTER.core
                 int pageIndex = hlog.GetPageIndexForPage(p);
 
                 var endLogicalAddress = hlog.GetStartLogicalAddress(p + 1);
-                if ((recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
-                        || (options.clearLocks && options.headAddress < endLogicalAddress))
+                if (recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
                     ProcessReadSnapshotPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
 
                 // Issue next read
@@ -816,8 +810,8 @@ namespace FASTER.core
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
 
-            // Perform recovery if page in fuzzy portion of the log or clearing locks
-            if ((fromAddress < endLogicalAddress && fromAddress < untilAddress) || (options.clearLocks && options.headAddress < endLogicalAddress))
+            // Perform recovery if page is part of the re-do portion of log
+            if (fromAddress < endLogicalAddress && fromAddress < untilAddress)
             {
                 /*
                  * Handling corner-cases:
@@ -825,41 +819,64 @@ namespace FASTER.core
                  * When fromAddress is in the middle of the page, then start recovery only from corresponding offset 
                  * in page. Similarly, if untilAddress falls in the middle of the page, perform recovery only until that
                  * offset. Otherwise, scan the entire page [0, PageSize)
-                 * 
-                 * If options.clearLocks, the read of this page overwrote the prior lock clearing, so we must redo it here.
                  */
 
                 var pageFromAddress = 0L;
                 var pageUntilAddress = hlog.GetPageSize();
-                if (options.clearLocks)
-                {
-                    if (options.headAddress > startLogicalAddress && options.headAddress < endLogicalAddress)
-                        pageFromAddress = hlog.GetOffsetInPage(options.headAddress);
-                    if (endLogicalAddress > options.tailAddress)
-                        pageUntilAddress = hlog.GetOffsetInPage(options.tailAddress);
-                }
-                else
-                {
-                    if (fromAddress > startLogicalAddress && fromAddress < endLogicalAddress)
-                        pageFromAddress = hlog.GetOffsetInPage(fromAddress);
-                    if (endLogicalAddress > untilAddress)
-                        pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
-                }
-
                 var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
+
+
+                if (fromAddress > startLogicalAddress && fromAddress < endLogicalAddress)
+                    pageFromAddress = hlog.GetOffsetInPage(fromAddress);
+                if (endLogicalAddress > untilAddress)
+                    pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
+
                 RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                startLogicalAddress, physicalAddress, nextVersion, options.undoNextVersion, options.clearLocks);
+                                startLogicalAddress, physicalAddress, nextVersion, options);
             }
 
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
         }
 
+        private unsafe void ClearLocksOnPage(long page, RecoveryOptions options)
+        {
+            var startLogicalAddress = hlog.GetStartLogicalAddress(page);
+            var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
+            var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
+
+            // no need to clear locks for records that will not end up in main memory
+            if (options.headAddress >= endLogicalAddress) return;
+
+            long untilLogicalAddressInPage = hlog.GetPageSize();
+            long pointer = 0;
+
+            while (pointer < untilLogicalAddressInPage)
+            {
+                long recordStart = physicalAddress + pointer;
+                ref RecordInfo info = ref hlog.GetInfo(recordStart);
+                info.ClearLocks();
+                info.Unseal();
+
+                if (info.IsNull())
+                    pointer += RecordInfo.GetLength();
+                else
+                {
+                    int size = hlog.GetRecordSize(recordStart).Item2;
+                    Debug.Assert(size <= hlog.GetPageSize());
+                    pointer += size;
+                }
+            }
+        }
+
+        // Re-do the necessary log entries. We ensure that the InNewVersion test (to skip v+1 records)
+        // runs ONLY for the fuzzy region (which has v and v+1 records) because the earlier parts may
+        // have an incorrect InNewVersion status.
         private unsafe bool RecoverFromPage(long startRecoveryAddress,
                                      long fromLogicalAddressInPage,
                                      long untilLogicalAddressInPage,
                                      long pageLogicalAddress,
                                      long pagePhysicalAddress,
-                                     long nextVersion, bool undoNextVersion, bool clearLocks)
+                                     long nextVersion, RecoveryOptions options)
         {
             bool touched = false;
 
@@ -891,18 +908,16 @@ namespace FASTER.core
                     entry = default;
                     FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
 
-                    if (!info.InNewVersion || !undoNextVersion)
+                    bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.InNewVersion;
+                    if (!options.undoNextVersion) ignoreRecord = false;
+
+                    if (!ignoreRecord)
                     {
                         entry.Address = pageLogicalAddress + pointer;
                         entry.Tag = tag;
                         entry.Pending = false;
                         entry.Tentative = false;
                         bucket->bucket_entries[slot] = entry.word;
-                        if (clearLocks && info.IsLocked)
-                        {
-                            // We do not set 'touched' here as there is no need to write these pages back
-                            info.ClearLocks();
-                        }
                     }
                     else
                     {

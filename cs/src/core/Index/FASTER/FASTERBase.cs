@@ -15,7 +15,6 @@ namespace FASTER.core
         public const int kCacheLineBytes = 64;
 
         public const bool kFineGrainedHandoverRecord = false;
-
         public const bool kFineGrainedHandoverBucket = true;
 
         /// Number of entries per bucket (assuming 8-byte entries to fill a cacheline)
@@ -37,18 +36,19 @@ namespace FASTER.core
         public const long kReadCacheBitMask = (1L << kReadCacheBitShift);
 
         public const int kTagSize = 14;
-
         public const int kTagShift = 62 - kTagSize;
-
         public const long kTagMask = (1L << kTagSize) - 1;
-
         public const long kTagPositionMask = (kTagMask << kTagShift);
-
         public const long kAddressMask = (1L << 48) - 1;
 
         // Position of tag in hash value (offset is always in the least significant bits)
         public const int kHashTagShift = 64 - kTagSize;
 
+        // Default number of entries in the lock table.
+        public const int kDefaultLockTableSize = 16 * 1024;
+
+        public const int kMaxLockSpins = 10;   // TODO verify these
+        public const int kMaxReaderLockDrainSpins = 100;
 
         /// Invalid entry value
         public const int kInvalidEntrySlot = kEntriesPerBucket;
@@ -75,6 +75,7 @@ namespace FASTER.core
 
         public const long kInvalidAddress = 0;
         public const long kTempInvalidAddress = 1;
+        public const long kUnknownAddress = 2;
         public const int kFirstValidAddress = 64;
     }
 
@@ -157,6 +158,8 @@ namespace FASTER.core
             }
         }
 
+        public long AbsoluteAddress => Utility.AbsoluteAddress(this.Address);
+
         public ushort Tag
         {
             readonly get
@@ -229,6 +232,13 @@ namespace FASTER.core
                     word &= ~Constants.kReadCacheBitMask;
                 }
             }
+        }
+
+        public override string ToString()
+        {
+            var addrRC = this.ReadCache ? "(rc)" : string.Empty;
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"addr {this.AbsoluteAddress}{addrRC}, tag {Tag}, tent {bstr(Tentative)}, pend {bstr(Pending)}";
         }
     }
 

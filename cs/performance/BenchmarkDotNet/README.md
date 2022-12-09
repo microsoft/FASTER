@@ -9,6 +9,7 @@ To run:
 Currently we have two very simple benchmarks; more will be added later.
 - LightEpochTests: Currently runs a microbenchmark of epoch Acquire/Release.
 - SyncVsAsyncTests: Compares sync vs. async API performance.
+- InliningTests: Outputs information as to what was inlined and what wasn't
 
 BenchmarkDotNet does not support cross-run comparisons; currently, just save the output to a file and diff. A script will be written in the future to automate these comparisons.
 

@@ -262,7 +262,7 @@ namespace FASTER.test.UnsafeContext
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public async Task TestShiftHeadAddress([Values] DeviceType deviceType, [Values] SyncMode syncMode)
+        public async Task TestShiftHeadAddressUC([Values] DeviceType deviceType, [Values] SyncMode syncMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;

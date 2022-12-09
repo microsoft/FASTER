@@ -16,12 +16,16 @@ namespace FASTER.test
     {
         // Various categories used to group tests
         internal const string SmokeTestCategory = "Smoke";
+        internal const string StressTestCategory = "Stress";
         internal const string FasterKVTestCategory = "FasterKV";
         internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";
+        internal const string LockTableTestCategory = "LockTable";
         internal const string CheckpointRestoreCategory = "CheckpointRestore";
-        internal const string RMW = "RMW";
+        internal const string MallocFixedPageSizeCategory = "MallocFixedPageSize";
+        internal const string RMWTestCategory = "RMW";
+        internal const string ModifiedBitTestCategory = "ModifiedBitTest";
 
         /// <summary>
         /// Delete a directory recursively
@@ -108,11 +112,13 @@ namespace FASTER.test
             LocalMemory
         }
 
-        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = 20, bool deleteOnClose = false)  // latencyMs works only for DeviceType = LocalMemory
+        internal const int DefaultLocalMemoryDeviceLatencyMs = 20;   // latencyMs only applies to DeviceType = LocalMemory
+
+        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = DefaultLocalMemoryDeviceLatencyMs, bool deleteOnClose = false)
         {
             IDevice device = null;
             bool preallocateFile = false;
-            long capacity = -1; // Capacity unspecified
+            long capacity = Devices.CAPACITY_UNSPECIFIED;
             bool recoverDevice = false;
             
             switch (testDeviceType)
@@ -182,6 +188,16 @@ namespace FASTER.test
         public enum FlushMode { NoFlush, ReadOnly, OnDisk }
 
         public enum KeyEquality { Equal, NotEqual }
+
+        public enum ReadCacheMode { UseReadCache, NoReadCache }
+
+        public enum EphemeralLockingMode { UseEphemeralLocking, NoEphemeralLocking };
+
+        public enum KeyContentionMode { Contention, NoContention };
+
+        public enum BatchMode { Batch, NoBatch };
+
+        public enum UpdateOp { Upsert, RMW, Delete }
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);

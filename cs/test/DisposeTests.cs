@@ -115,7 +115,7 @@ namespace FASTER.test.Dispose
                         // There should be one readcache entry for this test.
                         Assert.IsTrue(new HashBucketEntry() { word = entry.Address }.ReadCache);
                         Assert.GreaterOrEqual(address, tester.fht.ReadCache.BeginAddress);
-                        var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
+                        var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                         ref RecordInfo recordInfo = ref tester.fht.readcache.GetInfo(physicalAddress);
                         address = recordInfo.PreviousAddress;
 
@@ -138,7 +138,7 @@ namespace FASTER.test.Dispose
                         }
                         else
                         {
-                            var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
+                            var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                             ref RecordInfo recordInfo = ref tester.fht.readcache.GetInfo(physicalAddress);
                             while (recordInfo.PreviousAddress == address)
                             {
@@ -154,6 +154,7 @@ namespace FASTER.test.Dispose
             void SignalEvent()
             {
                 // Let the SUT proceed, which will trigger a RETRY_NOW due to the failed CAS, so we need to release for the second wait as well.
+                // Release with a count of 2 to handle the attempt it's currently blocked on and the subsequent retry.
                 if (!isSUT)
                     tester.sutGate.Release(2);
             }
@@ -328,7 +329,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeSingleWriterTest()
+        public void DisposeSingleWriter2Threads()
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -365,7 +366,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeInitialUpdaterTest([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode)
+        public void DisposeInitialUpdater2Threads([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -403,7 +404,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeCopyUpdaterTest([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode)
+        public void DisposeCopyUpdater2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -430,6 +431,7 @@ namespace FASTER.test.Dispose
                     otherGate.Wait();
                     session.RMW(ref collidingKey, ref input);
                 }
+                session.CompletePending(true);
             }
 
             var tasks = new[]
@@ -439,16 +441,36 @@ namespace FASTER.test.Dispose
             };
             Task.WaitAll(tasks);
 
+            // The way this works for OnDisk is:
+            //   SUT sees that the address in the hash entry is below HeadAddress (because everything has been flushed to disk)
+            //      SUT goes pending, gets to InternalContinuePendingRMW, calls CreateNewRecordRMW, which calls CopyUpdater
+            //          SUT (in CopyUpdater) signals Other, then blocks
+            //      SUT has recorded prevHighestKeyHashAddress with the original hash entry address
+            //   Other calls InternalRMW and also sees that the address in the hash entry is below HeadAddress, so it goes pending
+            //      Other gets to InternalContinuePendingRMW, sees its key does not exist, and calls InitialUpdater, which signals SUT
+            //      Other returns from InternalContinuePendingRMW, which enqueues DeserializedFromDisk into functions2.handlerQueue
+            //   SUT is now unblocked and returns from CopyUpdater. CAS fails due to Other's insertion
+            //      SUT does the RETRY loop in InternalContinuePendingRMW
+            //      This second loop iteration sees that prevHighestKeyHashAddress is less than the current hash table entry, so drops down to do InternalRMW.
+            //      InternalRMW does TracebackForKeyMatch, which passes Other's inserted collision and goes below HeadAddress
+            //      InternalRMW thus enqueues another pending IO
+            //      InternalContinuePendingRMW returns, which enqueues DeserializedFromDisk into functions1.handlerQueue
+            //      The final pending IO calls InternalContinuePendingRMW, which operates normally now as there is no conflict.
+            //      InternalContinuePendingRMW returns, which enqueues another DeserializedFromDisk into functions1.handlerQueue
             Assert.AreEqual(DisposeHandler.CopyUpdater, functions1.handlerQueue.Dequeue());
             if (flushMode == FlushMode.OnDisk)
+            {
                 Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions1.handlerQueue.Dequeue());
+                Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions1.handlerQueue.Dequeue());
+                Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions2.handlerQueue.Dequeue());
+            }
             Assert.IsEmpty(functions1.handlerQueue);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeSingleDeleterTest([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode)
+        public void DisposeSingleDeleter2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -497,7 +519,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposePendingReadTest([Values] ReadCopyDestination copyDest)
+        public void PendingRead([Values] ReadCopyDestination copyDest)
         {
             DoPendingReadInsertTest(copyDest, initialReadCacheInsert: false);
         }
@@ -505,7 +527,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeCopyToTailWithInitialReadCacheTest([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest)
+        public void CopyToTailWithInitialReadCache([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest)
         {
             // We use the ReadCopyDestination.ReadCache parameter so Setup() knows to set up the readcache, but
             // for the actual test it is used only for setup; we execute CopyToTail.
@@ -513,6 +535,62 @@ namespace FASTER.test.Dispose
         }
 
         void DoPendingReadInsertTest(ReadCopyDestination copyDest, bool initialReadCacheInsert)
+        {
+            MyKey key = new() { key = TestKey };
+            MyKey collidingKey2 = new() { key = TestCollidingKey2 };
+            MyValue collidingValue2 = new() { value = TestCollidingValue2 };
+
+            using var session = fht.NewSession(new DisposeFunctionsNoSync());
+
+            // Do initial insert(s) to set things up
+            {
+                MyValue value = new() { value = TestInitialValue };
+                session.Upsert(ref key, ref value);
+                if (initialReadCacheInsert)
+                    session.Upsert(ref collidingKey2, ref collidingValue2);
+            }
+
+            // FlushAndEvict so we go pending
+            DoFlush(FlushMode.OnDisk);
+
+            MyOutput output = new();
+            MyInput input = new();
+
+            if (initialReadCacheInsert)
+            {
+                Assert.IsTrue(session.Read(ref collidingKey2, ref output).IsPending);
+                session.CompletePending(wait: true);
+            }
+
+            ReadOptions readOptions = default;
+            if (copyDest == ReadCopyDestination.Tail)
+                readOptions.ReadFlags = ReadFlags.CopyReadsToTail;
+            var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
+            Assert.IsTrue(status.IsPending, status.ToString());
+            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            (status, output) = GetSinglePendingResult(completedOutputs);
+            Assert.AreEqual(TestInitialValue, output.value.value);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public void DisposePendingRead2Threads([Values] ReadCopyDestination copyDest)
+        {
+            DoDisposePendingReadInsertTest2Threads(copyDest, initialReadCacheInsert: false);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public void DisposeCopyToTailWithInitialReadCache2Threads([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest)
+        {
+            // We use the ReadCopyDestination.ReadCache parameter so Setup() knows to set up the readcache, but
+            // for the actual test it is used only for setup; we execute CopyToTail.
+            DoDisposePendingReadInsertTest2Threads(ReadCopyDestination.Tail, initialReadCacheInsert: true);
+        }
+
+        void DoDisposePendingReadInsertTest2Threads(ReadCopyDestination copyDest, bool initialReadCacheInsert)
         {
             var functions1 = new DisposeFunctions(this, sut: true, splice: initialReadCacheInsert);
             var functions2 = new DisposeFunctions(this, sut: false);

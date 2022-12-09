@@ -165,11 +165,11 @@ namespace FASTER.core
             internal const ushort kDisableReadCacheReads = 0x0002;
             internal const ushort kCopyReadsToTail = 0x0004;
             internal const ushort kCopyFromDeviceOnly = 0x0008;
+            internal const ushort kResetModifiedBit = 0x0010;
             // END  Must be kept in sync with corresponding ReadFlags enum values
 
             internal const ushort kNoKey = 0x0100;
             internal const ushort kIsAsync = 0x0200;
-            internal const ushort kHasPrevHighestKeyHashAddress = 0x0400;
 
             // Flags for various operations passed at multiple levels, e.g. through RETRY_NOW.
             internal const ushort kUnused1 = 0x1000;
@@ -193,47 +193,36 @@ namespace FASTER.core
                 return tempInputContainer;
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static ushort GetOperationFlags(ReadFlags readFlags)
+            static PendingContext()
             {
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
                 Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
                 Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
-                ushort flags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
-                return flags;
+                Debug.Assert((ushort)ReadFlags.ResetModifiedBit >> 1 == kResetModifiedBit);
             }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static ushort GetOperationFlags(ReadFlags readFlags) 
+                => (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly | ReadFlags.ResetModifiedBit)) >> 1);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey)
             {
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
-                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
-                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
-                ushort flags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
+                ushort flags = GetOperationFlags(readFlags);
                 if (noKey)
                     flags |= kNoKey;
                 return flags;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions) 
-                => this.SetOperationFlags(GetOperationFlags(readFlags), readOptions.StopAddress);
+            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions) => this.SetOperationFlags(GetOperationFlags(readFlags), readOptions.StopAddress);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey)
-                => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), readOptions.StopAddress);
+            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey) => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), readOptions.StopAddress);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags)
-            {
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
-                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
-                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
-                this.operationFlags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
-            }
+            internal void SetOperationFlags(ReadFlags readFlags) => this.operationFlags = GetOperationFlags(readFlags);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void SetOperationFlags(ushort flags, long stopAddress)
@@ -249,31 +238,17 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
             }
 
-            internal bool DisableReadCacheUpdates
-            {
-                get => (operationFlags & kDisableReadCacheUpdates) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kDisableReadCacheUpdates) : (ushort)(operationFlags & ~kDisableReadCacheUpdates);
-            }
+            internal bool DisableReadCacheUpdates => (operationFlags & kDisableReadCacheUpdates) != 0;
 
-            internal bool DisableReadCacheReads
-            {
-                get => (operationFlags & kDisableReadCacheReads) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kDisableReadCacheReads) : (ushort)(operationFlags & ~kDisableReadCacheReads);
-            }
+            internal bool DisableReadCacheReads => (operationFlags & kDisableReadCacheReads) != 0;
 
-            internal bool CopyReadsToTail
-            {
-                get => (operationFlags & kCopyReadsToTail) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kCopyReadsToTail) : (ushort)(operationFlags & ~kCopyReadsToTail);
-            }
+            internal bool CopyReadsToTail => (operationFlags & kCopyReadsToTail) != 0;
 
             internal bool CopyReadsToTailFromReadOnly => (operationFlags & (kCopyReadsToTail | kCopyFromDeviceOnly)) == kCopyReadsToTail;
 
-            internal bool CopyFromDeviceOnly
-            {
-                get => (operationFlags & kCopyFromDeviceOnly) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kCopyFromDeviceOnly) : (ushort)(operationFlags & ~kCopyFromDeviceOnly);
-            }
+            internal bool CopyFromDeviceOnly => (operationFlags & kCopyFromDeviceOnly) != 0;
+
+            internal bool ResetModifiedBit => (operationFlags & kResetModifiedBit) != 0;
 
             internal bool HasMinAddress => this.minAddress != Constants.kInvalidAddress;
 
@@ -283,10 +258,16 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
             }
 
-            internal bool HasPrevHighestKeyHashAddress
+            internal long PrevHighestKeyHashAddress
             {
-                get => (operationFlags & kHasPrevHighestKeyHashAddress) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kHasPrevHighestKeyHashAddress) : (ushort)(operationFlags & ~kHasPrevHighestKeyHashAddress);
+                get => recordInfo.PreviousAddress;
+                set => recordInfo.PreviousAddress = value;
+            }
+
+            internal long PrevLatestLogicalAddress
+            {
+                get => entry.word;
+                set => entry.word = value;
             }
 
             public void Dispose()

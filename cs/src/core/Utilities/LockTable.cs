@@ -1,299 +1,407 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
+using FASTER.core.Utilities;
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FASTER.core
 {
-    // We need to duplicate the Key because we can't get to the key object of the dictionary to Return() it.
-    // This is a class rather than a struct because a struct would update a copy.
-    internal class LockTableEntry<TKey>
+    internal class LockTable<TKey> : IDisposable
     {
-        internal IHeapContainer<TKey> key;
-        internal RecordInfo logRecordInfo;  // in main log
-        internal RecordInfo lockRecordInfo; // in lock table; we have to Lock/Tentative the LockTable entry separately from logRecordInfo
+        private const int kLockSpinCount = 10;
 
-        internal LockTableEntry(IHeapContainer<TKey> key, RecordInfo logRecordInfo, RecordInfo lockRecordInfo)
+        #region IInMemKVUserFunctions implementation
+        internal class LockTableFunctions : IInMemKVUserFunctions<TKey, IHeapContainer<TKey>, RecordInfo>
         {
-            this.key = key;
-            this.logRecordInfo = logRecordInfo;
-            this.lockRecordInfo = lockRecordInfo;
+            private readonly IFasterEqualityComparer<TKey> keyComparer;
+            private readonly IVariableLengthStruct<TKey> keyLen;
+            private readonly SectorAlignedBufferPool bufferPool;
+
+            internal LockTableFunctions(IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen, SectorAlignedBufferPool bufferPool)
+            {
+                this.keyComparer = keyComparer;
+                this.keyLen = keyLen;
+                this.bufferPool = bufferPool;
+            }
+
+            public IHeapContainer<TKey> CreateHeapKey(ref TKey key)
+                => bufferPool is null ? new StandardHeapContainer<TKey>(ref key) : new VarLenHeapContainer<TKey>(ref key, keyLen, bufferPool);
+
+            public bool Equals(ref TKey key, IHeapContainer<TKey> heapKey) => keyComparer.Equals(ref key, ref heapKey.Get());
+
+            public long GetHashCode64(ref TKey key) => keyComparer.GetHashCode64(ref key);
+
+            public bool IsActive(ref RecordInfo recordInfo) => recordInfo.IsLocked;
+
+            public void Dispose(ref IHeapContainer<TKey> key, ref RecordInfo recordInfo)
+            {
+                key?.Dispose();
+                key = default;
+                recordInfo = default;
+            }
+        }
+        #endregion IInMemKVUserFunctions implementation
+
+        internal readonly InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions> kv;
+        internal readonly LockTableFunctions functions;
+
+        internal LockTable(int numBuckets, IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen, SectorAlignedBufferPool bufferPool)
+        {
+            this.functions = new(keyComparer, keyLen, bufferPool);
+            this.kv = new InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>(numBuckets, numBuckets >> 4, this.functions);
         }
 
+        public bool IsActive => kv.IsActive;
+
+        /// <summary>
+        /// Try to lock the key for an ephemeral operation; if there is no lock, return without locking and let 2p insert handle it.
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        /// <param name="hash">The hash code of the key to lock, to avoid recalculating</param>
+        /// <param name="lockType">The lock type to acquire, if the key is found</param>
+        /// <param name="gotLock">Returns true if we got the requested lock; the caller must unlock</param>
+        /// <returns>True if either lock was acquired or the entry was not found; false if lock acquisition failed</returns>
+        /// <remarks>Ephemeral locks only lock if an entry exists; two-phase insertion/locking will ensure we don't have a conflict 
+        ///     if there is not already an entry there.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void XLock() => this.lockRecordInfo.LockExclusiveRaw();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void XUnlock() { this.lockRecordInfo.UnlockExclusive();}
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SLock() => this.lockRecordInfo.LockSharedRaw();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SUnlock() { this.lockRecordInfo.UnlockShared(); }
-
-        public override string ToString() => $"{key}";
-    }
-
-    // TODO: abstract base or interface for additional implementations (or "DI" a test wrapper)
-    // TODO: internal IHeapContainer<TKey> key; causes an object allocation each time. we need:
-    //      Non-Varlen: a specialized LockTableEntry that just uses Key directly
-    //      Varlen: a shared heap container abstraction that shares a single buffer pool allocator and allocates, frees into it, returning a struct wrapper.
-
-    internal class LockTable<TKey>
-    {
-        class KeyComparer : IEqualityComparer<IHeapContainer<TKey>>
+        public bool TryLockEphemeral(ref TKey key, long hash, LockType lockType, out bool gotLock)
         {
-            readonly internal IFasterEqualityComparer<TKey> comparer;
-
-            internal KeyComparer(IFasterEqualityComparer<TKey> comparer) => this.comparer = comparer;
-
-            public bool Equals(IHeapContainer<TKey> k1, IHeapContainer<TKey> k2) => comparer.Equals(ref k1.Get(), ref k2.Get());
-
-            public int GetHashCode(IHeapContainer<TKey> k) => (int)comparer.GetHashCode64(ref k.Get());
+            var funcs = new FindEntryFunctions_EphemeralLock(lockType);
+            kv.FindEntry(ref key, hash, ref funcs);
+            gotLock = funcs.gotLock;
+            return funcs.success;
         }
 
-        readonly internal SafeConcurrentDictionary<IHeapContainer<TKey>, LockTableEntry<TKey>> dict;
-        readonly IVariableLengthStruct<TKey> keyLen;
-        readonly KeyComparer keyComparer;
-        readonly SectorAlignedBufferPool bufferPool;
-
-        // dict.Empty takes locks on all tables ("snapshot semantics"), which is too much of a perf hit. So we track this
-        // separately. It is not atomic when items are added/removed, but by incrementing it before and decrementing it after
-        // we add or remove items, respectively, we achieve the desired goal of IsActive.
-        long approxNumItems = 0;
-
-        internal LockTable(IVariableLengthStruct<TKey> keyLen, IFasterEqualityComparer<TKey> comparer, SectorAlignedBufferPool bufferPool)
+        internal struct FindEntryFunctions_EphemeralLock : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindEntryFunctions
         {
-            this.keyLen = keyLen;
-            this.keyComparer = new(comparer);
-            this.bufferPool = bufferPool;
-            this.dict = new(this.keyComparer);
+            readonly LockType lockType;
+            internal bool success, gotLock;
+
+            internal FindEntryFunctions_EphemeralLock(LockType lockType)
+            {
+                this.lockType = lockType;
+                this.success = this.gotLock = false;
+            }
+
+            public void NotFound(ref TKey key) => success = true;
+
+            public void FoundEntry(ref TKey key, ref RecordInfo recordInfo) => success = gotLock = recordInfo.TryLock(lockType);
         }
 
-        internal bool IsActive => this.approxNumItems > 0;
-
-        IHeapContainer<TKey> GetKeyContainer(ref TKey key) 
-            => bufferPool is null ? new StandardHeapContainer<TKey>(ref key) : new VarLenHeapContainer<TKey>(ref key, keyLen, bufferPool);
-
+        /// <summary>
+        /// Try to acquire a manual lock, either by locking existing LockTable record or adding a new record.
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        /// <param name="hash">The hash code of the key to lock, to avoid recalculating</param>
+        /// <param name="lockType">The lock type to acquire, if the key is found</param>
+        /// <param name="isTentative">If true, the lock should be acquired tentatively, as part of two-phase insertion/locking</param>
+        /// <returns>True if the lock was acquired; false if lock acquisition failed</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool Unlock(ref TKey key, LockType lockType, out bool exists)
+        public bool TryLockManual(ref TKey key, long hash, LockType lockType, out bool isTentative)
         {
-            var lookupKey = GetKeyContainer(ref key);
-            exists = dict.TryGetValue(lookupKey, out var lte);
-            if (exists)
-                return Unlock(lookupKey, lte, lockType);
+            var funcs = new FindOrAddEntryFunctions_ManualLock(lockType, isTentative: true);
+            kv.FindOrAddEntry(ref key, hash, ref funcs);
+            isTentative = funcs.isTentative;    // funcs.isTentative is in/out
+            return funcs.success;
+        }
+
+        internal struct FindOrAddEntryFunctions_ManualLock : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindOrAddEntryFunctions
+        {
+            readonly LockType lockType;
+            internal bool success, isTentative; // isTentative is in/out
+
+            internal FindOrAddEntryFunctions_ManualLock(LockType lockType, bool isTentative)
+            {
+                this.lockType = lockType;
+                this.isTentative = isTentative;
+                this.success = false;
+            }
+
+            public void FoundEntry(ref TKey key, ref RecordInfo recordInfo)
+            {
+                // If the entry is already there, we lock it non-tentatively
+                success = recordInfo.TryLock(lockType);
+                isTentative = false;
+            }
+
+            public void AddedEntry(ref TKey key, ref RecordInfo recordInfo)
+            {
+                recordInfo.InitializeLock(lockType);
+                recordInfo.Valid = true;
+                recordInfo.Tentative = isTentative;
+                success = true;
+            }
+        }
+
+        /// <summary>
+        /// Unlock the key with the specified lock type
+        /// </summary>
+        /// <param name="key">The key to unlock</param>
+        /// <param name="hash">The hash code of the key to lock, to avoid recalculating</param>
+        /// <param name="lockType">The lock type--shared or exclusive</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Unlock(ref TKey key, long hash, LockType lockType)
+        {
+            var funcs = new FindEntryFunctions_Unlock(lockType);
+            kv.FindEntry(ref key, hash, ref funcs);
+
+            // success is false if the key was not found, or if the record was marked invalid.
+            return funcs.success;
+        }
+
+        internal struct FindEntryFunctions_Unlock : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindEntryFunctions
+        {
+            readonly LockType lockType;
+            readonly bool wasTentative;
+            internal bool success;
+
+            internal FindEntryFunctions_Unlock(LockType lockType, bool wasTentative = false)
+            {
+                this.lockType = lockType;
+                this.wasTentative = wasTentative;
+                success = false;
+            }
+
+            public void NotFound(ref TKey key) => success = false;
+
+            public void FoundEntry(ref TKey key, ref RecordInfo recordInfo)
+            {
+                Debug.Assert(wasTentative == recordInfo.Tentative, "entry.recordInfo.Tentative was not as expected");
+                Debug.Assert(!recordInfo.Tentative || recordInfo.IsLockedExclusive, "A Tentative entry should be X locked");
+                success = recordInfo.TryUnlock(lockType);
+            }
+        }
+
+        /// <summary>
+        /// Remove the key from the lockTable, if it exists. Called after a record is transferred.
+        /// </summary>
+        /// <param name="key">The key to unlock</param>
+        /// <param name="hash">The hash code of the key to lock, to avoid recalculating</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Remove(ref TKey key, long hash)
+        {
+            var funcs = new FindEntryFunctions_Remove();
+            kv.FindEntry(ref key, hash, ref funcs);
+            return funcs.wasFound;
+        }
+
+        internal struct FindEntryFunctions_Remove : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindEntryFunctions
+        {
+            internal bool wasFound;
+
+            public void NotFound(ref TKey key) => wasFound = false;
+
+            public void FoundEntry(ref TKey key, ref RecordInfo recordInfo)
+            {
+                recordInfo.ClearLocks();
+                wasFound = true;
+            }
+        }
+
+        /// <summary>
+        /// Transfer locks from the record into the lock table.
+        /// </summary>
+        /// <param name="key">The key to unlock</param>
+        /// <param name="logRecordInfo">The log record to copy from</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void TransferFromLogRecord(ref TKey key, RecordInfo logRecordInfo)
+        {
+            // This is called from record eviction, which doesn't have a hashcode available, so we have to calculate it here.
+            long hash = functions.GetHashCode64(ref key);
+            var funcs = new AddEntryFunctions_TransferFromLogRecord(logRecordInfo);
+            kv.AddEntry(ref key, hash, ref funcs);
+        }
+
+        internal struct AddEntryFunctions_TransferFromLogRecord : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IAddEntryFunctions
+        {
+            internal RecordInfo fromRecordInfo;
+
+            internal AddEntryFunctions_TransferFromLogRecord(RecordInfo fromRI) => fromRecordInfo = fromRI;
+
+            public void AddedEntry(ref TKey key, ref RecordInfo recordInfo)
+            {
+                recordInfo.TransferLocksFrom(ref fromRecordInfo);
+                recordInfo.Valid = true;
+            }
+        }
+
+        /// <summary>
+        /// Transfer locks from the record into the lock table.
+        /// </summary>
+        /// <param name="key">The key to unlock</param>
+        /// <param name="hash">The hash code of the key to lock, to avoid recalculating</param>
+        /// <param name="logRecordInfo">The log record to copy from</param>
+        /// <returns>Returns whether the entry was found</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TransferToLogRecord(ref TKey key, long hash, ref RecordInfo logRecordInfo)
+        {
+            Debug.Assert(logRecordInfo.Tentative, "Must retain tentative flag until locks are transferred");
+            var funcs = new FindEntryFunctions_TransferToLogRecord(logRecordInfo);
+            kv.FindEntry(ref key, hash, ref funcs);
+            logRecordInfo = funcs.toRecordInfo;
+            return funcs.wasFound;
+        }
+
+        internal struct FindEntryFunctions_TransferToLogRecord : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindEntryFunctions
+        {
+            internal RecordInfo toRecordInfo;
+            internal bool wasFound;
+
+            internal FindEntryFunctions_TransferToLogRecord(RecordInfo toRI)
+            {
+                this.toRecordInfo = toRI;
+                wasFound = false;
+            }
+
+            public void NotFound(ref TKey key) { }
+
+            public void FoundEntry(ref TKey key, ref RecordInfo logRecordInfo)
+            {
+                toRecordInfo.TransferLocksFrom(ref logRecordInfo);
+                wasFound = true;
+            }
+        }
+
+        /// <summary>
+        /// Clear the Tentative bit from the key's lock--make it "real"
+        /// </summary>
+        /// <param name="key">The key to unlock</param>
+        /// <param name="hash">The hash code of the key to lock, to avoid recalculating</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ClearTentativeBit(ref TKey key, long hash)
+        {
+            var funcs = new FindEntryFunctions_ClearTentative();
+            kv.FindEntry(ref key, hash, ref funcs);
+            return funcs.success;
+        }
+
+        internal struct FindEntryFunctions_ClearTentative : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindEntryFunctions
+        {
+            internal bool success;
+
+            public void NotFound(ref TKey key) => success = false;
+
+            public void FoundEntry(ref TKey key, ref RecordInfo recordInfo)
+            {
+                Debug.Assert(recordInfo.Tentative, "ClearTentative should only be called for a tentative record");
+                recordInfo.ClearTentativeBitAtomic();
+                success = true;
+            }
+        }
+
+        /// <summary>
+        /// Unlock the key, or remove a tentative entry that was added. This is called when the caller is abandoning the current attempt and will retry.
+        /// </summary>
+        /// <param name="key">The key to unlock</param>
+        /// <param name="hash">The hash code of the key to lock, to avoid recalculating</param>
+        /// <param name="lockType">The lock type--shared or exclusive</param>
+        /// <param name="wasTentative">Whether or not we set a Tentative lock for it</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnlockOrRemoveTentativeEntry(ref TKey key, long hash, LockType lockType, bool wasTentative)
+        {
+            var funcs = new FindEntryFunctions_Unlock(lockType, wasTentative);
+            kv.FindEntry(ref key, hash, ref funcs);
+            Debug.Assert(funcs.success, "UnlockOrRemoveTentative should always find the entry");
+        }
+
+        /// <summary>
+        /// Returns whether the two-phase Update protocol completes successfully: wait for any tentative lock on the key (it will either be cleared by
+        /// the owner or the record will be removed), and return false if a non-tentative lock was found.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool CompleteTwoPhaseUpdate(ref TKey key, long hash)
+        {
+            var funcs = new FindEntryFunctions_CompleteTwoPhaseUpdate();
+            while (true)
+            {
+                funcs.tentativeFound = false;
+                kv.FindEntry(ref key, hash, ref funcs);
+                if (funcs.notFound)
+                    return true;
+                if (!funcs.tentativeFound)
+                    break;
+                Thread.Yield();
+            }
+
+            // A non-tentative lock was found.
             return false;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool Unlock(IHeapContainer<TKey> lookupKey, LockTableEntry<TKey> lte, LockType lockType)
+        internal struct FindEntryFunctions_CompleteTwoPhaseUpdate : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindEntryFunctions
         {
-            bool result = false;
-            lte.SLock();
-            if (!lte.lockRecordInfo.Invalid)
-            {
-                lte.logRecordInfo.Unlock(lockType);
-                result = true;
-            }
-            lte.SUnlock();
+            internal bool notFound, tentativeFound;
 
-            if (!lte.logRecordInfo.IsLocked)
-            {
-                lte.XLock();
-                if (!lte.logRecordInfo.IsLocked && !lte.lockRecordInfo.Invalid)
-                    TryRemoveEntry(lookupKey);
-                lte.XUnlock();
-            }
+            public void NotFound(ref TKey key) => notFound = true;
 
-            return result;
+            public void FoundEntry(ref TKey key, ref RecordInfo recordInfo) => tentativeFound = recordInfo.Tentative;
         }
 
+        /// <summary>
+        /// Returns whether the two-phase CopyToTail protocol completes successfully: wait for any tentative lock on the key (it will either be cleared by
+        /// the owner or the record will be removed), return false if an exclusive lock is found, or transfer any read locks.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void TransferFromLogRecord(ref TKey key, RecordInfo logRecordInfo)
+        public bool CompleteTwoPhaseCopyToTail(ref TKey key, long hash, ref RecordInfo logRecordInfo, bool allowXLock, bool removeEphemeralLock)
         {
-            var lookupKey = GetKeyContainer(ref key);
-            RecordInfo newRec = default;
-            newRec.SetValid();
-            newRec.CopyLocksFrom(logRecordInfo);
-            RecordInfo lockRec = default;
-            lockRec.SetValid();
-            Interlocked.Increment(ref this.approxNumItems);
-            if (!dict.TryAdd(lookupKey, new(lookupKey, newRec, lockRec)))
+            Debug.Assert(logRecordInfo.Tentative, "Must retain tentative flag until locks are transferred");
+            var funcs = new FindEntryFunctions_CompleteTwoPhaseCopyToTail(logRecordInfo, allowXLock, removeEphemeralLock);
+            kv.FindEntry(ref key, hash, ref funcs);
+            logRecordInfo = funcs.toRecordInfo;
+            return funcs.success;
+        }
+
+        internal struct FindEntryFunctions_CompleteTwoPhaseCopyToTail : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindEntryFunctions
+        {
+            internal RecordInfo toRecordInfo;   // TODO: C# 11 will let this be a ref field
+            private readonly bool allowXLock, removeEphemeralLock;
+            internal bool success;
+
+            internal FindEntryFunctions_CompleteTwoPhaseCopyToTail(RecordInfo toRecordInfo, bool allowXLock, bool removeEphemeralLock)
             {
-                Interlocked.Decrement(ref this.approxNumItems);
-                lookupKey.Dispose();
-                Debug.Fail("Trying to Transfer to an existing key");
-                return;
-            }
-        }
-
-        // Lock the LockTable record for the key if it exists, else add a Tentative record for it.
-        // Returns true if the record was locked or tentative; else false (an already-Tentative record was encountered)
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool LockOrTentative(ref TKey key, LockType lockType, out bool tentative)
-        {
-            var keyContainer = GetKeyContainer(ref key);
-            bool existingConflict = false;
-            var lte = dict.AddOrUpdate(keyContainer,
-                key => {            // New Value
-                    RecordInfo lockRecordInfo = default;
-                    lockRecordInfo.Tentative = true;
-                    lockRecordInfo.SetValid();
-                    RecordInfo logRecordInfo = default;
-                    logRecordInfo.SetValid();
-                    existingConflict = !logRecordInfo.Lock(lockType);
-                    Interlocked.Increment(ref this.approxNumItems);
-                    return new(key, logRecordInfo, lockRecordInfo);
-                }, (key, lte) => {  // Update Value
-                    if (lte.lockRecordInfo.Tentative)
-                        existingConflict = true;
-                    else
-                    {
-                        lte.XLock();
-                        existingConflict = lte.lockRecordInfo.Invalid || !lte.logRecordInfo.Lock(lockType);
-                        lte.XUnlock();
-                    }
-                    return lte;
-                });
-            tentative = lte.lockRecordInfo.Tentative;
-            return !existingConflict;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool Get(TKey key, out RecordInfo recordInfo) => Get(ref key, out recordInfo);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool ContainsKey(ref TKey key)
-        {
-            if (!IsActive)
-                return false;
-            using var lookupKey = GetKeyContainer(ref key);
-            return dict.ContainsKey(lookupKey);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool Get(ref TKey key, out RecordInfo recordInfo)
-        {
-            if (IsActive)
-            {
-                using var lookupKey = GetKeyContainer(ref key);
-                if (dict.TryGetValue(lookupKey, out var lte))
-                {
-                    recordInfo = lte.logRecordInfo;
-                    return !lte.lockRecordInfo.Invalid;
-                }
-            }
-            recordInfo = default;
-            return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool ClearTentative(ref TKey key)
-        {
-            if (!IsActive)
-                return false;
-            using var lookupKey = GetKeyContainer(ref key);
-
-            // False is legit, as other operations may have removed it.
-            if (!dict.TryGetValue(lookupKey, out var lte))
-                return false;
-            bool cleared = false;
-            lte.XLock();
-            if (lte.lockRecordInfo.Tentative && !lte.lockRecordInfo.Invalid)
-            {
-                lte.lockRecordInfo.SetTentativeAtomic(false);
-                cleared = true;
-            }
-            lte.XUnlock();
-            return cleared;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnlockOrRemoveTentative(ref TKey key, LockType lockType, bool wasTentative)
-        {
-            if (IsActive)
-            {
-                using var lookupKey = GetKeyContainer(ref key);
-                if (dict.TryGetValue(lookupKey, out var lte))
-                {
-                    Debug.Assert(wasTentative == lte.lockRecordInfo.Tentative, "lockRecordInfo.Tentative was not as expected");
-
-                    // We assume that we own the lock or placed the Tentative record, and a Tentative record may have legitimately been removed.
-                    if (lte.lockRecordInfo.Tentative)
-                        RemoveIfTentative(lookupKey, lte);
-                    else
-                        Unlock(lookupKey, lte, lockType);
-                    return;
-                }
+                this.toRecordInfo = toRecordInfo;
+                this.allowXLock = allowXLock;
+                this.removeEphemeralLock = removeEphemeralLock;
+                success = false;
             }
 
-            // A tentative record may have been removed by the other side of the 2-phase process.
-            if (!wasTentative)
-                Debug.Fail("Trying to UnlockOrRemoveTentative on nonexistent nonTentative key");
+            public void NotFound(ref TKey key) => success = true;
+
+            public void FoundEntry(ref TKey key, ref RecordInfo logRecordInfo) 
+                => success = toRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref logRecordInfo, allowXLock, seal: false, this.removeEphemeralLock);
         }
 
-        bool TryRemoveEntry(IHeapContainer<TKey> lookupKey)
-        {
-            if (dict.TryRemove(lookupKey, out var lte))
-            {
-                Interlocked.Decrement(ref this.approxNumItems);
-                lte.lockRecordInfo.SetInvalid();
-                lte.key.Dispose();
-                return true;
-            }
-            return false;
-        }
+        /// <summary>
+        /// Test whether a key is present in the Lock Table. In production code, this is used to implement 
+        /// <see cref="FasterKV{Key, Value}.SpinWaitUntilRecordIsClosed(ref Key, long, long, AllocatorBase{Key, Value})"/>.
+        /// </summary>
+        /// <param name="key">The key to unlock</param>
+        /// <param name="hash">The hash code of the key to lock, to avoid recalculating</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ContainsKey(ref TKey key, long hash) => kv.ContainsKey(ref key, hash);
+
+        public void Dispose() => kv.Dispose();
+
+        #region Internal methods for Test
+        internal bool HasEntries(ref TKey key) => kv.HasEntries(ref key);
+        internal bool HasEntries(long hash) => kv.HasEntries(hash);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool RemoveIfTentative(IHeapContainer<TKey> lookupKey, LockTableEntry<TKey> lte)
-        {
-            if (lte.lockRecordInfo.Dirty)
-                if (lte.lockRecordInfo.Filler) return false;
-            if (lte.lockRecordInfo.IsLocked)
-                if (lte.lockRecordInfo.Filler) return false;
-            if (!lte.lockRecordInfo.Tentative || lte.lockRecordInfo.Invalid)
-                return false;
-            lte.XLock();
-            if (lte.lockRecordInfo.Dirty)
-                if (lte.lockRecordInfo.Filler) return false;
-            
-            // If the record is Invalid, it was already removed.
-            var removed = lte.lockRecordInfo.Invalid || (lte.lockRecordInfo.Tentative && TryRemoveEntry(lookupKey));
-            lte.XUnlock();
-            return removed;
-        }
+        internal bool TryGet(ref TKey key, out RecordInfo recordInfo) => TryGet(ref key, this.functions.GetHashCode64(ref key), out recordInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void TransferToLogRecord(ref TKey key, ref RecordInfo logRecord)
-        {
-            // This is called after the record has been CAS'd into the log or readcache, so this should not be allowed to fail.
-            using var lookupKey = GetKeyContainer(ref key);
-            if (dict.TryGetValue(lookupKey, out var lte))
-            {
-                // If it's a Tentative record, wait for it to no longer be tentative.
-                while (lte.lockRecordInfo.Tentative)
-                    Thread.Yield();
-                
-                // If invalid, then the Lock thread called TryRemoveEntry and will retry, which will add the locks after the main-log record is no longer tentative.
-                if (lte.lockRecordInfo.Invalid)
-                    return;
+        internal bool TryGet(ref TKey key, long hash, out RecordInfo recordInfo) => kv.TryGet(ref key, hash, out recordInfo);
 
-                lte.XLock();
-                if (!lte.lockRecordInfo.Invalid)
-                {
-                    logRecord.CopyLocksFrom(lte.logRecordInfo);
-                    TryRemoveEntry(lookupKey);
-                }
-                lte.XUnlock();
-            }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsLocked(ref TKey key, long hash) => TryGet(ref key, hash, out var recordInfo) && recordInfo.IsLocked;
 
-            // If we're here, there were no locks to apply, or we applied them all.
-        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsLockedShared(ref TKey key, long hash) => TryGet(ref key, hash, out var recordInfo) && recordInfo.IsLockedShared;
 
-        public override string ToString() => this.dict.Count.ToString();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsLockedExclusive(ref TKey key, long hash) => TryGet(ref key, hash, out var recordInfo) && recordInfo.IsLockedExclusive;
+        #endregion Internal methods for Test
     }
 }
