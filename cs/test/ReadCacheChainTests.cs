@@ -808,11 +808,11 @@ namespace FASTER.test.ReadCacheTests
         public void LongRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
                                           [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
 #if WINDOWS
-                                              [Values(DeviceType.LSD,
+                                              [Values(DeviceType.LSD
 #else
-                                              [Values(DeviceType.MLSD,
+                                              [Values(DeviceType.MLSD
 #endif
-                                               DeviceType.EmulatedAzure)] DeviceType deviceType)
+                                              )] DeviceType deviceType)
 #pragma warning restore IDE0060 // Remove unused parameter
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
@@ -1036,11 +1036,11 @@ namespace FASTER.test.ReadCacheTests
         public void SpanByteRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
                                               [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
 #if WINDOWS
-                                              [Values(DeviceType.LSD,
+                                              [Values(DeviceType.LSD
 #else
-                                              [Values(DeviceType.MLSD,
+                                              [Values(DeviceType.MLSD
 #endif
-                                               DeviceType.EmulatedAzure)] DeviceType deviceType)
+                                              )] DeviceType deviceType)
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
                 Assert.Ignore("Skipped due to 0 threads for both read and update");

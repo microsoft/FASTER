@@ -109,11 +109,11 @@ namespace FASTER.test.ReadCacheTests
         public unsafe void RandomReadCacheTest([Values(1, 2, 4, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
                                                 [Values] EphemeralLockingMode ephemeralLockingMode, [Values] ReadCacheMode readCacheMode,
 #if WINDOWS
-                                                [Values(DeviceType.LSD,
+                                                [Values(DeviceType.LSD
 #else
-                                                [Values(DeviceType.MLSD,
+                                                [Values(DeviceType.MLSD
 #endif
-                                                DeviceType.EmulatedAzure)] DeviceType deviceType)
+                                                )] DeviceType deviceType)
         {
             if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
                 Assert.Ignore("Skipped because 1 thread cannot have contention");
