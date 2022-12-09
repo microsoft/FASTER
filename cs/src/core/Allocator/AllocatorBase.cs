@@ -517,6 +517,13 @@ namespace FASTER.core
                             if (address >= startLogicalAddress && address < endLogicalAddress)
                             {
                                 var destination = GetPhysicalAddress(address);
+
+                                // Clear extra space (if any) in old record
+                                var oldSize = GetRecordSize(destination).Item2;
+                                if (oldSize > size)
+                                    new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
+
+                                // Update with new record
                                 Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
 
                                 // Clean up temporary bits when applying the delta log
@@ -591,6 +598,31 @@ namespace FASTER.core
             }
         }
 
+        private unsafe void VerifyPage(long page)
+        {
+            var startLogicalAddress = GetStartLogicalAddress(page);
+            var endLogicalAddress = GetStartLogicalAddress(page + 1);
+            var physicalAddress = GetPhysicalAddress(startLogicalAddress);
+
+            long untilLogicalAddressInPage = GetPageSize();
+            long pointer = 0;
+
+            while (pointer < untilLogicalAddressInPage)
+            {
+                long recordStart = physicalAddress + pointer;
+                ref RecordInfo info = ref GetInfo(recordStart);
+
+                if (info.IsNull())
+                    pointer += RecordInfo.GetLength();
+                else
+                {
+                    int size = GetRecordSize(recordStart).Item2;
+                    Debug.Assert(size < 50);
+                    Debug.Assert(size <= GetPageSize());
+                    pointer += size;
+                }
+            }
+        }
 
         /// <summary>
         /// Read objects to memory (async)
