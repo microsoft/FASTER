@@ -105,9 +105,11 @@ This section covers the internal design and implementation of manual locking. Al
 For locking we use the following terminology for records:
 - **MainLog** records are in the main log's mutable or immutable in-memory portion
 - **ReadCache** records are in the readcache (always in memory)
+- **CTT** abbreviation for CopyToTail
 - **InMemory** records are either MainLog or ReadCache (see RecordSource).
 - **Auxiliary** records are in the ReadCache or are entries in the LockTable for main log records below HeadAddress
 - **OnDisk** records are mainlog records below HeadAddress (and may have an associated auxiliary record)
+- **Splice** inserting a record into a key's hash chain in the gap between the readcache records and the mainlog records
 
 ### Relevant RecordInfo Bits
 
@@ -185,21 +187,88 @@ When Read() operations have locked a readcache record, they must check for the c
 ## Ephemeral Locking Conceptual Flow
 The flow of locking differs for Read and updaters (RMW, Upsert, Delete). 
 
+For operations where the key exists in memory:
+- Read simply locks the record and calls the appropriate `IFunctions` method. 
+- Updaters lock the record during the lifetime of the operation (not simply during the `IFunctions` method call, as in previous versions). 
+  - If the record is in the mutable region, the update can be done in-place and the lock is immediately released.
+  - Otherwise a new record is created, and the locked record becomes the 'source'.
+    - For RMW the 'source' data is actually used as a source, with its data used to create the new record.
+    - For Upsert and Delete, the data currently in the record is ignored; an entirely new record is written.
+    - The 'source' record is unlocked.
+
+### Operation Data Structures
+There are a number of variables necessary to track the main hash table entry information, the 'source' record as defined above (including locks), and other stack-based data relevant to the operation. The code has been refactored to place these within structs that live on the stack at the `InternalXxx` level.
+
+#### HashEntryInfo
+This is used for hash-chain traversal and CAS updates. It consists primarily of:
+- The key's hash code and associated tag.
+- a stable copy of the `HashBucketEntry` at the time the `HashEntryInfo` was populated.
+    - This has both `Address` (which may or may not include the readcache bit) and `AbsoluteAddress` (`Address` stripped of the readcache bit) accessors.
+- a pointer (in the unsafe "C/C++ *" sense) to the live `HashBucketEntry` that may be updated by other sessions as our current operation proceeds.
+    - As with the stable copy, this has two address accessors: `CurrentAddress` (which may or may not include the readcache bit) and `AbsoluteCurrentAddress` (`CurrentAddress` stripped of the readcache bit).
+- A method to update the stable copy of the `HashBucketEntry` with the current information from the 'live' pointer.
+
+#### RecordSource
+This is actually `RecordSource<TKey, TValue>` and carries the information identifying the source record and lock information for that record.
+- Whether there is an in-memory source record, and if so: its logical and physical addresses, whether it is in the readcache or main log, and whether it is locked.
+- The latest logical address of this key hash in the main log. If there are no readcache records, then this is the same as the `HashEntryInfo` Address; 
+- If there are readcache records in the chain, then `RecordSource` contains the lowest readcache logical and physical addresses. These are used for 'splicing' a new main-log record into the gap between the readcache records and the main log recoreds; see [ReadCache](#readcache) below.
+- The log (readcache or hlog) in which the source record, if any, resides. This is hlog unless there is a source readcache record.
+- Whether a LockTable lock was acquired. This is exclusive with in-memory locks; only one should be set.
+
+#### OperationStackContext
+This contains all information on the stack that is necessary for the operation, making parameter lists much smaller. It contains:
+- The `HashEntryInfo`  and `RecordSource<TKey, TValue>` for this operation. These are generally used together, and in some situations, such as when hlog.HeadAddress has changed due to an epoch refresh, `RecordSource<TKey, TValue>` is reinitialized from `HashEntryInfo` during the operation.
+- the logical address of a new record created for the operation. This is passed back up the chain so the try/finally can set it invalid and non-tentative on exceptions, without having to pay the cost of a nested try/finally in the `CreateNewRecord*` method.
+
+### ReadCache
+The readcache is a cache for records that are read from disk. In the case of record that become 'hot' (read multiple times) this saves multiple IOs. It is of fixed size determined at FasterKV startup, and has no on-disk component; records in the ReadCache evicted from the head without writing to disk when new records are added to the tail.
+
+Records in the readcache participate in locking, either because they are the record to be read, or because they are the 'source' of an update. If the key is found in the readcache, then the `RecordSource<TKey, TValue>.Log` is set to the readcache. If the operation is an update, then the readcache record is Invalidated before being unlocked.
+
 ### Read Locking Conceptual Flow
 When locking for `Read()` operations, we never take an exclusive lock. This requires some checking when unlocking, as noted in [Ephemeral Lock Release](#ephemeral-lock-release), to ensure we have released the shared lock on the key.
 
 #### Read Locking for InMemory Records
-
-Read locks records as soon as they are found, calls the caller's `IFunctions` callback, unlocks, and returns. The sequence is:
+Read-locks records as soon as they are found, calls the caller's `IFunctions` callback, unlocks, and returns. The sequence is:
 
 If the record is in the readcache, readlock it, call `IFasterSession.SingleReader`, unlock it, and return.
 
 If the record is in the mutable region, readlock it, call `IFasterSession.ConcurrentReader`, unlock it, and return.
 
-If the record is in the immutable region, readlock it, call `IFasterSession.SingleReader`, unlock it, and return. The caller may have directed that these records be copied to tail; if so, we have the same issue of lock transfer to the new main-log record as in [Read Locking for OnDisk Records](#read-locking-for-ondisk-records). The unlocking utilty function make this transparent to `InternalRead()` (or in this case, `ReadFromImmutableRegion()`).
+If the record is in the immutable region, readlock it, call `IFasterSession.SingleReader`, unlock it, and return. The caller may have directed that these records be copied to tail; if so, we have the same issue of lock transfer to the new main-log record as in [Read Locking for OnDisk Records](#read-locking-for-ondisk-records). The unlocking utility function make this transparent to `InternalRead()` (or in this case, `ReadFromImmutableRegion()`).
 
 #### Read Locking for OnDisk Records 
-TODO
+This goes through the pending-read processing starting with `InternalContinuePendingRead`. 
+
+We first look for an existing source record for the key; another session may have added that key to the log, readcache, or LockTable. If found, it is locked.
+
+Call `IFasterSession.SingleReader`.
+
+If the ReadCache is enabled or CopyToTail is true, call `InternalTryCopyToTail`; if successful, this transfers locks from the source record and clears the "source is locked" flag in `RecordSource<TKey, TValue>`.
+
+Unlock the source record, if any (and if still locked), and return.
+
+##### InternalTryCopyToTail
+This is called when a pending read completes, during compaction, and when copying records from the immutable region to the readcache.
+
+First, we see whether the key is found "later than" the expected logical address. This expected logical address is dependent upon the operation:
+- If this is Read() doing a copy of a record in the immutable region, this is the logical address of the source record
+- Otherwise, if this is Read(), it is from the completion of a pending Read(), and is the latestLogicalAddress from `InternalRead`.
+- Otherwise, this is Compact(), this is a lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this).
+
+If the key is found, we return an appropriate NOT FOUND code, as docuemnted in the code.
+
+Otherwise, we allocate a block on either the readcache or hlog, depending on which we are copying to (readcache or CTT). Allocation may entail flush() which may entail epoch refresh, so when this is complete, ensure all of our in-memory addresses are still in memory (`VerifyInMemoryAddresses()`, which updates readcache), and return RETRY_NOW if an in-memory main-log location was evicted.
+
+After this we know HeadAddress will not change. Initialize the new record from the passed-in Value and call `IFunctions.SingleWriter()`, then insert the new record into the chain:
+- By CAS into the hash table entry, if doing readcache or there are no readcache records in the chain.
+    - If this was a readcache insertion, we must do two-phase insert: check to make sure no main-log record was inserted for this readcache record, and if it was, mark the newly-inserted record as Invalid and return.
+- Else splice by CAS into the gap between readcache and mainlog records.
+    - Because this is done by CAS, we will fail if any other record was inserted there.
+    - A race that inserts this key into the readcache on another session will subsequently see this session's main-log insertion and fail.
+
+Call `CompleteTwoPhaseCopyToTail` (like `InternalTryCopyToTail`, this includes copying to ReadCache despite the name). Since we have a readlock, not an exclusive lock, we must transfer all read locks, either from an in-memory source record or from a LockTable entry.
 
 ### Update Locking Conceptual Flow
 TODO
@@ -338,7 +407,7 @@ With these locking rules, we can implement Compaction quite quickly:
 - Most of the time we will obtain the XLock immediately, so we know nobody else has changed the list; we can simply swap in the entry from `LastActiveChunkEntryIndex` (stored in 32 bits of `bucket.word`) and then decrement `LastActiveChunkEntryIndex`. If this releases the last entry on the chunk, then we free the chunk as described above.
 - Otherwise, we Compact from the beginning; the logic is the same as the single-element case but examining each entry from the beginning, until it finds an `IsDefault` (or reaches the end of the final chunk).
 
-**END OF REVISIONS 10/13/2022**
+**END OF REVISIONS 12/09/2022**
 
 
 
