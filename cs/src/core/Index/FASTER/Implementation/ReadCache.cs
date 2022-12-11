@@ -14,6 +14,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool FindInReadCache(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long untilAddress, bool alwaysFindLatestLA = true, bool waitForTentative = true)
         {
+            Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
         RestartChain:
             // 'recSrc' has already been initialized to the address in 'hei'.
             if (!stackCtx.hei.IsReadCache)
@@ -144,6 +145,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool SkipReadCache(ref long logicalAddress, out long lowestReadCacheLogicalAddress, out long lowestReadCachePhysicalAddress)
         {
+            Debug.Assert(UseReadCache, "Should not call SkipReadCache if !UseReadCache");
             var entry = new HashBucketEntry() { word = logicalAddress };
             logicalAddress = entry.AbsoluteAddress;
             if (!entry.ReadCache || logicalAddress < readcache.HeadAddress)
@@ -243,6 +245,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ReadCacheCompleteTwoPhaseUpdate(ref Key key, ref HashEntryInfo hei)
         {
+            Debug.Assert(UseReadCache, "Should not call ReadCacheCompleteTwoPhaseUpdate if !UseReadCache");
             HashBucketEntry entry = new() { word = hei.CurrentAddress };
             HashBucketEntry untilEntry = new() { word = hei.Address };
 
@@ -268,6 +271,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ReadCacheCompleteTwoPhaseCopyToTail(ref Key key, ref HashEntryInfo hei, ref RecordInfo newRecordInfo, bool allowXLock, bool removeEphemeralLock)
         {
+            Debug.Assert(UseReadCache, "Should not call ReadCacheCompleteTwoPhaseCopyToTail if !UseReadCache");
             HashBucketEntry entry = new() { word = hei.CurrentAddress };
             HashBucketEntry untilEntry = new() { word = hei.Address };
 

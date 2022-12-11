@@ -76,7 +76,7 @@ namespace FASTER.core
                 // can't wait for tentative records here; that would deadlock (we wait for them to become non-tentative and they wait for us to become
                 // non-tentative). So we must bring the records back here even if they are tentative, then bail on them.
                 var found = false;
-                if (stackCtx2.hei.IsReadCache && (!stackCtx.hei.IsReadCache || stackCtx2.hei.Address > stackCtx.hei.Address))
+                if (UseReadCache && stackCtx2.hei.IsReadCache && (!stackCtx.hei.IsReadCache || stackCtx2.hei.Address > stackCtx.hei.Address))
                 {
                     var untilAddress = stackCtx.hei.IsReadCache ? stackCtx.hei.Address : Constants.kInvalidAddress;
                     found = FindInReadCache(ref key, ref stackCtx2, untilAddress, alwaysFindLatestLA: !stackCtx.hei.IsReadCache, waitForTentative: false);

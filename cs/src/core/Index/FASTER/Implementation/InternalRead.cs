@@ -69,7 +69,7 @@ namespace FASTER.core
             var useStartAddress = startAddress != Constants.kInvalidAddress && !pendingContext.HasMinAddress;
             if (!useStartAddress)
             {
-                if (!FindTag(ref stackCtx.hei) || (!stackCtx.hei.IsReadCache && stackCtx.hei.Address < pendingContext.minAddress))
+                if (!FindTag(ref stackCtx.hei) || ((!UseReadCache || !stackCtx.hei.IsReadCache) && stackCtx.hei.Address < pendingContext.minAddress))
                     return OperationStatus.NOTFOUND;
                 prevHighestKeyHashAddress = stackCtx.hei.Address;
             }

@@ -123,7 +123,7 @@ namespace FASTER.core
         internal void SetRecordInvalid(long logicalAddress)
         {
             // This is called on exception recovery for a tentative record.
-            var localLog = IsReadCache(logicalAddress) ? readcache : hlog;
+            var localLog = UseReadCache && IsReadCache(logicalAddress) ? readcache : hlog;
             ref var recordInfo = ref localLog.GetInfo(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress)));
             Debug.Assert(recordInfo.Tentative, "Expected tentative record in SetRecordInvalid");
             recordInfo.SetInvalid();
@@ -146,7 +146,7 @@ namespace FASTER.core
             if (stackCtx.recSrc.InMemorySourceWasEvicted())
                 return false;
 
-            // If the splice point is still above readcache.HeadAddress, we're good.
+            // If we're not using readcache or the splice point is still above readcache.HeadAddress, we're good.
             if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress)
                 return true;
 
@@ -177,7 +177,7 @@ namespace FASTER.core
                 else
                     stackCtx.recSrc.LatestLogicalAddress = skipReadCacheStartAddress | Constants.kReadCacheBitMask;
 
-                if (SkipReadCache(ref stackCtx.recSrc.LatestLogicalAddress, out stackCtx.recSrc.LowestReadCacheLogicalAddress, out stackCtx.recSrc.LowestReadCachePhysicalAddress))
+                if (UseReadCache && SkipReadCache(ref stackCtx.recSrc.LatestLogicalAddress, out stackCtx.recSrc.LowestReadCacheLogicalAddress, out stackCtx.recSrc.LowestReadCachePhysicalAddress))
                 {
                     Debug.Assert(stackCtx.hei.IsReadCache || stackCtx.hei.Address == stackCtx.recSrc.LatestLogicalAddress, "For non-readcache chains, recSrc.LatestLogicalAddress should == hei.Address");
                     return true;
