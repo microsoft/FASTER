@@ -70,13 +70,14 @@ namespace FASTER.test
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
                 if (status.IsPending)
-                    session.CompletePending(true);
-                else
                 {
-                    Assert.IsTrue(status.Found);
-                    Assert.AreEqual(value.vfield1, output.value.vfield1);
-                    Assert.AreEqual(value.vfield2, output.value.vfield2);
+                    Assert.IsTrue(session.CompletePendingWithOutputs(out var outputs, wait: true));
+                    (status, output) = TestUtils.GetSinglePendingResult(outputs);
                 }
+
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
 
@@ -129,13 +130,14 @@ namespace FASTER.test
 
                 var status = session.Read(ref key1, ref input, ref output, 0, 0);
                 if (status.IsPending)
-                    session.CompletePending(true);
-                else
                 {
-                    Assert.IsTrue(status.Found);
-                    Assert.AreEqual(value.vfield1, output.value.vfield1);
-                    Assert.AreEqual(value.vfield2, output.value.vfield2);
+                    Assert.IsTrue(session.CompletePendingWithOutputs(out var outputs, wait: true));
+                    (status, output) = TestUtils.GetSinglePendingResult(outputs);
                 }
+
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
 
@@ -175,7 +177,7 @@ namespace FASTER.test
             fht.Log.Truncate();
             Assert.AreEqual(compactUntil, fht.Log.BeginAddress);
 
-            // Read 2000 keys - all should be present
+            // Read all keys - all should be present except those we deleted
             for (int i = 0; i < totalRecords; i++)
             {
                 OutputStruct output = default;
@@ -186,19 +188,20 @@ namespace FASTER.test
 
                 var status = session.Read(ref key1, ref input, ref output, ctx, 0);
                 if (status.IsPending)
-                    session.CompletePending(true);
+                {
+                    Assert.IsTrue(session.CompletePendingWithOutputs(out var outputs, wait: true));
+                    (status, output) = TestUtils.GetSinglePendingResult(outputs);
+                }
+
+                if (ctx == 0)
+                {
+                    Assert.IsTrue(status.Found);
+                    Assert.AreEqual(value.vfield1, output.value.vfield1);
+                    Assert.AreEqual(value.vfield2, output.value.vfield2);
+                }
                 else
                 {
-                    if (ctx == 0)
-                    {
-                        Assert.IsTrue(status.Found);
-                        Assert.AreEqual(value.vfield1, output.value.vfield1);
-                        Assert.AreEqual(value.vfield2, output.value.vfield2);
-                    }
-                    else
-                    {
-                        Assert.IsFalse(status.Found);
-                    }
+                    Assert.IsFalse(status.Found);
                 }
             }
         }
@@ -247,20 +250,19 @@ namespace FASTER.test
                 var status = session.Read(ref key1, ref input, ref output, ctx, 0);
                 if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    Assert.IsTrue(session.CompletePendingWithOutputs(out var outputs, wait: true));
+                    (status, output) = TestUtils.GetSinglePendingResult(outputs);
+                }
+
+                if (ctx == 0)
+                {
+                    Assert.IsTrue(status.Found);
+                    Assert.AreEqual(value.vfield1, output.value.vfield1);
+                    Assert.AreEqual(value.vfield2, output.value.vfield2);
                 }
                 else
                 {
-                    if (ctx == 0)
-                    {
-                        Assert.IsTrue(status.Found);
-                        Assert.AreEqual(value.vfield1, output.value.vfield1);
-                        Assert.AreEqual(value.vfield2, output.value.vfield2);
-                    }
-                    else
-                    {
-                        Assert.IsFalse(status.Found);
-                    }
+                    Assert.IsFalse(status.Found);
                 }
             }
         }
@@ -269,7 +271,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         [Category("Compaction")]
 
-        public void BlittableLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType)
+        public void BlittableLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType, [Values]bool flushAndEvict)
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy
@@ -286,7 +288,10 @@ namespace FASTER.test
             value = new ValueStruct { vfield1 = 11, vfield2 = 21 };
             session.Upsert(ref key, ref value, 0, 0);
 
-            fht.Log.Flush(true);
+            if (flushAndEvict)
+                fht.Log.FlushAndEvict(true);
+            else
+                fht.Log.Flush(true);
 
             var compactUntil = session.Compact(fht.Log.TailAddress, compactionType);
             fht.Log.Truncate();
@@ -296,14 +301,13 @@ namespace FASTER.test
             var status = session.Read(ref key, ref input, ref output, 0, 0);
             if (status.IsPending)
             {
-                session.CompletePending(true);
+                Assert.IsTrue(session.CompletePendingWithOutputs(out var outputs, wait: true));
+                (status, output) = TestUtils.GetSinglePendingResult(outputs);
             }
-            else
-            {
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
-            }
+
+            Assert.IsTrue(status.Found);
+            Assert.AreEqual(value.vfield1, output.value.vfield1);
+            Assert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
         private struct EvenCompactionFunctions : ICompactionFunctions<KeyStruct, ValueStruct>

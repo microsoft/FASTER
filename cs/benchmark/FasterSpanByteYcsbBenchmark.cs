@@ -78,11 +78,11 @@ namespace FASTER.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<SpanByte, SpanByte>
                     (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableEphemeralLocking: testLoader.LockImpl != LockImpl.Ephemeral);
             else
                 store = new FasterKV<SpanByte, SpanByte>
                     (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableEphemeralLocking: testLoader.LockImpl != LockImpl.Ephemeral);
         }
 
         internal void Dispose()

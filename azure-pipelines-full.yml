@@ -8,7 +8,7 @@ jobs:
   pool:
     vmImage: windows-2022
   displayName: 'C# (Windows)'
-  timeoutInMinutes: 75 
+  timeoutInMinutes: 150 
 
   strategy:
     maxParallel: 2

@@ -68,7 +68,7 @@ namespace FASTER.test.async
 
         [Test]
         [Category("FasterKV")]
-        [Category("Stress")]
+        [Category(TestUtils.StressTestCategory)]
         public async Task LowMemConcurrentUpsertReadAsyncTest()
         {
             await Task.Yield();
@@ -91,7 +91,7 @@ namespace FASTER.test.async
 
         [Test]
         [Category("FasterKV")]
-        [Category("Stress")]
+        [Category(TestUtils.StressTestCategory)]
         public async Task LowMemConcurrentUpsertRMWReadAsyncTest([Values]bool completeSync)
         {
             await Task.Yield();

@@ -169,7 +169,7 @@ namespace FASTER.test.readaddress
                     checkpointSettings: new CheckpointSettings { CheckpointDir = $"{this.testDir}/CheckpointDir" },
                     serializerSettings: null,
                     comparer: new Key.Comparer(),
-                    disableLocking: true
+                    disableEphemeralLocking: true
                     );
             }
 

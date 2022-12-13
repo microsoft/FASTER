@@ -7,7 +7,6 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
@@ -408,7 +407,8 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="localSegmentOffsets"></param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
+        /// <param name="fuzzyStartLogicalAddress">Start address of fuzzy region, which contains old and new version records (we use this to selectively flush only old-version records during snapshot checkpoint)</param>
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress);
 
         private protected void VerifyCompatibleSectorSize(IDevice device)
         {
@@ -462,7 +462,7 @@ namespace FASTER.core
                     var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
                     if (info.Dirty)
                     {
-                        info.DirtyAtomic = false; // there may be read locks being taken, hence atomic
+                        info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                         int size = sizeof(long) + sizeof(int) + alignedRecordSize;
                         if (destOffset + size > entryLength)
                         {
@@ -517,7 +517,19 @@ namespace FASTER.core
                             if (address >= startLogicalAddress && address < endLogicalAddress)
                             {
                                 var destination = GetPhysicalAddress(address);
+
+                                // Clear extra space (if any) in old record
+                                var oldSize = GetRecordSize(destination).Item2;
+                                if (oldSize > size)
+                                    new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
+
+                                // Update with new record
                                 Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
+
+                                // Clean up temporary bits when applying the delta log
+                                ref var destInfo = ref GetInfo(destination);
+                                destInfo.ClearLocks();
+                                destInfo.Unseal();
                             }
                             physicalAddress += size;
                         }
@@ -586,6 +598,31 @@ namespace FASTER.core
             }
         }
 
+        private unsafe void VerifyPage(long page)
+        {
+            var startLogicalAddress = GetStartLogicalAddress(page);
+            var endLogicalAddress = GetStartLogicalAddress(page + 1);
+            var physicalAddress = GetPhysicalAddress(startLogicalAddress);
+
+            long untilLogicalAddressInPage = GetPageSize();
+            long pointer = 0;
+
+            while (pointer < untilLogicalAddressInPage)
+            {
+                long recordStart = physicalAddress + pointer;
+                ref RecordInfo info = ref GetInfo(recordStart);
+
+                if (info.IsNull())
+                    pointer += RecordInfo.GetLength();
+                else
+                {
+                    int size = GetRecordSize(recordStart).Item2;
+                    Debug.Assert(size < 50);
+                    Debug.Assert(size <= GetPageSize());
+                    pointer += size;
+                }
+            }
+        }
 
         /// <summary>
         /// Read objects to memory (async)
@@ -1784,10 +1821,11 @@ namespace FASTER.core
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
         /// <param name="endLogicalAddress"></param>
+        /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="completedSemaphore"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore)
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore)
         {
             int totalNumPages = (int)(endPage - startPage);
             completedSemaphore = new SemaphoreSlim(0);
@@ -1811,7 +1849,7 @@ namespace FASTER.core
                 };
 
                 // Intended destination is flushPage
-                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);
+                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
             }
         }
 
@@ -2025,7 +2063,7 @@ namespace FASTER.core
                             ref var info = ref GetInfo(physicalAddress);
                             var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
                             if (info.Dirty)
-                                info.DirtyAtomic = false; // there may be read locks being taken, hence atomic
+                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;
                         }
                     }

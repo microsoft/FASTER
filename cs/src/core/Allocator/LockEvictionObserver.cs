@@ -31,11 +31,8 @@ namespace FASTER.core
                 if (!info.IsLocked)
                     continue;
 
-                // Seal it so there is no possibility it will be missed while we're in the process of transferring it to the Lock Table.
-                // Use manualLocking as we want to transfer the locks, not drain them.
-                info.Seal(manualLocking: true);
-
                 // Now get it into the lock table, so it is ready as soon as the record is removed.
+                // We do not have to worry about conflicts with other threads, because lock and unlock stop at HeadAddress.
                 this.store.LockTable.TransferFromLogRecord(ref iter.GetKey(), info);
             }
         }

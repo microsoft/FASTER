@@ -235,6 +235,7 @@ namespace FASTER.core
                         startPage,
                         endPage,
                         faster._hybridLogCheckpoint.info.finalLogicalAddress,
+                        faster._hybridLogCheckpoint.info.startLogicalAddress,
                         faster._hybridLogCheckpoint.snapshotFileDevice,
                         faster._hybridLogCheckpoint.snapshotFileObjectLogDevice,
                         out faster._hybridLogCheckpoint.flushedSemaphore);

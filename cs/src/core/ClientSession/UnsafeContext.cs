@@ -347,7 +347,7 @@ namespace FASTER.core
             }
 
             #region IFunctions - Optional features supported
-            public bool DisableLocking => _clientSession.fht.DisableLocking;
+            public bool DisableEphemeralLocking => _clientSession.fht.DisableEphemeralLocking;
 
             public bool IsManualLocking => false;
 
@@ -359,15 +359,7 @@ namespace FASTER.core
                 => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out bool lockFailed)
-            {
-                lockFailed = false;
-                return this.DisableLocking
-                                   ? ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo)
-                                   : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo, out lockFailed);
-            }
-
-            public bool ConcurrentReaderNoLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
                     return true;
@@ -376,31 +368,10 @@ namespace FASTER.core
                 return false;
             }
 
-            public bool ConcurrentReaderLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out bool lockFailed)
-            {
-                if (!recordInfo.LockShared())
-                {
-                    lockFailed = true;
-                    return false;
-                }
-                try
-                {
-                    lockFailed = false;
-                    return !recordInfo.Tombstone && ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
-                }
-                finally
-                {
-                    recordInfo.UnlockShared();
-                }
-            }
-
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
                 => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
 
             #endregion IFunctions - Reads
-
-            // Except for readcache/copy-to-tail usage of SingleWriter, all operations that append a record must lock in the <Operation>() call and unlock
-            // in the Post<Operation> call; otherwise another session can try to access the record as soon as it's CAS'd and before Post<Operation> is called.
 
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -415,39 +386,11 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out bool lockFailed)
-            {
-                lockFailed = false;
-                return this.DisableLocking
-                                   ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo)
-                                   : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, out lockFailed);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
+            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
             {
                 recordInfo.SetDirtyAndModified();
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out bool lockFailed)
-            {
-                if (!recordInfo.LockExclusive())
-                {
-                    lockFailed = true;
-                    return false;
-                }
-                try
-                {
-                    lockFailed = false;
-                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
             }
             #endregion IFunctions - Upserts
 
@@ -488,43 +431,10 @@ namespace FASTER.core
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
-            {
-                lockFailed = false;
-                return this.DisableLocking
-                                   ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status)
-                                   : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out lockFailed, out status);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
             {
                 recordInfo.SetDirtyAndModified();
                 return _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
-            }
-
-            private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
-            {
-                if (!recordInfo.LockExclusive())
-                {
-                    lockFailed = true;
-                    status = OperationStatus.SUCCESS;
-                    return false;
-                }
-                try
-                {
-                    lockFailed = false;
-                    if (recordInfo.Tombstone)
-                    {
-                        status = OperationStatus.SUCCESS;
-                        return false;
-                    }
-                    return InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
@@ -535,50 +445,22 @@ namespace FASTER.core
 
             #region IFunctions - Deletes
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+                => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
             }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
-                => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo);
  
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
-            {
-                lockFailed = false;
-                return this.DisableLocking
-                                   ? ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo)
-                                   : ConcurrentDeleterLock(ref key, ref value, ref recordInfo, ref deleteInfo, out lockFailed);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             {
                 recordInfo.SetDirtyAndModified();
                 recordInfo.SetTombstone();
                 return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
-            {
-                if (!recordInfo.LockExclusive())
-                {
-                    lockFailed = true;
-                    return false;
-                }
-                try
-                {
-                    lockFailed = false;
-                    return recordInfo.Tombstone || ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
             }
             #endregion IFunctions - Deletes
 
@@ -602,6 +484,17 @@ namespace FASTER.core
                 _clientSession.LatestCommitPoint = commitPoint;
             }
             #endregion IFunctions - Checkpointing
+
+            #region Ephemeral locking
+            public bool TryLockEphemeralExclusive(ref RecordInfo recordInfo) => _clientSession.fht.DisableEphemeralLocking || recordInfo.TryLockExclusive();
+            public bool TryLockEphemeralShared(ref RecordInfo recordInfo) => _clientSession.fht.DisableEphemeralLocking || recordInfo.TryLockShared();
+            public void UnlockEphemeralExclusive(ref RecordInfo recordInfo)
+            {
+                if (!_clientSession.fht.DisableEphemeralLocking)
+                    recordInfo.UnlockExclusive();
+            }
+            public bool TryUnlockEphemeralShared(ref RecordInfo recordInfo) => _clientSession.fht.DisableEphemeralLocking || recordInfo.TryUnlockShared();
+            #endregion Ephemeral locking
 
             #region Internal utilities
             public int GetInitialLength(ref Input input)

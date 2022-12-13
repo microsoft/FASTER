@@ -21,12 +21,7 @@ namespace FASTER.core
         /// <summary>
         /// Exclusive lock, taken on Upsert, RMW, or Delete
         /// </summary>
-        Exclusive,
-
-        /// <summary>
-        /// Promote a Shared lock to an Exclusive lock
-        /// </summary>
-        ExclusiveFromShared
+        Exclusive
     }
 
     internal enum LockOperationType : byte

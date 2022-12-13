@@ -9,9 +9,9 @@ namespace FASTER.core
     public enum SessionType : byte
     {
         /// <summary>
-        /// The standard client session, which does ephemeral locking and epoch protection on a per-operation basis.
+        /// Direct calls through to the standard client session, which does ephemeral locking and epoch protection on a per-operation basis.
         /// </summary>
-        ClientSession,
+        BasicContext,
 
         /// <summary>
         /// An unsafe context which does ephemeral locking but allows the user to do coarse-grained epoch protection,
@@ -154,7 +154,8 @@ namespace FASTER.core
         public long Version { get; internal set; }
 
         /// <summary>
-        /// The logical address of the record being operated on
+        /// The logical address of the record being operated on. For CopyUpdater, this is the source address,
+        /// or <see cref="Constants.kInvalidAddress"/> if the source is the read cache.
         /// </summary>
         public long Address { get; internal set; }
 
