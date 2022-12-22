@@ -2140,9 +2140,30 @@ void FasterKv<K, V, D, H, OH>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Sta
       context->thread_io_responses->push(context.get());
     } else {
       //keys are not same. I/O is not complete
-      // TODO: add check for min_address to avoid unecessary I/Os (applies for Read/ConditionalInsert ops)
+
+      // check for min_address in pending_context to avoid unecessary I/Os
+      Address min_search_offset = faster->hlog.begin_address.load();
+      switch (pending_context->type) {
+        case OperationType::Read: {
+          auto read_pending_context = static_cast<async_pending_read_context_t*>(pending_context);
+          if (read_pending_context->min_search_offset > min_search_offset) {
+            min_search_offset = read_pending_context->min_search_offset;
+          }
+        }
+        break;
+        case OperationType::ConditionalInsert: {
+          auto ci_pending_context = static_cast<async_pending_ci_context_t*>(pending_context);
+          if (ci_pending_context->min_search_offset > min_search_offset) {
+            min_search_offset = ci_pending_context->min_search_offset;
+          }
+        }
+        break;
+        default:
+          break;
+      }
+
       context->address = record->header.previous_address();
-      if(context->address >= faster->hlog.begin_address.load()) {
+      if(context->address >= min_search_offset) {
         faster->AsyncGetFromDisk(context->address, faster->MinIoRequestSize(),
                                  AsyncGetFromDiskCallback, *context.get());
         context.async = true;
