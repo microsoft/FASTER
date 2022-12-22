@@ -255,41 +255,73 @@ inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& p
 
 template <class K, class V, class D, class H>
 inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_head_address) {
-  // NOTE: Currently eviction process is single threaded
-  // TODO: might want to make it multithreaded in the future
   typedef ReadCacheEvictContext<K, V> rc_evict_context_t;
+
+  static std::atomic<int> threads_evicting{ 0 };
   static std::atomic<bool> eviction_in_progress{ false };
 
-  // Evict one page at a time -- first page is smaller than the remaining ones
-  log_debug("ReadCache EVICT: [%lu] -> [%lu]", to_head_address.control(), from_head_address.control());
+  static std::vector<Address> record_addrs;
+  static std::atomic<uint32_t> record_addrs_idx{ 0 };
 
-  bool active = false;
-  if (!eviction_in_progress.compare_exchange_strong(active, true)) {
-    // wait until other thread finishes eviction
-    do {
+  // Evict one page at a time -- first page is smaller than the remaining ones
+  log_info("[tid=%u] ReadCache EVICT: [%lu] -> [%lu]",
+          Thread::id(), to_head_address.control(), from_head_address.control());
+
+  if (++threads_evicting == 1) {
+    // First thread to arrive for this eviction range -- do the initialization
+    record_addrs.clear();
+    record_addrs_idx.store(0);
+
+    // Traverse range & identify valid record addresses
+    Address address = from_head_address;
+    while (address < to_head_address) {
+      record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(address));
+
+      if (ReadCacheRecordInfo{ record->header }.IsNull()) {
+        // reached end of the page -- move to next page!
+        address = Address{ address.page() + 1, 0 };
+        continue;
+      }
+      // add to valid addresses
+      record_addrs.push_back(address);
+      // move to next record
+      if (address.offset() + record->size() <= Address::kMaxOffset) {
+        address += record->size();
+      } else {
+        address = Address{ address.page() + 1, 0 };
+      }
+    }
+    record_addrs.shrink_to_fit();
+
+    // start eviction process for all threads
+    assert(threads_evicting.load() == 1);
+    eviction_in_progress.store(true);
+  } else {
+    while (!eviction_in_progress.load()) {
       std::this_thread::yield();
-      active = eviction_in_progress.load();
-    } while(active);
-    return;
+    }
+    ++threads_evicting;
   }
   assert(eviction_in_progress.load());
 
-  Address faster_hlog_begin_address = faster_hlog_->begin_address.load();
-
-  // not used in sync (hot) hash index; init invalid/empty context
+  // init invalid/empty context; not used in sync (hot) hash index
   ExecutionContext exec_context;
-  Address address = from_head_address;
 
-  while (address < to_head_address) {
+  Address faster_hlog_begin_address = faster_hlog_->begin_address.load();
+  uint32_t idx;
+  while(true) {
+    // Fetch next record
+    idx = record_addrs_idx++;
+    if (idx >= record_addrs.size()) {
+      break;
+    }
+    Address address = record_addrs[idx];
+
     record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(address));
     ReadCacheRecordInfo rc_record_info{ record->header };
     uint32_t record_size = record->size();
 
-    if (rc_record_info.IsNull()) {
-      // reached end of the page -- move to next page!
-      address = Address{ address.page() + 1, 0 };
-      continue;
-    }
+    assert(!rc_record_info.IsNull());
     // Assume (for now) that only a single entry per hash bucket lies in read cache
     assert(!rc_record_info.previous_address().in_readcache());
 
@@ -301,14 +333,12 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     if (index_status == Status::NotFound) {
       // nothing to update -- continue to next record
       assert(context.entry == HashBucketEntry::kInvalidEntry);
-      address += record_size;
       continue;
     }
     assert(context.entry != HashBucketEntry::kInvalidEntry);
 
     assert(!context.entry.rc_.readcache_ || context.entry.address().readcache_address() >= address);
     if (!context.entry.rc_.readcache_ || context.entry.address().readcache_address() != address) {
-      address += record_size;
       continue;
     }
     assert(context.entry.address().readcache_address() == address);
@@ -332,16 +362,18 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
       assert(index_status == Status::Aborted);
       // context.entry should reflect current hash index entry -- retry!
     }
+  };
 
-    if (address.offset() + record_size <= Address::kMaxOffset) {
-      address += record_size;
-    } else {
-      address = Address{ address.page() + 1, 0 };
+  if (--threads_evicting == 0) {
+    eviction_in_progress.store(false);
+  } else {
+    // thread barrier -- wait until all threads finish
+    while (eviction_in_progress.load()) {
+      std::this_thread::yield();
     }
   }
-  log_debug("ReadCache EVICT: DONE!");
 
-  eviction_in_progress.store(false);
+  log_info("[tid=%u] ReadCache EVICT: DONE!", Thread::id());
 }
 
 template <class K, class V, class D, class H>
