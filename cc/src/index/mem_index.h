@@ -131,7 +131,7 @@ class HashIndex : public IHashIndex<D> {
   Status RecoverComplete();
   Status ReadCheckpointMetadata(const Guid& token, CheckpointState<file_t>& checkpoint);
 
-  void DumpDistribution();
+  void DumpDistribution() const;
 
   uint64_t size() const {
     return table_[this->resize_info.version].size();
@@ -212,6 +212,31 @@ class HashIndex : public IHashIndex<D> {
   InternalHashTable<disk_t, hash_index_definition_t> table_[2];
   // Allocator for the hash buckets that don't fit in the hash table.
   MallocFixedPageSize<hash_bucket_t, disk_t> overflow_buckets_allocator_[2];
+
+#ifdef STATISTICS
+ public:
+  void EnableStatsCollection() {
+    collect_stats_ = true;
+  }
+  void DisableStatsCollection() {
+    collect_stats_ = false;
+  }
+  // implementation at the end of this file
+  void PrintStats() const;
+
+ private:
+  bool collect_stats_{ true };
+  // FindEntry
+  mutable std::atomic<uint64_t> find_entry_calls_{ 0 };
+  mutable std::atomic<uint64_t> find_entry_success_count_{ 0 };
+  // FindOrCreateEntry
+  std::atomic<uint64_t> find_or_create_entry_calls_{ 0 };
+  // TryUpdateEntry
+  std::atomic<uint64_t> try_update_entry_calls_{ 0 };
+  std::atomic<uint64_t> try_update_entry_success_count_{ 0 };
+  // UpdateEntry
+  std::atomic<uint64_t> update_entry_calls_{ 0 };
+#endif
 };
 
 template <class D, class HID>
@@ -220,6 +245,12 @@ inline Status HashIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
                                           C& pending_context) const {
   //static_assert(std::is_base_of<PendingContext<typename C::key_t>, C>::value,
   //              "PendingClass is not the base class of pending_context argument");
+
+#ifdef STATISTICS
+  if (collect_stats_) {
+    ++find_entry_calls_;
+  }
+#endif
 
   key_hash_t hash{ pending_context.get_key_hash() };
   uint32_t version = this->resize_info.version;
@@ -242,6 +273,13 @@ inline Status HashIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
           // If final key, return immediately
           pending_context.set_index_entry(entry,
               const_cast<AtomicHashBucketEntry*>(&bucket->entries[entry_idx]));
+
+          #ifdef STATISTICS
+          if (collect_stats_) {
+            ++find_entry_success_count_;
+          }
+          #endif
+
           return Status::Ok;
         }
       }
@@ -263,6 +301,12 @@ inline Status HashIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_contex
                                                   C& pending_context) {
   //static_assert(std::is_base_of<PendingContext<typename C::key_t>, C>::value,
   //              "PendingClass is not the base class of pending_context argument");
+
+#ifdef STATISTICS
+  if (collect_stats_) {
+    ++find_or_create_entry_calls_;
+  }
+#endif
 
   HashBucketEntry expected_entry;
   AtomicHashBucketEntry* atomic_entry;
@@ -324,6 +368,15 @@ inline Status HashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pe
   bool success = pending_context.atomic_entry->compare_exchange_strong(pending_context.entry, new_entry);
   hash_bucket_entry_t after{ pending_context.entry };
 
+#ifdef STATISTICS
+  if (collect_stats_) {
+    ++try_update_entry_calls_;
+    if (success) {
+      ++try_update_entry_success_count_;
+    }
+  }
+#endif
+
   /*
   if (success) {
   log_debug("{%p} [%llu %lu %d] -> [%llu %lu %d] SUCCESS",
@@ -352,6 +405,13 @@ inline Status HashIndex<D, HID>::UpdateEntry(ExecutionContext& context, C& pendi
   key_hash_t hash{ pending_context.get_key_hash() };
   hash_bucket_entry_t new_entry{ new_address, hash.tag(), false };
   pending_context.atomic_entry->store(new_entry);
+
+#ifdef STATISTICS
+  if (collect_stats_) {
+    ++update_entry_calls_;
+  }
+#endif
+
   return Status::Ok;
 }
 
@@ -961,7 +1021,31 @@ inline void HashIndex<D, HID>::DumpDistribution() {
   for(uint8_t idx = 0; idx < 15; ++idx) {
     fprintf(stderr, "%2u : %" PRIu64 "\n", idx, histogram[idx]);
   }
-  fprintf(stderr, "15+: %" PRIu64 "\n", histogram[15]);
+}
+
+#ifdef STATISTICS
+template <class D, class HID>
+inline void HashIndex<D, HID>::PrintStats() const {
+  // FindEntry
+  printf("FindEntry Calls\t: %lu\n", find_entry_calls_.load());
+  if (find_entry_calls_.load() > 0) {
+    printf("Status::Ok (%%)\t: %.2lf\n",
+      (static_cast<double>(find_entry_success_count_.load()) / find_entry_calls_.load()) * 100.0);
+  }
+  // FindOrCreateEntry
+  printf("FindOrCreateEntry Calls\t: %lu\n", find_or_create_entry_calls_.load());
+  // TryUpdateEntry
+  printf("TryUpdateEntry Calls\t: %lu\n", try_update_entry_calls_.load());
+  if (try_update_entry_calls_.load() > 0) {
+    printf("Status::Ok (%%)\t: %.2lf\n",
+      (static_cast<double>(try_update_entry_success_count_.load()) / try_update_entry_calls_.load()) * 100.0);
+  }
+  // UpdateEntry
+  printf("UpdateEntry Calls\t: %lu\n\n", update_entry_calls_.load());
+
+  DumpDistribution();
+}
+#endif
 }
 
 }

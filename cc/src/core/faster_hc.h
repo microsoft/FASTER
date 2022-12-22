@@ -146,6 +146,25 @@ public:
     return hot_store.IsCompactionLive() || cold_store.IsCompactionLive();
   }
 
+#ifdef STATISTICS
+  void EnableStatsCollection() {
+    hot_store.EnableStatsCollection();
+    cold_store.EnableStatsCollection();
+  }
+  void DisableStatsCollection() {
+    hot_store.DisableStatsCollection();
+    cold_store.DisableStatsCollection();
+  }
+  inline void PrintStats() {
+    printf("\n**************** HOT  LOG ****************\n");
+    hot_store.PrintStats();
+    printf("\n**************** -------- ****************\n");
+    printf("\n**************** COLD LOG ****************\n");
+    cold_store.PrintStats();
+    printf("\n**************** -------- ****************\n");
+  }
+#endif
+
  public:
   hot_faster_store_t hot_store;
   cold_faster_store_t cold_store;

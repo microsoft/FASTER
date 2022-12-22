@@ -168,6 +168,10 @@ class FasterKv {
       auto_compaction_active_.store(true);
       compaction_thread_ = std::move(std::thread(&FasterKv::AutoCompactHlog, this));
     }
+
+    #ifdef STATISTICS
+    InitializeStats();
+    #endif
   }
 
   ~FasterKv() {
@@ -428,6 +432,197 @@ class FasterKv {
 
   std::thread compaction_thread_;
   std::atomic<bool> auto_compaction_active_;
+
+
+#ifdef STATISTICS
+ public:
+  void EnableStatsCollection() {
+    hash_index_.EnableStatsCollection();
+    collect_stats_ = true;
+  }
+  void DisableStatsCollection() {
+    hash_index_.DisableStatsCollection();
+    collect_stats_ = false;
+  }
+
+  void PrintStats() const {
+    /*
+    double PERCENTILES[] = { 25, 50, 75, 95, 99, 99.5, 99.9 };
+    const std::vector<double> percentiles{
+      PERCENTILES, PERCENTILES + sizeof(PERCENTILES) / sizeof(double) };
+    */
+
+    // Reads
+    printf("==== READS ====\n");
+    printf("Total Requests Served\t: %lu\n", reads_total_.load());
+    if (reads_total_.load() > 0) {
+      printf("Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(reads_sync_.load()) / reads_total_.load()) * 100.0);
+      printf("Total I/O operations\t: %lu\n", reads_iops_.load());
+      printf("I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(reads_iops_.load()) / reads_total_.load());
+      pprint_per_req_stats(reads_per_req_iops_, "I/O ops");
+    }
+    // Upserts
+    printf("\n==== UPSERTS ====\n");
+    printf("Total Requests Served\t: %lu\n", upserts_total_.load());
+    if (upserts_total_.load() > 0) {
+      printf("Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(upserts_sync_.load()) / upserts_total_.load()) * 100.0);
+      printf("Total I/O operations\t: %lu\n", upserts_iops_.load());
+      printf("I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(upserts_iops_.load()) / upserts_total_.load());
+      pprint_per_req_stats(upserts_per_req_iops_, "I/O ops");
+      pprint_per_req_stats(upserts_per_req_record_invalidations_, "Record Invalidations");
+    }
+    // RMWs
+    printf("\n==== RMWs ====\n");
+    printf("Total Requests Served\t: %lu\n", rmw_total_.load());
+    if (rmw_total_.load() > 0) {
+      printf("Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(rmw_sync_.load()) / rmw_total_.load()) * 100.0);
+      printf("Total I/O operations\t: %lu\n", rmw_iops_.load());
+      printf("I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(rmw_iops_.load()) / rmw_total_.load());
+      pprint_per_req_stats(rmw_per_req_iops_, "I/O ops");
+      pprint_per_req_stats(rmw_per_req_record_invalidations_, "Record Invalidations");
+    }
+    // Deletes
+    printf("\n==== DELETES ====\n");
+    printf("Total Requests Served\t: %lu\n", deletes_total_.load());
+    if (deletes_total_.load() > 0) {
+      printf("Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(deletes_sync_.load()) / deletes_total_.load()) * 100.0);
+      printf("Total I/O operations\t: %lu\n", deletes_iops_.load());
+      printf("I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(deletes_iops_.load()) / deletes_total_.load());
+      pprint_per_req_stats(deletes_per_req_iops_, "I/O ops");
+      pprint_per_req_stats(deletes_per_req_record_invalidations_, "Record Invalidations");
+    }
+    // Conditional Inserts
+    printf("\n=== Conditional Inserts ===\n");
+    printf("Total Requests Served\t: %lu\n", ci_total_.load());
+    if (ci_total_.load() > 0) {
+      printf("Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(ci_sync_.load()) / ci_total_.load()) * 100.0);
+      printf("Total I/O operations \t: %lu\n", ci_iops_.load());
+      printf("I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(ci_iops_.load()) / ci_total_.load());
+      printf("Records Copied (%%)\t: %.2lf\n",
+        static_cast<double>(ci_copied_.load()) / ci_total_.load() * 100.0);
+      pprint_per_req_stats(ci_per_req_iops_, "I/O ops");
+      pprint_per_req_stats(ci_per_req_record_invalidations_, "Record Invalidations");
+    }
+
+    // Print hash index stats
+    printf("\n ########## HASH INDEX #########\n");
+    hash_index_.PrintStats();
+    printf("\n ########## ---------- #########\n");
+  }
+
+ private:
+  void InitializeStats() {
+    for (int i = 0; i < per_req_resolution; i++) {
+      // iops
+      reads_per_req_iops_[i].store(0);
+      upserts_per_req_iops_[i].store(0);
+      rmw_per_req_iops_[i].store(0);
+      deletes_per_req_iops_[i].store(0);
+      ci_per_req_iops_[i].store(0);
+      // record invalidations
+      upserts_per_req_record_invalidations_[i].store(0);
+      rmw_per_req_record_invalidations_[i].store(0);
+      deletes_per_req_record_invalidations_[i].store(0);
+      ci_per_req_record_invalidations_[i].store(0);
+    }
+  }
+
+  void UpdatePerReqStats(pending_context_t* pending_context) {
+    if (collect_stats_) {
+      auto num_iops = std::min(pending_context->num_iops, 5U);
+      auto num_record_invalidations = std::min(pending_context->num_record_invalidations, 5U);
+      switch(pending_context->type) {
+        case OperationType::Read:
+          ++reads_per_req_iops_[num_iops];
+          break;
+        case OperationType::Upsert:
+          // possible due to cold-index reqs
+          ++upserts_per_req_iops_[num_iops];
+          ++upserts_per_req_record_invalidations_[num_record_invalidations];
+          break;
+        case OperationType::RMW:
+          ++rmw_per_req_iops_[num_iops];
+          ++rmw_per_req_record_invalidations_[num_record_invalidations];
+          break;
+        case OperationType::Delete:
+          // possible due to cold-index reqs
+          ++deletes_per_req_iops_[num_iops];
+          ++deletes_per_req_record_invalidations_[num_record_invalidations];
+          break;
+        case OperationType::ConditionalInsert:
+          ++ci_per_req_iops_[num_iops];
+          ++ci_per_req_record_invalidations_[num_record_invalidations];
+          break;
+        default:
+          assert(false);
+          break;
+      }
+    }
+  }
+
+  void pprint_per_req_stats(const std::atomic<uint64_t>* iops_arr, std::string prefix) const {
+    static const unsigned allDots = 60;
+
+    uint64_t sum = 0;
+    for (int i = 0; i < per_req_resolution; i++) {
+      sum += iops_arr[i].load();
+    }
+    if (sum == 0) return;
+
+    for (int i = 0; i < per_req_resolution; i++) {
+      auto num_iops = iops_arr[i].load();
+      printf("%d%c  %s [%'10lu] {%6.2lf%%}: ", i,
+        (i != per_req_resolution - 1) ? ' ' : '+', prefix.c_str(),
+        num_iops, static_cast<double>(num_iops) / sum * 100.0);
+      auto dots = (iops_arr[i].load() * allDots) / sum;
+      printf("%s\n", std::string(dots, '*').c_str());
+    }
+  }
+
+  static constexpr unsigned per_req_resolution = 6;
+  bool collect_stats_{ true };
+  // Reads
+  std::atomic<uint64_t> reads_total_{ 0 };
+  std::atomic<uint64_t> reads_sync_{ 0 };
+  std::atomic<uint64_t> reads_iops_{ 0 };
+  std::atomic<uint64_t> reads_per_req_record_invalidations_[per_req_resolution];
+  std::atomic<uint64_t> reads_per_req_iops_[per_req_resolution];
+  // Upserts
+  std::atomic<uint64_t> upserts_total_{ 0 };
+  std::atomic<uint64_t> upserts_sync_{ 0 };
+  std::atomic<uint64_t> upserts_iops_{ 0 };
+  std::atomic<uint64_t> upserts_per_req_record_invalidations_[per_req_resolution];
+  std::atomic<uint64_t> upserts_per_req_iops_[per_req_resolution];
+  // RMWs
+  std::atomic<uint64_t> rmw_total_{ 0 };
+  std::atomic<uint64_t> rmw_sync_{ 0 };
+  std::atomic<uint64_t> rmw_iops_{ 0 };
+  std::atomic<uint64_t> rmw_per_req_record_invalidations_[per_req_resolution];
+  std::atomic<uint64_t> rmw_per_req_iops_[per_req_resolution];
+  // Deletes
+  std::atomic<uint64_t> deletes_total_{ 0 };
+  std::atomic<uint64_t> deletes_sync_{ 0 };
+  std::atomic<uint64_t> deletes_iops_{ 0 };
+  std::atomic<uint64_t> deletes_per_req_record_invalidations_[per_req_resolution];
+  std::atomic<uint64_t> deletes_per_req_iops_[per_req_resolution];
+  // Conditional Inserts
+  std::atomic<uint64_t> ci_total_{ 0 };
+  std::atomic<uint64_t> ci_sync_{ 0 };
+  std::atomic<uint64_t> ci_iops_{ 0 };
+  std::atomic<uint64_t> ci_copied_{ 0 };
+  std::atomic<uint64_t> ci_per_req_record_invalidations_[per_req_resolution];
+  std::atomic<uint64_t> ci_per_req_iops_[per_req_resolution];
+#endif
 };
 
 // Implementations.
@@ -528,6 +723,19 @@ inline Status FasterKv<K, V, D, H, OH>::Read(RC& context, AsyncCallback callback
   pending_read_context_t pending_context{ context, callback, abort_if_tombstone,
                                           Address::kInvalidAddress, num_compaction_truncs_.load() };
   OperationStatus internal_status = InternalRead(pending_context);
+
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++reads_total_;
+    if (internal_status == OperationStatus::SUCCESS ||
+        internal_status == OperationStatus::NOT_FOUND ||
+        internal_status == OperationStatus::ABORTED) {
+      ++reads_sync_;
+      ++reads_per_req_iops_[0];
+    }
+  }
+  #endif
+
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
@@ -557,10 +765,30 @@ inline Status FasterKv<K, V, D, H, OH>::Upsert(UC& context, AsyncCallback callba
   static_assert(alignof(value_t) == alignof(typename upsert_context_t::value_t),
                 "alignof(value_t) != alignof(typename upsert_context_t::value_t)");
 
+  if (block_inserts_while_compacting_) {
+    while(next_hlog_begin_address_.load() != Address::kInvalidAddress) {
+      CompletePending(false);
+      if (other_store_ != nullptr && other_store_->epoch_.IsProtected()) {
+        other_store_->CompletePending(false);
+      }
+      std::this_thread::yield();
+    }
+  }
+
   pending_upsert_context_t pending_context{ context, callback };
   OperationStatus internal_status = InternalUpsert(pending_context);
-  Status status;
 
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++upserts_total_;
+    if (internal_status == OperationStatus::SUCCESS) {
+      ++upserts_sync_;
+      ++upserts_per_req_iops_[0];
+    }
+  }
+  #endif
+
+  Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
   } else {
@@ -584,6 +812,18 @@ inline Status FasterKv<K, V, D, H, OH>::Rmw(MC& context, AsyncCallback callback,
 
   pending_rmw_context_t pending_context{ context, callback, create_if_not_exists };
   OperationStatus internal_status = InternalRmw(pending_context, false);
+
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++rmw_total_;
+    if (internal_status == OperationStatus::SUCCESS ||
+        internal_status == OperationStatus::NOT_FOUND) {
+      ++rmw_sync_;
+      ++rmw_per_req_iops_[0];
+    }
+  }
+  #endif
+
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
@@ -612,6 +852,17 @@ inline Status FasterKv<K, V, D, H, OH>::Delete(DC& context, AsyncCallback callba
 
   pending_delete_context_t pending_context{ context, callback };
   OperationStatus internal_status = InternalDelete(pending_context, force_tombstone);
+
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++deletes_total_;
+    if (internal_status == OperationStatus::SUCCESS) {
+      ++deletes_sync_;
+      ++deletes_per_req_iops_[0];
+    }
+  }
+  #endif
+
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
@@ -712,7 +963,14 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIoPendingRequests(ExecutionContext
     }
 
     if(!pending_context.async) {
-      pending_context->caller_callback(pending_context->caller_context, result);
+      #ifdef STATISTICS
+      if (collect_stats_) {
+        UpdatePerReqStats(pending_context.get());
+      }
+      #endif
+      if (pending_context->caller_callback) {
+        pending_context->caller_callback(pending_context->caller_context, result);
+      }
     }
   }
 }
@@ -771,6 +1029,12 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
             }
             // if not marked here, it will be ignored by conditional insert during compaction
 
+            #ifdef STATISTICS
+            if (collect_stats_) {
+              ++pending_context->num_record_invalidations;
+            }
+            #endif
+
             // Retry request
             pending_context->clear_index_op();
             result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
@@ -806,6 +1070,12 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
             }
             // if not marked here, it will be ignored by conditional insert during compaction
 
+            #ifdef STATISTICS
+            if (collect_stats_) {
+              ++pending_context->num_record_invalidations;
+            }
+            #endif
+
             // Retry request
             pending_context->clear_index_op();
             result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
@@ -828,7 +1098,14 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
     }
 
     if(!pending_context.async) {
-      pending_context->caller_callback(pending_context->caller_context, result);
+      #ifdef STATISTICS
+      if (collect_stats_) {
+        UpdatePerReqStats(pending_context.get());
+      }
+      #endif
+      if (pending_context->caller_callback) {
+        pending_context->caller_callback(pending_context->caller_context, result);
+      }
     }
   }
 }
@@ -869,7 +1146,12 @@ inline void FasterKv<K, V, D, H, OH>::CompleteRetryRequests(ExecutionContext& co
 
     // If done, callback user code.
     if(!pending_context.async) {
-      pending_context->caller_callback(pending_context->caller_context, result);
+      #ifdef STATISTICS
+      UpdatePerReqStats(pending_context.get());
+      #endif
+      if (pending_context->caller_callback) {
+        pending_context->caller_callback(pending_context->caller_context, result);
+      }
     }
   }
 }
@@ -1153,6 +1435,12 @@ create_record:
     record->header.invalid = true;
     pending_context.clear_index_op();
 
+    #ifdef STATISTICS
+    if (collect_stats_) {
+      ++pending_context.num_record_invalidations;
+    }
+    #endif
+
     return InternalUpsert(pending_context);
   } else {
     assert(index_status == Status::Pending);
@@ -1373,6 +1661,13 @@ create_record:
     assert(index_status == Status::Aborted);
     // Try again.
     new_record->header.invalid = true;
+
+    #ifdef STATISTICS
+    if (collect_stats_) {
+      ++pending_context.num_record_invalidations;
+    }
+    #endif
+
     return OperationStatus::RETRY_NOW;
   }
 }
@@ -1542,6 +1837,12 @@ create_record:
     // Try again.
     record->header.invalid = true;
     pending_context.clear_index_op();
+
+    #ifdef STATISTICS
+    if (collect_stats_) {
+      ++pending_context.num_record_invalidations;
+    }
+    #endif
 
     return InternalDelete(pending_context, force_tombstone);
   } else {
@@ -2068,6 +2369,13 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionCo
     // CAS failed; try again.
     new_record->header.invalid = true;
     pending_context->go_async(address);
+
+    #ifdef STATISTICS
+    if (collect_stats_) {
+      ++pending_context->num_record_invalidations;
+    }
+    #endif
+
     return OperationStatus::RETRY_NOW;
   }
 }
@@ -3398,6 +3706,19 @@ inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCal
   pending_ci_context_t pending_context{ context, callback, min_search_offset, to_other_store };
   OperationStatus internal_status = InternalConditionalInsert(pending_context);
 
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++ci_total_;
+    if (internal_status == OperationStatus::SUCCESS ||
+        internal_status == OperationStatus::NOT_FOUND ||
+        internal_status == OperationStatus::ABORTED ||
+        internal_status == OperationStatus::ASYNC_TO_COLD_STORE) {
+      ++ci_sync_;
+      ++ci_per_req_iops_[0];
+    }
+  }
+  #endif
+
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     // insert performed successfully
@@ -3572,6 +3893,12 @@ create_record:
 
     if (index_status == Status::Ok) {
       // Installed the new record in the hash table.
+      #ifdef STATISTICS
+      if (collect_stats_) {
+        ++ci_copied_;
+      }
+      #endif
+
       return OperationStatus::SUCCESS;
     } else if (index_status == Status::Pending) {
       return OperationStatus::INDEX_ENTRY_ON_DISK;
@@ -3579,6 +3906,13 @@ create_record:
       assert(index_status == Status::Aborted);
       // Hash-chain changed since last time -- retry!
       record->header.invalid = true;
+
+      #ifdef STATISTICS
+      if (collect_stats_) {
+        ++pending_context.num_record_invalidations;
+      }
+      #endif
+
       return InternalConditionalInsert(pending_context);
     }
   }
@@ -3591,6 +3925,17 @@ create_record:
       OperationStatus op_status = other_store_->InternalUpsert(*upsert_context);
       assert(op_status == OperationStatus::SUCCESS || op_status == OperationStatus::INDEX_ENTRY_ON_DISK);
 
+      #ifdef STATISTICS
+      if (other_store_->collect_stats_) {
+        // Update stats of `other_store_'
+        ++(other_store_->upserts_total_);
+        if (op_status == OperationStatus::SUCCESS) {
+          ++(other_store_->upserts_sync_);
+          ++(other_store_->upserts_per_req_iops_[0]);
+        }
+      }
+      #endif
+
       if (op_status == OperationStatus::SUCCESS) {
         // free upsert context(s) before returning
         CallbackContext<async_pending_upsert_context_t> upsert_ctxt{ upsert_context };
@@ -3598,6 +3943,13 @@ create_record:
           // free if ConditionalInsert did not go pending; otherwise it will be freed by CompleteIoPendingRequests
           CallbackContext<IAsyncContext> upsert_caller_ctxt{ upsert_context->caller_context };
         }
+
+        #ifdef STATISTICS
+        if (collect_stats_) {
+          ++ci_copied_;
+        }
+        #endif
+
         return op_status;
       } else {
         return OperationStatus::ASYNC_TO_COLD_STORE;
@@ -3607,6 +3959,17 @@ create_record:
       OperationStatus op_status = other_store_->InternalDelete(*delete_context, true);
       assert(op_status == OperationStatus::SUCCESS || op_status == OperationStatus::INDEX_ENTRY_ON_DISK);
 
+      #ifdef STATISTICS
+      if (other_store_->collect_stats_) {
+        // Update stats of `other_store_'
+        ++(other_store_->deletes_total_);
+        if (op_status == OperationStatus::SUCCESS) {
+          ++(other_store_->deletes_sync_);
+          ++(other_store_->deletes_per_req_iops_[0]);
+        }
+      }
+      #endif
+
       if (op_status == OperationStatus::SUCCESS) {
         // free delete context(s) before returning
         CallbackContext<async_pending_delete_context_t> delete_ctxt{ delete_context };
@@ -3614,6 +3977,13 @@ create_record:
           // free if ConditionalInsert did not go pending; otherwise it will be freed by CompleteIoPendingRequests
           CallbackContext<IAsyncContext> delete_caller_ctxt{ delete_context->caller_context };
         }
+
+        #ifdef STATISTICS
+        if (collect_stats_) {
+          ++ci_copied_;
+        }
+        #endif
+
         return op_status;
       } else {
         return OperationStatus::ASYNC_TO_COLD_STORE;

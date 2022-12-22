@@ -77,6 +77,10 @@ class IHashIndex {
   constexpr static bool IsSync();
 
  public:
+#ifdef STATISTICS
+  void PrintStats() const;
+#endif
+
   ResizeInfo resize_info;
 };
 

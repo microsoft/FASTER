@@ -200,6 +200,38 @@ class FasterIndex : public IHashIndex<D> {
   uint64_t table_size_;
   std::atomic<uint64_t> serial_num_;
   std::string index_root_path_;
+
+#ifdef STATISTICS
+ public:
+  void EnableStatsCollection() {
+    collect_stats_ = true;
+  }
+  void DisableStatsCollection() {
+    collect_stats_ = false;
+  }
+  // implementation at the end of this file
+  void PrintStats() const;
+
+ private:
+  //static bool collect_stats_;
+  bool collect_stats_{ true };
+
+  // FindEntry
+  mutable std::atomic<uint64_t> find_entry_calls_{ 0 };
+  mutable std::atomic<uint64_t> find_entry_sync_calls_{ 0 };
+  mutable std::atomic<uint64_t> find_entry_success_count_{ 0 };
+  // FindOrCreateEntry
+  std::atomic<uint64_t> find_or_create_entry_calls_{ 0 };
+  std::atomic<uint64_t> find_or_create_entry_sync_calls_{ 0 };
+  // TryUpdateEntry
+  std::atomic<uint64_t> try_update_entry_calls_{ 0 };
+  std::atomic<uint64_t> try_update_entry_sync_calls_{ 0 };
+  std::atomic<uint64_t> try_update_entry_success_count_{ 0 };
+  // UpdateEntry
+  std::atomic<uint64_t> update_entry_calls_{ 0 };
+  std::atomic<uint64_t> update_entry_sync_calls_{ 0 };
+#endif
+
 };
 
 template <class D, class HID>
@@ -207,7 +239,25 @@ template <class C>
 inline Status FasterIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
                                             C& pending_context) const {
   pending_context.index_op_type = IndexOperationType::Retrieve;
-  return ReadIndexEntry(exec_context, pending_context);
+  Status status = ReadIndexEntry(exec_context, pending_context);
+
+#ifdef STATISTICS
+  if (collect_stats_) {
+    ++find_entry_calls_;
+    switch(status) {
+      case Status::Ok:
+        ++find_entry_success_count_;
+      case Status::NotFound:
+        ++find_entry_sync_calls_;
+        break;
+      case Status::Pending:
+      default:
+        break;
+    }
+  }
+#endif
+
+  return status;
 }
 
 template <class D, class HID>
@@ -221,6 +271,9 @@ inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context
   uint64_t io_id = exec_context.io_id++;
   FasterIndexReadContext context{ OperationType::Read, pending_context, io_id,
                                   &exec_context.index_io_responses, key, pos };
+#ifdef STATISTICS
+  context.set_hash_index((void*)this);
+#endif
 
   // TODO: replace serial_num with thread-local (possibly inside )
   Status status = store_->Read(context, AsyncEntryOperationDiskCallback, 0);
@@ -246,9 +299,24 @@ template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context) {
   pending_context.index_op_type = IndexOperationType::Retrieve;
-  // should replace with desired entry (i.e., Address::kInvalidAddress) *only* if entry is expected to be empty
-  return RmwIndexEntry(exec_context, pending_context, Address::kInvalidAddress,
-                      HashBucketEntry::kInvalidEntry, false);
+  // replace with desired entry (i.e., Address::kInvalidAddress) *only* if entry is expected to be empty
+  Status status = RmwIndexEntry(exec_context, pending_context, Address::kInvalidAddress,
+                              HashBucketEntry::kInvalidEntry, false);
+#ifdef STATISTICS
+  if (collect_stats_) {
+    ++find_or_create_entry_calls_;
+    switch(status) {
+      case Status::Ok:
+        ++find_or_create_entry_sync_calls_;
+        break;
+      case Status::Pending:
+      default:
+        break;
+    }
+  }
+#endif
+
+  return status;
 }
 
 template <class D, class HID>
@@ -256,7 +324,25 @@ template <class C>
 inline Status FasterIndex<D, HID>::TryUpdateEntry(ExecutionContext& exec_context, C& pending_context,
                                                 Address new_address, bool readcache) {
   pending_context.index_op_type = IndexOperationType::Update;
-  return RmwIndexEntry(exec_context, pending_context, new_address, pending_context.entry, false);
+  Status status = RmwIndexEntry(exec_context, pending_context, new_address, pending_context.entry, false);
+
+#ifdef STATISTICS
+  if (collect_stats_) {
+    ++try_update_entry_calls_;
+    switch(status) {
+      case Status::Ok:
+        ++try_update_entry_success_count_;
+      case Status::NotFound:
+        ++try_update_entry_sync_calls_;
+        break;
+      case Status::Pending:
+      default:
+        break;
+    }
+  }
+#endif
+
+  return status;
 }
 
 template <class D, class HID>
@@ -264,7 +350,23 @@ template <class C>
 inline Status FasterIndex<D, HID>::UpdateEntry(ExecutionContext& exec_context, C& pending_context,
                                               Address new_address) {
   pending_context.index_op_type = IndexOperationType::Update;
-  return RmwIndexEntry(exec_context, pending_context, new_address, pending_context.entry, true);
+  Status status = RmwIndexEntry(exec_context, pending_context, new_address, pending_context.entry, true);
+
+  #ifdef STATISTICS
+    if (collect_stats_) {
+      ++update_entry_calls_;
+      switch(status) {
+        case Status::Ok:
+          ++update_entry_sync_calls_;
+          break;
+        case Status::Pending:
+        default:
+          break;
+      }
+    }
+  #endif
+
+  return status;
 }
 
 template <class D, class HID>
@@ -285,6 +387,9 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
   FasterIndexRmwContext context{ OperationType::RMW, pending_context, io_id,
                                 &exec_context.index_io_responses,
                                 key, pos, force_update, expected_entry, desired_entry };
+#ifdef STATISTICS
+  context.set_hash_index((void*)this);
+#endif
 
   Status status = store_->Rmw(context, AsyncEntryOperationDiskCallback, ++serial_num_);
   assert(status == Status::Ok || status == Status::Pending);
@@ -318,6 +423,26 @@ void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, S
     assert(context->result == Status::Corruption);
     context->result = Status::NotFound;
   }
+
+#ifdef STATISTICS
+  typedef FasterIndex<D, HID> faster_hash_index_t;
+  faster_hash_index_t* hash_index = static_cast<faster_hash_index_t*>(context->hash_index);
+
+  if (hash_index->collect_stats_ && context->result == Status::Ok) {
+    switch(context->hash_index_op) {
+      case HashIndexOp::FIND_ENTRY:
+        ++(hash_index->find_entry_success_count_);
+        break;
+      case HashIndexOp::TRY_UPDATE_ENTRY:
+        ++(hash_index->try_update_entry_success_count_);
+        break;
+      case HashIndexOp::FIND_OR_CREATE_ENTRY:
+      case HashIndexOp::UPDATE_ENTRY:
+      default:
+        break;
+    }
+  }
+#endif
 
   // FIXME: store this inside FasterIndexReadContext
   AsyncIndexIOContext index_io_context{ context->caller_context, context->thread_io_responses,
@@ -419,6 +544,33 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
   return true;
 }
 
+
+#ifdef STATISTICS
+template <class D, class HID>
+void FasterIndex<D, HID>::PrintStats() const {
+  // FindEntry
+  printf("FindEntry Calls\t: %lu\n", find_entry_calls_.load());
+  if (find_entry_calls_.load() > 0) {
+    printf("Status::Ok (%%)\t: %.2lf\n",
+      (static_cast<double>(find_entry_success_count_.load()) / find_entry_calls_.load()) * 100.0);
+  }
+  // FindOrCreateEntry
+  printf("FindOrCreateEntry Calls\t: %lu\n", find_or_create_entry_calls_.load());
+  // TryUpdateEntry
+  printf("TryUpdateEntry Calls\t: %lu\n", try_update_entry_calls_.load());
+  if (try_update_entry_calls_.load() > 0) {
+    printf("Status::Ok (%%)\t: %.2lf\n",
+      (static_cast<double>(try_update_entry_success_count_.load()) / try_update_entry_calls_.load()) * 100.0);
+  }
+  // UpdateEntry
+  printf("UpdateEntry Calls\t: %lu\n\n", update_entry_calls_.load());
+
+  printf("==== COLD-INDEX ====\n");
+  store_->PrintStats();
+
+  //store_->DumpHybridLog("/dev/shm/debug/a");
+}
+#endif
 
 }
 } // namespace FASTER::index

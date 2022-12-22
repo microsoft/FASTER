@@ -50,6 +50,14 @@ struct alignas(Constants::kCacheLineBytes) HashIndexChunkEntry {
 };
 static_assert(sizeof(HashIndexChunkEntry) == 4096, "sizeof(HashIndexChunkEntry) != 4kB");
 
+enum class HashIndexOp : uint8_t {
+  FIND_ENTRY = 0,
+  FIND_OR_CREATE_ENTRY,
+  TRY_UPDATE_ENTRY,
+  UPDATE_ENTRY,
+
+  INVALID,
+};
 
 class FasterIndexContext : public IAsyncContext {
  public:
@@ -68,6 +76,9 @@ class FasterIndexContext : public IAsyncContext {
     , entry{ entry_ }
     , key_{ key }
     , pos_{ pos } {
+  #ifdef STATISTICS
+      hash_index_op = HashIndexOp::INVALID;
+  #endif
   }
   /// Copy (and deep-copy) constructor.
   FasterIndexContext(const FasterIndexContext& other, IAsyncContext* caller_context_)
@@ -80,6 +91,10 @@ class FasterIndexContext : public IAsyncContext {
     , entry{ other.entry }
     , key_{ other.key_ }
     , pos_{ other.pos_ } {
+  #ifdef STATISTICS
+      hash_index_op = other.hash_index_op;
+      hash_index = other.hash_index;
+  #endif
   }
 
   /// The implicit and explicit interfaces require a key() accessor.
@@ -108,6 +123,16 @@ class FasterIndexContext : public IAsyncContext {
   HashIndexChunkKey key_;
   /// Used to identify which hash bucket entry (inside chunk) to update
   HashIndexChunkPos pos_;
+
+#ifdef STATISTICS
+ public:
+  void set_hash_index(void* hash_index_) {
+    hash_index = hash_index_;
+  }
+
+  HashIndexOp hash_index_op;
+  void* hash_index;
+#endif
 };
 
 /// Used by FindEntry hash index method
@@ -118,6 +143,9 @@ class FasterIndexReadContext : public FasterIndexContext {
                         HashIndexChunkKey key, HashIndexChunkPos pos)
     : FasterIndexContext(op_type, caller_context, io_id, thread_io_responses,
                           HashBucketEntry::kInvalidEntry, key, pos) {
+#ifdef STATISTICS
+    hash_index_op = HashIndexOp::FIND_ENTRY;
+#endif
   }
   /// Copy (and deep-copy) constructor.
   FasterIndexReadContext(const FasterIndexReadContext& other, IAsyncContext* caller_context_)
@@ -155,6 +183,13 @@ class FasterIndexRmwContext : public FasterIndexContext {
                         thread_io_responses, expected_entry, key, pos)
     , desired_entry_{ desired_entry }
     , force_{ force } {
+#ifdef STATISTICS
+    if (is_find_or_create_entry_request()) {
+      hash_index_op = HashIndexOp::FIND_OR_CREATE_ENTRY;
+    } else {
+      hash_index_op = force_ ? HashIndexOp::UPDATE_ENTRY : HashIndexOp::TRY_UPDATE_ENTRY;
+    }
+#endif
   }
   /// Copy (and deep-copy) constructor.
   FasterIndexRmwContext(const FasterIndexRmwContext& other, IAsyncContext* caller_context_)

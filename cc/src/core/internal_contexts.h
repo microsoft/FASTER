@@ -85,6 +85,10 @@ class PendingContext : public IAsyncContext {
     , entry{ HashBucketEntry::kInvalidEntry }
     , atomic_entry{ nullptr }
     , skip_read_cache{ false } {
+  #ifdef STATISTICS
+      num_iops = 0;
+      num_record_invalidations = 0;
+  #endif
   }
 
  public:
@@ -102,6 +106,10 @@ class PendingContext : public IAsyncContext {
     , entry{ other.entry }
     , atomic_entry{ other.atomic_entry }
     , skip_read_cache{ other.skip_read_cache } {
+  #ifdef STATISTICS
+      num_iops = other.num_iops;
+      num_record_invalidations = other.num_record_invalidations;
+  #endif
   }
 
  public:
@@ -163,6 +171,11 @@ class PendingContext : public IAsyncContext {
   AtomicHashBucketEntry* atomic_entry;
   /// Use (or skip) reading from read cache
   bool skip_read_cache;
+
+#ifdef STATISTICS
+  uint32_t num_iops;
+  uint32_t num_record_invalidations;
+#endif
 };
 
 /// FASTER's internal Read() context.
