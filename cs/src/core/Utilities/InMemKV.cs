@@ -695,7 +695,7 @@ namespace FASTER.core.Utilities
                     }
                 }
 
-                AddEntry(key, ref funcs, ref bucket, wasActive);
+                AddEntry(ref key, ref funcs, ref bucket, wasActive);
                 return true;
             }
             catch (Exception)
@@ -734,7 +734,7 @@ namespace FASTER.core.Utilities
             bool wasActive = bucket.HasEntries;
             try
             {
-                AddEntry(key, ref funcs, ref bucket, wasActive);
+                AddEntry(ref key, ref funcs, ref bucket, wasActive);
             }
             catch (Exception)
             {
@@ -750,7 +750,7 @@ namespace FASTER.core.Utilities
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void AddEntry<TFuncs>(TKey key, ref TFuncs funcs, ref InMemKVBucket<TKey, THeapKey, TValue, TUserFunctions> bucket, bool wasActive) 
+        private void AddEntry<TFuncs>(ref TKey key, ref TFuncs funcs, ref InMemKVBucket<TKey, THeapKey, TValue, TUserFunctions> bucket, bool wasActive) 
             where TFuncs : IAddEntryFunctions
         {
             // At this point we know we will add an entry, so pre-increment the active-bucket count to avoid a race where we add the entry but 
