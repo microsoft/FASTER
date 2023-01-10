@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static FASTER.core.LockUtility;
 
@@ -9,15 +10,22 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset, bool waitForTentative = true)
+        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset, bool waitForTentative = true)
         {
             if (!UseReadCache || !FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress))
             {
-                if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
-                {
-                    stackCtx.recSrc.PhysicalAddress = hlog.GetPhysicalAddress(stackCtx.recSrc.LogicalAddress);
-                    TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minOffset, waitForTentative);
-                }
+                TryFindRecordInMainLog(ref key, ref stackCtx, minOffset, waitForTentative);
+            }
+            return stackCtx.recSrc.HasInMemorySrc;
+        }
+
+        private bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset, bool waitForTentative)
+        {
+            Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
+            if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+            {
+                stackCtx.recSrc.PhysicalAddress = hlog.GetPhysicalAddress(stackCtx.recSrc.LogicalAddress);
+                TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minOffset, waitForTentative);
             }
             return stackCtx.recSrc.HasInMemorySrc;
         }

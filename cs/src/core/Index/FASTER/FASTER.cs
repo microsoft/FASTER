@@ -223,7 +223,7 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.LockTable = new LockTable<Key>(lockTableSize, this.comparer, keyLen, keyLen is null ? null : hlog.bufferPool);
+            this.LockTable = new LockTable<Key>(lockTableSize, this.comparer, keyLen);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

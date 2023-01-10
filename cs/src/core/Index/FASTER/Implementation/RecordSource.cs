@@ -88,6 +88,7 @@ namespace FASTER.core
 
         internal bool HasSrc => HasInMemorySrc || HasLockTableLock;
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
+        internal bool HasLock => HasInMemoryLock || HasLockTableLock;
 
         /// <summary>
         /// Initialize to the latest logical address from the caller.

@@ -68,7 +68,7 @@ namespace FASTER.core
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
             // We must always scan to HeadAddress; a Lockable*Context could be activated and lock the record in the immutable region while we're scanning.
-            FindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
+            TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
 
             UpsertInfo upsertInfo = new()
             {

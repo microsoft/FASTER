@@ -1294,13 +1294,23 @@ namespace FASTER.core
                 if (ReadCache)
                     EvictCallback(oldSafeHeadAddress, newSafeHeadAddress);
 
+                // If we are going to scan, ensure earlier scans are done (we don't want to overwrite a later record with an earlier one)
+                if ((OnLockEvictionObserver is not null) || (OnEvictionObserver is not null))
+                {
+                    while (ClosedUntilAddress < oldSafeHeadAddress)
+                    {
+                        epoch.ProtectAndDrain();
+                        Thread.Yield();
+                    }
+                }
+
                 for (long closePageAddress = oldSafeHeadAddress & ~PageSizeMask; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
                 {
                     long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
                     long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
 
                     // If there are no active locking sessions, there should be no locks in the log.
-                    if (this.NumActiveLockingSessions > 0 && OnLockEvictionObserver is not null)
+                    if (OnLockEvictionObserver is not null)
                         MemoryPageScan(start, end, OnLockEvictionObserver);
 
                     if (OnEvictionObserver is not null)

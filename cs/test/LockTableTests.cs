@@ -31,7 +31,7 @@ namespace FASTER.test.LockTable
         public void Setup()
         {
             DeleteDirectory(MethodTestDir);
-            lockTable = new(Constants.kDefaultLockTableSize, new SingleBucketComparer(), bufferPool: null, keyLen: null);
+            lockTable = new(Constants.kDefaultLockTableSize, new SingleBucketComparer(), keyLen: null);
         }
 
         [TearDown]

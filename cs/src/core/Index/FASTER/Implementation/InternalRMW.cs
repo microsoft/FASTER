@@ -139,7 +139,7 @@ namespace FASTER.core
             // InternalContinuePendingRMW can stop comparing keys immediately above this address.
             long prevHighestKeyHashAddress = stackCtx.hei.Address;
 
-            FindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
+            TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
 
             RMWInfo rmwInfo = new()
             {

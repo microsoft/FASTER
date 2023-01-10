@@ -11,24 +11,25 @@ namespace FASTER.core
 {
     internal class LockTable<TKey> : IDisposable
     {
-        private const int kLockSpinCount = 10;
-
         #region IInMemKVUserFunctions implementation
-        internal class LockTableFunctions : IInMemKVUserFunctions<TKey, IHeapContainer<TKey>, RecordInfo>
+        internal class LockTableFunctions : IInMemKVUserFunctions<TKey, IHeapContainer<TKey>, RecordInfo>, IDisposable
         {
             private readonly IFasterEqualityComparer<TKey> keyComparer;
             private readonly IVariableLengthStruct<TKey> keyLen;
             private readonly SectorAlignedBufferPool bufferPool;
 
-            internal LockTableFunctions(IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen, SectorAlignedBufferPool bufferPool)
+            internal LockTableFunctions(IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen)
             {
                 this.keyComparer = keyComparer;
                 this.keyLen = keyLen;
-                this.bufferPool = bufferPool;
+                if (keyLen is not null)
+                    this.bufferPool = new SectorAlignedBufferPool(1, 1);
             }
 
             public IHeapContainer<TKey> CreateHeapKey(ref TKey key)
                 => bufferPool is null ? new StandardHeapContainer<TKey>(ref key) : new VarLenHeapContainer<TKey>(ref key, keyLen, bufferPool);
+
+            public ref TKey GetHeapKeyRef(IHeapContainer<TKey> heapKey) => ref heapKey.Get();
 
             public bool Equals(ref TKey key, IHeapContainer<TKey> heapKey) => keyComparer.Equals(ref key, ref heapKey.Get());
 
@@ -42,15 +43,20 @@ namespace FASTER.core
                 key = default;
                 recordInfo = default;
             }
+
+            public void Dispose()
+            {
+                this.bufferPool?.Free();
+            }
         }
         #endregion IInMemKVUserFunctions implementation
 
         internal readonly InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions> kv;
         internal readonly LockTableFunctions functions;
 
-        internal LockTable(int numBuckets, IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen, SectorAlignedBufferPool bufferPool)
+        internal LockTable(int numBuckets, IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen)
         {
-            this.functions = new(keyComparer, keyLen, bufferPool);
+            this.functions = new(keyComparer, keyLen);
             this.kv = new InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>(numBuckets, numBuckets >> 4, this.functions);
         }
 
@@ -382,7 +388,11 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ContainsKey(ref TKey key, long hash) => kv.ContainsKey(ref key, hash);
 
-        public void Dispose() => kv.Dispose();
+        public void Dispose()
+        {
+            kv.Dispose();
+            functions.Dispose();
+        }
 
         #region Internal methods for Test
         internal bool HasEntries(ref TKey key) => kv.HasEntries(ref key);

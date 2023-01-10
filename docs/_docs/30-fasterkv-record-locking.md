@@ -29,6 +29,10 @@ Here are some Manual-locking use cases:
 - Lock key1, do a bunch of operations on other keys, then unlock key1. As long as the set of keys for this operation are partitioned by the choice for key1 and all updates on those keys are done only when the lock for key1 is held, this ensures the consistency of those keys' values.
 - Executing transactions with a mix of shared and exclusive operations on any number of keys as an atomic operation.
 
+It is important not to mix operations between the different context types:
+- If you issue a `BeginUnsafe()` from one of the `*UnsafeContext`s and then make a call on a `BasicContext` (or `ClientSession`) or `LockableContext`, the latter will try to acquire the epoch which is held by the `*UnsafeContext`.
+- If you acquire an exclusive lock on a key via one of the `Lockable*Context`s and then make an update call with a non-`Lockable` context on the same key, the latter will try to acquire the exclusive lock.
+
 ### Considerations
 
 All manual locking of keys must lock the keys in a deterministic order, and unlock in the reverse order, to avoid deadlocks.
@@ -232,11 +236,21 @@ When locking for `Read()` operations, we never take an exclusive lock. This requ
 #### Read Locking for InMemory Records
 Read-locks records as soon as they are found, calls the caller's `IFunctions` callback, unlocks, and returns. The sequence is:
 
-If the record is in the readcache, readlock it, call `IFasterSession.SingleReader`, unlock it, and return.
+If the record is in the readcache:
+- readlock it
+- call `IFasterSession.SingleReader`
+- unlock it
 
-If the record is in the mutable region, readlock it, call `IFasterSession.ConcurrentReader`, unlock it, and return.
+If the record is in the mutable region:
+- readlock it
+- call `IFasterSession.ConcurrentReader`
+- unlock it
 
-If the record is in the immutable region, readlock it, call `IFasterSession.SingleReader`, unlock it, and return. The caller may have directed that these records be copied to tail; if so, we have the same issue of lock transfer to the new main-log record as in [Read Locking for OnDisk Records](#read-locking-for-ondisk-records). The unlocking utility function make this transparent to `InternalRead()` (or in this case, `ReadFromImmutableRegion()`).
+If the record is in the immutable region:
+- readlock it, 
+- call `IFasterSession.SingleReader`
+- The caller may have directed that records read from the immutable region be copied to tail; if so, we have the same issue of lock transfer to the new main-log record as in [Read Locking for OnDisk Records](#read-locking-for-ondisk-records). The unlocking utility function make this transparent to `InternalRead()` (or in this case, `ReadFromImmutableRegion()`).
+- unlock it
 
 #### Read Locking for OnDisk Records 
 This goes through the pending-read processing starting with `InternalContinuePendingRead`. 
@@ -270,13 +284,29 @@ After this we know HeadAddress will not change. Initialize the new record from t
 
 Call `CompleteTwoPhaseCopyToTail` (like `InternalTryCopyToTail`, this includes copying to ReadCache despite the name). Since we have a readlock, not an exclusive lock, we must transfer all read locks, either from an in-memory source record or from a LockTable entry.
 
-### Update Locking Conceptual Flow
+### Upsert Locking Conceptual Flow
+Because this is a blind update, it operates differently depending on whether, and where, a source record is found.
+
+If the record is in the readcache:
+- exclusive lock it
+- add a new record  TODO complete details, e.g. call `IFasterSession.SingleReader`, ...
+- unlock it
+
+If the record is in the mutable region:
+- readlock it
+- call `IFasterSession.ConcurrentReader`
+- unlock it
+
+If the record is in the immutable region:
+- readlock it, 
+- call `IFasterSession.SingleReader`
+- The caller may have directed that records read from the immutable region be copied to tail; if so, we have the same issue of lock transfer to the new main-log record as in [Read Locking for OnDisk Records](#read-locking-for-ondisk-records). The unlocking utility function make this transparent to `InternalRead()` (or in this case, `ReadFromImmutableRegion()`).
+- unlock it
+
+#### RMW Locking for InMemory Records
 TODO
 
-#### Update Locking for InMemory Records
-TODO
-
-#### Update Locking for OnDisk Records
+#### Delete Locking for OnDisk Records
 TODO
 
 ## Implementation
@@ -498,11 +528,11 @@ When the `ReadCache` is enabled, "records" from the `ReadCache` (actually simply
 - When there are no `ReadCache` entries in a hash chain, it looks like: `HashTable` -> m4000 -> m3000 -> m...
 - When there are `ReadCache` entries in a hash chain, it looks like: `HashTable` -> r8000 -> r7000 -> m4000 -> m3000 -> m...
 
-As a terminology note, the sub-chain of r#### records is referred to as the `ReadCache` prefix of that hash chain.
+As a terminology note, the sub-chain of r#### records is referred to as the `ReadCache` prefix chain of that hash chain.
 
-In FASTER v1, updates involving `ReadCache` records strip the entire `ReadCache` prefix from the chain. Additionally, the `ReadCache` prefix is stripped from the hash chain when a `ReadCache` page with that hashcode is evicted due to memory limits. In FASTER v2, because `ReadCache` records may be locked, we must not lose those locks. This is resolved in two ways:
-- On record updates, `ReadCache` prefixes are preserved except for the specific record being updated, which is spliced out and transferred to a `CopyToTail` on the main log, including any locks.
-- When `ReadCache` pages are evicted, their records are removed from the `ReadCache` prefix, and any with locks are transferred to the `LockTable`.
+In FASTER v1, updates involving `ReadCache` records stripped the entire `ReadCache` prefix from the chain. Additionally, the `ReadCache` prefix is stripped from the hash chain when a `ReadCache` page with that hashcode is evicted due to memory limits. In FASTER v2, because `ReadCache` records may be locked, we must not lose those locks. This is resolved in two ways:
+- On record updates, `ReadCache` prefix chains are preserved except for the specific record being updated, which is spliced out and transferred to a `CopyToTail` on the main log, including any locks.
+- When `ReadCache` pages are evicted, their records are removed from the `ReadCache` prefix chain, and any with locks are transferred to the `LockTable`.
 
 ### Record Transfers
 

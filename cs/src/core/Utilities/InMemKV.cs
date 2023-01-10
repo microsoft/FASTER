@@ -30,6 +30,8 @@ namespace FASTER.core.Utilities
 
         THeapKey CreateHeapKey(ref TKey key);
 
+        ref TKey GetHeapKeyRef(THeapKey heapKey);
+
         bool IsActive(ref TValue value);
 
         bool Equals(ref TKey key, THeapKey heapKey);

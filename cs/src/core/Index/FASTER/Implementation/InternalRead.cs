@@ -69,7 +69,7 @@ namespace FASTER.core
             var useStartAddress = startAddress != Constants.kInvalidAddress && !pendingContext.HasMinAddress;
             if (!useStartAddress)
             {
-                if (!FindTag(ref stackCtx.hei) || ((!UseReadCache || !stackCtx.hei.IsReadCache) && stackCtx.hei.Address < pendingContext.minAddress))
+                if (!FindTag(ref stackCtx.hei) || (!stackCtx.hei.IsReadCache && stackCtx.hei.Address < pendingContext.minAddress))
                     return OperationStatus.NOTFOUND;
                 prevHighestKeyHashAddress = stackCtx.hei.Address;
             }
@@ -233,7 +233,7 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    EphemeralSUnlock(ref key, ref stackCtx, ref srcRecordInfo);
+                    EphemeralSUnlock(fasterSession, sessionCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
                 }
             }
             return false;
@@ -282,7 +282,7 @@ namespace FASTER.core
             }
             finally
             {
-                EphemeralSUnlock(ref key, ref stackCtx, ref srcRecordInfo);
+                EphemeralSUnlock(fasterSession, sessionCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
             }
         }
 
@@ -343,7 +343,7 @@ namespace FASTER.core
             {
                 // Unlock the record. If doing CopyReadsToTailFromReadOnly, then we have already copied the locks to the new record;
                 // this unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
-                EphemeralSUnlock(ref key, ref stackCtx, ref srcRecordInfo);
+                EphemeralSUnlock(fasterSession, sessionCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
             }
         }
     }
