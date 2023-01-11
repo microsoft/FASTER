@@ -264,7 +264,8 @@ template <class D, class HID>
 template <class C>
 inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context, C& pending_context) const {
   key_hash_t hash{ pending_context.get_key_hash() };
-  HashIndexChunkKey key{ hash.chunk_id(table_size_) };
+  // Use the hash from the original key to form the hash for the cold-index
+  HashIndexChunkKey key{ hash.chunk_id(table_size_), hash.tag() };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
 
   // TODO: avoid incrementing io_id for every request if possible
@@ -375,7 +376,8 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
                                                 Address new_address, HashBucketEntry expected_entry,
                                                 bool force_update) {
   key_hash_t hash{ pending_context.get_key_hash() };
-  HashIndexChunkKey key{ hash.chunk_id(table_size_) };
+  // Use the hash from the original key to form the hash for the cold-index
+  HashIndexChunkKey key{ hash.chunk_id(table_size_), hash.tag() };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
 
   // FIXME: avoid incrementing io_id for every request if possible

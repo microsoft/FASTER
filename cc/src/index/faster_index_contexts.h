@@ -7,8 +7,9 @@ namespace index {
 
 class HashIndexChunkKey {
  public:
-  HashIndexChunkKey(uint64_t value)
-    : key{ value } {
+  HashIndexChunkKey(uint64_t key_, uint16_t tag_)
+    : key{ key_ }
+    , tag{ tag_ } {
   }
   HashIndexChunkKey(const HashIndexChunkKey&) = default;
 
@@ -16,8 +17,8 @@ class HashIndexChunkKey {
     return static_cast<uint32_t>(sizeof(HashIndexChunkKey));
   }
   inline core::KeyHash GetHash() const {
-    FasterHashHelper<uint64_t> hash_fn;
-    return core::KeyHash{ hash_fn(key) };
+    core::ColdLogIndexKeyHash hash{ key, tag };
+    return core::KeyHash{ hash.control() };
   }
 
   inline bool operator==(const HashIndexChunkKey& other) const {
@@ -28,6 +29,7 @@ class HashIndexChunkKey {
   }
  private:
   uint64_t key;
+  uint16_t tag;
 };
 
 struct HashIndexChunkPos {

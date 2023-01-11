@@ -53,6 +53,11 @@ struct IndexKeyHash {
   explicit IndexKeyHash(uint64_t code)
     : entry_{ code } {
   }
+  IndexKeyHash(uint64_t address, uint16_t tag)
+    : entry_{ 0 } {
+      entry_.address = address;
+      entry_.tag = tag;
+  }
   IndexKeyHash(const IndexKeyHash& other)
     : entry_{ other.entry_} {
   }
@@ -80,7 +85,7 @@ struct IndexKeyHash {
 
   inline size_t chunk_id(uint64_t hash_table_size) const {
     assert(kInChunkTotalBits != 0); // should not be called if there are no in-chunks bits
-    return (hash_table_index(hash_table_size) << U::kTagBits) + tag();
+    return hash_table_index(hash_table_size);
   }
   inline uint8_t index_in_chunk() const {
     assert(kInChunkTotalBits != 0); // should not be called if there are no in-chunks bits
