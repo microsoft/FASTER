@@ -27,8 +27,10 @@ namespace FASTER.core
                 return lockStatus;
 
             // Not in memory. First make sure the record has been transferred to the lock table if we did not find it because it was in the eviction region.
-            if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
-                SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, hlog);
+            var prevLogHA = hlog.HeadAddress;
+            var prevReadCacheHA = UseReadCache ? readcache.HeadAddress : 0;
+            if (stackCtx.recSrc.LogicalAddress >= stackCtx.recSrc.Log.BeginAddress)
+                SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, stackCtx.recSrc.Log);
 
             // Do LockTable operations
             if (lockOp.LockOperationType == LockOperationType.IsLocked)
@@ -39,20 +41,42 @@ namespace FASTER.core
                 if (this.LockTable.Unlock(ref key, stackCtx.hei.hash, lockOp.LockType))
                     return OperationStatus.SUCCESS;
 
-                // Recheck in-memory, due to a race where, when T1 started this InternalLock call, the key was not in the hash table (it was a nonexistent key) but was in the LockTable:
+                // We may need to recheck in-memory, due to a race where, when T1 started this InternalLock call, the key was not in the hash table
+                // (it was a nonexistent key) but was in the LockTable:
                 //  T1 did TryFindAndUnlockRecordInMemory above, and did not find the key in the hash table
                 //  T2 did an Upsert of the key, which inserted a tentative entry into the log, then transferred the lock from the LockTable to that log record
+                //      Or, T2 completed a pending Read and did CopyToTail or CopyToReadCache
                 //  T1 would fail LockTable.Unlock and leave a locked record in the log
-                stackCtx.hei.SetToCurrent();
-                stackCtx.SetRecordSourceToHashEntry(hlog);
-                if (TryFindAndLockRecordInMemory(ref key, lockOp, out lockInfo, ref stackCtx, out lockStatus))
-                    return lockStatus;
+                // If the address in the HashEntryInfo has changed, or if hei has a readcache address and either we can't navigate from the lowest readcache
+                // address (due to it being below HeadAddress) or its previous address does not point to the same address as when we started (which means a
+                // new log entry was spliced in, then we retry in-memory.
+                if (stackCtx.hei.IsNotCurrent || 
+                        (stackCtx.hei.IsReadCache
+                        && (stackCtx.recSrc.LowestReadCachePhysicalAddress < readcache.HeadAddress 
+                            || readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress).PreviousAddress != stackCtx.recSrc.LatestLogicalAddress)))
+                {
+                    stackCtx.hei.SetToCurrent();
+                    stackCtx.SetRecordSourceToHashEntry(hlog);
+                    if (TryFindAndLockRecordInMemory(ref key, lockOp, out lockInfo, ref stackCtx, out lockStatus))
+                        return lockStatus;
+
+                    // If the HeadAddresses have changed, then the key may have dropped below it and was/will be evicted back to the LockTable.
+                    if (hlog.HeadAddress != prevLogHA || (UseReadCache && readcache.HeadAddress != prevReadCacheHA))
+                        return OperationStatus.RETRY_LATER;
+                }
 
                 Debug.Fail("Trying to unlock a nonexistent key");
-                return OperationStatus.RETRY_NOW;   // oneMiss does not need an epoch refresh as there should be a (possibly tentative) record inserted at tail
+                return OperationStatus.SUCCESS; // SUCCEED so we don't continue the loop; TODO change to OperationStatus.NOTFOUND and return false from Lock API
             }
 
-            // Try to lock
+            // Try to lock. One of the following things can happen here:
+            //  - We find a record in the LockTable and:
+            //    - It is tentative; we fail the lock and return RETRY_LATER
+            //    - It is not tentative; we either:
+            //      - Succeed with the lock (probably an additional S lock) and return SUCCESS
+            //      - Fail the lock and return RETRY_LATER
+            //  - The LockTable failed to insert a record
+            //  - We did not find a record so we added one, so proceed with two-phase insert protocol below.
             if (!this.LockTable.TryLockManual(ref key, stackCtx.hei.hash, lockOp.LockType, out bool tentativeLock))
                 return OperationStatus.RETRY_LATER;
 
@@ -71,12 +95,17 @@ namespace FASTER.core
                 var found = false;
                 if (stackCtx2.hei.IsReadCache && (!stackCtx.hei.IsReadCache || stackCtx2.hei.Address > stackCtx.hei.Address))
                 {
+                    // stackCtx2 has readcache records. If stackCtx.hei is a readcache record, then we just have to search down to that record;
+                    // otherwise we search the entire readcache. We only need to find the latest logical address if stackCtx.hei is *not* a readcache record.
                     var untilAddress = stackCtx.hei.IsReadCache ? stackCtx.hei.Address : Constants.kInvalidAddress;
                     found = FindInReadCache(ref key, ref stackCtx2, untilAddress, alwaysFindLatestLA: !stackCtx.hei.IsReadCache, waitForTentative: false);
                 }
 
                 if (!found)
                 {
+                    // Search the main log. Since we did not find the key in the readcache, we have either:
+                    //  - stackCtx.hei is not a readcache record: we have the most current LowestReadCache info in stackCtx2 (which may be none, if there are no readcache records)
+                    //  - stackCtx.hei is a readcache record: stackCtx2 stopped searching before that, so stackCtx1 has the most recent readcache info
                     var lowestRcPhysicalAddress = stackCtx.hei.IsReadCache ? stackCtx.recSrc.LowestReadCachePhysicalAddress : stackCtx2.recSrc.LowestReadCachePhysicalAddress;
                     var latestlogicalAddress = lowestRcPhysicalAddress != 0 ? readcache.GetInfo(lowestRcPhysicalAddress).PreviousAddress : stackCtx2.hei.Address;
                     if (latestlogicalAddress > stackCtx.recSrc.LatestLogicalAddress)

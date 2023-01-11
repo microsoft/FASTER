@@ -254,13 +254,13 @@ namespace FASTER.core
             {
                 if (fasterSession.IsManualLocking)
                 {
-                    // For manual locking, we should already have made sure there is at least an SLock for this; with no HasInMemorySrc, it is in the Lock Table.
+                    // For manual locking, we should already have made sure there is at least an SLock for this; since there is no HasInMemorySrc, it is in the Lock Table.
                     if (LockTable.IsActive)
                         LockTable.TransferToLogRecord(ref key, stackCtx.hei.hash, ref newRecordInfo);
                 }
                 else
                 {
-                    // XLocks are not allowed, because another thread owns them.
+                    // XLocks are not allowed here in the ephemeral section, because another thread owns them (ephemeral locking only takes a read lock for operations that end up here).
                     success = (!LockTable.IsActive || LockTable.CompleteTwoPhaseCopyToTail(ref key, stackCtx.hei.hash, ref newRecordInfo, allowXLock: fasterSession.IsManualLocking,
                                                                                           removeEphemeralLock: stackCtx.recSrc.HasLockTableLock))
                               &&
