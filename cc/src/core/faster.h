@@ -140,7 +140,8 @@ class FasterKv {
     , refresh_callback_store_{ nullptr }
     , refresh_callback_{ nullptr }
     , compaction_config_{ compaction_config }
-    , auto_compaction_active_{ false } {
+    , auto_compaction_active_{ false }
+    , auto_compaction_scheduled_{ false } {
     log_init();
 
     if(!Utility::IsPowerOfTwo(table_size)) {
@@ -247,6 +248,10 @@ class FasterKv {
   inline uint32_t NumActiveSessions() const {
     return num_active_sessions_.load();
   }
+  inline bool AutoCompactionScheduled() const {
+    return auto_compaction_scheduled_.load();
+  }
+
 
  private:
   typedef Record<key_t, value_t> record_t;
@@ -432,6 +437,7 @@ class FasterKv {
 
   std::thread compaction_thread_;
   std::atomic<bool> auto_compaction_active_;
+  std::atomic<bool> auto_compaction_scheduled_;
 
 
 #ifdef STATISTICS
@@ -4196,9 +4202,11 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
 
   while (auto_compaction_active_.load()) {
     if (Size() < hlog_size_threshold) {
+      auto_compaction_scheduled_.store(false);
       std::this_thread::sleep_for(compaction_config_.check_interval);
       continue;
     }
+    auto_compaction_scheduled_.store(true);
 
     uint64_t begin_address = hlog.begin_address.control();
     uint64_t tail_address = hlog.GetTailAddress().control();
@@ -4227,6 +4235,8 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
       log_error("Hlog compaction was not successfull :( -- retry!");
     }
   }
+  // no more auto-compactions
+  auto_compaction_scheduled_.store(false);
 }
 
 }

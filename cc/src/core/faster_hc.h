@@ -48,6 +48,8 @@ public:
   : hot_store{ hot_log_table_size, hot_log_mem_size, hot_log_filename, hot_log_mutable_perc, rc_config }
   , cold_store{ cold_log_table_size, cold_log_mem_size, cold_log_filename, cold_log_mutable_perc }
   , hc_compaction_config_{ hc_compaction_config }
+  , auto_compaction_active_{ false }
+  , auto_compaction_scheduled_{ false }
   {
     hot_store.SetOtherStore(&cold_store);
     cold_store.SetOtherStore(&hot_store);
@@ -61,8 +63,8 @@ public:
         throw std::runtime_error{ "HCComapctionConfig: Cold log size too small (<64 MB)" };
       }
       // Launch background compaction check thread
-      is_compaction_active_.store(true);
-      compaction_thread_ = std::move(std::thread(&FasterKvHC::CheckInternalLogsSize, this));
+      auto_compaction_active_.store(true);
+      auto_compaction_thread_ = std::move(std::thread(&FasterKvHC::CheckInternalLogsSize, this));
     } else {
       log_warn("Automatic HC compaction is disabled");
     }
@@ -75,10 +77,10 @@ public:
           cold_store.system_state_.phase() != Phase::REST ) {
       std::this_thread::yield();
     }
-    if (compaction_thread_.joinable()) {
+    if (auto_compaction_thread_.joinable()) {
       // shut down compaction thread
-      is_compaction_active_.store(false);
-      compaction_thread_.join();
+      auto_compaction_active_.store(false);
+      auto_compaction_thread_.join();
     }
   }
 
@@ -142,8 +144,9 @@ public:
     log_info("--- not implemented ---");
     //cold_store.DumpDistribution();
   }
-  inline bool IsCompactionLive() {
-    return hot_store.IsCompactionLive() || cold_store.IsCompactionLive();
+  }
+  inline bool AutoCompactionScheduled() const {
+    return auto_compaction_scheduled_.load();
   }
 
 #ifdef STATISTICS
@@ -188,8 +191,9 @@ public:
 
   // compaction-related
   HCCompactionConfig hc_compaction_config_;
-  std::thread compaction_thread_;
-  std::atomic<bool> is_compaction_active_;
+  std::thread auto_compaction_thread_;
+  std::atomic<bool> auto_compaction_active_;
+  std::atomic<bool> auto_compaction_scheduled_;
 };
 
 template<class K, class V, class D>
@@ -564,7 +568,6 @@ inline bool FasterKvHC<K, V, D>::CompactColdLog(uint64_t until_address, bool shi
 
 template<class K, class V, class D>
 inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
-
   HlogCompactionConfig& hot_compaction_config = hc_compaction_config_.hot_store;
   HlogCompactionConfig& cold_compaction_config = hc_compaction_config_.cold_store;
 
@@ -578,12 +581,15 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
     cold_compaction_config.check_interval
   );
 
-  while(is_compaction_active_.load()) {
+  while(auto_compaction_active_.load()) {
     if (hot_store.Size() < hot_log_size_threshold &&
         cold_store.Size() < cold_log_size_threshold) {
+      auto_compaction_scheduled_.store(false);
       std::this_thread::sleep_for(check_interval);
       continue;
     }
+    // At least one compaction will take place
+    auto_compaction_scheduled_.store(true);
 
     if (hot_store.Size() >= hot_log_size_threshold) {
       uint64_t begin_address = hot_store.hlog.begin_address.control();
@@ -635,6 +641,8 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       }
     }
   }
+
+  auto_compaction_scheduled_.store(false);
 }
 
 template<class K, class V, class D>
