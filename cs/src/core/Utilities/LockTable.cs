@@ -361,7 +361,7 @@ namespace FASTER.core
 
         internal struct FindEntryFunctions_CompleteTwoPhaseCopyToTail : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindEntryFunctions
         {
-            internal RecordInfo toRecordInfo;   // TODO: C# 11 will let this be a ref field
+            internal RecordInfo toRecordInfo;
             private readonly bool allowXLock, removeEphemeralLock;
             internal bool success;
 
@@ -375,8 +375,8 @@ namespace FASTER.core
 
             public void NotFound(ref TKey key) => success = true;
 
-            public void FoundEntry(ref TKey key, ref RecordInfo logRecordInfo) 
-                => success = toRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref logRecordInfo, allowXLock, seal: false, this.removeEphemeralLock);
+            public void FoundEntry(ref TKey key, ref RecordInfo recordInfo) 
+                => success = toRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref recordInfo, allowXLock, seal: false, this.removeEphemeralLock);
         }
 
         /// <summary>

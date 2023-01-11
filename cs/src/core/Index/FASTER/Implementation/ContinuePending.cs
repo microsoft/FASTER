@@ -66,12 +66,12 @@ namespace FASTER.core
                     if (stackCtx.recSrc.HasInMemorySrc)
                         srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
 
-                    // Wait until after locking to check this.
-                    if (srcRecordInfo.Tombstone)
-                        goto NotFound;
-
                     try
                     {
+                        // Wait until after locking to check this.
+                        if (srcRecordInfo.Tombstone)
+                            goto NotFound;
+
                         ReadInfo readInfo = new()
                         {
                             SessionType = fasterSession.SessionType,
@@ -119,7 +119,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, ctx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlockAfterPendingIO(fasterSession, ctx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 } // end while (true)
             }
@@ -328,7 +328,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, currentCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlockAfterPendingIO(fasterSession, currentCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
             } while (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext));

@@ -57,7 +57,10 @@ namespace FASTER.core
         {
             status = OperationStatus.SUCCESS;
             if (fasterSession.DisableEphemeralLocking)
+            {
+                Debug.Assert(!fasterSession.IsManualLocking || recordInfo.IsLockedExclusive, $"Attempting to use a non-XLocked key in a Manual Locking context (requesting XLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
                 return true;
+            }
 
             // A failed lockOp means this is an intermediate record, e.g. Tentative or Sealed, or we exhausted the spin count. All these must RETRY_LATER.
             if (!fasterSession.TryLockEphemeralExclusive(ref recordInfo))
@@ -75,7 +78,10 @@ namespace FASTER.core
         {
             status = OperationStatus.SUCCESS;
             if (fasterSession.DisableEphemeralLocking)
+            {
+                Debug.Assert(!fasterSession.IsManualLocking || recordInfo.IsLocked, $"Attempting to use a non-Locked (S or X) key in a Manual Locking context (requesting SLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
                 return true;
+            }
 
             // A failed lockOp means this is an intermediate record, e.g. Tentative or Sealed, or we exhausted the spin count. All these must RETRY_LATER.
             if (!fasterSession.TryLockEphemeralShared(ref recordInfo))
