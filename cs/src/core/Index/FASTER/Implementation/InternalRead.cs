@@ -140,8 +140,10 @@ namespace FASTER.core
             // On-Disk Region
             else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
             {
+#if DEBUG
+                SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LogicalAddress, hlog);
                 Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, stackCtx.hei.hash), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
-
+#endif
                 // Note: we do not lock here; we wait until reading from disk, then lock in the InternalContinuePendingRead chain.
                 if (hlog.IsNullDevice)
                     return OperationStatus.NOTFOUND;
