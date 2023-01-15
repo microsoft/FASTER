@@ -238,8 +238,10 @@ namespace FASTER.core
 
         private unsafe long InternalAllocate(int blockSize)
         {
-            if (freeList.TryDequeue(out long result))
-                return result;
+            if (blockSize == 1) {
+                if (freeList.TryDequeue(out long result))
+                    return result;
+            }
 
             // Determine insertion index.
             // ReSharper disable once CSharpWarnings::CS0420
