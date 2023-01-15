@@ -219,7 +219,7 @@ namespace FASTER.core
                 // Someone added a new record in the splice region. It won't be readcache; that would've been added at tail. See if it's our key.
                 // We want this whether it's Tentative or not, so don't wait for Tentative.
                 var minAddress = untilLogicalAddress > hlog.HeadAddress ? untilLogicalAddress : hlog.HeadAddress;
-                if (TraceBackForKeyMatch(ref key, lowest_rcri.PreviousAddress, minAddress + 1, out _, out long prevAddress, waitForTentative: false))
+                if (TraceBackForKeyMatch(ref key, lowest_rcri.PreviousAddress, minAddress + 1, out long prevAddress, out _, waitForTentative: false))
                     success = false;
                 else if (prevAddress > untilLogicalAddress && prevAddress < hlog.HeadAddress)
                 {
