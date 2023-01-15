@@ -205,8 +205,8 @@ namespace FASTER.core
         internal long GetIndexSizeCacheLines()
         {
             long adjustedSize = Utility.PreviousPowerOf2(IndexSize);
-            if (adjustedSize < 64)
-                throw new FasterException($"{nameof(IndexSize)} should be at least of size one cache line (64 bytes)");
+            if (adjustedSize < 512)
+                throw new FasterException($"{nameof(IndexSize)} should be at least of size 8 cache line (512 bytes)");
             if (IndexSize != adjustedSize)
                 logger?.LogInformation($"Warning: using lower value {adjustedSize} instead of specified {IndexSize} for {nameof(IndexSize)}");
             return adjustedSize / 64;
