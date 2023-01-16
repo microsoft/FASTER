@@ -351,7 +351,7 @@ namespace FASTER.core
                     if (!VerifyInMemoryAddresses(ref stackCtx))
                     {
                         // Don't save allocation because we did not allocate a full Value.
-                        return OperationStatus.RETRY_NOW;   // If this failed, we have just gone through an epoch refresh, so don't need RETRY_LATER
+                        return OperationStatus.RETRY_LATER;
                     }
                 } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
             }

@@ -199,14 +199,26 @@ namespace FASTER.core
                         ref RecordInfo srcRecordInfo, ref RecordInfo newRecordInfo, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            // We don't check for ephemeral xlocking here; we know we had that lock, but we don't need to actually lock the new record because
+            // We don't check for ephem eral xlocking here; we know we had that lock, but we don't need to actually lock the new record because
             // we know this is the last step and we are going to unlock it immediately; it is protected until we remove the Tentative bit.
 
             if (fasterSession.IsManualLocking)
             {
-                // For manual locking, we should already have made sure there is an XLock for this. Preserve it on the new record.
-                // If there is a LockTable entry, transfer from it (which will remove it from the LockTable); otherwise just set the bit directly.
-                if (!LockTable.IsActive || !LockTable.TransferToLogRecord(ref key, stackCtx.hei.hash, ref newRecordInfo))
+                // For manual locking, we should already have made sure there is an XLock for this, and must preserve it on the new record.
+                // If we do not have an in-memory source there should be a LockTable entry; transfer from it (which will remove it from the LockTable).
+                // Otherwise (we do have an in-memory source) just set the bit directly; we'll mark and clear the IM source below.
+                bool transferred = false;
+                if (!stackCtx.recSrc.HasInMemorySrc)
+                {
+                    bool found = this.LockTable.TryGet(ref key, stackCtx.hei.hash, out var ltriLT);
+                    Debug.Assert(found && ltriLT.IsLocked && !ltriLT.Tentative, "TODO remove: Error--non-InMemorySrc expected to find a non-tentative locked locktable entry");
+
+                    transferred = LockTable.IsActive && LockTable.TransferToLogRecord(ref key, stackCtx.hei.hash, ref newRecordInfo);
+                    Debug.Assert(transferred, "ManualLocking Non-InMemory source should find a LockTable entry to transfer locks from");
+                }
+                if (this.LockTable.TryGet(ref key, stackCtx.hei.hash, out var ltri))
+                    Debug.Assert(!ltri.IsLocked || ltri.Tentative, "TODO remove: Error--existing non-tentative lock in LT after CompleteTwoPhaseUpdate transfer");
+                if (!transferred)
                     newRecordInfo.InitializeLockExclusive();
             }
             else if ((LockTable.IsActive && !LockTable.CompleteTwoPhaseUpdate(ref key, stackCtx.hei.hash))

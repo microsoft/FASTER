@@ -450,7 +450,7 @@ namespace FASTER.core
                         ref var ri = ref readcache.GetInfo(newPhysicalAddress);
                         ri.SetInvalid();                                        // We haven't yet set stackCtx.newLogicalAddress, so do this directly here
                         ri.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
-                        return OperationStatus.RETRY_NOW;                       // If this failed, we have just gone through an epoch refresh, so don't need RETRY_LATER
+                        return OperationStatus.RETRY_LATER;
                     }
                 } while (stackCtx.hei.IsReadCache && newLogicalAddress < stackCtx.hei.AbsoluteAddress);
 
@@ -475,7 +475,7 @@ namespace FASTER.core
                         if (!VerifyInMemoryAddresses(ref stackCtx))
                         {
                             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
-                            return OperationStatus.RETRY_NOW;   // If this failed, we have just gone through an epoch refresh, so don't need RETRY_LATER
+                            return OperationStatus.RETRY_LATER;
                         }
                     } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
                 }

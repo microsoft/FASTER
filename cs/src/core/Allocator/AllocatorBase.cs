@@ -166,6 +166,10 @@ namespace FASTER.core
         /// </summary>
         public long BeginAddress;
 
+        /// <inheritdoc/>
+        public override string ToString()
+            => $"TA {GetTailAddress()}, ROA {ReadOnlyAddress}, SafeROA {SafeReadOnlyAddress}, HA {HeadAddress}, SafeHA {SafeHeadAddress}, CUA {ClosedUntilAddress}, FUA {FlushedUntilAddress}";
+
         #endregion
 
         #region Protected device info

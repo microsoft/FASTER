@@ -129,9 +129,10 @@ namespace FASTER.core
         /// </summary>
         /// <returns>Whether lock was acquired successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockExclusive()
+        public bool TryLockExclusive(bool tentative = false)
         {
             int spinCount = Constants.kMaxLockSpins;
+            long tentativeBit = tentative ? kTentativeBitMask : 0;
 
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
             while (true)
@@ -141,7 +142,7 @@ namespace FASTER.core
                     return false;
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
-                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask | tentativeBit, expected_word))
                         break;
                 }
                 if (spinCount > 0 && --spinCount <= 0)
@@ -154,8 +155,11 @@ namespace FASTER.core
             {
                 if ((word & kSharedLockMaskInWord) == 0)
                 {
-                    // Someone else may have transferred/invalidated the record while we were draining reads.
-                    return !IsIntermediateOrInvalidWord(this.word);
+                    // Someone else may have transferred/invalidated the record while we were draining reads. *Don't* check for Tentative here;
+                    // we may have set it above, and no record should be set to tentative after it's been inserted into the hash chain.
+                    if ((this.word & (kSealedBitMask | kValidBitMask)) == kValidBitMask)
+                        return true;
+                    break;
                 }
                 Thread.Yield();
             }
@@ -165,7 +169,7 @@ namespace FASTER.core
             for (; ; Thread.Yield())
             {
                 long expected_word = word;
-                if (Interlocked.CompareExchange(ref word, expected_word & ~kExclusiveLockBitMask, expected_word) == expected_word)
+                if (Interlocked.CompareExchange(ref word, expected_word & ~(kExclusiveLockBitMask | tentativeBit), expected_word) == expected_word)
                     break;
             }
             return false;
@@ -189,7 +193,7 @@ namespace FASTER.core
         /// </summary>
         /// <returns>Whether lock was acquired successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockShared()
+        public bool TryLockShared(bool tentative = false)
         {
             int spinCount = Constants.kMaxLockSpins;
 
@@ -202,7 +206,9 @@ namespace FASTER.core
                 if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
                     && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
                 {
-                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word + kSharedLockIncrement, expected_word))
+                    // If there are no shared locks, this one will be tentative if requested. Otherwise, do not force existing locks to be tentative. 
+                    long tentativeBit = tentative && ((expected_word & kSharedLockMaskInWord) == 0) ? kTentativeBitMask : 0;
+                    if (expected_word == Interlocked.CompareExchange(ref word, (expected_word + kSharedLockIncrement) | tentativeBit, expected_word))
                         break;
                 }
                 if (spinCount > 0 && --spinCount <= 0) 
@@ -214,19 +220,19 @@ namespace FASTER.core
 
         // For new records, which don't need the Interlocked overhead.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitializeLock(LockType lockType)
+        internal void InitializeLock(LockType lockType, bool tentative)
         {
             if (lockType == LockType.Shared)
-                this.InitializeLockShared();
+                this.InitializeLockShared(tentative);
             else
-                this.InitializeLockExclusive();
+                this.InitializeLockExclusive(tentative);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitializeLockShared() => this.word += kSharedLockIncrement;
+        internal void InitializeLockShared(bool tentative = false) => this.word += kSharedLockIncrement | (tentative ? kTentativeBitMask : 0);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitializeLockExclusive() => this.word |= kExclusiveLockBitMask;
+        internal void InitializeLockExclusive(bool tentative = false) => this.word |= kExclusiveLockBitMask | (tentative ? kTentativeBitMask : 0);
 
         /// <summary>
         /// Try to reset the modified bit of the RecordInfo

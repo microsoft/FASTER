@@ -23,6 +23,7 @@ namespace FASTER.core
             FindTag(ref stackCtx.hei);
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
+            // If the record is in memory, then there can't be a LockTable lock.
             if (TryFindAndLockRecordInMemory(ref key, lockOp, out lockInfo, ref stackCtx, out OperationStatus lockStatus))
                 return lockStatus;
 
@@ -92,6 +93,8 @@ namespace FASTER.core
                 // the assumption they had the lock. (Otherwise, we remove the lock table entry here, and the other thread proceeds). That means we
                 // can't wait for tentative records here; that would deadlock (we wait for them to become non-tentative and they wait for us to become
                 // non-tentative). So we must bring the records back here even if they are tentative, then bail on them.
+                // Note: We don't use TryFindRecordInMemory here because we only want to scan the tail portion of the hash chain; we've already searched
+                // below that, with the TryFindAndLockRecordInMemory call above.
                 var found = false;
                 if (stackCtx2.hei.IsReadCache && (!stackCtx.hei.IsReadCache || stackCtx2.hei.Address > stackCtx.hei.Address))
                 {
@@ -123,14 +126,8 @@ namespace FASTER.core
             }
 
             // Success
-            if (tentativeLock)
-            {
-                if (this.LockTable.ClearTentativeBit(ref key, stackCtx.hei.hash))
-                    return OperationStatus.SUCCESS;
-
-                Debug.Fail("Should have found our tentative record");
-                return OperationStatus.RETRY_NOW;   // The tentative record was not there, so someone else removed it; retry does not need epoch refresh
-            }
+            if (tentativeLock && !this.LockTable.ClearTentativeBit(ref key, stackCtx.hei.hash))
+                return OperationStatus.RETRY_LATER;     // The tentative record was not found, so the lock has not been done; retry
             return OperationStatus.SUCCESS;
         }
 
