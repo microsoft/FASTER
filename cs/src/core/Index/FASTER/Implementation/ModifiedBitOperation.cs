@@ -33,7 +33,7 @@ namespace FASTER.core
                 if (recordInfo.Invalid || !comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = recordInfo.PreviousAddress;
-                    TraceBackForKeyMatch(ref key, logicalAddress, hlog.HeadAddress, out physicalAddress, out logicalAddress);
+                    TraceBackForKeyMatch(ref key, logicalAddress, hlog.HeadAddress, out logicalAddress, out physicalAddress);
                 }
             }
             #endregion
