@@ -393,7 +393,7 @@ namespace FASTER.core
                 if (ri.Invalid || !comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = ri.PreviousAddress;
-                    TraceBackForKeyMatch(ref key, logicalAddress, hlog.HeadAddress, out physicalAddress, out logicalAddress);
+                    TraceBackForKeyMatch(ref key, logicalAddress, hlog.HeadAddress, out logicalAddress, out physicalAddress);
                 }
 
                 if (logicalAddress > untilLogicalAddress)
