@@ -223,7 +223,7 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.LockTable = new LockTable<Key>(lockTableSize, this.comparer, keyLen, keyLen is null ? null : hlog.bufferPool);
+            this.LockTable = new LockTable<Key>(lockTableSize, this.comparer, keyLen);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
@@ -859,8 +859,8 @@ namespace FASTER.core
                     for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
                         if (b.bucket_entries[bucket_entry] >= beginAddress)
                             ++total_entry_count;
-                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
-                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0) break;
+                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
                 }
             }
             return total_entry_count;
@@ -894,8 +894,8 @@ namespace FASTER.core
                             ++total_record_count;
                         }
                     }
-                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
-                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0) break;
+                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
                 }
 
                 if (!histogram.ContainsKey(cnt)) histogram[cnt] = 0;

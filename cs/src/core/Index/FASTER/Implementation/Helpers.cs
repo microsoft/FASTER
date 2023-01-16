@@ -123,7 +123,7 @@ namespace FASTER.core
         internal void SetRecordInvalid(long logicalAddress)
         {
             // This is called on exception recovery for a tentative record.
-            var localLog = UseReadCache && IsReadCache(logicalAddress) ? readcache : hlog;
+            var localLog = IsReadCache(logicalAddress) ? readcache : hlog;
             ref var recordInfo = ref localLog.GetInfo(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress)));
             Debug.Assert(recordInfo.Tentative, "Expected tentative record in SetRecordInvalid");
             recordInfo.SetInvalid();

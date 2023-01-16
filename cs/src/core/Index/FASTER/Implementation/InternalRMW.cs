@@ -139,7 +139,7 @@ namespace FASTER.core
             // InternalContinuePendingRMW can stop comparing keys immediately above this address.
             long prevHighestKeyHashAddress = stackCtx.hei.Address;
 
-            FindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
+            TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
 
             RMWInfo rmwInfo = new()
             {
@@ -494,7 +494,7 @@ namespace FASTER.core
                     if (!VerifyInMemoryAddresses(ref stackCtx, stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress | Constants.kReadCacheBitMask : Constants.kInvalidAddress))
                     {
                         SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
-                        return OperationStatus.RETRY_NOW;   // If this failed, we have just gone through an epoch refresh, so don't need RETRY_LATER
+                        return OperationStatus.RETRY_LATER;
                     }
                 } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
             }

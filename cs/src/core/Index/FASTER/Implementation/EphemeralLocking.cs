@@ -16,20 +16,38 @@ namespace FASTER.core
         {
             if (UseReadCache && FindInReadCache(ref key, ref stackCtx, 
                                                 untilAddress: (prevHighestKeyHashAddress & Constants.kReadCacheBitMask) != 0 ? prevHighestKeyHashAddress : Constants.kInvalidAddress))
-            {
-                ref var recordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                var ok = lockType == LockType.Shared
-                    ? fasterSession.TryLockEphemeralShared(ref recordInfo)
-                    : fasterSession.TryLockEphemeralExclusive(ref recordInfo);
-                if (!ok)
-                    return OperationStatus.RETRY_LATER;
-                stackCtx.recSrc.HasInMemoryLock = true;
-            }
-            else if (LockTable.IsActive)
-            {
-                if (!fasterSession.DisableEphemeralLocking && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, lockType, out stackCtx.recSrc.HasLockTableLock))
-                    return OperationStatus.RETRY_LATER;
-            }
+                return TryLockInMemoryRecord<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, lockType);
+
+            if (LockTable.IsActive && !fasterSession.DisableEphemeralLocking && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, lockType, out stackCtx.recSrc.HasLockTableLock))
+                return OperationStatus.RETRY_LATER;
+            return OperationStatus.SUCCESS;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private OperationStatus TryFindAndEphemeralLockRecord<Input, Output, Context, FasterSession>(
+                FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
+                LockType lockType, long prevHighestKeyHashAddress = Constants.kInvalidAddress)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            var internalStatus = TryFindAndEphemeralLockAuxiliaryRecord<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, lockType, prevHighestKeyHashAddress);
+            if (stackCtx.recSrc.HasSrc)
+                return internalStatus;
+
+            if (!TryFindRecordInMainLog(ref key, ref stackCtx, minOffset: hlog.HeadAddress, waitForTentative: true))
+                return OperationStatus.SUCCESS;
+            return TryLockInMemoryRecord<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, lockType);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static OperationStatus TryLockInMemoryRecord<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref OperationStackContext<Key, Value> stackCtx, LockType lockType) where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            ref var recordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+            var ok = lockType == LockType.Shared
+                ? fasterSession.TryLockEphemeralShared(ref recordInfo)
+                : fasterSession.TryLockEphemeralExclusive(ref recordInfo);
+            if (!ok)
+                return OperationStatus.RETRY_LATER;
+            stackCtx.recSrc.HasInMemoryLock = !fasterSession.DisableEphemeralLocking;
             return OperationStatus.SUCCESS;
         }
 
@@ -39,7 +57,10 @@ namespace FASTER.core
         {
             status = OperationStatus.SUCCESS;
             if (fasterSession.DisableEphemeralLocking)
+            {
+                Debug.Assert(!fasterSession.IsManualLocking || recordInfo.IsLockedExclusive, $"Attempting to use a non-XLocked key in a Manual Locking context (requesting XLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
                 return true;
+            }
 
             // A failed lockOp means this is an intermediate record, e.g. Tentative or Sealed, or we exhausted the spin count. All these must RETRY_LATER.
             if (!fasterSession.TryLockEphemeralExclusive(ref recordInfo))
@@ -57,7 +78,10 @@ namespace FASTER.core
         {
             status = OperationStatus.SUCCESS;
             if (fasterSession.DisableEphemeralLocking)
+            {
+                Debug.Assert(!fasterSession.IsManualLocking || recordInfo.IsLocked, $"Attempting to use a non-Locked (S or X) key in a Manual Locking context (requesting SLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
                 return true;
+            }
 
             // A failed lockOp means this is an intermediate record, e.g. Tentative or Sealed, or we exhausted the spin count. All these must RETRY_LATER.
             if (!fasterSession.TryLockEphemeralShared(ref recordInfo))
@@ -70,7 +94,10 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void EphemeralSUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo recordInfo)
+        void EphemeralSUnlock<Input, Output, Context, FasterSession>(FasterSession fasterSession, FasterExecutionContext<Input, Output, Context> currentCtx,
+                                                                     ref PendingContext<Input, Output, Context> pendingContext,
+                                                                     ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo recordInfo)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (!stackCtx.recSrc.HasInMemoryLock)
                 return;
@@ -79,18 +106,16 @@ namespace FASTER.core
             // be transferred from the readcache to the main log (or even to the LockTable, if the record was in the (SafeHeadAddress, ClosedUntilAddress)
             // interval when a Read started).
 
-            // If the record dived below HeadAddress, we must wait for it to enter the lock table before unlocking.
-            if (stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.Log.HeadAddress)
+            // If the record dived below HeadAddress, we must wait for it to enter the lock table before unlocking; InternalLock does this (and starts 
+            // by searching the in-memory space first, which is good because the record may have been transferred).
+            // If RecordInfo unlock fails, the locks were transferred to another recordInfo; do InternalLock to chase the key through the full process.
+            OperationStatus status;
+            do
             {
-                SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, stackCtx.recSrc.Log);
-                LockTable.Unlock(ref key, stackCtx.hei.hash, LockType.Shared);
-            }
-            else if (!recordInfo.TryUnlockShared())
-            {
-                // Normal unlock failed, so the locks were transferred to another recordInfo; do a standard unlock to chase the key through the full process.
-                bool oneMiss = false;
-                InternalLock(ref key, new(LockOperationType.Unlock, LockType.Shared), ref oneMiss, out _);
-            }
+                if (stackCtx.recSrc.LogicalAddress >= stackCtx.recSrc.Log.HeadAddress && recordInfo.TryUnlockShared())
+                    break;
+                status = InternalLock(ref key, new(LockOperationType.Unlock, LockType.Shared), out _);
+            } while (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext));
             stackCtx.recSrc.HasInMemoryLock = false;
         }
 
@@ -105,7 +130,11 @@ namespace FASTER.core
                 return;
             }
 
-            // Unlock exclusive locks, if any. 
+            // Unlock exclusive locks, if any. Exclusive locks are different from shared locks, in that Shared locks can be transferred
+            // (due to CopyToTail or ReadCache) while the lock is held. Exclusive locks pin the lock in place:
+            //   - The owning thread ensures that no epoch refresh is done, so there is no eviction if it is in memory
+            //   - Other threads will attempt (and fail) to lock it in memory or in the locktable, until we release it.
+            //     - This means there can be no transfer *from* the locktable while the XLock is held
             if (stackCtx.recSrc.HasInMemoryLock)
             {
                 // This unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
@@ -142,8 +171,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key,
-                ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
+        private void EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(FasterSession fasterSession,
+                FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext,
+                ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (fasterSession.DisableEphemeralLocking)
@@ -156,7 +186,7 @@ namespace FASTER.core
             if (stackCtx.recSrc.HasInMemoryLock)
             {
                 // This unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
-                EphemeralSUnlock(ref key, ref stackCtx, ref srcRecordInfo);
+                EphemeralSUnlock(fasterSession, currentCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
                 return;
             }
 
@@ -169,14 +199,26 @@ namespace FASTER.core
                         ref RecordInfo srcRecordInfo, ref RecordInfo newRecordInfo, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            // We don't check for ephemeral xlocking here; we know we had that lock, but we don't need to actually lock the new record because
+            // We don't check for ephem eral xlocking here; we know we had that lock, but we don't need to actually lock the new record because
             // we know this is the last step and we are going to unlock it immediately; it is protected until we remove the Tentative bit.
 
             if (fasterSession.IsManualLocking)
             {
-                // For manual locking, we should already have made sure there is an XLock for this. Preserve it on the new record.
-                // If there is a LockTable entry, transfer from it (which will remove it from the LockTable); otherwise just set the bit directly.
-                if (!LockTable.IsActive || !LockTable.TransferToLogRecord(ref key, stackCtx.hei.hash, ref newRecordInfo))
+                // For manual locking, we should already have made sure there is an XLock for this, and must preserve it on the new record.
+                // If we do not have an in-memory source there should be a LockTable entry; transfer from it (which will remove it from the LockTable).
+                // Otherwise (we do have an in-memory source) just set the bit directly; we'll mark and clear the IM source below.
+                bool transferred = false;
+                if (!stackCtx.recSrc.HasInMemorySrc)
+                {
+                    bool found = this.LockTable.TryGet(ref key, stackCtx.hei.hash, out var ltriLT);
+                    Debug.Assert(found && ltriLT.IsLocked && !ltriLT.Tentative, "TODO remove: Error--non-InMemorySrc expected to find a non-tentative locked locktable entry");
+
+                    transferred = LockTable.IsActive && LockTable.TransferToLogRecord(ref key, stackCtx.hei.hash, ref newRecordInfo);
+                    Debug.Assert(transferred, "ManualLocking Non-InMemory source should find a LockTable entry to transfer locks from");
+                }
+                if (this.LockTable.TryGet(ref key, stackCtx.hei.hash, out var ltri))
+                    Debug.Assert(!ltri.IsLocked || ltri.Tentative, "TODO remove: Error--existing non-tentative lock in LT after CompleteTwoPhaseUpdate transfer");
+                if (!transferred)
                     newRecordInfo.InitializeLockExclusive();
             }
             else if ((LockTable.IsActive && !LockTable.CompleteTwoPhaseUpdate(ref key, stackCtx.hei.hash))
@@ -224,13 +266,13 @@ namespace FASTER.core
             {
                 if (fasterSession.IsManualLocking)
                 {
-                    // For manual locking, we should already have made sure there is at least an SLock for this; with no HasInMemorySrc, it is in the Lock Table.
+                    // For manual locking, we should already have made sure there is at least an SLock for this; since there is no HasInMemorySrc, it is in the Lock Table.
                     if (LockTable.IsActive)
                         LockTable.TransferToLogRecord(ref key, stackCtx.hei.hash, ref newRecordInfo);
                 }
                 else
                 {
-                    // XLocks are not allowed, because another thread owns them.
+                    // XLocks are not allowed here in the ephemeral section, because another thread owns them (ephemeral locking only takes a read lock for operations that end up here).
                     success = (!LockTable.IsActive || LockTable.CompleteTwoPhaseCopyToTail(ref key, stackCtx.hei.hash, ref newRecordInfo, allowXLock: fasterSession.IsManualLocking,
                                                                                           removeEphemeralLock: stackCtx.recSrc.HasLockTableLock))
                               &&

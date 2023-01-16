@@ -30,6 +30,8 @@ namespace FASTER.core.Utilities
 
         THeapKey CreateHeapKey(ref TKey key);
 
+        ref TKey GetHeapKeyRef(THeapKey heapKey);
+
         bool IsActive(ref TValue value);
 
         bool Equals(ref TKey key, THeapKey heapKey);
@@ -754,7 +756,8 @@ namespace FASTER.core.Utilities
             where TFuncs : IAddEntryFunctions
         {
             // At this point we know we will add an entry, so pre-increment the active-bucket count to avoid a race where we add the entry but 
-            // another thread does not see it immediately because this will become the first active bucket.
+            // another thread does not see it immediately because this will become the first active bucket. The XLock on the bucket during membership
+            // changes means this will only be done by the correct thread.
             if (!wasActive)
                 IncrementActiveBuckets();
 

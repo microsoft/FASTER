@@ -58,9 +58,8 @@ namespace FASTER.core
             LockOperation lockOp = new(LockOperationType.Lock, lockType);
 
             OperationStatus status;
-            bool oneMiss = false;
             do
-                status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out _);
+                status = clientSession.fht.InternalLock(ref key, lockOp, out _);
             while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
             Debug.Assert(status == OperationStatus.SUCCESS);
 
@@ -82,9 +81,8 @@ namespace FASTER.core
             LockOperation lockOp = new(LockOperationType.Unlock, lockType);
 
             OperationStatus status;
-            bool oneMiss = false;
             do
-                status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out _);
+                status = clientSession.fht.InternalLock(ref key, lockOp, out _);
             while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
             Debug.Assert(status == OperationStatus.SUCCESS);
 
@@ -107,9 +105,8 @@ namespace FASTER.core
 
             OperationStatus status;
             RecordInfo lockInfo;
-            bool oneMiss = false;
             do
-                status = clientSession.fht.InternalLock(ref key, lockOp, ref oneMiss, out lockInfo);
+                status = clientSession.fht.InternalLock(ref key, lockOp, out lockInfo);
             while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
             Debug.Assert(status == OperationStatus.SUCCESS);
             return (lockInfo.IsLockedExclusive, lockInfo.NumLockedShared);
@@ -576,13 +573,13 @@ namespace FASTER.core
             #region Ephemeral locking
             public bool TryLockEphemeralExclusive(ref RecordInfo recordInfo)
             {
-                Debug.Assert(recordInfo.IsLockedExclusive, "Attempting to use a non-XLocked key in a Lockable context (requesting XLock)");
+                Debug.Assert(recordInfo.IsLockedExclusive, $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
                 return true;
             }
 
             public bool TryLockEphemeralShared(ref RecordInfo recordInfo)
             {
-                Debug.Assert(recordInfo.IsLocked, "Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock)");
+                Debug.Assert(recordInfo.IsLocked, $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
                 return true;
             }
 

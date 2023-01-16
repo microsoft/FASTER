@@ -88,6 +88,7 @@ namespace FASTER.core
 
         internal bool HasSrc => HasInMemorySrc || HasLockTableLock;
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
+        internal bool HasLock => HasInMemoryLock || HasLockTableLock;
 
         /// <summary>
         /// Initialize to the latest logical address from the caller.
@@ -134,6 +135,7 @@ namespace FASTER.core
                 }
 
                 // if fasterSession.DisableEphemeralLocking, the "finally" handler won't unlock it, so we do that here.
+                // For ephemeral locks, we don't clear the locks here (defer that to the "finally").
                 if (fasterSession.DisableEphemeralLocking)
                     srcRecordInfo.ClearLocks();
             }

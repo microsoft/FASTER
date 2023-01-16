@@ -11,24 +11,25 @@ namespace FASTER.core
 {
     internal class LockTable<TKey> : IDisposable
     {
-        private const int kLockSpinCount = 10;
-
         #region IInMemKVUserFunctions implementation
-        internal class LockTableFunctions : IInMemKVUserFunctions<TKey, IHeapContainer<TKey>, RecordInfo>
+        internal class LockTableFunctions : IInMemKVUserFunctions<TKey, IHeapContainer<TKey>, RecordInfo>, IDisposable
         {
             private readonly IFasterEqualityComparer<TKey> keyComparer;
             private readonly IVariableLengthStruct<TKey> keyLen;
             private readonly SectorAlignedBufferPool bufferPool;
 
-            internal LockTableFunctions(IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen, SectorAlignedBufferPool bufferPool)
+            internal LockTableFunctions(IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen)
             {
                 this.keyComparer = keyComparer;
                 this.keyLen = keyLen;
-                this.bufferPool = bufferPool;
+                if (keyLen is not null)
+                    this.bufferPool = new SectorAlignedBufferPool(1, 1);
             }
 
             public IHeapContainer<TKey> CreateHeapKey(ref TKey key)
                 => bufferPool is null ? new StandardHeapContainer<TKey>(ref key) : new VarLenHeapContainer<TKey>(ref key, keyLen, bufferPool);
+
+            public ref TKey GetHeapKeyRef(IHeapContainer<TKey> heapKey) => ref heapKey.Get();
 
             public bool Equals(ref TKey key, IHeapContainer<TKey> heapKey) => keyComparer.Equals(ref key, ref heapKey.Get());
 
@@ -42,15 +43,20 @@ namespace FASTER.core
                 key = default;
                 recordInfo = default;
             }
+
+            public void Dispose()
+            {
+                this.bufferPool?.Free();
+            }
         }
         #endregion IInMemKVUserFunctions implementation
 
         internal readonly InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions> kv;
         internal readonly LockTableFunctions functions;
 
-        internal LockTable(int numBuckets, IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen, SectorAlignedBufferPool bufferPool)
+        internal LockTable(int numBuckets, IFasterEqualityComparer<TKey> keyComparer, IVariableLengthStruct<TKey> keyLen)
         {
-            this.functions = new(keyComparer, keyLen, bufferPool);
+            this.functions = new(keyComparer, keyLen);
             this.kv = new InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>(numBuckets, numBuckets >> 4, this.functions);
         }
 
@@ -122,16 +128,18 @@ namespace FASTER.core
 
             public void FoundEntry(ref TKey key, ref RecordInfo recordInfo)
             {
-                // If the entry is already there, we lock it non-tentatively
-                success = recordInfo.TryLock(lockType);
-                isTentative = false;
+                // If the entry is already there, we lock it, tentatively if specified
+                success = (lockType == LockType.Shared)
+                    ? recordInfo.TryLockShared(isTentative)      // This will only be tentative if there are no other locks at the time we finally acquire the lock
+                    : recordInfo.TryLockExclusive(isTentative);
+                isTentative = recordInfo.Tentative;
             }
 
             public void AddedEntry(ref TKey key, ref RecordInfo recordInfo)
             {
-                recordInfo.InitializeLock(lockType);
+                recordInfo.InitializeLock(lockType, isTentative);
+                isTentative = recordInfo.Tentative;
                 recordInfo.Valid = true;
-                recordInfo.Tentative = isTentative;
                 success = true;
             }
         }
@@ -169,8 +177,11 @@ namespace FASTER.core
 
             public void FoundEntry(ref TKey key, ref RecordInfo recordInfo)
             {
-                Debug.Assert(wasTentative == recordInfo.Tentative, "entry.recordInfo.Tentative was not as expected");
-                Debug.Assert(!recordInfo.Tentative || recordInfo.IsLockedExclusive, "A Tentative entry should be X locked");
+                // If the record is xlocked and tentative, it means RecordInfo.TryLockExclusive is spinning in its "drain the readers" loop.
+#if DEBUG
+                var ri = recordInfo;    // Need a local for atomic comparisons; "ref recordInfo" state can change between the "&&"
+                Debug.Assert(wasTentative == ri.Tentative || lockType == LockType.Shared && ri.Tentative && ri.IsLockedExclusive, "Entry.recordInfo.Tentative was not as expected");
+#endif
                 success = recordInfo.TryUnlock(lockType);
             }
         }
@@ -202,13 +213,15 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Transfer locks from the record into the lock table.
+        /// Transfer locks from the Log record into the lock table. Called on eviction from main log or readcache.
         /// </summary>
         /// <param name="key">The key to unlock</param>
         /// <param name="logRecordInfo">The log record to copy from</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void TransferFromLogRecord(ref TKey key, RecordInfo logRecordInfo)
         {
+            Debug.Assert(!logRecordInfo.IsIntermediate, "Should not have a transfer from an intermediate log record");
+
             // This is called from record eviction, which doesn't have a hashcode available, so we have to calculate it here.
             long hash = functions.GetHashCode64(ref key);
             var funcs = new AddEntryFunctions_TransferFromLogRecord(logRecordInfo);
@@ -229,7 +242,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Transfer locks from the record into the lock table.
+        /// Transfer locks from the lock table into the Log record.
         /// </summary>
         /// <param name="key">The key to unlock</param>
         /// <param name="hash">The hash code of the key to lock, to avoid recalculating</param>
@@ -238,7 +251,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TransferToLogRecord(ref TKey key, long hash, ref RecordInfo logRecordInfo)
         {
-            Debug.Assert(logRecordInfo.Tentative, "Must retain tentative flag until locks are transferred");
+            Debug.Assert(logRecordInfo.Tentative, "Caller must retain tentative flag in log record until locks are transferred");
             var funcs = new FindEntryFunctions_TransferToLogRecord(logRecordInfo);
             kv.FindEntry(ref key, hash, ref funcs);
             logRecordInfo = funcs.toRecordInfo;
@@ -258,9 +271,10 @@ namespace FASTER.core
 
             public void NotFound(ref TKey key) { }
 
-            public void FoundEntry(ref TKey key, ref RecordInfo logRecordInfo)
+            public void FoundEntry(ref TKey key, ref RecordInfo recordInfo)
             {
-                toRecordInfo.TransferLocksFrom(ref logRecordInfo);
+                Debug.Assert(!recordInfo.Tentative, "Should not transfer from a tentative LT record");
+                toRecordInfo.TransferLocksFrom(ref recordInfo);
                 wasFound = true;
             }
         }
@@ -275,6 +289,7 @@ namespace FASTER.core
         {
             var funcs = new FindEntryFunctions_ClearTentative();
             kv.FindEntry(ref key, hash, ref funcs);
+            Debug.Assert(funcs.success, "ClearTentativeBit should always find the entry");
             return funcs.success;
         }
 
@@ -355,7 +370,7 @@ namespace FASTER.core
 
         internal struct FindEntryFunctions_CompleteTwoPhaseCopyToTail : InMemKV<TKey, IHeapContainer<TKey>, RecordInfo, LockTableFunctions>.IFindEntryFunctions
         {
-            internal RecordInfo toRecordInfo;   // TODO: C# 11 will let this be a ref field
+            internal RecordInfo toRecordInfo;
             private readonly bool allowXLock, removeEphemeralLock;
             internal bool success;
 
@@ -369,8 +384,8 @@ namespace FASTER.core
 
             public void NotFound(ref TKey key) => success = true;
 
-            public void FoundEntry(ref TKey key, ref RecordInfo logRecordInfo) 
-                => success = toRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref logRecordInfo, allowXLock, seal: false, this.removeEphemeralLock);
+            public void FoundEntry(ref TKey key, ref RecordInfo recordInfo) 
+                => success = toRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref recordInfo, allowXLock, seal: false, this.removeEphemeralLock);
         }
 
         /// <summary>
@@ -382,7 +397,11 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ContainsKey(ref TKey key, long hash) => kv.ContainsKey(ref key, hash);
 
-        public void Dispose() => kv.Dispose();
+        public void Dispose()
+        {
+            kv.Dispose();
+            functions.Dispose();
+        }
 
         #region Internal methods for Test
         internal bool HasEntries(ref TKey key) => kv.HasEntries(ref key);

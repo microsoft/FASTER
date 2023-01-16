@@ -47,6 +47,11 @@ namespace FASTER.core
         internal long AbsoluteCurrentAddress => Utility.AbsoluteAddress(this.CurrentAddress);
 
         /// <summary>
+        /// Return whether the <see cref="HashBucketEntry"/> has been updated
+        /// </summary>
+        internal bool IsNotCurrent => this.CurrentAddress != this.Address;
+
+        /// <summary>
         /// Whether the original address for this hash entry (at the time of FindTag, etc.) is a readcache address.
         /// </summary>
         internal bool IsReadCache => entry.ReadCache;

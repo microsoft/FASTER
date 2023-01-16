@@ -26,14 +26,10 @@ namespace FASTER.core
         {
             while (iter.GetNext(out RecordInfo info))
             {
-                // If it is not Invalid, we must Seal it so there is no possibility it will be missed while we're in the process
-                // of transferring it to the Lock Table. Use manualLocking as we want to transfer the locks, not drain them.
-                if (!info.IsLocked)
-                    continue;
-
-                // Now get it into the lock table, so it is ready as soon as the record is removed.
-                // We do not have to worry about conflicts with other threads, because lock and unlock stop at HeadAddress.
-                this.store.LockTable.TransferFromLogRecord(ref iter.GetKey(), info);
+                // Note: we do not have to worry about conflicts with other threads, because other operations
+                // (data operations and lock and unlock) stop at HeadAddress.
+                if (info.IsLocked)
+                    this.store.LockTable.TransferFromLogRecord(ref iter.GetKey(), info);
             }
         }
 

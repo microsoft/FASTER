@@ -37,21 +37,12 @@ namespace FASTER.core
                             FasterExecutionContext<Input, Output, Context> currentCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            ref RecordInfo recordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
+            ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
+            Debug.Assert(!srcRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
                 SpinWaitUntilClosed(request.logicalAddress);
-
-                // This should never be Tentative, so it doesn't matter it's the request record's RecordInfo.
-                if (recordInfo.IsIntermediate(out var status))
-                {
-                    Debug.Assert(!recordInfo.Tentative && recordInfo.Sealed, "Should have non-Tentative Sealed record here");
-                    if (!HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext))
-                        return status;
-                }
-                if (recordInfo.Tombstone)
-                    goto NotFound;
 
                 // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
                 ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
@@ -64,37 +55,38 @@ namespace FASTER.core
                         Debug.Fail("Expected to FindTag in InternalContinuePendingRead");
                     stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                    // A 'ref' variable must be initialized. If we find a record for the key, we reassign the reference. We don't copy from this source, but we do lock it.
-                    RecordInfo dummyRecordInfo = default;
-                    ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
-
-                    status = TryFindAndEphemeralLockAuxiliaryRecord<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, LockType.Shared, pendingContext.PrevHighestKeyHashAddress);
+                    // During the pending operation, the record may have been added to any of the possible locations.
+                    var status = TryFindAndEphemeralLockRecord<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, LockType.Shared, pendingContext.PrevHighestKeyHashAddress);
                     if (status != OperationStatus.SUCCESS)
                     {
                         if (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext))
                             continue;
                         return status;
                     }
-                    if (stackCtx.recSrc.HasReadCacheSrc)
+                    if (stackCtx.recSrc.HasInMemorySrc)
                         srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
 
                     try
                     {
+                        // Wait until after locking to check this.
+                        if (srcRecordInfo.Tombstone)
+                            goto NotFound;
+
                         ReadInfo readInfo = new()
                         {
                             SessionType = fasterSession.SessionType,
                             Version = ctx.version,
                             Address = request.logicalAddress,
-                            RecordInfo = recordInfo
+                            RecordInfo = srcRecordInfo
                         };
 
                         ref var value = ref hlog.GetContextRecordValue(ref request);
                         var expired = false;
-                        if (!fasterSession.SingleReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref recordInfo, ref readInfo))
+                        if (!fasterSession.SingleReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref srcRecordInfo, ref readInfo))
                         {
                             if (readInfo.Action == ReadAction.CancelOperation)
                             {
-                                pendingContext.recordInfo = recordInfo;
+                                pendingContext.recordInfo = srcRecordInfo;
                                 return OperationStatus.CANCELED;
                             }
                             if (readInfo.Action != ReadAction.Expire)
@@ -120,20 +112,20 @@ namespace FASTER.core
                         }
                         else
                         {
-                            pendingContext.recordInfo = recordInfo;
+                            pendingContext.recordInfo = srcRecordInfo;
                             return OperationStatus.SUCCESS;
                         }
                     }
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlockAfterPendingIO(fasterSession, ctx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 } // end while (true)
             }
 
         NotFound:
-            pendingContext.recordInfo = recordInfo;
+            pendingContext.recordInfo = srcRecordInfo;
             return OperationStatus.NOTFOUND;
         }
 
@@ -179,16 +171,10 @@ namespace FASTER.core
 
             byte* recordPointer = request.record.GetValidPointer();
             RecordInfo inputRecordInfo = hlog.GetInfoFromBytePointer(recordPointer); // Not ref, as we don't want to write into request.record
-
-            // This should never be Tentative, so it doesn't matter it's non-ref copy of the request record's RecordInfo.
-            if (inputRecordInfo.IsIntermediate(out var status))
-            {
-                Debug.Assert(!inputRecordInfo.Tentative && inputRecordInfo.Sealed, "Should have non-Tentative Sealed record here");
-                if (!HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext))
-                    return status;
-            }
+            Debug.Assert(!inputRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
+            OperationStatus status;
 
             while (true)
             {
@@ -199,14 +185,15 @@ namespace FASTER.core
                 RecordInfo dummyRecordInfo = default;
                 ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
-                status = TryFindAndEphemeralLockAuxiliaryRecord<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress);
+                // During the pending operation, the record may have been added to any of the possible locations.
+                status = TryFindAndEphemeralLockRecord<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress);
                 if (status != OperationStatus.SUCCESS)
                 {
                     if (HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext))
                         continue;
                     return status;
                 }
-                if (stackCtx.recSrc.HasReadCacheSrc)
+                if (stackCtx.recSrc.HasInMemorySrc)
                     srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
 
                 try
@@ -311,7 +298,7 @@ namespace FASTER.core
                     // Scan compaction does not know the address, so we must traverse. This is similar to what ITCTT does, but we update untilAddress so it's not done twice.
                     Debug.Assert(actualAddress == Constants.kUnknownAddress, "Unexpected address in compaction");
 
-                    if (FindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress))
+                    if (TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress))
                     {
                         if (stackCtx.recSrc.LogicalAddress > untilAddress)   // Same check ITCTT does
                             status = OperationStatus.NOTFOUND;
@@ -341,7 +328,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlockAfterPendingIO(fasterSession, currentCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
             } while (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext));
@@ -463,7 +450,7 @@ namespace FASTER.core
                         ref var ri = ref readcache.GetInfo(newPhysicalAddress);
                         ri.SetInvalid();                                        // We haven't yet set stackCtx.newLogicalAddress, so do this directly here
                         ri.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
-                        return OperationStatus.RETRY_NOW;                       // If this failed, we have just gone through an epoch refresh, so don't need RETRY_LATER
+                        return OperationStatus.RETRY_LATER;
                     }
                 } while (stackCtx.hei.IsReadCache && newLogicalAddress < stackCtx.hei.AbsoluteAddress);
 
@@ -488,7 +475,7 @@ namespace FASTER.core
                         if (!VerifyInMemoryAddresses(ref stackCtx))
                         {
                             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
-                            return OperationStatus.RETRY_NOW;   // If this failed, we have just gone through an epoch refresh, so don't need RETRY_LATER
+                            return OperationStatus.RETRY_LATER;
                         }
                     } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
                 }

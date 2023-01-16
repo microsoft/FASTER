@@ -81,10 +81,7 @@ namespace FASTER.core
                 if (logicalAddress < log.ClosedUntilAddress)
                     break;
 
-                // If the Lock Table contains the key, then the record was transferred but ClosedUntilAddress has not yet been updated
-                // because OnPagesClosed is waiting for the full page to be done.
-                if (LockTable.ContainsKey(ref key, keyHash))
-                    break;
+                // Note: We cannot jump out here if the Lock Table contains the key, because it may be an older version of the record.
             }
         }
 

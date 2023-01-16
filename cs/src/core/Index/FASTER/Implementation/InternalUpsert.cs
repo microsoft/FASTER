@@ -68,7 +68,7 @@ namespace FASTER.core
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
             // We must always scan to HeadAddress; a Lockable*Context could be activated and lock the record in the immutable region while we're scanning.
-            FindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
+            TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
 
             UpsertInfo upsertInfo = new()
             {
@@ -343,7 +343,7 @@ namespace FASTER.core
                     if (!VerifyInMemoryAddresses(ref stackCtx))
                     {
                         SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
-                        return OperationStatus.RETRY_NOW;   // If this failed, we have just gone through an epoch refresh, so don't need RETRY_LATER
+                        return OperationStatus.RETRY_LATER;
                     }
                 } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
             }
