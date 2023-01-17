@@ -108,7 +108,7 @@ namespace FASTER.test.Dispose
                 if (isSUT)
                 {
                     MyKey key = new() { key = TestKey };
-                    tester.fht.FindKey(ref key, out var entry);
+                    tester.fht.FindHashBucketEntryForKey(ref key, out var entry);
                     var address = entry.Address;
                     if (isSplice)
                     {
@@ -133,7 +133,7 @@ namespace FASTER.test.Dispose
                             while (entry.Address == address)
                             {
                                 Thread.Yield();
-                                tester.fht.FindKey(ref key, out entry);
+                                tester.fht.FindHashBucketEntryForKey(ref key, out entry);
                             }
                         }
                         else

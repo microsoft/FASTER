@@ -243,11 +243,6 @@ namespace FASTER.core
         internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
 
         /// <summary>
-        /// Observer for locked records getting evicted from memory (page closed)
-        /// </summary>
-        internal IObserver<IFasterScanIterator<Key, Value>> OnLockEvictionObserver;
-
-        /// <summary>
         /// The "event" to be waited on for flush completion by the initiator of an operation
         /// </summary>
         internal CompletionEvent FlushEvent;
@@ -1295,7 +1290,7 @@ namespace FASTER.core
                     EvictCallback(oldSafeHeadAddress, newSafeHeadAddress);
 
                 // If we are going to scan, ensure earlier scans are done (we don't want to overwrite a later record with an earlier one)
-                if ((OnLockEvictionObserver is not null) || (OnEvictionObserver is not null))
+                if (OnEvictionObserver is not null)
                 {
                     while (ClosedUntilAddress < oldSafeHeadAddress)
                     {
@@ -1308,10 +1303,6 @@ namespace FASTER.core
                 {
                     long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
                     long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
-
-                    // If there are no active locking sessions, there should be no locks in the log.
-                    if (OnLockEvictionObserver is not null)
-                        MemoryPageScan(start, end, OnLockEvictionObserver);
 
                     if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);

@@ -23,7 +23,7 @@ namespace FASTER.core
 
         /// <summary>
         /// Sets <see cref="recSrc"/> to the current <see cref="hei"/>.<see cref="HashEntryInfo.CurrentAddress"/>, which is the current address
-        /// in the hash table. This is the same effect as calling <see cref="FasterKV{Key, Value}.FindTag(ref HashEntryInfo)"/>.
+        /// in the hash table. This is the same effect as calling <see cref="FasterBase.FindTag(ref HashEntryInfo)"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UpdateRecordSourceToCurrentHashEntry()
@@ -45,26 +45,6 @@ namespace FASTER.core
         internal void SetNewRecordInvalid(ref RecordInfo newRecordInfo)
         {
             newRecordInfo.SetInvalid();
-            this.newLogicalAddress = Constants.kInvalidAddress;
-        }
-
-        /// <summary>
-        /// Called during normal operations when a record insertion fails, to set the new record invalid and non-tentative.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetNewRecordInvalidAtomic(ref RecordInfo newRecordInfo)
-        {
-            newRecordInfo.SetInvalidAtomic();
-            this.newLogicalAddress = Constants.kInvalidAddress;
-        }
-
-        /// <summary>
-        /// Called during normal operations when a record insertion succeeds, to set the new record non-tentative (permanent).
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearNewRecordTentativeBitAtomic(ref RecordInfo newRecordInfo)
-        {
-            newRecordInfo.ClearTentativeBitAtomic();
             this.newLogicalAddress = Constants.kInvalidAddress;
         }
 

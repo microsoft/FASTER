@@ -65,7 +65,8 @@ namespace FASTER.core
         int maxSessionID;
 
         internal readonly bool DisableEphemeralLocking;
-        internal readonly LockTable<Key> LockTable;
+        internal readonly RecordInfoLocker EphemeralOnlyLocker;
+        internal readonly OverflowBucketLockTable<Key> ManualLockTable;
 
         internal void IncrementNumLockingSessions()
         {
@@ -83,7 +84,7 @@ namespace FASTER.core
                 fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(),
                 fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
                 fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
-                fasterKVSettings.TryRecoverLatest, fasterKVSettings.DisableEphemeralLocking, null, fasterKVSettings.logger, fasterKVSettings.LockTableSize)
+                fasterKVSettings.TryRecoverLatest, fasterKVSettings.LockingMode, null, fasterKVSettings.logger)
         { }
 
         /// <summary>
@@ -96,18 +97,19 @@ namespace FASTER.core
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="disableEphemeralLocking">Whether FASTER takes ephemeral read and write locks on records</param>
+        /// <param name="lockingMode">How FASTER should do record locking</param>
         /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="FasterKVSettings{Key, Value}"/>).</param>
         /// <param name="logger">Logger to use.</param>
         /// <param name="lockTableSize">Number of buckets in the lock table</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableEphemeralLocking = false,
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, LockingMode lockingMode = LockingMode.SessionControlled,
             ILoggerFactory loggerFactory = null, ILogger logger = null, int lockTableSize = Constants.kDefaultLockTableSize)
         {
             this.loggerFactory = loggerFactory;
             this.logger = logger ?? this.loggerFactory?.CreateLogger("FasterKV Constructor");
+
             if (comparer != null)
                 this.comparer = comparer;
             else
@@ -129,7 +131,7 @@ namespace FASTER.core
                 }
             }
 
-            this.DisableEphemeralLocking = disableEphemeralLocking;
+            this.DisableEphemeralLocking = lockingMode == LockingMode.Disabled;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
@@ -148,6 +150,9 @@ namespace FASTER.core
 
             this.ReadFlags = logSettings.ReadFlags;
             UseReadCache = logSettings.ReadCacheSettings is not null;
+
+            if (lockingMode == LockingMode.EphemeralOnly && UseReadCache)
+                throw new FasterException("Cannot UseReadCache with LockingMode.EphemeralOnly");
 
             UpdateVarLen(ref variableLengthStructSettings);
 
@@ -218,12 +223,12 @@ namespace FASTER.core
             }
 
             hlog.Initialize();
-            hlog.OnLockEvictionObserver = new LockEvictionObserver<Key, Value>(this);
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.LockTable = new LockTable<Key>(lockTableSize, this.comparer, keyLen);
+            this.EphemeralOnlyLocker = new RecordInfoLocker(lockingMode == LockingMode.EphemeralOnly);
+            this.ManualLockTable = new OverflowBucketLockTable<Key>(lockingMode == LockingMode.SessionControlled);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

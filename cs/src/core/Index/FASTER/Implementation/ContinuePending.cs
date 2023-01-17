@@ -50,20 +50,20 @@ namespace FASTER.core
 
                 while (true)
                 {
-                    // We must check both the readcache (in case another thread inserted it there while IO was pending for this thread) and LockTable for locks.
+                    Debug.Assert(!EphemeralOnlyLocker.IsEnabled, $"Should not have pending IO operations with {nameof(LockingMode.EphemeralOnly)}");
+
                     if (!FindTag(ref stackCtx.hei))
                         Debug.Fail("Expected to FindTag in InternalContinuePendingRead");
                     stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                    // During the pending operation, the record may have been added to any of the possible locations.
-                    var status = TryFindAndEphemeralLockRecord<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, LockType.Shared, pendingContext.PrevHighestKeyHashAddress);
-                    if (status != OperationStatus.SUCCESS)
+                    if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
                     {
-                        if (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext))
-                            continue;
-                        return status;
+                        HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, currentCtx, currentCtx, fasterSession, ref pendingContext);
+                        continue;
                     }
-                    if (stackCtx.recSrc.HasInMemorySrc)
+
+                    // During the pending operation, the record may have been added to the log or readcache.
+                    if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Shared, pendingContext.PrevHighestKeyHashAddress))
                         srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
 
                     try
@@ -99,7 +99,7 @@ namespace FASTER.core
                         var copyToRC = !stackCtx.recSrc.HasReadCacheSrc && UseReadCache && !pendingContext.DisableReadCacheUpdates;
                         if (copyToRC || copyToTail)
                         {
-                            status = InternalTryCopyToTail(ctx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
+                            var status = InternalTryCopyToTail(ctx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
                                                 ref stackCtx, ref srcRecordInfo, untilLogicalAddress: pendingContext.PrevLatestLogicalAddress,
                                                 fasterSession, copyToTail ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
                             if (!HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext))
@@ -119,7 +119,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO(fasterSession, ctx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 } // end while (true)
             }
@@ -178,22 +178,21 @@ namespace FASTER.core
 
             while (true)
             {
-                FindOrCreateTag(ref stackCtx.hei);
+                FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
                 stackCtx.SetRecordSourceToHashEntry(hlog);
+
+                if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockEphemeralExclusive(ref key, ref stackCtx))
+                {
+                    HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, sessionCtx, sessionCtx, fasterSession, ref pendingContext);
+                    continue;
+                }
 
                 // A 'ref' variable must be initialized. If we find a record for the key, we reassign the reference.
                 RecordInfo dummyRecordInfo = default;
                 ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
                 // During the pending operation, the record may have been added to any of the possible locations.
-                status = TryFindAndEphemeralLockRecord<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress);
-                if (status != OperationStatus.SUCCESS)
-                {
-                    if (HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext))
-                        continue;
-                    return status;
-                }
-                if (stackCtx.recSrc.HasInMemorySrc)
+                if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress))
                     srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
 
                 try
@@ -272,6 +271,12 @@ namespace FASTER.core
                     Debug.Fail("Expected to FindTag in InternalCopyToTailForCompaction");
                 stackCtx.SetRecordSourceToHashEntry(hlog);
 
+                if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
+                {
+                    HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, currentCtx, currentCtx, fasterSession, ref pendingContext);
+                    continue;
+                }
+
                 status = OperationStatus.SUCCESS;
                 if (actualAddress >= hlog.BeginAddress)
                 {
@@ -283,13 +288,10 @@ namespace FASTER.core
                         stackCtx.recSrc.PhysicalAddress = hlog.GetPhysicalAddress(stackCtx.recSrc.LogicalAddress);
                         stackCtx.recSrc.HasMainLogSrc = true;
                         srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                        if (!(stackCtx.recSrc.HasInMemoryLock = fasterSession.TryLockEphemeralShared(ref srcRecordInfo)))
-                            status = OperationStatus.RETRY_LATER;
                     }
                     else
                     {
-                        status = TryFindAndEphemeralLockAuxiliaryRecord<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, LockType.Shared);
-                        if (status == OperationStatus.SUCCESS && stackCtx.recSrc.HasInMemorySrc)
+                        if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress))
                             srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
                     }
                 }
@@ -306,15 +308,7 @@ namespace FASTER.core
                         {
                             untilAddress = stackCtx.recSrc.LatestLogicalAddress;
                             srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                            if (!(stackCtx.recSrc.HasInMemoryLock = fasterSession.TryLockEphemeralShared(ref srcRecordInfo)))
-                                status = OperationStatus.RETRY_LATER;
                         }
-                    }
-                    else
-                    {
-                        if (LockTable.IsActive && !fasterSession.DisableEphemeralLocking 
-                                && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, LockType.Shared, out stackCtx.recSrc.HasLockTableLock))
-                            status = OperationStatus.RETRY_LATER;
                     }
                 }
 
@@ -328,7 +322,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO(fasterSession, currentCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
             } while (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext));
@@ -454,7 +448,7 @@ namespace FASTER.core
                     }
                 } while (stackCtx.hei.IsReadCache && newLogicalAddress < stackCtx.hei.AbsoluteAddress);
 
-                newRecordInfo = ref WriteTentativeInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
+                newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
                 stackCtx.newLogicalAddress = newLogicalAddress;
 
                 upsertInfo.Address = Constants.kInvalidAddress;     // We do not expose readcache addresses
@@ -480,7 +474,7 @@ namespace FASTER.core
                     } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
                 }
 
-                newRecordInfo = ref WriteTentativeInfo(ref key, hlog, newPhysicalAddress, inNewVersion: currentCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+                newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: currentCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
                 stackCtx.newLogicalAddress = newLogicalAddress;
 
                 newRecordInfo.Tombstone = expired;
@@ -531,9 +525,8 @@ namespace FASTER.core
             }
 
             if (success)
-                success = CompleteTwoPhaseCopyToTail<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
-
-            if (!success)
+                CompleteCopyToTail<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
+            else
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
 
@@ -559,7 +552,6 @@ namespace FASTER.core
                 newRecordInfo.Modified = false;
                 pendingContext.recordInfo = newRecordInfo;
             }
-            stackCtx.ClearNewRecordTentativeBitAtomic(ref newRecordInfo);
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
 #endregion
         }

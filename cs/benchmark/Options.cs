@@ -37,7 +37,7 @@ namespace FASTER.benchmark
                         "\n    0 = None (default)" +
                         "\n    1 = Ephemeral locking using RecordInfo.SpinLock()" +
                         "\n    2 = Manual locking using LockableUnsafeContext")]
-        public int LockImpl { get; set; }
+        public int LockingMode { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
          HelpText = "Number of iterations of the test to run")]
@@ -96,7 +96,7 @@ namespace FASTER.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockImpl}; i: {IterationCount};"
+            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount};"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
                         + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";

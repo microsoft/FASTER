@@ -7,13 +7,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using FASTER.core;
-using FASTER.core.Utilities;
 using NUnit.Framework;
 using FASTER.test.ReadCacheTests;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
 using System.Diagnostics;
-using FASTER.test.LockTable;
 
 namespace FASTER.test.LockableUnsafeContext
 {
@@ -180,8 +178,8 @@ namespace FASTER.test.LockableUnsafeContext
             Assert.Greater(count, numRecords - 10);
         }
 
-        bool LockTableHasEntries() => LockTableTests.LockTableHasEntries(fht.LockTable);
-        int LockTableEntryCount() => LockTableTests.LockTableEntryCount(fht.LockTable);
+        bool LockTableHasEntries() => LockTableTests.LockTableHasEntries(fht.ManualLockTable);
+        int LockTableEntryCount() => LockTableTests.LockTableEntryCount(fht.ManualLockTable);
 
         [Test]
         [Category("FasterKV")]
@@ -677,7 +675,7 @@ namespace FASTER.test.LockableUnsafeContext
         void AddLockTableEntry(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext, int key, bool immutable)
         {
             luContext.Lock(key, LockType.Exclusive);
-            var found = fht.LockTable.TryGet(ref key, out RecordInfo recordInfo);
+            var found = fht.ManualLockTable.TryGet(ref key, out RecordInfo recordInfo);
 
             // Immutable locks in the ReadOnly region; it does NOT create a LockTable entry
             if (immutable)
@@ -697,7 +695,7 @@ namespace FASTER.test.LockableUnsafeContext
             Assert.AreEqual(expectedKey, storedKey);
 
             // This is called after we've transferred from LockTable to log.
-            Assert.False(fht.LockTable.TryGet(ref expectedKey, out _));
+            Assert.False(fht.ManualLockTable.TryGet(ref expectedKey, out _));
 
             // Verify we've transferred the expected locks.
             ref RecordInfo recordInfo = ref fht.hlog.GetInfo(pa);
@@ -766,8 +764,8 @@ namespace FASTER.test.LockableUnsafeContext
                 fht.Log.FlushAndEvict(wait: true);
 
                 // Verify the lock table entry.
-                Assert.IsTrue(fht.LockTable.IsActive, "Lock Table should be active");
-                Assert.IsTrue(fht.LockTable.ContainsKey(ref key, fht.Comparer.GetHashCode64(ref key)));
+                Assert.IsTrue(fht.ManualLockTable.IsActive, "Lock Table should be active");
+                Assert.IsTrue(fht.ManualLockTable.ContainsKey(ref key, fht.Comparer.GetHashCode64(ref key)));
 
                 luContext.Unlock(ref key, LockType.Exclusive);
             }
@@ -959,14 +957,14 @@ namespace FASTER.test.LockableUnsafeContext
                 foreach (var key in locks.Keys.OrderBy(k => -k))
                 {
                     var localKey = key;     // can't ref the iteration variable
-                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
+                    var found = fht.ManualLockTable.TryGet(ref localKey, out RecordInfo recordInfo);
                     Assert.IsTrue(found);
                     var lockType = locks[key];
                     Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
                     Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
 
                     luContext.Unlock(key, lockType);
-                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out _));
+                    Assert.IsFalse(fht.ManualLockTable.TryGet(ref localKey, out _));
                 }
             }
             catch (Exception)
@@ -1356,7 +1354,7 @@ namespace FASTER.test.LockableUnsafeContext
                 foreach (var key in locks.Keys.OrderBy(k => -k))
                 {
                     int localKey = key;
-                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
+                    var found = fht.ManualLockTable.TryGet(ref localKey, out RecordInfo recordInfo);
                     Assert.IsTrue(found);
                     var lockType = locks[key];
                     Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
@@ -1369,7 +1367,7 @@ namespace FASTER.test.LockableUnsafeContext
                     Assert.IsTrue(status.IsPending, status.ToString());
                     luContext.CompletePending(wait: true);
 
-                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out _));
+                    Assert.IsFalse(fht.ManualLockTable.TryGet(ref localKey, out _));
                     var (isLockedExclusive, numLockedShared) = luContext.IsLocked(localKey);
                     Assert.AreEqual(lockType == LockType.Exclusive, isLockedExclusive);
                     Assert.AreEqual(lockType != LockType.Exclusive, numLockedShared > 0);

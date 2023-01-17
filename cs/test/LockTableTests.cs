@@ -1,13 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-
 using FASTER.core;
-using FASTER.core.Utilities;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection.Metadata.Ecma335;
 using System.Threading;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
@@ -24,26 +20,27 @@ namespace FASTER.test.LockTable
     [TestFixture]
     internal class LockTableTests
     {
-        LockTable<long> lockTable;
+        OverflowBucketLockTable<long> lockTable;
+        IFasterEqualityComparer<long> comparer = new LongFasterEqualityComparer();
         long SingleBucketKey = 1;   // We use a single bucket here for most tests so this lets us use 'ref' easily
 
         [SetUp]
         public void Setup()
         {
             DeleteDirectory(MethodTestDir);
-            lockTable = new(Constants.kDefaultLockTableSize, new SingleBucketComparer(), keyLen: null);
+            lockTable = new(true);
         }
 
         [TearDown]
         public void TearDown()
         {
             lockTable.Dispose();
-            lockTable = null;
+            lockTable = default;
         }
 
         void TryLock(long key, LockType lockType, bool ephemeral, int expectedCurrentReadLocks, bool expectedLockResult, bool expectedGotLock)
         {
-            var hash = lockTable.functions.GetHashCode64(ref key);
+            var hash = comparer.GetHashCode64(ref key);
 
             // Check for existing lock
             var found = lockTable.TryGet(ref key, out var existingRecordInfo);

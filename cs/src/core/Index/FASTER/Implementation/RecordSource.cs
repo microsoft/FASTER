@@ -112,14 +112,15 @@ namespace FASTER.core
         /// After a successful CopyUpdate or other replacement of a source record, this marks the source record as Sealed or Invalid.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkSourceRecordAfterSuccessfulCopyUpdate<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref RecordInfo srcRecordInfo)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        internal void MarkSourceRecordAfterSuccessfulCopy(ref RecordInfo srcRecordInfo)
         {
-            if (this.HasInMemorySrc && this.LogicalAddress >= this.Log.HeadAddress)
+            if (this.HasInMemorySrc)
             {
+                System.Diagnostics.Debug.Assert(this.LogicalAddress >= this.Log.ClosedUntilAddress, "Should not have evicted the source record while we held the epoch");
+
+                // Note that records cannot be evicted even if they are now below HeadAddress of the log or readcache, because we hold the epoch.
                 if (this.HasReadCacheSrc)
                 {
-                    // If the record was evicted, it won't be accessed, so we do not need to worry about setting it invalid.
                     // Even though we should be called with an XLock (unless ephemeral locking is disabled) we need to do this atomically;
                     // otherwise this could race with ReadCacheEvict unlinking records.
                     srcRecordInfo.SetInvalidAtomic();
@@ -128,21 +129,10 @@ namespace FASTER.core
                 {
                     // Another thread may come along to do this update in-place, or use this record as a copy source, once we've released our lock;
                     // Seal it to prevent that. This will cause the other thread to RETRY_NOW (unlike Invalid which ignores the record).
-                    // If the record was evicted, then we cannot Seal it, but we have already inserted the later record, so any attempt to retrieve
-                    // the old record from disk will find the newer version instead due to normal verification when completing pending I/O.
                     // Because we have an XLock (unless ephemeral locking is disabled), we don't need an atomic operation here.
                     srcRecordInfo.Seal();
                 }
-
-                // if fasterSession.DisableEphemeralLocking, the "finally" handler won't unlock it, so we do that here.
-                if (fasterSession.DisableEphemeralLocking)
-                    srcRecordInfo.ClearLocks();
             }
-
-            // We successfully transferred the source recordInfo, and will unlock it in UnlockAfterUpdate, but if there was a LockTable entry,
-            // it was transferred and doesn't exist in the LockTable anymore.  A new LockTable entry may be written if the source record fell
-            // below HeadAddress due to BlockAllocate, but we handle that case in UnlockAfter*() below (by spinwaiting until it's in the LockTable).
-            this.HasLockTableLock = false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

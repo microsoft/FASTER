@@ -24,6 +24,36 @@ namespace FASTER.core
         Exclusive
     }
 
+    /// <summary>
+    /// How FASTER should do record locking
+    /// </summary>
+    public enum LockingMode : byte
+    {
+        /// <summary>
+        /// Locking may be manual or ephemeral; a separate lock table is used rather than the <see cref="RecordInfo"/>.
+        /// </summary>
+        SessionControlled,
+
+        /// <summary>
+        /// Only ephemeral locking is done; all locks are in-memory via the <see cref="RecordInfo"/>.
+        /// </summary>
+        EphemeralOnly,
+
+        /// <summary>
+        /// Ephemeral locking is disabled in FASTER; only manual locking via a separate lock table is done.
+        /// </summary>
+        Disabled
+    }
+
+    /// <summary>
+    /// Lock state of a record
+    /// </summary>
+    internal struct LockState
+    {
+        internal bool IsLockedExclusive;
+        internal ushort NumLockedShared;
+    }
+
     internal enum LockOperationType : byte
     {
         None,

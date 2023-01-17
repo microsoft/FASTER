@@ -104,21 +104,15 @@ namespace FASTER.test.recovery
             hash_table1.Initialize(size, 512);
 
             //do something
-            var bucket = default(HashBucket*);
-            var slot = default(int);
-
             var keyGenerator1 = new Random(seed);
             var valueGenerator = new Random(seed + 1);
             for (int i = 0; i < numAdds; i++)
             {
                 long key = keyGenerator1.Next();
-                var hash = Utility.GetHashCode(key);
-                var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+                HashEntryInfo hei = new(Utility.GetHashCode(key));
+                hash_table1.FindOrCreateTag(ref hei, 0);
 
-                var entry = default(HashBucketEntry);
-                hash_table1.FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, 0);
-
-                hash_table1.UpdateSlot(bucket, slot, entry.word, valueGenerator.Next(), out long found_word);
+                hash_table1.UpdateSlot(hei.bucket, hei.slot, hei.entry.word, valueGenerator.Next(), out long found_word);
             }
 
             //issue checkpoint call
@@ -133,27 +127,20 @@ namespace FASTER.test.recovery
         {
             var keyGenerator2 = new Random(seed);
 
-            var bucket1 = default(HashBucket*);
-            var bucket2 = default(HashBucket*);
-            var slot1 = default(int);
-            var slot2 = default(int);
-
-            var entry1 = default(HashBucketEntry);
-            var entry2 = default(HashBucketEntry);
             for (int i = 0; i < 2 * numAdds; i++)
             {
                 long key = keyGenerator2.Next();
-                var hash = Utility.GetHashCode(key);
-                var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
+                HashEntryInfo hei1 = new(Utility.GetHashCode(key));
+                HashEntryInfo hei2 = new(hei1.hash);
 
-                var exists1 = hash_table1.FindTag(hash, tag, ref bucket1, ref slot1, ref entry1);
-                var exists2 = hash_table2.FindTag(hash, tag, ref bucket2, ref slot2, ref entry2);
+                var exists1 = hash_table1.FindTag(ref hei1);
+                var exists2 = hash_table2.FindTag(ref hei2);
 
                 Assert.AreEqual(exists2, exists1);
 
                 if (exists1)
                 {
-                    Assert.AreEqual(entry2.word, entry1.word);
+                    Assert.AreEqual(hei2.entry.word, hei1.entry.word);
                 }
             }
 

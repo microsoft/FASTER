@@ -105,12 +105,14 @@ namespace FASTER.core
             return false;
         }
 
-        public bool TryUnlock(LockType lockType)
+        public void Unlock(LockType lockType)
         {
-            if (lockType != LockType.Exclusive)
-                return TryUnlockShared();
-            UnlockExclusive();
-            return true;
+            if (lockType == LockType.Shared)
+                this.UnlockShared();
+            if (lockType == LockType.Exclusive)
+                this.UnlockExclusive();
+            else
+                Debug.Fail($"Unexpected LockType: {lockType}");
         }
 
         /// <summary>
@@ -172,16 +174,12 @@ namespace FASTER.core
         }
 
         /// <summary>Unlock RecordInfo that was previously locked for shared access, via <see cref="TryLockShared"/></summary>
-        /// <returns>Whether the record is still valid and unsealed (otherwise it was probably transferred, e.g. from the readcache or compaction).</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryUnlockShared()
+        public void UnlockShared()
         {
             // Note: We cannot assert this is not XLocked, because LockExclusive sets the XLock bit and then waits for readers to drain.
             Debug.Assert(IsLockedShared, "Trying to S unlock an unlocked record");
-            var current_word = Interlocked.Add(ref word, -kSharedLockIncrement);
-
-            // An invalid or Sealed record means we have to retry.
-            return (current_word & (kValidBitMask | kSealedBitMask)) == kValidBitMask;
+            Interlocked.Add(ref word, -kSharedLockIncrement);
         }
 
         /// <summary>
@@ -263,7 +261,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TransferReadLocksFromAndMarkSourceAtomic(ref RecordInfo source, bool allowXLock, bool seal, bool removeEphemeralLock)
+        public bool TransferReadLocksFromAndMarkSourceAtomic(ref RecordInfo source, bool seal, bool removeEphemeralLock)
         {
             // This is called when tranferring read locks from the read cache or Lock Table to a tentative log record.
             Debug.Assert(this.Tentative, "Must only transfer locks to a tentative recordInfo");
@@ -273,20 +271,13 @@ namespace FASTER.core
                 long expected_word = source.word;
                 var new_word = expected_word;
 
-                // Fail if there is an established XLock. Having both X and S locks means the other thread is still in the read-lock draining portion
-                // of TryLockExclusive, so we can remove the exclusive bit, and TryLockExclusive will see the "invalid" mark bits after the SLocks are
-                // drained, and will return false. If there is only an XLock, we cannot proceed.
-                if (!allowXLock && (word & (kExclusiveLockBitMask | kSharedLockMaskInWord)) == kExclusiveLockBitMask)
-                    return false;
-                new_word &= ~kExclusiveLockBitMask;
-
                 // Mark the source record atomically with the transfer.
                 if (seal)
                     new_word |= kSealedBitMask;
                 else
                     new_word &= ~kValidBitMask;
 
-                // If the source record has an ephemeral lock, remove it now. (Check this *after* the "established XLock" test above.)
+                // If the source record has an ephemeral lock, remove it now.
                 if (removeEphemeralLock)
                     new_word -= kSharedLockIncrement;
 
@@ -432,27 +423,6 @@ namespace FASTER.core
                     return;
                 Thread.Yield();
             }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SetInvalidAtomicIfNoLocks()
-        {
-            while (!this.Invalid)
-            {
-                long expected_word = word;
-
-                if ((expected_word & (kSealedBitMask | kTentativeBitMask | kExclusiveLockBitMask | kSharedLockMaskInWord)) != 0)
-                    return false;
-
-                long new_word = expected_word & ~kValidBitMask;
-                long current_word = Interlocked.CompareExchange(ref word, new_word, expected_word);
-                if (expected_word == current_word)
-                    return true;
-                Thread.Yield();
-            }
-
-            // If we got here, someone else set it Invalid--that means we cannot rely on a consistent state in the caller, so return false.
-            return false;
         }
 
         public bool Invalid => (word & kValidBitMask) == 0;

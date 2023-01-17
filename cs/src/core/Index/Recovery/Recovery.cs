@@ -880,13 +880,8 @@ namespace FASTER.core
         {
             bool touched = false;
 
-            var hash = default(long);
-            var tag = default(ushort);
             var pointer = default(long);
             var recordStart = default(long);
-            var bucket = default(HashBucket*);
-            var entry = default(HashBucketEntry);
-            var slot = default(int);
 
             pointer = fromLogicalAddressInPage;
             while (pointer < untilLogicalAddressInPage)
@@ -902,22 +897,19 @@ namespace FASTER.core
 
                 if (!info.Invalid)
                 {
-                    hash = comparer.GetHashCode64(ref hlog.GetKey(recordStart));
-                    tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-
-                    entry = default;
-                    FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
+                    HashEntryInfo hei = new(comparer.GetHashCode64(ref hlog.GetKey(recordStart)));
+                    FindOrCreateTag(ref hei, hlog.BeginAddress);
 
                     bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.InNewVersion;
                     if (!options.undoNextVersion) ignoreRecord = false;
 
                     if (!ignoreRecord)
                     {
-                        entry.Address = pageLogicalAddress + pointer;
-                        entry.Tag = tag;
-                        entry.Pending = false;
-                        entry.Tentative = false;
-                        bucket->bucket_entries[slot] = entry.word;
+                        hei.entry.Address = pageLogicalAddress + pointer;
+                        hei.entry.Tag = hei.tag;
+                        hei.entry.Pending = false;
+                        hei.entry.Tentative = false;
+                        hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
                     }
                     else
                     {
@@ -925,11 +917,11 @@ namespace FASTER.core
                         info.SetInvalid();
                         if (info.PreviousAddress < startRecoveryAddress)
                         {
-                            entry.Address = info.PreviousAddress;
-                            entry.Tag = tag;
-                            entry.Pending = false;
-                            entry.Tentative = false;
-                            bucket->bucket_entries[slot] = entry.word;
+                            hei.entry.Address = info.PreviousAddress;
+                            hei.entry.Tag = hei.tag;
+                            hei.entry.Pending = false;
+                            hei.entry.Tentative = false;
+                            hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
                         }
                     }
                 }

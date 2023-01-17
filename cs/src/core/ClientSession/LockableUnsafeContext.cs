@@ -96,7 +96,7 @@ namespace FASTER.core
         public void Unlock(Key key, LockType lockType) => Unlock(ref key, lockType);
 
         /// <inheritdoc/>
-        public (bool exclusive, byte shared) IsLocked(ref Key key)
+        public (bool exclusive, ushort shared) IsLocked(ref Key key)
         {
             clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for IsLocked()");
@@ -104,16 +104,16 @@ namespace FASTER.core
             LockOperation lockOp = new(LockOperationType.IsLocked, LockType.None);
 
             OperationStatus status;
-            RecordInfo lockInfo;
+            LockState lockState;
             do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out lockInfo);
+                status = clientSession.fht.InternalLock(ref key, lockOp, out lockState);
             while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
             Debug.Assert(status == OperationStatus.SUCCESS);
-            return (lockInfo.IsLockedExclusive, lockInfo.NumLockedShared);
+            return (lockState.IsLockedExclusive, lockState.NumLockedShared);
         }
 
         /// <inheritdoc/>
-        public (bool exclusive, byte shared) IsLocked(Key key) => IsLocked(ref key);
+        public (bool exclusive, ushort shared) IsLocked(Key key) => IsLocked(ref key);
 
         /// <summary>
         /// The session id of FasterSession
@@ -571,20 +571,39 @@ namespace FASTER.core
             #endregion IFunctions - Checkpointing
 
             #region Ephemeral locking
-            public bool TryLockEphemeralExclusive(ref RecordInfo recordInfo)
+            public bool TryLockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                Debug.Assert(recordInfo.IsLockedExclusive, $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
+                Debug.Assert(_clientSession.fht.ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
+                            $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
+                            + $" XLocked {_clientSession.fht.ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
+                            + $" Slocked {_clientSession.fht.ManualLockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
                 return true;
             }
 
-            public bool TryLockEphemeralShared(ref RecordInfo recordInfo)
+            public bool TryLockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                Debug.Assert(recordInfo.IsLocked, $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
+                Debug.Assert(_clientSession.fht.ManualLockTable.IsLocked(ref key, ref stackCtx.hei),
+                            $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock):"
+                            + $" XLocked {_clientSession.fht.ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
+                            + $" Slocked {_clientSession.fht.ManualLockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
                 return true;
             }
 
-            public void UnlockEphemeralExclusive(ref RecordInfo recordInfo) { }
-            public bool TryUnlockEphemeralShared(ref RecordInfo recordInfo) => true;
+            public void UnlockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            {
+                Debug.Assert(_clientSession.fht.ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
+                            $"Attempting to unlock a non-XLocked key in a Lockable context (requesting XLock):"
+                            + $" XLocked {_clientSession.fht.ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
+                            + $" Slocked {_clientSession.fht.ManualLockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
+            }
+
+            public void UnlockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            {
+                Debug.Assert(_clientSession.fht.ManualLockTable.IsLockedShared(ref key, ref stackCtx.hei),
+                            $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
+                            + $" XLocked {_clientSession.fht.ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
+                            + $" Slocked {_clientSession.fht.ManualLockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
+            }
             #endregion
 
             #region Internal utilities

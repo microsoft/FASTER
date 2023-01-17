@@ -78,11 +78,11 @@ namespace FASTER.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<Key, Value>
                     (testLoader.MaxKey / 4, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableEphemeralLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode);
             else
                 store = new FasterKV<Key, Value>
                     (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableEphemeralLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode);
         }
 
         internal void Dispose()
@@ -315,7 +315,7 @@ namespace FASTER.benchmark
 
             (Key key, LockType kind) xlock = (new Key { value = long.MaxValue }, LockType.Exclusive);
             (Key key, LockType kind) slock = (new Key { value = long.MaxValue - 1 }, LockType.Shared);
-            if (testLoader.Options.LockImpl == (int)LockImpl.Manual)
+            if (testLoader.LockingMode == LockingMode.SessionControlled)
             {
                 session = store.For(functions).NewSession<Functions>();
                 luContext = session.LockableUnsafeContext;
@@ -432,7 +432,7 @@ namespace FASTER.benchmark
                 worker.Join();
             }
 
-            if (testLoader.Options.LockImpl == (int)LockImpl.Manual)
+            if (testLoader.LockingMode == LockingMode.SessionControlled)
             {
                 luContext.Unlock(xlock.key, xlock.kind);
                 luContext.Unlock(slock.key, slock.kind);

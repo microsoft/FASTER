@@ -142,7 +142,7 @@ namespace FASTER.core
             {
 #if DEBUG
                 SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LogicalAddress, hlog);
-                Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, stackCtx.hei.hash), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
+                Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
 #endif
                 // Note: we do not lock here; we wait until reading from disk, then lock in the InternalContinuePendingRead chain.
                 if (hlog.IsNullDevice)
@@ -167,7 +167,7 @@ namespace FASTER.core
             // No record found
             else
             {
-                Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, stackCtx.hei.hash), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
+                Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
                 return OperationStatus.NOTFOUND;
             }
 
@@ -223,7 +223,7 @@ namespace FASTER.core
                     RecordInfo = srcRecordInfo
                 };
 
-                if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                if (!TryEphemeralOnlySLock(ref stackCtx.recSrc, ref srcRecordInfo, out status))
                     return false;
 
                 try
@@ -235,7 +235,7 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    EphemeralSUnlock(fasterSession, sessionCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                    EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                 }
             }
             return false;
@@ -260,7 +260,7 @@ namespace FASTER.core
                 RecordInfo = srcRecordInfo
             };
 
-            if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out var status))
+            if (!TryEphemeralOnlySLock(ref stackCtx.recSrc, ref srcRecordInfo, out var status))
                 return status;
 
             try
@@ -284,7 +284,7 @@ namespace FASTER.core
             }
             finally
             {
-                EphemeralSUnlock(fasterSession, sessionCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
         }
 
@@ -307,7 +307,7 @@ namespace FASTER.core
                 RecordInfo = srcRecordInfo
             };
 
-            if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out var status))
+            if (!TryEphemeralOnlySLock(ref stackCtx.recSrc, ref srcRecordInfo, out var status))
                 return status;
 
             try
@@ -345,7 +345,7 @@ namespace FASTER.core
             {
                 // Unlock the record. If doing CopyReadsToTailFromReadOnly, then we have already copied the locks to the new record;
                 // this unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
-                EphemeralSUnlock(fasterSession, sessionCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
         }
     }

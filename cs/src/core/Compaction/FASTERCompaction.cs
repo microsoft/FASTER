@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -24,6 +26,9 @@ namespace FASTER.core
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
+            if (this.EphemeralOnlyLocker.IsEnabled)
+                throw new FasterException($"Compaction is not supported with {nameof(LockingMode.EphemeralOnly)}");
+
             return compactionType switch
             {
                 CompactionType.Scan => CompactScan<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, sessionVariableLengthStructSettings),

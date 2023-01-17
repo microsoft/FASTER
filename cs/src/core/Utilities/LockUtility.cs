@@ -56,7 +56,7 @@ namespace FASTER.core
                 return recordInfo.TryLock(lockOp.LockType);
 
             if (lockOp.LockOperationType == LockOperationType.Unlock)
-                recordInfo.TryUnlock(lockOp.LockType);
+                recordInfo.Unlock(lockOp.LockType);
             else
                 Debug.Fail($"Unexpected LockOperation {lockOp.LockOperationType}");
             return true;

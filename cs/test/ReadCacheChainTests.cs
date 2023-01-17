@@ -172,7 +172,7 @@ namespace FASTER.test.ReadCacheTests
 
         internal static (long logicalAddress, long physicalAddress) GetHashChain(FasterKV<int, int> fht, int key, out int recordKey, out bool invalid, out bool isReadCache)
         {
-            var tagExists = fht.FindKey(ref key, out var entry);
+            var tagExists = fht.FindHashBucketEntryForKey(ref key, out var entry);
             Assert.IsTrue(tagExists);
 
             isReadCache = entry.ReadCache;
@@ -258,8 +258,8 @@ namespace FASTER.test.ReadCacheTests
             luContext.exclusiveLockCount = 0;
         }
 
-        bool LockTableHasEntries() => LockTableTests.LockTableHasEntries(fht.LockTable);
-        int LockTableEntryCount() => LockTableTests.LockTableEntryCount(fht.LockTable);
+        bool LockTableHasEntries() => LockTableTests.LockTableHasEntries(fht.ManualLockTable);
+        int LockTableEntryCount() => LockTableTests.LockTableEntryCount(fht.ManualLockTable);
 
         [Test]
         [Category(FasterKVTestCategory)]
@@ -570,14 +570,14 @@ namespace FASTER.test.ReadCacheTests
                 foreach (var key in locks.Keys)
                 {
                     var localKey = key;    // can't ref the iteration variable
-                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
+                    var found = fht.ManualLockTable.TryGet(ref localKey, out RecordInfo recordInfo);
                     Assert.IsTrue(found);
                     var lockType = locks[key];
                     Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
                     Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
 
                     luContext.Unlock(key, lockType);
-                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out recordInfo));
+                    Assert.IsFalse(fht.ManualLockTable.TryGet(ref localKey, out recordInfo));
                 }
             }
             catch (Exception)
@@ -635,7 +635,7 @@ namespace FASTER.test.ReadCacheTests
                 foreach (var key in locks.Keys)
                 {
                     var localKey = key;    // can't ref the iteration variable
-                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
+                    var found = fht.ManualLockTable.TryGet(ref localKey, out RecordInfo recordInfo);
                     Assert.IsTrue(found);
                     var lockType = locks[key];
                     Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
@@ -658,7 +658,7 @@ namespace FASTER.test.ReadCacheTests
 
                     luContext.Unlock(key, lockType);
                     var localKey = key;    // can't ref the iteration variable
-                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out _));
+                    Assert.IsFalse(fht.ManualLockTable.TryGet(ref localKey, out _));
                 }
             }
             catch (Exception)

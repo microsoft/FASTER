@@ -3,7 +3,6 @@
 
 using Microsoft.Extensions.Logging;
 using System;
-using System.Diagnostics;
 using System.IO;
 
 namespace FASTER.core
@@ -23,9 +22,9 @@ namespace FASTER.core
         public long IndexSize = 1L << 26;
 
         /// <summary>
-        /// Whether non-Lockable FASTER contexts take read and write locks on records internally as part of operations
+        /// How FASTER should do record locking
         /// </summary>
-        public bool DisableEphemeralLocking = false;
+        public LockingMode LockingMode;
 
         /// <summary>
         /// Device used for main hybrid log
@@ -136,11 +135,6 @@ namespace FASTER.core
         public bool TryRecoverLatest = false;
 
         /// <summary>
-        /// Number of buckets in the lock table.
-        /// </summary>
-        public int LockTableSize = Constants.kDefaultLockTableSize;
-
-        /// <summary>
         /// Create default configuration settings for FasterKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
@@ -195,7 +189,7 @@ namespace FASTER.core
             var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
-            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(DisableEphemeralLocking ? "no" : "yes")}";
+            retStr += $"; mutable fraction: {MutableFraction}; locking mode: {this.LockingMode}";
             retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
             if (ReadCacheEnabled)
                 retStr += $"; rc memory: {Utility.PrettySize(ReadCacheMemorySize)}; rc page: {Utility.PrettySize(ReadCachePageSize)}";

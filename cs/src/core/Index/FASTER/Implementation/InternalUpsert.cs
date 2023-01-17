@@ -64,7 +64,7 @@ namespace FASTER.core
             RecordInfo dummyRecordInfo = default;
             ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
-            FindOrCreateTag(ref stackCtx.hei);
+            FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
             // We must always scan to HeadAddress; a Lockable*Context could be activated and lock the record in the immutable region while we're scanning.
@@ -78,6 +78,9 @@ namespace FASTER.core
                 Address = stackCtx.recSrc.LogicalAddress,
                 KeyHash = stackCtx.hei.hash
             };
+
+            if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockEphemeralExclusive(ref key, ref stackCtx))
+                return OperationStatus.RETRY_LATER;
 
             #region Entry latch operation
             if (sessionCtx.phase != Phase.REST)
@@ -102,7 +105,7 @@ namespace FASTER.core
                     {
                         // Mutable Region: Update the record in-place
                         srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                        if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                        if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                             goto LatchRelease;
 
                         if (srcRecordInfo.Tombstone)
@@ -110,7 +113,7 @@ namespace FASTER.core
 
                         if (!srcRecordInfo.IsValidUpdateOrLockSource)
                         {
-                            EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
+                            EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                             srcRecordInfo = ref dummyRecordInfo;
                             goto CreateNewRecord;
                         }
@@ -143,16 +146,10 @@ namespace FASTER.core
                     }
                     else
                     {
-                        // Either on-disk or no record exists - check for lock before creating new record. First ensure any record lock has transitioned to the LockTable.
+                        // Either on-disk or no record exists - create new record.
                         if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
-                            SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, hlog);
-                        Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, stackCtx.hei.hash), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
-                        if (LockTable.IsActive && !fasterSession.DisableEphemeralLocking 
-                                && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, LockType.Exclusive, out stackCtx.recSrc.HasLockTableLock))
-                        {
-                            status = OperationStatus.RETRY_LATER;
-                            goto LatchRelease;
-                        }
+                            this.EphemeralOnlyLocker.ThrowIfEnabledOnRecordBelowHeadAddress();
+                        Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
                         goto CreateNewRecord;
                     }
                 }
@@ -168,11 +165,11 @@ namespace FASTER.core
             LockSourceRecord:
                 // This would be a local function to reduce "goto", but 'ref' variables and parameters aren't supported on local functions.
                 srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                     goto LatchRelease;
                 if (!srcRecordInfo.IsValidUpdateOrLockSource)
                 {
-                    EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
+                    EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     srcRecordInfo = ref dummyRecordInfo;
                 }
                 goto CreateNewRecord;
@@ -348,7 +345,7 @@ namespace FASTER.core
                 } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
             }
 
-            ref RecordInfo newRecordInfo = ref WriteTentativeInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.newLogicalAddress = newLogicalAddress;
 
             UpsertInfo upsertInfo = new()
@@ -375,11 +372,9 @@ namespace FASTER.core
             bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
             if (success)
             {
-                if (!CompleteTwoPhaseUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo, out var lockStatus))
-                    return lockStatus;
+                CompleteUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
-                stackCtx.ClearNewRecordTentativeBitAtomic(ref newRecordInfo);
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);

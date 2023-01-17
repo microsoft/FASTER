@@ -80,10 +80,10 @@ namespace FASTER.core
         #endregion Disposal
 
         #region Ephemeral locking
-        bool TryLockEphemeralExclusive(ref RecordInfo recordInfo);
-        bool TryLockEphemeralShared(ref RecordInfo recordInfo);
-        void UnlockEphemeralExclusive(ref RecordInfo recordInfo);
-        bool TryUnlockEphemeralShared(ref RecordInfo recordInfo);
+        bool TryLockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
+        bool TryLockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
+        void UnlockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
+        void UnlockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
         #endregion 
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
