@@ -230,8 +230,10 @@ namespace FASTER.core
         public virtual void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
         {
             if ((int)(toAddress >> segmentSizeBits) <= startSegment)
+            {
+                callback(result);
                 return;
-
+            }
             // Truncate only up to segment boundary if address is not aligned
             TruncateUntilSegmentAsync((int)(toAddress >> segmentSizeBits), callback, result);
         }
