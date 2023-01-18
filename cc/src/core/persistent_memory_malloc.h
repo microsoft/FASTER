@@ -354,6 +354,7 @@ class PersistentMemoryMalloc {
     uint32_t last_page = tail_page_offset_.load().page();
     while( !NewPage(last_page) ) {
       epoch_->ProtectAndDrain();
+      std::this_thread::yield();
     }
 
     // Get updated tail address
@@ -363,16 +364,17 @@ class PersistentMemoryMalloc {
     }
 
     // Make all buffer pages immutable
-    while(read_only_address.load() != tail_address) {
+    while(read_only_address.load() != GetTailAddress()) {
       epoch_->ProtectAndDrain();
-      //std::this_thread::yield();
+      std::this_thread::yield();
 
       ShiftReadOnlyToTail();
     }
     // Wait until safe only address is changed to tail address
-    while(tail_address > safe_read_only_address.load()) {
+    while(GetTailAddress() > safe_read_only_address.load()) {
       disk->TryComplete();
       epoch_->ProtectAndDrain();
+      std::this_thread::yield();
     }
 
     // Wait until all in-mem pages are flushed to disk
@@ -405,8 +407,9 @@ class PersistentMemoryMalloc {
     epoch_->BumpCurrentEpoch(OnPagesClosed, context_copy);
 
     // Wait until safe only address is changed to tail address
-    while(tail_address > safe_head_address.load()) {
+    while(GetTailAddress() > safe_head_address.load()) {
       epoch_->ProtectAndDrain();
+      std::this_thread::yield();
     }
 
     fprintf(stderr, "SHA = %lu\n", safe_head_address.load().control());
