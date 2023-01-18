@@ -83,86 +83,80 @@ namespace FASTER.core
             if (sessionCtx.phase != Phase.REST)
             {
                 latchDestination = AcquireLatchUpsert(sessionCtx, ref stackCtx.hei, ref status, ref latchOperation, stackCtx.recSrc.LogicalAddress);
+                if (latchDestination == LatchDestination.Retry)
+                    goto LatchRelease;
             }
             #endregion
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
-                #region Normal processing
+            #region Address and source record checks
 
-                if (latchDestination == LatchDestination.NormalProcessing)
+                if (stackCtx.recSrc.HasReadCacheSrc)
                 {
-                    if (stackCtx.recSrc.HasReadCacheSrc)
+                    // Use the readcache record as the CopyUpdater source.
+                    goto LockSourceRecord;
+                }
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
+                {
+                    // Mutable Region: Update the record in-place
+                    // We perform mutable updates only if we are in normal processing phase of checkpointing
+                    srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
+                    if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                        goto LatchRelease;
+
+                    if (srcRecordInfo.Tombstone)
+                        goto CreateNewRecord;
+
+                    if (!srcRecordInfo.IsValidUpdateOrLockSource)
                     {
-                        // Use the readcache record as the CopyUpdater source.
-                        goto LockSourceRecord;
-                    }
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
-                    {
-                        // Mutable Region: Update the record in-place
-                        srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                        if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                            goto LatchRelease;
-
-                        if (srcRecordInfo.Tombstone)
-                            goto CreateNewRecord;
-
-                        if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                        {
-                            EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
-                            srcRecordInfo = ref dummyRecordInfo;
-                            goto CreateNewRecord;
-                        }
-
-                        upsertInfo.RecordInfo = srcRecordInfo;
-                        ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
-                        if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo))
-                        {
-                            this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
-                            pendingContext.recordInfo = srcRecordInfo;
-                            pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                            goto LatchRelease;
-                        }
-                        if (upsertInfo.Action == UpsertAction.CancelOperation)
-                        {
-                            status = OperationStatus.CANCELED;
-                            goto LatchRelease;
-                        }
-
-                        // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
-                        stackCtx.recSrc.HasMainLogSrc = true;
+                        EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
+                        srcRecordInfo = ref dummyRecordInfo;
                         goto CreateNewRecord;
                     }
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
-                    {
-                        // Only need to go below ReadOnly for locking and Sealing.
-                        stackCtx.recSrc.HasMainLogSrc = true;
-                        goto LockSourceRecord;
-                    }
-                    else
-                    {
-                        // Either on-disk or no record exists - check for lock before creating new record. First ensure any record lock has transitioned to the LockTable.
-                        if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
-                            SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, hlog);
-                        Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, stackCtx.hei.hash), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
-                        if (LockTable.IsActive && !fasterSession.DisableEphemeralLocking 
-                                && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, LockType.Exclusive, out stackCtx.recSrc.HasLockTableLock))
-                        {
-                            status = OperationStatus.RETRY_LATER;
-                            goto LatchRelease;
-                        }
-                        goto CreateNewRecord;
-                    }
-                }
-                else if (latchDestination == LatchDestination.Retry)
-                {
-                    goto LatchRelease;
-                }
 
-                // All other regions: Create a record in the mutable region
-                #endregion Normal processing
+                    upsertInfo.RecordInfo = srcRecordInfo;
+                    ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
+                    if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo))
+                    {
+                        this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
+                        pendingContext.recordInfo = srcRecordInfo;
+                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        goto LatchRelease;
+                    }
+                    if (upsertInfo.Action == UpsertAction.CancelOperation)
+                    {
+                        status = OperationStatus.CANCELED;
+                        goto LatchRelease;
+                    }
+
+                    // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
+                    stackCtx.recSrc.HasMainLogSrc = true;
+                    goto CreateNewRecord;
+                }
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+                {
+                    // Only need to go below ReadOnly for locking and Sealing.
+                    stackCtx.recSrc.HasMainLogSrc = true;
+                    goto LockSourceRecord;
+                }
+                else
+                {
+                    // Either on-disk or no record exists - check for lock before creating new record. First ensure any record lock has transitioned to the LockTable.
+                    if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
+                        SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, hlog);
+                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, stackCtx.hei.hash), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
+                    if (LockTable.IsActive && !fasterSession.DisableEphemeralLocking 
+                            && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, LockType.Exclusive, out stackCtx.recSrc.HasLockTableLock))
+                    {
+                        status = OperationStatus.RETRY_LATER;
+                        goto LatchRelease;
+                    }
+                    goto CreateNewRecord;
+                }
+            #endregion Address and source record checks
 
             #region Lock source record
             LockSourceRecord:
