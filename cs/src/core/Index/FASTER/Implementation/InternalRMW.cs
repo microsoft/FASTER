@@ -206,7 +206,7 @@ namespace FASTER.core
                     stackCtx.recSrc.HasMainLogSrc = true;
                     goto CreateNewRecord;
                 }
-                else if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(stackCtx.recSrc.PhysicalAddress).Tombstone)
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(stackCtx.recSrc.PhysicalAddress).Tombstone && latchDestination == LatchDestination.NormalProcessing)
                 {
                     // Fuzzy Region: Must retry after epoch refresh, due to lost-update anomaly
                     status = OperationStatus.RETRY_LATER;
