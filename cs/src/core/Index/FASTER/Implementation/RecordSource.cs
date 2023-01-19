@@ -112,7 +112,8 @@ namespace FASTER.core
         /// After a successful CopyUpdate or other replacement of a source record, this marks the source record as Sealed or Invalid.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkSourceRecordAfterSuccessfulCopy(ref RecordInfo srcRecordInfo)
+        internal void MarkSourceRecordAfterSuccessfulCopy<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref RecordInfo srcRecordInfo)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (this.HasInMemorySrc)
             {

@@ -169,7 +169,7 @@ namespace FASTER.core
             // If we are doing SessionControlled locking, then we will have a lock table entry separate from the recordInfo for both
             // manual and ephemeral locks; no transfer or marking is needed.
             if (stackCtx.recSrc.HasInMemorySrc)
-                stackCtx.recSrc.MarkSourceRecordAfterSuccessfulCopy(ref srcRecordInfo);
+                stackCtx.recSrc.MarkSourceRecordAfterSuccessfulCopy<Input, Output, Context, FasterSession>(fasterSession, ref srcRecordInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -200,7 +200,7 @@ namespace FASTER.core
                 // Spin wait to drain the reader locks; 'Tentative' still protects the new record.
                 while (srcRecordInfo.IsLockedShared)
                     Thread.Yield();
-                stackCtx.recSrc.MarkSourceRecordAfterSuccessfulCopy(ref srcRecordInfo);
+                stackCtx.recSrc.MarkSourceRecordAfterSuccessfulCopy<Input, Output, Context, FasterSession>(fasterSession, ref srcRecordInfo);
 #endif
             }
         }

@@ -119,7 +119,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO(fasterSession, ctx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 } // end while (true)
             }
@@ -322,7 +322,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO(fasterSession, currentCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
             } while (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext));
