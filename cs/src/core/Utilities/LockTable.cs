@@ -64,7 +64,7 @@ namespace FASTER.core
 
         public bool IsActive => kv.IsActive;
 
-    #region Internal methods for Test
+    #region Internal methods for Test - TODO remove
         internal bool HasEntries(ref TKey key) => kv.HasEntries(ref key);
         internal bool HasEntries(long hash) => kv.HasEntries(hash);
 

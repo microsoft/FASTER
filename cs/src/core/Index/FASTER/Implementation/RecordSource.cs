@@ -132,6 +132,11 @@ namespace FASTER.core
                     // Because we have an XLock (unless ephemeral locking is disabled), we don't need an atomic operation here.
                     srcRecordInfo.Seal();
                 }
+
+                // if fasterSession.DisableEphemeralLocking, the "finally" handler won't unlock it, so we do that here.
+                // For ephemeral locks, we don't clear the locks here (defer that to the "finally").
+                if (fasterSession.DisableEphemeralLocking)
+                    srcRecordInfo.ClearLocks();
             }
         }
 
