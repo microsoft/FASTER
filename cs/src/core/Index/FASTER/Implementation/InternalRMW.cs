@@ -157,30 +157,30 @@ namespace FASTER.core
             if (sessionCtx.phase != Phase.REST)
             {
                 latchDestination = AcquireLatchRMW(pendingContext, sessionCtx, ref stackCtx.hei, ref status, ref latchOperation, stackCtx.recSrc.LogicalAddress);
+                if (latchDestination == LatchDestination.Retry)
+                    goto LatchRelease;
             }
             #endregion Entry latch operation if necessary
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
-            #region Normal processing
+            #region Address and source record checks
 
-                if (latchDestination == LatchDestination.NormalProcessing)
+                if (stackCtx.recSrc.HasReadCacheSrc)
                 {
-                    if (stackCtx.recSrc.HasReadCacheSrc)
-                    {
-                        // Use the readcache record as the CopyUpdater source.
-                        goto LockSourceRecord;
-                    }
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
-                    {
-                        // Mutable Region: Update the record in-place
-                        srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                        if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                            goto LatchRelease;
+                    // Use the readcache record as the CopyUpdater source.
+                    goto LockSourceRecord;
+                }
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
+                {
+                    // Mutable Region: Update the record in-place
+                    srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
+                    if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                        goto LatchRelease;
 
-                        if (srcRecordInfo.Tombstone)
-                            goto CreateNewRecord;
+                    if (srcRecordInfo.Tombstone)
+                        goto CreateNewRecord;
 
                         if (!srcRecordInfo.IsValidUpdateOrLockSource)
                         {
@@ -189,60 +189,55 @@ namespace FASTER.core
                             goto CreateNewRecord;
                         }
 
-                        rmwInfo.RecordInfo = srcRecordInfo;
-                        if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref output, ref srcRecordInfo, ref rmwInfo, out status)
-                            || (rmwInfo.Action == RMWAction.ExpireAndStop))
-                        {
-                            this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
-
-                            // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
-                            // Our IFasterSession.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate (inside the ephemeral lock)
-                            // and marked the record.
-                            pendingContext.recordInfo = srcRecordInfo;
-                            pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                            goto LatchRelease;
-                        }
-                        if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
-                            goto LatchRelease;
-
-                        // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Use this record as the CopyUpdater source.
-                        stackCtx.recSrc.HasMainLogSrc = true;
-                        goto CreateNewRecord;
-                    }
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(stackCtx.recSrc.PhysicalAddress).Tombstone)
+                    rmwInfo.RecordInfo = srcRecordInfo;
+                    if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref output, ref srcRecordInfo, ref rmwInfo, out status)
+                        || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
-                        // Fuzzy Region: Must retry after epoch refresh, due to lost-update anomaly
-                        status = OperationStatus.RETRY_LATER;
+                        this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
+
+                        // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
+                        // Our IFasterSession.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate (inside the ephemeral lock)
+                        // and marked the record.
+                        pendingContext.recordInfo = srcRecordInfo;
+                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         goto LatchRelease;
                     }
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
-                    {
-                        // Safe Read-Only Region: CopyUpdate to create a record in the mutable region
-                        stackCtx.recSrc.HasMainLogSrc = true;
-                        goto LockSourceRecord;
-                    }
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
-                    {
-                        this.EphemeralOnlyLocker.ThrowIfEnabledOnRecordBelowHeadAddress();
+                    if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
+                        goto LatchRelease;
 
-                        // Disk Region: Need to issue async io requests. Locking will be check on pending completion.
-                        status = OperationStatus.RECORD_ON_DISK;
-                        latchDestination = LatchDestination.CreatePendingContext;
-                        goto CreatePendingContext;
-                    }
-                    else
-                    {
-                        // No record exists - create new record.
-                        Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
-                        goto CreateNewRecord;
-                    }
+                    // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Use this record as the CopyUpdater source.
+                    stackCtx.recSrc.HasMainLogSrc = true;
+                    goto CreateNewRecord;
                 }
-                else if (latchDestination == LatchDestination.Retry)
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(stackCtx.recSrc.PhysicalAddress).Tombstone && latchDestination == LatchDestination.NormalProcessing)
                 {
+                    // Fuzzy Region: Must retry after epoch refresh, due to lost-update anomaly
+                    status = OperationStatus.RETRY_LATER;
                     goto LatchRelease;
                 }
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+                {
+                    // Safe Read-Only Region: CopyUpdate to create a record in the mutable region
+                    stackCtx.recSrc.HasMainLogSrc = true;
+                    goto LockSourceRecord;
+                }
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
+                {
+                    this.EphemeralOnlyLocker.ThrowIfEnabledOnRecordBelowHeadAddress();
 
-            #endregion Normal processing
+                    // Disk Region: Need to issue async io requests. Locking will be check on pending completion.
+                    status = OperationStatus.RECORD_ON_DISK;
+                    latchDestination = LatchDestination.CreatePendingContext;
+                    goto CreatePendingContext;
+                }
+                else
+                {
+                    // No record exists - create new record.
+                    Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
+                    goto CreateNewRecord;
+                }
+
+            #endregion Address and source record checks
 
             #region Lock source record
             LockSourceRecord:
