@@ -83,13 +83,23 @@ namespace FASTER.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool AddSession(WireFormat protocol, ref ISessionProvider provider, INetworkSender networkSender, out IMessageConsumer session)
         {
+            session = null;
+
             if (Interlocked.Increment(ref activeSessionCount) <= 0)
-            {
-                session = null;
                 return false;
+
+            bool retVal = false;
+            try
+            {
+                session = provider.GetSession(protocol, networkSender);
+                retVal = activeSessions.TryAdd(session, default);
+                if (!retVal) Interlocked.Decrement(ref activeSessionCount);
             }
-            session = provider.GetSession(protocol, networkSender);
-            return activeSessions.TryAdd(session, default);
+            catch
+            {
+                Interlocked.Decrement(ref activeSessionCount);
+            }
+            return retVal;
         }
 
         /// <inheritdoc />
@@ -116,8 +126,14 @@ namespace FASTER.server
                         {
                             if (activeSessions.TryRemove(_session, out _))
                             {
-                                _session.Dispose();
-                                Interlocked.Decrement(ref activeSessionCount);
+                                try
+                                {
+                                    _session.Dispose();
+                                }
+                                finally
+                                {
+                                    Interlocked.Decrement(ref activeSessionCount);
+                                }
                             }
                         }
                     }
@@ -138,8 +154,14 @@ namespace FASTER.server
             {
                 if (activeSessions.TryRemove(_session, out _))
                 {
-                    _session.Dispose();
-                    Interlocked.Decrement(ref activeSessionCount);
+                    try
+                    {
+                        _session.Dispose();
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref activeSessionCount);
+                    }
                 }
             }
         }
