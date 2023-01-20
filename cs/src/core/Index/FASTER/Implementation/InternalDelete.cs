@@ -64,7 +64,7 @@ namespace FASTER.core
             var tagExists = FindTag(ref stackCtx.hei);
             if (!tagExists)
             {
-                Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Delete() of a non-existent key requires a LockTable lock");
+                Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Delete() of a non-existent key requires a LockTable lock");
                 return OperationStatus.NOTFOUND;
             }
             stackCtx.SetRecordSourceToHashEntry(hlog);
@@ -164,7 +164,7 @@ namespace FASTER.core
                     else
                     {
                         // Either on-disk or no record exists - check for lock before creating new record. First ensure any record lock has transitioned to the LockTable.
-                        Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Delete() of an on-disk or non-existent key requires a LockTable lock");
+                        Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Delete() of an on-disk or non-existent key requires a LockTable lock");
                         goto CreateNewRecord;
                     }
                 }

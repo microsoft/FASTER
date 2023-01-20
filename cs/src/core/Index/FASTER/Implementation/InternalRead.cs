@@ -142,7 +142,7 @@ namespace FASTER.core
             {
 #if DEBUG
                 SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LogicalAddress, hlog);
-                Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
+                Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
 #endif
                 // Note: we do not lock here; we wait until reading from disk, then lock in the InternalContinuePendingRead chain.
                 if (hlog.IsNullDevice)
@@ -167,7 +167,7 @@ namespace FASTER.core
             // No record found
             else
             {
-                Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
+                Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
                 return OperationStatus.NOTFOUND;
             }
 

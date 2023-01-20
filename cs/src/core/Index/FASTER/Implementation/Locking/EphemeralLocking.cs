@@ -45,7 +45,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-            if (!this.ManualLockTable.IsEnabled || fasterSession.TryLockTableEphemeralXLock(ref key, ref stackCtx))
+            if (!this.LockTable.IsEnabled || fasterSession.TryLockTableEphemeralXLock(ref key, ref stackCtx))
                 return true;
             status = OperationStatus.RETRY_LATER;
             return false;
@@ -57,7 +57,7 @@ namespace FASTER.core
         {
             status = OperationStatus.SUCCESS;
 
-            if (this.ManualLockTable.IsEnabled)
+            if (this.LockTable.IsEnabled)
             {
                 if (!fasterSession.TryLockTableEphemeralSLock(ref key, ref stackCtx))
                 {
@@ -113,7 +113,7 @@ namespace FASTER.core
             }
             else
             {
-                Debug.Assert(this.ManualLockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
+                Debug.Assert(this.LockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
                 Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have an InMemoryLock when we have an ephemeral lock with ManualLockTable enabled");
                 fasterSession.LockTableEphemeralSUnlock(ref key, ref stackCtx);
                 stackCtx.recSrc.HasLockTableLock = false;
@@ -160,7 +160,7 @@ namespace FASTER.core
             }
             else
             {
-                Debug.Assert(this.ManualLockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
+                Debug.Assert(this.LockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
                 Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have an InMemoryLock when we have an ephemeral lock with ManualLockTable enabled");
                 fasterSession.LockTableEphemeralXUnlock(ref key, ref stackCtx);
                 stackCtx.recSrc.HasLockTableLock = false;

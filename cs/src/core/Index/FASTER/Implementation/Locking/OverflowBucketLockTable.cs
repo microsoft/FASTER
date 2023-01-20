@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
-    internal struct OverflowBucketLockTable<TKey> : IManualLockTable<TKey>
+    internal struct OverflowBucketLockTable<TKey> : ILockTable<TKey>
     {
         internal bool IsEnabled;
 
@@ -36,6 +36,11 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe bool TryLockEphemeral(ref TKey key, ref HashEntryInfo hei, LockType lockType) 
+            => lockType == LockType.Shared ? TryLockEphemeralShared(ref key, ref hei) : TryLockEphemeralExclusive(ref key, ref hei);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool TryLockEphemeralShared(ref TKey key, ref HashEntryInfo hei)
         {
             AssertLockAllowed();
@@ -52,21 +57,21 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void UnlockManual(ref TKey key, ref HashEntryInfo hei, LockType lockType)
+        public unsafe void Unlock(ref TKey key, ref HashEntryInfo hei, LockType lockType)
         {
             AssertUnlockAllowed();
             if (lockType == LockType.Shared)
-                HashBucket.ReleaseSharedLatch(hei.bucket);
+                UnlockShared(ref key, ref hei);
             else
             {
                 Debug.Assert(lockType == LockType.Exclusive, "Attempt to unlock with unknown LockType");
-                HashBucket.ReleaseExclusiveLatch(hei.bucket);
+                UnlockExclusive(ref key, ref hei);
             }
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void UnlockEphemeralShared(ref TKey key, ref HashEntryInfo hei)
+        public unsafe void UnlockShared(ref TKey key, ref HashEntryInfo hei)
         {
             AssertUnlockAllowed();
             HashBucket.ReleaseSharedLatch(hei.firstBucket);
@@ -74,7 +79,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void UnlockEphemeralExclusive(ref TKey key, ref HashEntryInfo hei)
+        public unsafe void UnlockExclusive(ref TKey key, ref HashEntryInfo hei)
         {
             AssertUnlockAllowed();
             HashBucket.ReleaseExclusiveLatch(hei.firstBucket);
@@ -111,6 +116,7 @@ namespace FASTER.core
             AssertQueryAllowed();
             return new()
             {
+                IsFound = true, // Always true for OverflowBucketLockTable
                 NumLockedShared = HashBucket.NumLatchedShared(hei.firstBucket),
                 IsLockedExclusive = HashBucket.IsLatchedExclusive(hei.firstBucket)
             };

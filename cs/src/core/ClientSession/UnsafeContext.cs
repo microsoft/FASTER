@@ -490,7 +490,7 @@ namespace FASTER.core
             {
                 if (_clientSession.fht.DisableEphemeralLocking)
                     return true;
-                if (!_clientSession.fht.ManualLockTable.TryLockEphemeralExclusive(ref key, ref stackCtx.hei))
+                if (!_clientSession.fht.LockTable.TryLockEphemeralExclusive(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasLockTableLock = true;
             }
@@ -499,7 +499,7 @@ namespace FASTER.core
             {
                 if (_clientSession.fht.DisableEphemeralLocking)
                     return true;
-                if (!_clientSession.fht.DisableEphemeralLocking || _clientSession.fht.ManualLockTable.TryLockEphemeralShared(ref key, ref stackCtx.hei))
+                if (!_clientSession.fht.DisableEphemeralLocking || _clientSession.fht.LockTable.TryLockEphemeralShared(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasLockTableLock = true;
             }
@@ -507,13 +507,13 @@ namespace FASTER.core
             public void LockTableEphemeralXUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 if (!_clientSession.fht.DisableEphemeralLocking)
-                    _clientSession.fht.ManualLockTable.UnlockEphemeralExclusive(ref key, ref stackCtx.hei);
+                    _clientSession.fht.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
             }
 
             public void LockTableEphemeralSUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 if (_clientSession.fht.DisableEphemeralLocking)
-                    _clientSession.fht.ManualLockTable.UnlockEphemeralShared(ref key, ref stackCtx.hei);
+                    _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);
             }
             #endregion Ephemeral locking
 

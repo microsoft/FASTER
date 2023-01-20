@@ -258,8 +258,8 @@ namespace FASTER.test.ReadCacheTests
             luContext.exclusiveLockCount = 0;
         }
 
-        bool LockTableHasEntries() => LockTableTests.LockTableHasEntries(fht.ManualLockTable);
-        int LockTableEntryCount() => LockTableTests.LockTableEntryCount(fht.ManualLockTable);
+        bool LockTableHasEntries() => OverflowBucketLockTableTests.LockTableHasEntries(fht.LockTable);
+        int LockTableEntryCount() => OverflowBucketLockTableTests.LockTableEntryCount(fht.LockTable);
 
         [Test]
         [Category(FasterKVTestCategory)]
@@ -570,14 +570,14 @@ namespace FASTER.test.ReadCacheTests
                 foreach (var key in locks.Keys)
                 {
                     var localKey = key;    // can't ref the iteration variable
-                    var found = fht.ManualLockTable.TryGet(ref localKey, out RecordInfo recordInfo);
+                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
                     Assert.IsTrue(found);
                     var lockType = locks[key];
                     Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
                     Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
 
                     luContext.Unlock(key, lockType);
-                    Assert.IsFalse(fht.ManualLockTable.TryGet(ref localKey, out recordInfo));
+                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out recordInfo));
                 }
             }
             catch (Exception)
@@ -635,7 +635,7 @@ namespace FASTER.test.ReadCacheTests
                 foreach (var key in locks.Keys)
                 {
                     var localKey = key;    // can't ref the iteration variable
-                    var found = fht.ManualLockTable.TryGet(ref localKey, out RecordInfo recordInfo);
+                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
                     Assert.IsTrue(found);
                     var lockType = locks[key];
                     Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
@@ -658,7 +658,7 @@ namespace FASTER.test.ReadCacheTests
 
                     luContext.Unlock(key, lockType);
                     var localKey = key;    // can't ref the iteration variable
-                    Assert.IsFalse(fht.ManualLockTable.TryGet(ref localKey, out _));
+                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out _));
                 }
             }
             catch (Exception)

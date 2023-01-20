@@ -56,7 +56,7 @@ namespace FASTER.core
                         Debug.Fail("Expected to FindTag in InternalContinuePendingRead");
                     stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                    if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockTableEphemeralSLock(ref key, ref stackCtx))
+                    if (this.LockTable.IsEnabled && !fasterSession.TryLockTableEphemeralSLock(ref key, ref stackCtx))
                     {
                         HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, currentCtx, currentCtx, fasterSession, ref pendingContext);
                         continue;
@@ -181,7 +181,7 @@ namespace FASTER.core
                 FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
                 stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockTableEphemeralXLock(ref key, ref stackCtx))
+                if (this.LockTable.IsEnabled && !fasterSession.TryLockTableEphemeralXLock(ref key, ref stackCtx))
                 {
                     HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, sessionCtx, sessionCtx, fasterSession, ref pendingContext);
                     continue;
@@ -271,7 +271,7 @@ namespace FASTER.core
                     Debug.Fail("Expected to FindTag in InternalCopyToTailForCompaction");
                 stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockTableEphemeralSLock(ref key, ref stackCtx))
+                if (this.LockTable.IsEnabled && !fasterSession.TryLockTableEphemeralSLock(ref key, ref stackCtx))
                 {
                     HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, currentCtx, currentCtx, fasterSession, ref pendingContext);
                     continue;

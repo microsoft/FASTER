@@ -18,22 +18,29 @@ namespace FASTER.core
         internal OperationStatus InternalLock(ref Key key, LockOperation lockOp, out LockState lockState)
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalLock must have protected epoch");
-            Debug.Assert(this.ManualLockTable.IsEnabled, "ManualLockTable must be enabled for InternalLock");
+            Debug.Assert(this.LockTable.IsEnabled, "ManualLockTable must be enabled for InternalLock");
             lockState = default;
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
             FindTag(ref stackCtx.hei);
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
-            if (lockOp.LockOperationType == LockOperationType.IsLocked)
-            { 
-                lockState = this.ManualLockTable.GetLockState(ref key, ref stackCtx.hei);
-                return OperationStatus.SUCCESS;
+            switch (lockOp.LockOperationType)
+            {
+                case LockOperationType.Lock:
+                    if (!this.LockTable.TryLockManual(ref key, ref stackCtx.hei, lockOp.LockType))
+                        return OperationStatus.RETRY_LATER;
+                    return OperationStatus.SUCCESS;
+                case LockOperationType.Unlock:
+                    this.LockTable.Unlock(ref key, ref stackCtx.hei, lockOp.LockType);
+                    return OperationStatus.SUCCESS;
+                case LockOperationType.IsLocked:
+                    lockState = this.LockTable.GetLockState(ref key, ref stackCtx.hei);
+                    return OperationStatus.SUCCESS;
+                default:
+                    Debug.Fail($"Unexpected {nameof(LockOperationType)}: {lockOp.LockOperationType}");
+                    break;
             }
-
-            if (!this.ManualLockTable.TryLockManual(ref key, ref stackCtx.hei, lockOp.LockType))
-                return OperationStatus.RETRY_LATER;
-
             return OperationStatus.SUCCESS;
         }
     }

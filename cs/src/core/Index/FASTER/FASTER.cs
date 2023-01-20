@@ -66,7 +66,7 @@ namespace FASTER.core
 
         internal readonly bool DisableEphemeralLocking;
         internal readonly RecordInfoLocker EphemeralOnlyLocker;
-        internal readonly OverflowBucketLockTable<Key> ManualLockTable;
+        internal readonly OverflowBucketLockTable<Key> LockTable;
 
         internal void IncrementNumLockingSessions()
         {
@@ -225,7 +225,7 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             this.EphemeralOnlyLocker = new RecordInfoLocker(lockingMode == LockingMode.EphemeralOnly);
-            this.ManualLockTable = new OverflowBucketLockTable<Key>(lockingMode == LockingMode.SessionControlled);
+            this.LockTable = new OverflowBucketLockTable<Key>(lockingMode == LockingMode.SessionControlled);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

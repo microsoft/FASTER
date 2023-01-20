@@ -148,7 +148,7 @@ namespace FASTER.core
                 else
                 {
                     // Either on-disk or no record exists - create new record.
-                    Debug.Assert(!fasterSession.IsManualLocking || ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
+                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
                     goto CreateNewRecord;
                 }
             #endregion Address and source record checks

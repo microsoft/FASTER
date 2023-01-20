@@ -51,7 +51,10 @@ namespace FASTER.core
     internal struct LockState
     {
         internal bool IsLockedExclusive;
+        internal bool IsFound;
         internal ushort NumLockedShared;
+
+        internal bool IsLocked => IsLockedExclusive || NumLockedShared > 0;
     }
 
     internal enum LockOperationType : byte

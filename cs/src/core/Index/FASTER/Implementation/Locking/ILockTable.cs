@@ -9,16 +9,26 @@ namespace FASTER.core
     /// Manual-enabled (both manual and ephemeral) LockTable interface definition
     /// </summary>
     /// <typeparam name="TKey"></typeparam>
-    internal interface IManualLockTable<TKey> : IDisposable
+    internal interface ILockTable<TKey> : IDisposable
     {
         /// <summary>
         /// Try to acquire a manual lock for the key.
         /// </summary>
         /// <param name="key">The key to lock</param>
         /// <param name="hei">The hash table entry info of the key to lock</param>
-        /// <param name="lockType">The lock type to acquire, if the key is found</param>
+        /// <param name="lockType">The lock type to acquire</param>
         /// <returns>True if the lock was acquired; false if lock acquisition failed</returns>
+        /// <remarks>There are no variations of this call specific to Shared vs. Exclusive, because this is
+        ///     called only from InternalLock, which takes the <paramref name="lockType"/> argument.</remarks>
         public bool TryLockManual(ref TKey key, ref HashEntryInfo hei, LockType lockType);
+
+        /// <summary>
+        /// Try to acquire a <paramref name="lockType"/> ephemeral lock for the key. 
+        /// </summary>
+        /// <param name="key">The key to lock</param>
+        /// <param name="hei">The hash table entry info of the key to lock</param>
+        /// <param name="lockType">The lock type to acquire--shared or exclusive</param>
+        public bool TryLockEphemeral(ref TKey key, ref HashEntryInfo hei, LockType lockType);
 
         /// <summary>
         /// Try to acquire a shared ephemeral lock for the key. 
@@ -35,26 +45,26 @@ namespace FASTER.core
         public bool TryLockEphemeralExclusive(ref TKey key, ref HashEntryInfo hei);
 
         /// <summary>
-        /// Release the specified lock type on the key.
+        /// Release the <paramref name="lockType"/> lock on the key.
         /// </summary>
         /// <param name="key">The key to unlock</param>
         /// <param name="hei">The hash table entry info of the key to lock</param>
-        /// <param name="lockType">The lock type--shared or exclusive</param>
-        public void UnlockManual(ref TKey key, ref HashEntryInfo hei, LockType lockType);
+        /// <param name="lockType">The lock type to release--shared or exclusive</param>
+        public void Unlock(ref TKey key, ref HashEntryInfo hei, LockType lockType);
 
         /// <summary>
         /// Release a shared lock on the key.
         /// </summary>
         /// <param name="key">The key to unlock</param>
         /// <param name="hei">The hash table entry info of the key to lock</param>
-        public void UnlockEphemeralShared(ref TKey key, ref HashEntryInfo hei);
+        public void UnlockShared(ref TKey key, ref HashEntryInfo hei);
 
         /// <summary>
         /// Release an exclusive lock on the key.
         /// </summary>
         /// <param name="key">The key to unlock</param>
         /// <param name="hei">The hash table entry info of the key to lock</param>
-        public void UnlockEphemeralExclusive(ref TKey key, ref HashEntryInfo hei);
+        public void UnlockExclusive(ref TKey key, ref HashEntryInfo hei);
 
         /// <summary>
         /// Return whether the key is S locked
