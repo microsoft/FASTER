@@ -1918,6 +1918,8 @@ namespace FASTER.core
             iterators = CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
             commitNum = info.CommitNum;
+            // After recovery  persisted commitnum remians 0 so we need to set it to latest commit number
+            persistedCommitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
