@@ -662,7 +662,7 @@ namespace FASTER.core
             #endregion IFunctions - Checkpointing
 
             #region Ephemeral locking
-            public bool TryLockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public bool TryLockTableEphemeralXLock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
@@ -671,7 +671,7 @@ namespace FASTER.core
                 return true;
             }
 
-            public bool TryLockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public bool TryLockTableEphemeralSLock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.ManualLockTable.IsLocked(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock):"
@@ -680,7 +680,7 @@ namespace FASTER.core
                 return true;
             }
 
-            public void UnlockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void LockTableEphemeralXUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.ManualLockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
                             $"Attempting to unlock a non-XLocked key in a Lockable context (requesting XLock):"
@@ -688,7 +688,7 @@ namespace FASTER.core
                             + $" Slocked {_clientSession.fht.ManualLockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
             }
 
-            public void UnlockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void LockTableEphemeralSUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.ManualLockTable.IsLockedShared(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"

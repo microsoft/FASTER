@@ -24,7 +24,7 @@ namespace FASTER.core
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
-                stackCtx.recSrc.PhysicalAddress = hlog.GetPhysicalAddress(stackCtx.recSrc.LogicalAddress);
+                stackCtx.recSrc.SetPhysicalAddress();
                 TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minOffset, waitForTentative);
             }
             return stackCtx.recSrc.HasInMemorySrc;

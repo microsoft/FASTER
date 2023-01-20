@@ -22,13 +22,6 @@ namespace FASTER.core
         void AssertQueryAllowed() => Debug.Assert(IsEnabled, "Attempt to do EphemeralOnly-locking query when locking mode is not LockingMode.EphemeralOnly");
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ThrowIfEnabledOnRecordBelowHeadAddress()
-        {
-            if (this.IsEnabled)
-                throw new FasterException("EphemeralOnly locking requires all existing records to be in memory");
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool TryLockShared(ref RecordInfo recordInfo)
         {
             AssertLockAllowed();

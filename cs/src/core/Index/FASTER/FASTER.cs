@@ -151,9 +151,6 @@ namespace FASTER.core
             this.ReadFlags = logSettings.ReadFlags;
             UseReadCache = logSettings.ReadCacheSettings is not null;
 
-            if (lockingMode == LockingMode.EphemeralOnly && UseReadCache)
-                throw new FasterException("Cannot UseReadCache with LockingMode.EphemeralOnly");
-
             UpdateVarLen(ref variableLengthStructSettings);
 
             IVariableLengthStruct<Key> keyLen = null;

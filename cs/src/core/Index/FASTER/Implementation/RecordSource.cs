@@ -85,6 +85,8 @@ namespace FASTER.core
         internal ref RecordInfo GetSrcRecordInfo() => ref Log.GetInfo(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ref Value GetSrcValue() => ref Log.GetValue(PhysicalAddress);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long SetPhysicalAddress() => Log.GetPhysicalAddress(LogicalAddress);
 
         internal bool HasSrc => HasInMemorySrc || HasLockTableLock;
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;

@@ -150,8 +150,8 @@ namespace FASTER.core
                 KeyHash = stackCtx.hei.hash
             };
 
-            if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockEphemeralExclusive(ref key, ref stackCtx))
-                return OperationStatus.RETRY_LATER;
+            if (!TryLockTableEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
+                return status;
 
             #region Entry latch operation if necessary
             if (sessionCtx.phase != Phase.REST)
@@ -223,8 +223,6 @@ namespace FASTER.core
                 }
                 else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
                 {
-                    this.EphemeralOnlyLocker.ThrowIfEnabledOnRecordBelowHeadAddress();
-
                     // Disk Region: Need to issue async io requests. Locking will be check on pending completion.
                     status = OperationStatus.RECORD_ON_DISK;
                     latchDestination = LatchDestination.CreatePendingContext;

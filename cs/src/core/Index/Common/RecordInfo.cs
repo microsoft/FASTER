@@ -94,6 +94,10 @@ namespace FASTER.core
 
         private static bool IsIntermediateOrInvalidWord(long word) => (word & (kTentativeBitMask | kSealedBitMask | kValidBitMask)) != kValidBitMask;
 
+        private static bool IsClosedWord(long word) => (word & (kTentativeBitMask | kSealedBitMask | kValidBitMask)) != kValidBitMask;
+
+        public bool IsClosed => IsClosedWord(word);
+
         public bool TryLock(LockType lockType)
         {
             if (lockType == LockType.Shared)

@@ -56,7 +56,7 @@ namespace FASTER.core
                         Debug.Fail("Expected to FindTag in InternalContinuePendingRead");
                     stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                    if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
+                    if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockTableEphemeralSLock(ref key, ref stackCtx))
                     {
                         HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, currentCtx, currentCtx, fasterSession, ref pendingContext);
                         continue;
@@ -181,7 +181,7 @@ namespace FASTER.core
                 FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
                 stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockEphemeralExclusive(ref key, ref stackCtx))
+                if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockTableEphemeralXLock(ref key, ref stackCtx))
                 {
                     HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, sessionCtx, sessionCtx, fasterSession, ref pendingContext);
                     continue;
@@ -265,13 +265,13 @@ namespace FASTER.core
                 RecordInfo dummyRecordInfo = default;
                 ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
-                // We must check both the readcache and LockTable for locks, as well as transfer if the current record is in the immutable region (Compaction
+                // We must check both the readcache as well as transfer if the current record is in the immutable region (Compaction
                 // allows copying up to SafeReadOnlyAddress). hei must be set in all cases, because ITCTT relies on it.
                 if (!FindTag(ref stackCtx.hei))
                     Debug.Fail("Expected to FindTag in InternalCopyToTailForCompaction");
                 stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
+                if (this.ManualLockTable.IsEnabled && !fasterSession.TryLockTableEphemeralSLock(ref key, ref stackCtx))
                 {
                     HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, currentCtx, currentCtx, fasterSession, ref pendingContext);
                     continue;
@@ -285,7 +285,7 @@ namespace FASTER.core
                     {
                         // Since this is for compaction, we don't need to TracebackForKeyMatch; ITCTT will catch the case where a future record was inserted for this key.
                         stackCtx.recSrc.LogicalAddress = actualAddress;
-                        stackCtx.recSrc.PhysicalAddress = hlog.GetPhysicalAddress(stackCtx.recSrc.LogicalAddress);
+                        stackCtx.recSrc.SetPhysicalAddress();
                         stackCtx.recSrc.HasMainLogSrc = true;
                         srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
                     }

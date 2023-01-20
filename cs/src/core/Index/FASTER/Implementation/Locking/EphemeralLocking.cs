@@ -41,9 +41,32 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryEphemeralOnlySLock(ref RecordSource<Key, Value> recSrc, ref RecordInfo recordInfo, out OperationStatus status)
+        private bool TryLockTableEphemeralXLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, out OperationStatus status)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
+            if (!this.ManualLockTable.IsEnabled || fasterSession.TryLockTableEphemeralXLock(ref key, ref stackCtx))
+                return true;
+            status = OperationStatus.RETRY_LATER;
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TryEphemeralSLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo recordInfo, out OperationStatus status)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            status = OperationStatus.SUCCESS;
+
+            if (this.ManualLockTable.IsEnabled)
+            {
+                if (!fasterSession.TryLockTableEphemeralSLock(ref key, ref stackCtx))
+                {
+                    status = OperationStatus.RETRY_LATER;
+                    return false;
+                }
+                return true;
+            }
+
             if (!this.EphemeralOnlyLocker.IsEnabled)
                 return false;
 
@@ -56,26 +79,8 @@ namespace FASTER.core
                 status = OperationStatus.RETRY_LATER;
             }
             else
-                recSrc.HasInMemoryLock = true;
-            return recSrc.HasInMemoryLock;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryEphemeralSLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo recordInfo, out OperationStatus status)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            if (this.ManualLockTable.IsEnabled)
-            {
-                if (fasterSession.TryLockEphemeralExclusive(ref key, ref stackCtx))
-                {
-                    status = OperationStatus.SUCCESS;
-                    return true;
-                }
-                status = OperationStatus.RETRY_LATER;
-                return false;
-            }
-
-            return TryEphemeralOnlySLock(ref stackCtx.recSrc, ref recordInfo, out status);
+                stackCtx.recSrc.HasInMemoryLock = true;
+            return stackCtx.recSrc.HasInMemoryLock;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -92,13 +97,17 @@ namespace FASTER.core
                 // while we hold the epoch.
                 Debug.Assert(stackCtx.recSrc.HasInMemoryLock, "Should have an InMemoryLock when we have an ephemeral lock with RecordInfoLocker enabled");
 
-                // TODO (see comments in CompleteCopyToTail also) Because this is an S lock, it is possible that the record was transferred from by another
-                // session on CopyToTail or CopyToReadCache (it would not have been a copy due to update, because that would've taken an X lock). We do not
-                // Seal or Invalidate here, so if the record is Sealed or Invalid after the unlock, it means we have to go find it wherever it is now (still
-                // in memory) and unlock it there. However this could cause problems if the new location goes below HeadAddress (even though it can't be
-                // evicted while we hold the epoch.. which could potentially cause deadlock). The alternative is to spin in CompleteCopyToTail until all
-                // readers are drained.. which also may be a deadlock danger).
                 this.EphemeralOnlyLocker.UnlockShared(ref recordInfo);
+
+                // (See comments in CompleteCopyToTail also) Because this is an S lock, then if the source record is in ReadOnly or ReadCache, it is possible
+                // that the source record (specifically its locks) was transferred by another session that did CopyToTail or CopyToReadCache (it would not have
+                // been a copy due to update, because that would've taken an X lock). If this happens then the record is Closed (Sealed or Invalid) after the
+                // unlock and we have to go find it wherever it is now (still in memory) and unlock it there.
+                //
+                // If this happens in a tightly memory-constrained environment, the new location could drop below HeadAddress. Despite this, it cannot be
+                // evicted while we hold the epoch, so use ClosedUntilAddress when searching.
+                if (recordInfo.IsClosed)
+                    FindAndUnlockTransferredRecord(ref key, stackCtx.hei.hash);
 
                 stackCtx.recSrc.HasInMemoryLock = false;
             }
@@ -106,8 +115,29 @@ namespace FASTER.core
             {
                 Debug.Assert(this.ManualLockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
                 Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have an InMemoryLock when we have an ephemeral lock with ManualLockTable enabled");
-                fasterSession.UnlockEphemeralShared(ref key, ref stackCtx);
+                fasterSession.LockTableEphemeralSUnlock(ref key, ref stackCtx);
                 stackCtx.recSrc.HasLockTableLock = false;
+            }
+        }
+
+        private void FindAndUnlockTransferredRecord(ref Key key, long hash)
+        {
+            // Loop because it may have transferred again in a highly threaded and memory-constrained scenario.
+            while (true)
+            { 
+                OperationStackContext<Key, Value> stackCtx = new(hash);
+                FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
+                stackCtx.SetRecordSourceToHashEntry(hlog);
+                var found = TryFindRecordInMemory(ref key, ref stackCtx, minOffset: hlog.ClosedUntilAddress);
+                Debug.Assert(found, "We should always find the new record if the old one is Closed");
+                if (!found)
+                    break;
+
+                stackCtx.recSrc.SetPhysicalAddress();
+                var recordInfo = stackCtx.recSrc.GetSrcRecordInfo();
+                recordInfo.UnlockShared();
+                if (!recordInfo.IsClosed)
+                    break;
             }
         }
 
@@ -132,7 +162,7 @@ namespace FASTER.core
             {
                 Debug.Assert(this.ManualLockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
                 Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have an InMemoryLock when we have an ephemeral lock with ManualLockTable enabled");
-                fasterSession.UnlockEphemeralExclusive(ref key, ref stackCtx);
+                fasterSession.LockTableEphemeralXUnlock(ref key, ref stackCtx);
                 stackCtx.recSrc.HasLockTableLock = false;
             }
         }
@@ -159,13 +189,14 @@ namespace FASTER.core
                         ref RecordInfo srcRecordInfo, ref RecordInfo newRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            if (!this.EphemeralOnlyLocker.IsEnabled)
+                return;
             if (UseReadCache)
                 ReadCacheCompleteUpdate(ref key, ref stackCtx.hei);
 
-            // Iff we are doing EphemeralOnly locking, we have to "transfer" the X lock from a readonly record--either from the
-            // main-log immutable region or readcache--to the new record. But we don't need to actually lock the new record because
-            // we know this is the last step and we are going to unlock it immediately; it is protected until we remove the Tentative bit.
-            // So all that is needed is to mark the source record as no longer in use.
+            // If we are doing EphemeralOnly locking, we have to "transfer" the X lock from a readonly record--either from the main-log immutable
+            // region or readcache--to the new record. But we don't need to actually lock the new record because we know this is the last step and
+            // we are going to unlock it immediately. So all that is needed is to mark the source record as no longer in use.
             // If we are doing SessionControlled locking, then we will have a lock table entry separate from the recordInfo for both
             // manual and ephemeral locks; no transfer or marking is needed.
             if (stackCtx.recSrc.HasInMemorySrc)
@@ -177,31 +208,22 @@ namespace FASTER.core
                         ref RecordInfo srcRecordInfo, ref RecordInfo newRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            if (!this.EphemeralOnlyLocker.IsEnabled)
+                return;
+
             if (UseReadCache)
                 ReadCacheCompleteCopyToTail(ref key, ref stackCtx.hei);
 
-            // TODO (see also comments in EphemeralSUnlock): Iff we are doing EphemeralOnly locking, we have to transfer the S locks from a
-            // readonly record--either from the main-log immutable region or readcache--to the new record. However, there's a catch: other
-            // sessions holding thhose read locks have to be able to release them. If we transfer while those locks are still held, then the
-            // existing lock holders would have to go find the new location, and the new location could go below HeadAddress before the lock
-            // holders get there. So, spin here waiting for share locks to drain. However, this has potential deadlock implications too, if
-            // it prevents a flush. TODO need to finalize this design; current assumption is that we will disallow any below-HeadAddress operations
-            // *and* CopyToTailFromReadOnly if EphemeralOnly.
-
+            // (See also comments in EphemeralSUnlock): If we are doing EphemeralOnly locking, we have to transfer the S locks from a
+            // readonly record--either from the main-log immutable region or readcache--to the new record. However, other sessions holding
+            // those read locks have to be able to release them; EphemeralSUnlock will handle that.
             // If we are doing SessionControlled locking, then we will have a lock table entry separate from the recordInfo for both
             // manual and ephemeral locks; no transfer or marking is needed.
             if (stackCtx.recSrc.HasInMemorySrc)
             {
-#if false // Part of the TODO
                 // Unlock the current ephemeral lock here; we mark the source so we *know* we will have an invalid unlock on srcRecordInfo and would have to chase
                 // through InternalLock to unlock it, so we save the time by not transferring our ephemeral lock; 'Tentative' still protects the new record.
                 newRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref srcRecordInfo, seal: stackCtx.recSrc.HasMainLogSrc, removeEphemeralLock: true);
-#else
-                // Spin wait to drain the reader locks; 'Tentative' still protects the new record.
-                while (srcRecordInfo.IsLockedShared)
-                    Thread.Yield();
-                stackCtx.recSrc.MarkSourceRecordAfterSuccessfulCopy<Input, Output, Context, FasterSession>(fasterSession, ref srcRecordInfo);
-#endif
             }
         }
     }

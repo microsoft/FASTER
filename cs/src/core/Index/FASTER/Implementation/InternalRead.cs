@@ -223,7 +223,7 @@ namespace FASTER.core
                     RecordInfo = srcRecordInfo
                 };
 
-                if (!TryEphemeralOnlySLock(ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out status))
                     return false;
 
                 try
@@ -260,7 +260,7 @@ namespace FASTER.core
                 RecordInfo = srcRecordInfo
             };
 
-            if (!TryEphemeralOnlySLock(ref stackCtx.recSrc, ref srcRecordInfo, out var status))
+            if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out var status))
                 return status;
 
             try
@@ -307,7 +307,7 @@ namespace FASTER.core
                 RecordInfo = srcRecordInfo
             };
 
-            if (!TryEphemeralOnlySLock(ref stackCtx.recSrc, ref srcRecordInfo, out var status))
+            if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out var status))
                 return status;
 
             try
