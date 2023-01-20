@@ -115,8 +115,9 @@ namespace FASTER.core
         internal void MarkSourceRecordAfterSuccessfulCopyUpdate<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref RecordInfo srcRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (this.HasInMemorySrc && this.LogicalAddress >= this.Log.HeadAddress)
+            if (this.HasInMemorySrc)
             {
+                // Record is guaranteed to be in memory at this point, regardless of HeadAddress
                 if (this.HasReadCacheSrc)
                 {
                     // If the record was evicted, it won't be accessed, so we do not need to worry about setting it invalid.
