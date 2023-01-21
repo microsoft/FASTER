@@ -49,7 +49,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Called during InternalXxx 'finally' handler, to set the new record invalid and non-tentative if an exception or other error occurred.
+        /// Called during InternalXxx 'finally' handler, to set the new record invalid if an exception or other error occurred.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void HandleNewRecordOnError(FasterKV<Key, Value> fkv)

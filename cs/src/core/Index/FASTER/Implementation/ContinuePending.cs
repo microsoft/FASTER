@@ -38,7 +38,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
-            Debug.Assert(!srcRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
+            Debug.Assert(!srcRecordInfo.Sealed && !srcRecordInfo.IsLocked, "Should always retrieve a non-Locked, non-Sealed record from disk");
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
@@ -171,7 +171,7 @@ namespace FASTER.core
 
             byte* recordPointer = request.record.GetValidPointer();
             RecordInfo inputRecordInfo = hlog.GetInfoFromBytePointer(recordPointer); // Not ref, as we don't want to write into request.record
-            Debug.Assert(!inputRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
+            Debug.Assert(!inputRecordInfo.Sealed && !inputRecordInfo.IsLocked, "Should always retrieve a non-Locked, non-Sealed record from disk");
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
             OperationStatus status;

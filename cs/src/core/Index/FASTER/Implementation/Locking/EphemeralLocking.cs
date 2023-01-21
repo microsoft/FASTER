@@ -16,7 +16,7 @@ namespace FASTER.core
             if (UseReadCache && FindInReadCache(ref key, ref stackCtx,
                                                 untilAddress: (prevHighestKeyHashAddress & Constants.kReadCacheBitMask) != 0 ? prevHighestKeyHashAddress : Constants.kInvalidAddress))
                 return true;
-            return TryFindRecordInMainLog(ref key, ref stackCtx, minOffset: hlog.HeadAddress, waitForTentative: true);
+            return TryFindRecordInMainLog(ref key, ref stackCtx, minOffset: hlog.HeadAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -212,7 +212,7 @@ namespace FASTER.core
                 return;
 
             if (UseReadCache)
-                ReadCacheCompleteCopyToTail(ref key, ref stackCtx.hei);
+                ReadCacheCompleteCopyToTail(ref key, ref stackCtx.hei, ref newRecordInfo, removeEphemeralLock: true);
 
             // (See also comments in EphemeralSUnlock): If we are doing EphemeralOnly locking, we have to transfer the S locks from a
             // readonly record--either from the main-log immutable region or readcache--to the new record. However, other sessions holding

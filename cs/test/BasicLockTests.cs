@@ -351,7 +351,6 @@ namespace FASTER.test.LockTests
             long physicalAddress = this.fkv.hlog.GetPhysicalAddress(expectedThrowAddress);
             ref var recordInfo = ref this.fkv.hlog.GetInfo(physicalAddress);
             Assert.IsTrue(recordInfo.Invalid, "Expected Invalid record");
-            Assert.IsFalse(recordInfo.Tentative, "Expected non-Tentative record");
         }
     }
 }

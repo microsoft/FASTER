@@ -12,7 +12,7 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindInReadCache(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long untilAddress, bool alwaysFindLatestLA = true, bool waitForTentative = true)
+        private bool FindInReadCache(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long untilAddress, bool alwaysFindLatestLA = true)
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
         RestartChain:
@@ -45,20 +45,8 @@ namespace FASTER.core
                 RecordInfo recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
 
                 // When traversing the readcache, we skip Invalid records. The semantics of Seal are that the operation is retried, so if we leave
-                // Sealed records in the readcache, we'll never get past them. Therefore, we go from Tentative to Invalid if the Tentative record
-                // has to be invalidated. There is only one scenario where we go Tentative -> Invalid in the readcache: when an updated record was
-                // added to the main log. This record is *after* the Invalidated one, so it is safe to proceed. We don't go Tentative -> Invalid for
-                // Read/CopyToReadCache; InternalContinuePendingRead makes sure there is not already a record in the readcache for a record just read
-                // from disk, and the usual CAS-into-hashbucket operation to add a new readcache record will catch the case a subsequent one was added.
-                if (recordInfo.Tentative && waitForTentative)
-                {
-                    // This is not a ref, so we have to re-get it.
-                    ref var ri = ref readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
-                    SpinWaitWhileTentativeAndReturnValidity(ref ri);
-                    recordInfo = ri;
-                }
-
-                // Return true if we find a read cache entry matching the key. Skip Invalid but *not* Intermediate; that's tested as part of lock acquisition.
+                // Sealed records in the readcache, we'll never get past them. Therefore, we go to Invalid to mark a ReadCache record as closed.
+                // Return true if we find a Valid read cache entry matching the key.
                 if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress > untilAddress && !stackCtx.recSrc.HasReadCacheSrc
                     && comparer.Equals(ref key, ref readcache.GetKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)))
                 {
@@ -163,13 +151,6 @@ namespace FASTER.core
                 lowestReadCachePhysicalAddress = physicalAddress;
 
                 var recordInfo = readcache.GetInfo(physicalAddress);
-                if (recordInfo.Tentative)
-                {
-                    // This is not a ref, so we have to re-get it.
-                    ref var ri = ref readcache.GetInfo(physicalAddress);
-                    SpinWaitWhileTentativeAndReturnValidity(ref ri);
-                    recordInfo = ri;
-                }
 
                 // Look ahead to see if we're at the end of the readcache chain.
                 entry.word = recordInfo.PreviousAddress;
@@ -219,7 +200,7 @@ namespace FASTER.core
                 // Someone added a new record in the splice region. It won't be readcache; that would've been added at tail. See if it's our key.
                 // We want this whether it's Tentative or not, so don't wait for Tentative.
                 var minAddress = untilLogicalAddress > hlog.HeadAddress ? untilLogicalAddress : hlog.HeadAddress;
-                if (TraceBackForKeyMatch(ref key, lowest_rcri.PreviousAddress, minAddress + 1, out long prevAddress, out _, waitForTentative: false))
+                if (TraceBackForKeyMatch(ref key, lowest_rcri.PreviousAddress, minAddress + 1, out long prevAddress, out _))
                     success = false;
                 else if (prevAddress > untilLogicalAddress && prevAddress < hlog.HeadAddress)
                 {
@@ -261,13 +242,34 @@ namespace FASTER.core
                 entry.word = recordInfo.PreviousAddress;
             }
 
-            // If we're here, no record for 'key' was found.
+            // If we're here, no (valid) record for 'key' was found.
             return;
         }
 
         // Called to check if another session added a readcache entry from a pending read while we were doing CopyToTail of a pending read.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCompleteCopyToTail(ref Key key, ref HashEntryInfo hei) => ReadCacheCompleteUpdate(ref key, ref hei);
+        private void ReadCacheCompleteCopyToTail(ref Key key, ref HashEntryInfo hei, ref RecordInfo newRecordInfo, bool removeEphemeralLock)
+        {
+            Debug.Assert(UseReadCache, "Should not call ReadCacheCompleteCopyToTail if !UseReadCache");
+            HashBucketEntry entry = new() { word = hei.CurrentAddress };
+            HashBucketEntry untilEntry = new() { word = hei.Address };
+
+            // Traverse for the key above untilAddress (which may not be in the readcache if there were no readcache records when it was retrieved).
+            while (entry.ReadCache && (entry.Address > untilEntry.Address || !untilEntry.ReadCache))
+            {
+                var physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
+                ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
+                if (!recordInfo.Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
+                {
+                    newRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref recordInfo, seal: false, removeEphemeralLock);
+                    return;
+                }
+                entry.word = recordInfo.PreviousAddress;
+            }
+
+            // If we're here, no (valid) record for 'key' was found.
+            return;
+        }
 
         internal void ReadCacheEvict(long rcLogicalAddress, long rcToLogicalAddress)
         {

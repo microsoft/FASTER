@@ -10,41 +10,39 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset, bool waitForTentative = true)
+        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset)
         {
             if (!UseReadCache || !FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress))
             {
-                TryFindRecordInMainLog(ref key, ref stackCtx, minOffset, waitForTentative);
+                TryFindRecordInMainLog(ref key, ref stackCtx, minOffset);
             }
             return stackCtx.recSrc.HasInMemorySrc;
         }
 
-        private bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset, bool waitForTentative)
+        private bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset)
         {
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
                 stackCtx.recSrc.SetPhysicalAddress();
-                TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minOffset, waitForTentative);
+                TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minOffset);
             }
             return stackCtx.recSrc.HasInMemorySrc;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(ref Key key, ref RecordSource<Key, Value> recSrc, long minOffset, bool waitForTentative = true)
+        private bool TraceBackForKeyMatch(ref Key key, ref RecordSource<Key, Value> recSrc, long minOffset)
         {
             ref var recordInfo = ref hlog.GetInfo(recSrc.PhysicalAddress);
             if (comparer.Equals(ref key, ref hlog.GetKey(recSrc.PhysicalAddress)) && !recordInfo.Invalid)
-            {
-                if (!waitForTentative || SpinWaitWhileTentativeAndReturnValidity(ref recordInfo))
-                    return recSrc.HasMainLogSrc = true;
-            }
+                return recSrc.HasMainLogSrc = true;
+
             recSrc.LogicalAddress = recordInfo.PreviousAddress;
-            return recSrc.HasMainLogSrc = TraceBackForKeyMatch(ref key, recSrc.LogicalAddress, minOffset, out recSrc.LogicalAddress, out recSrc.PhysicalAddress, waitForTentative);
+            return recSrc.HasMainLogSrc = TraceBackForKeyMatch(ref key, recSrc.LogicalAddress, minOffset, out recSrc.LogicalAddress, out recSrc.PhysicalAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(ref Key key, long fromLogicalAddress, long minAddress, out long foundLogicalAddress, out long foundPhysicalAddress, bool waitForTentative = true)
+        private bool TraceBackForKeyMatch(ref Key key, long fromLogicalAddress, long minAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
         {
             foundLogicalAddress = fromLogicalAddress;
             while (foundLogicalAddress >= minAddress)
@@ -53,10 +51,7 @@ namespace FASTER.core
 
                 ref var recordInfo = ref hlog.GetInfo(foundPhysicalAddress);
                 if (!recordInfo.Invalid && comparer.Equals(ref key, ref hlog.GetKey(foundPhysicalAddress)))
-                {
-                    if (!waitForTentative || SpinWaitWhileTentativeAndReturnValidity(ref recordInfo))
-                        return true;
-                }
+                    return true;
 
                 foundLogicalAddress = recordInfo.PreviousAddress;
             }

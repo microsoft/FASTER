@@ -12,8 +12,8 @@ using static FASTER.core.Utility;
 namespace FASTER.core
 {
     // RecordInfo layout (64 bits total):
-    // [-][Modified][InNewVersion][Filler][Dirty][Tentative][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
-    //     where X = exclusive lock, S = shared lock, R = readcache, A = address, - = unused
+    // [Unused2][Modified][InNewVersion][Filler][Dirty][Unused2][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    //     where X = exclusive lock, S = shared lock, R = readcache, A = address
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
     {
@@ -42,8 +42,8 @@ namespace FASTER.core
         // Other marker bits
         const int kTombstoneBitOffset = kExclusiveLockBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
-        const int kTentativeBitOffset = kValidBitOffset + 1;
-        const int kSealedBitOffset = kTentativeBitOffset + 1;
+        const int kUnused1BitOffset = kValidBitOffset + 1;
+        const int kSealedBitOffset = kUnused1BitOffset + 1;
         const int kDirtyBitOffset = kSealedBitOffset + 1;
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
@@ -53,13 +53,13 @@ namespace FASTER.core
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
-        const long kTentativeBitMask = 1L << kTentativeBitOffset;
+        const long kUnused1BitMask = 1L << kUnused1BitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kFillerBitMask = 1L << kFillerBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
-        internal const long kUnused1BitMask = 1L << kUnusedBitOffset;
+        internal const long kUnused2BitMask = 1L << kUnusedBitOffset;
 
         [FieldOffset(0)]
         private long word;
@@ -88,13 +88,7 @@ namespace FASTER.core
 
         public void ClearLocks() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
 
-        public bool IsIntermediate => IsIntermediateWord(word);
-
-        private static bool IsIntermediateWord(long word) => (word & (kTentativeBitMask | kSealedBitMask)) != 0;
-
-        private static bool IsIntermediateOrInvalidWord(long word) => (word & (kTentativeBitMask | kSealedBitMask | kValidBitMask)) != kValidBitMask;
-
-        private static bool IsClosedWord(long word) => (word & (kTentativeBitMask | kSealedBitMask | kValidBitMask)) != kValidBitMask;
+        private static bool IsClosedWord(long word) => (word & (kSealedBitMask | kValidBitMask)) != kValidBitMask;
 
         public bool IsClosed => IsClosedWord(word);
 
@@ -135,20 +129,19 @@ namespace FASTER.core
         /// </summary>
         /// <returns>Whether lock was acquired successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockExclusive(bool tentative = false)
+        public bool TryLockExclusive()
         {
             int spinCount = Constants.kMaxLockSpins;
-            long tentativeBit = tentative ? kTentativeBitMask : 0;
 
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
             while (true)
             {
                 long expected_word = word;
-                if (IsIntermediateOrInvalidWord(expected_word))
+                if (IsClosedWord(expected_word))
                     return false;
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
-                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask | tentativeBit, expected_word))
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
                         break;
                 }
                 if (spinCount > 0 && --spinCount <= 0)
@@ -161,8 +154,7 @@ namespace FASTER.core
             {
                 if ((word & kSharedLockMaskInWord) == 0)
                 {
-                    // Someone else may have transferred/invalidated the record while we were draining reads. *Don't* check for Tentative here;
-                    // we may have set it above, and no record should be set to tentative after it's been inserted into the hash chain.
+                    // Someone else may have transferred/invalidated the record while we were draining reads.
                     if ((this.word & (kSealedBitMask | kValidBitMask)) == kValidBitMask)
                         return true;
                     break;
@@ -175,7 +167,7 @@ namespace FASTER.core
             for (; ; Thread.Yield())
             {
                 long expected_word = word;
-                if (Interlocked.CompareExchange(ref word, expected_word & ~(kExclusiveLockBitMask | tentativeBit), expected_word) == expected_word)
+                if (Interlocked.CompareExchange(ref word, expected_word & ~kExclusiveLockBitMask, expected_word) == expected_word)
                     break;
             }
             return false;
@@ -195,7 +187,7 @@ namespace FASTER.core
         /// </summary>
         /// <returns>Whether lock was acquired successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockShared(bool tentative = false)
+        public bool TryLockShared()
         {
             int spinCount = Constants.kMaxLockSpins;
 
@@ -203,14 +195,12 @@ namespace FASTER.core
             while (true)
             {
                 long expected_word = word;
-                if (IsIntermediateOrInvalidWord(expected_word))
+                if (IsClosedWord(expected_word))
                     return false;
                 if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
                     && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
                 {
-                    // If there are no shared locks, this one will be tentative if requested. Otherwise, do not force existing locks to be tentative. 
-                    long tentativeBit = tentative && ((expected_word & kSharedLockMaskInWord) == 0) ? kTentativeBitMask : 0;
-                    if (expected_word == Interlocked.CompareExchange(ref word, (expected_word + kSharedLockIncrement) | tentativeBit, expected_word))
+                    if (expected_word == Interlocked.CompareExchange(ref word, expected_word + kSharedLockIncrement, expected_word))
                         break;
                 }
                 if (spinCount > 0 && --spinCount <= 0) 
@@ -220,21 +210,11 @@ namespace FASTER.core
             return true;
         }
 
-        // For new records, which don't need the Interlocked overhead.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitializeLock(LockType lockType, bool tentative)
-        {
-            if (lockType == LockType.Shared)
-                this.InitializeLockShared(tentative);
-            else
-                this.InitializeLockExclusive(tentative);
-        }
+        internal void InitializeLockShared() => this.word += kSharedLockIncrement;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitializeLockShared(bool tentative = false) => this.word += kSharedLockIncrement | (tentative ? kTentativeBitMask : 0);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitializeLockExclusive(bool tentative = false) => this.word |= kExclusiveLockBitMask | (tentative ? kTentativeBitMask : 0);
+        internal void InitializeLockExclusive() => this.word |= kExclusiveLockBitMask;
 
         /// <summary>
         /// Try to reset the modified bit of the RecordInfo
@@ -247,7 +227,7 @@ namespace FASTER.core
             while (true)
             {
                 long expected_word = word;
-                if (IsIntermediateOrInvalidWord(expected_word))
+                if (IsClosedWord(expected_word))
                     return false;
                 if ((expected_word & kModifiedBitMask) == 0)
                     return true;
@@ -271,11 +251,10 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TransferReadLocksFromAndMarkSourceAtomic(ref RecordInfo source, bool seal, bool removeEphemeralLock)
+        public void TransferReadLocksFromAndMarkSourceAtomic(ref RecordInfo source, bool seal, bool removeEphemeralLock)
         {
-            // This is called when tranferring read locks from the read cache or Lock Table to a tentative log record.
-            Debug.Assert(this.Tentative, "Must only transfer locks to a tentative recordInfo");
-            Debug.Assert(!this.IsLockedExclusive, "Must only transfer readlocks");
+            // This is called when tranferring read locks from the read cache or Lock Table read-only region to a new log record.
+            Debug.Assert(!this.IsLockedExclusive, "Must only transfer readlocks (there can be only one exclusive lock so it is handled directly)");
             for (; ; Thread.Yield())
             {
                 long expected_word = source.word;
@@ -296,7 +275,7 @@ namespace FASTER.core
                 if (expected_word == Interlocked.CompareExchange(ref source.word, new_word, expected_word))
                 {
                     this.word = (new_word & ~kSealedBitMask) | kValidBitMask;
-                    return true;
+                    return;
                 }
             }
         }
@@ -331,32 +310,6 @@ namespace FASTER.core
             {
                 if (value) word |= kValidBitMask;
                 else word &= ~kValidBitMask;
-            }
-        }
-
-        public bool Tentative
-        {
-            get => (word & kTentativeBitMask) > 0;
-            set
-            {
-                if (value) word |= kTentativeBitMask;
-                else word &= ~kTentativeBitMask;
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ClearTentativeBitAtomic()
-        {
-            // Call this when locking or splicing may be done simultaneously
-            while (true)
-            {
-                long expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
-                if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kTentativeBitMask, expected_word))
-                    return;
-
-                // Tentative records should not be operated on by other threads.
-                Debug.Assert((word & kSealedBitMask) == 0 && !this.Invalid);
-                Thread.Yield();
             }
         }
 
@@ -421,7 +374,7 @@ namespace FASTER.core
         public void SetDirty() => word |= kDirtyBitMask;
         public void SetTombstone() => word |= kTombstoneBitMask;
         public void SetValid() => word |= kValidBitMask;
-        public void SetInvalid() => word &= ~(kValidBitMask | kTentativeBitMask);
+        public void SetInvalid() => word &= ~kValidBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetInvalidAtomic()
@@ -429,7 +382,7 @@ namespace FASTER.core
             while (true)
             {
                 long expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
-                if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~(kValidBitMask | kTentativeBitMask), expected_word))
+                if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kValidBitMask, expected_word))
                     return;
                 Thread.Yield();
             }
@@ -437,12 +390,12 @@ namespace FASTER.core
 
         public bool Invalid => (word & kValidBitMask) == 0;
 
-        public bool SkipOnScan => Invalid || (word & (kSealedBitMask | kTentativeBitMask)) != 0;
+        public bool SkipOnScan => (word & (kValidBitMask | kSealedBitMask)) != kValidBitMask;
 
         /// <summary>
         /// Indicates whether this RecordInfo is a valid source for updates or record locks.
         /// </summary>
-        public bool IsValidUpdateOrLockSource => (word & (kValidBitMask | kTentativeBitMask | kSealedBitMask)) == kValidBitMask;
+        public bool IsValidUpdateOrLockSource => (word & (kValidBitMask | kSealedBitMask)) == kValidBitMask;
 
         public long PreviousAddress
         {
@@ -466,13 +419,19 @@ namespace FASTER.core
             set => word = value ? word | kUnused1BitMask : word & ~kUnused1BitMask;
         }
 
+        internal bool Unused2
+        {
+            get => (word & kUnused2BitMask) != 0;
+            set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask;
+        }
+
         public override string ToString()
         {
             var paRC = this.PreviousAddressIsReadCache ? "(rc)" : string.Empty;
             var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";
             static string bstr(bool value) => value ? "T" : "F";
             return $"prev {this.AbsolutePreviousAddress}{paRC}, locks {locks}, valid {bstr(Valid)}, mod {bstr(Modified)},"
-                 + $" tomb {bstr(Tombstone)}, tent {bstr(Tentative)}, seal {bstr(Sealed)}, fill {bstr(Filler)}, dirty {bstr(Dirty)}, Un1 {bstr(Unused1)}";
+                 + $" tomb {bstr(Tombstone)}, seal {bstr(Sealed)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused2)}, Un2 {bstr(Unused1)}";
         }
     }
 }
