@@ -38,7 +38,11 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
-            Debug.Assert(!srcRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
+            // We ignore locks and temp bits for disk images
+            srcRecordInfo.ClearLocks();
+            srcRecordInfo.Tentative = false;
+            srcRecordInfo.Unseal();
+            // Debug.Assert(!srcRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
@@ -170,8 +174,13 @@ namespace FASTER.core
             SpinWaitUntilClosed(request.logicalAddress);
 
             byte* recordPointer = request.record.GetValidPointer();
-            RecordInfo inputRecordInfo = hlog.GetInfoFromBytePointer(recordPointer); // Not ref, as we don't want to write into request.record
-            Debug.Assert(!inputRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
+            ref var inputRIRef = ref hlog.GetInfoFromBytePointer(recordPointer);
+            // We ignore locks and temp bits for disk images
+            inputRIRef.ClearLocks();
+            inputRIRef.Tentative = false;
+            inputRIRef.Unseal();
+            RecordInfo inputRecordInfo = inputRIRef; // Not ref, as we don't want to write into request.record
+            // Debug.Assert(!inputRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
             OperationStatus status;
