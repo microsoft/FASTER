@@ -527,8 +527,7 @@ namespace FASTER.core
 
                                 // Clean up temporary bits when applying the delta log
                                 ref var destInfo = ref GetInfo(destination);
-                                destInfo.ClearLocks();
-                                destInfo.Unseal();
+                                destInfo.ClearBitsForDiskImages();
                             }
                             physicalAddress += size;
                         }

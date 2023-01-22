@@ -121,7 +121,8 @@ namespace FASTER.core
             {
                 System.Diagnostics.Debug.Assert(this.LogicalAddress >= this.Log.ClosedUntilAddress, "Should not have evicted the source record while we held the epoch");
 
-                // Note that records cannot be evicted even if they are now below HeadAddress of the log or readcache, because we hold the epoch.
+                // Note that source records cannot be evicted even if they are now below HeadAddress of the log or readcache, because we hold the epoch.
+                // Therefore we *do not* stop at HeadAddress, because that would potentially allow a locked source record to be skipped.
                 if (this.HasReadCacheSrc)
                 {
                     // Even though we should be called with an XLock (unless ephemeral locking is disabled) we need to do this atomically;

@@ -88,6 +88,9 @@ namespace FASTER.core
 
         public void ClearLocks() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
 
+        // We ignore locks and temp bits for disk images
+        public void ClearBitsForDiskImages() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kDirtyBitMask);
+
         private static bool IsClosedWord(long word) => (word & (kSealedBitMask | kValidBitMask)) != kValidBitMask;
 
         public bool IsClosed => IsClosedWord(word);
@@ -315,7 +318,6 @@ namespace FASTER.core
 
         public bool Sealed => (word & kSealedBitMask) > 0;
         public void Seal() => word |= kSealedBitMask;
-        public void Unseal() => word &= ~kSealedBitMask;
 
         public void ClearDirtyAtomic()
         {

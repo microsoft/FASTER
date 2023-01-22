@@ -854,8 +854,7 @@ namespace FASTER.core
             {
                 long recordStart = physicalAddress + pointer;
                 ref RecordInfo info = ref hlog.GetInfo(recordStart);
-                info.ClearLocks();
-                info.Unseal();
+                info.ClearBitsForDiskImages();
 
                 if (info.IsNull())
                     pointer += RecordInfo.GetLength();
