@@ -225,7 +225,7 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             this.EphemeralOnlyLocker = new RecordInfoLocker(lockingMode == LockingMode.EphemeralOnly);
-            this.LockTable = new OverflowBucketLockTable<Key>(lockingMode == LockingMode.SessionControlled);
+            this.LockTable = new OverflowBucketLockTable<Key>(lockingMode == LockingMode.SessionControlled ? state[resizeInfo.version].size_mask : 0);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
@@ -726,6 +726,9 @@ namespace FASTER.core
         /// <returns>Whether the grow completed</returns>
         public bool GrowIndex()
         {
+            if (this.LockTable.IsEnabled && this.LockTable.GetType() == typeof(OverflowBucketLockTable<Key>))
+                throw new FasterException($"Cannot use GrowIndex when using {nameof(OverflowBucketLockTable<Key>)}");
+
             if (epoch.ThisInstanceProtected())
                 throw new FasterException("Cannot use GrowIndex when using non-async sessions");
 
@@ -767,6 +770,7 @@ namespace FASTER.core
             Free();
             hlog.Dispose();
             readcache?.Dispose();
+            LockTable.Dispose();
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();

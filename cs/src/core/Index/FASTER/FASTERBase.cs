@@ -429,7 +429,7 @@ namespace FASTER.core
 #endif
         }
 
-        internal long GetMaskedHashValue(long hash) => hash & state[resizeInfo.version].size_mask;
+        internal long GetMaskedHashCode(long hash) => hash & state[resizeInfo.version].size_mask;
 
         /// <summary>
         /// A helper function that is used to find the slot corresponding to a

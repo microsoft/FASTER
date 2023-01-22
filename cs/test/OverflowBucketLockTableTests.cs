@@ -23,7 +23,6 @@ namespace FASTER.test.LockTable
     [TestFixture]
     internal class OverflowBucketLockTableTests
     {
-        OverflowBucketLockTable<long> lockTable;
         IFasterEqualityComparer<long> comparer = new LongFasterEqualityComparer();
         long SingleBucketKey = 1;   // We use a single bucket here for most tests so this lets us use 'ref' easily
 
@@ -50,15 +49,15 @@ namespace FASTER.test.LockTable
 
             fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
                                             comparer: comparer, lockingMode: LockingMode.SessionControlled);
-
-            lockTable = new(true);
         }
 
         [TearDown]
         public void TearDown()
         {
-            lockTable.Dispose();
-            lockTable = default;
+            fht?.Dispose();
+            fht = default;
+            log?.Dispose();
+            log = default;
         }
 
         void TryLock(long key, LockType lockType, bool ephemeral, int expectedCurrentReadLocks, bool expectedLockResult)
@@ -67,26 +66,25 @@ namespace FASTER.test.LockTable
             GetBucket(ref hei);
 
             // Check for existing lock
-            var lockState = lockTable.GetLockState(ref key, ref hei);
+            var lockState = fht.LockTable.GetLockState(ref key, ref hei);
             Assert.AreEqual(expectedCurrentReadLocks > 0, lockState.NumLockedShared);
 
             if (ephemeral)
-                Assert.AreEqual(expectedLockResult, lockTable.TryLockEphemeral(ref key, ref hei, lockType));
+                Assert.AreEqual(expectedLockResult, fht.LockTable.TryLockEphemeral(ref key, ref hei, lockType));
             else
-                Assert.AreEqual(expectedLockResult, lockTable.TryLockManual(ref key, ref hei, lockType));
+                Assert.AreEqual(expectedLockResult, fht.LockTable.TryLockManual(ref key, ref hei, lockType));
         }
 
         void Unlock(long key, LockType lockType)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
             GetBucket(ref hei);
-            lockTable.Unlock(ref key, ref hei, lockType);
+            fht.LockTable.Unlock(ref key, ref hei, lockType);
         }
 
-        void GetBucket(ref HashEntryInfo hei)
-        {
-            fht.FindOrCreateTag(ref hei, fht.Log.BeginAddress);
-        }
+        void GetBucket(ref HashEntryInfo hei) => GetBucket(fht, ref hei);
+
+        internal static void GetBucket(FasterKV<long, long> fht, ref HashEntryInfo hei) => fht.FindOrCreateTag(ref hei, fht.Log.BeginAddress);
 
         internal void AssertLockCounts(ref HashEntryInfo hei, bool expectedX, long expectedS)
         {
@@ -95,10 +93,13 @@ namespace FASTER.test.LockTable
             Assert.AreEqual(expectedS, lockState.NumLockedShared);
         }
 
-        unsafe void AssertTotalLockCounts(long expectedX, long expectedS)
+        internal unsafe void AssertTotalLockCounts(long expectedX, long expectedS)
+            => AssertTotalLockCounts(fht, expectedX, expectedS);
+
+        internal static unsafe void AssertTotalLockCounts(FasterKV<long, long> fht, long expectedX, long expectedS)
         {
             HashBucket* buckets = fht.state[fht.resizeInfo.version].tableAligned;
-            var count = fht.state[fht.resizeInfo.version].size_mask;
+            var count = fht.LockTable.NumBuckets;
             long xcount = 0, scount = 0;
             for (var ii = 0; ii < count; ++ii)
             {
@@ -112,7 +113,7 @@ namespace FASTER.test.LockTable
 
         [Test]
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
-        public void SingleKeyTest(UseSingleBucketComparer justToSignalSetup)
+        public void SingleKeyTest(UseSingleBucketComparer /* justToSignalSetup */ _)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
             GetBucket(ref hei);
@@ -148,7 +149,7 @@ namespace FASTER.test.LockTable
 
         [Test]
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
-        public void ThreeKeyTest(UseSingleBucketComparer justToSignalSetup)
+        public void ThreeKeyTest(UseSingleBucketComparer /* justToSignalSetup */ _)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
             GetBucket(ref hei);
@@ -279,7 +280,7 @@ namespace FASTER.test.LockTable
                     {
                         HashEntryInfo hei = new(threadStructs[ii].hash);
                         GetBucket(ref hei);
-                        while (!lockTable.TryLockManual(ref threadStructs[ii].key, ref hei, threadStructs[ii].lockType))
+                        while (!fht.LockTable.TryLockManual(ref threadStructs[ii].key, ref hei, threadStructs[ii].lockType))
                             ;
                     }
 
@@ -291,7 +292,7 @@ namespace FASTER.test.LockTable
                     {
                         HashEntryInfo hei = new(threadStructs[ii].hash);
                         GetBucket(ref hei);
-                        lockTable.Unlock(ref threadStructs[ii].key, ref hei, threadStructs[ii].lockType);
+                        fht.LockTable.Unlock(ref threadStructs[ii].key, ref hei, threadStructs[ii].lockType);
                     }
                     Array.Clear(threadStructs);
                 }

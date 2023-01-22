@@ -15,35 +15,36 @@ namespace FASTER.test.ReadCacheTests
 {
     class ChainTests
     {
-        private FasterKV<int, int> fht;
+        private FasterKV<long, long> fht;
         private IDevice log;
-        const int lowChainKey = 40;
-        const int midChainKey = lowChainKey + chainLen * (mod / 2);
-        const int highChainKey = lowChainKey + chainLen * (mod - 1);
+        const long lowChainKey = 40;
+        const long midChainKey = lowChainKey + chainLen * (mod / 2);
+        const long highChainKey = lowChainKey + chainLen * (mod - 1);
         const int mod = 10;
         const int chainLen = 10;
         const int valueAdd = 1_000_000;
 
         // -1 so highChainKey is first in the chain.
-        const int numKeys = highChainKey + mod - 1;
+        const long numKeys = highChainKey + mod - 1;
 
         // Insert into chain.
-        const int spliceInNewKey = highChainKey + mod * 2;
-        const int spliceInExistingKey = highChainKey - mod;
-        const int immutableSplitKey = numKeys / 2;
+        const long spliceInNewKey = highChainKey + mod * 2;
+        const long spliceInExistingKey = highChainKey - mod;
+        const long immutableSplitKey = numKeys / 2;
 
         // This is the record after the first readcache record we insert; it lets us limit the range to ReadCacheEvict
         // so we get outsplicing rather than successively overwriting the hash table entry on ReadCacheEvict.
         long readCacheBelowMidChainKeyEvictionAddress;
 
-        internal class ChainComparer : IFasterEqualityComparer<int>
+        internal class ChainComparer : IFasterEqualityComparer<long>
         {
-            int mod;
+            readonly int mod;
+
             internal ChainComparer(int mod) => this.mod = mod;
 
-            public bool Equals(ref int k1, ref int k2) => k1 == k2;
+            public bool Equals(ref long k1, ref long k2) => k1 == k2;
 
-            public long GetHashCode64(ref int k) => k % mod;
+            public long GetHashCode64(ref long k) => k % mod;
         }
 
         [SetUp]
@@ -52,7 +53,7 @@ namespace FASTER.test.ReadCacheTests
             DeleteDirectory(MethodTestDir, wait: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
             log = Devices.CreateLogDevice(MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
-            fht = new FasterKV<int, int>
+            fht = new FasterKV<long, long>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
                 comparer: new ChainComparer(mod));
         }
@@ -71,7 +72,7 @@ namespace FASTER.test.ReadCacheTests
 
         void PopulateAndEvict(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
 
             if (recordRegion != RecordRegion.Immutable)
             {
@@ -89,7 +90,7 @@ namespace FASTER.test.ReadCacheTests
             session.CompletePending(true);
             fht.Log.FlushAndEvict(true);
 
-            for (int key = immutableSplitKey; key < numKeys; key++)
+            for (long key = immutableSplitKey; key < numKeys; key++)
                 session.Upsert(key, key + valueAdd);
             session.CompletePending(true);
             fht.Log.ShiftReadOnlyAddress(fht.Log.TailAddress, wait: true);
@@ -97,12 +98,12 @@ namespace FASTER.test.ReadCacheTests
 
         void CreateChain(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            int output = -1;
-            bool expectPending(int key) => recordRegion == RecordRegion.OnDisk || (recordRegion == RecordRegion.Immutable && key < immutableSplitKey);
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            long output = -1;
+            bool expectPending(long key) => recordRegion == RecordRegion.OnDisk || (recordRegion == RecordRegion.Immutable && key < immutableSplitKey);
 
             // Pass1: PENDING reads and populate the cache
-            for (var ii = 0; ii < chainLen; ++ii)
+            for (long ii = 0; ii < chainLen; ++ii)
             {
                 var key = lowChainKey + ii * mod;
                 var status = session.Read(key, out _);
@@ -144,10 +145,10 @@ namespace FASTER.test.ReadCacheTests
             }
         }
 
-        unsafe bool GetRecordInInMemoryHashChain(int key, out bool isReadCache)
+        unsafe bool GetRecordInInMemoryHashChain(long key, out bool isReadCache)
         {
             // returns whether the key was found before we'd go pending
-            var (la, pa) = GetHashChain(fht, key, out int recordKey, out bool invalid, out isReadCache);
+            var (la, pa) = GetHashChain(fht, key, out long recordKey, out bool invalid, out isReadCache);
             while (isReadCache || la >= fht.hlog.HeadAddress)
             {
                 if (recordKey == key && !invalid)
@@ -157,10 +158,10 @@ namespace FASTER.test.ReadCacheTests
             return false;
         }
 
-        internal bool FindRecordInReadCache(int key, out bool invalid, out long logicalAddress, out long physicalAddress)
+        internal bool FindRecordInReadCache(long key, out bool invalid, out long logicalAddress, out long physicalAddress)
         {
             // returns whether the key was found before we'd go pending
-            (logicalAddress, physicalAddress) = GetHashChain(fht, key, out int recordKey, out invalid, out bool isReadCache);
+            (logicalAddress, physicalAddress) = GetHashChain(fht, key, out long recordKey, out invalid, out bool isReadCache);
             while (isReadCache)
             {
                 if (recordKey == key)
@@ -170,7 +171,7 @@ namespace FASTER.test.ReadCacheTests
             return false;
         }
 
-        internal static (long logicalAddress, long physicalAddress) GetHashChain(FasterKV<int, int> fht, int key, out int recordKey, out bool invalid, out bool isReadCache)
+        internal static (long logicalAddress, long physicalAddress) GetHashChain(FasterKV<long, long> fht, long key, out long recordKey, out bool invalid, out bool isReadCache)
         {
             var tagExists = fht.FindHashBucketEntryForKey(ref key, out var entry);
             Assert.IsTrue(tagExists);
@@ -184,10 +185,10 @@ namespace FASTER.test.ReadCacheTests
             return (entry.Address, pa);
         }
 
-        (long logicalAddress, long physicalAddress) NextInChain(long physicalAddress, out int recordKey, out bool invalid, ref bool isReadCache)
+        (long logicalAddress, long physicalAddress) NextInChain(long physicalAddress, out long recordKey, out bool invalid, ref bool isReadCache)
             => NextInChain(fht, physicalAddress, out recordKey, out invalid, ref isReadCache);
 
-        internal static (long logicalAddress, long physicalAddress) NextInChain(FasterKV<int, int> fht, long physicalAddress, out int recordKey, out bool invalid, ref bool isReadCache)
+        internal static (long logicalAddress, long physicalAddress) NextInChain(FasterKV<long, long> fht, long physicalAddress, out long recordKey, out bool invalid, ref bool isReadCache)
         {
             var log = isReadCache ? fht.readcache : fht.hlog;
             var info = log.GetInfo(physicalAddress);
@@ -202,11 +203,11 @@ namespace FASTER.test.ReadCacheTests
             return (la, pa);
         }
 
-        (long logicalAddress, long physicalAddress) ScanReadCacheChain(int[] omitted = null, bool evicted = false, bool deleted = false)
+        (long logicalAddress, long physicalAddress) ScanReadCacheChain(long[] omitted = null, bool evicted = false, bool deleted = false)
         {
-            omitted ??= Array.Empty<int>();
+            omitted ??= Array.Empty <long>();
 
-            var (la, pa) = GetHashChain(fht, lowChainKey, out int actualKey, out bool invalid, out bool isReadCache);
+            var (la, pa) = GetHashChain(fht, lowChainKey, out long actualKey, out bool invalid, out bool isReadCache);
             for (var expectedKey = highChainKey; expectedKey >= lowChainKey; expectedKey -= mod)
             {
                 // We evict from readcache only to just below midChainKey
@@ -232,10 +233,10 @@ namespace FASTER.test.ReadCacheTests
             return (la, pa);
         }
 
-        (long logicalAddress, long physicalAddress) SkipReadCacheChain(int key)
+        (long logicalAddress, long physicalAddress) SkipReadCacheChain(long key)
             => SkipReadCacheChain(fht, key);
 
-        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain(FasterKV<int, int> fht, int key)
+        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain(FasterKV<long, long> fht, long key)
         {
             var (la, pa) = GetHashChain(fht, key, out _, out _, out bool isReadCache);
             while (isReadCache)
@@ -243,7 +244,7 @@ namespace FASTER.test.ReadCacheTests
             return (la, pa);
         }
 
-        void VerifySplicedInKey(int expectedKey)
+        void VerifySplicedInKey(long expectedKey)
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = SkipReadCacheChain(expectedKey);
@@ -251,15 +252,14 @@ namespace FASTER.test.ReadCacheTests
             Assert.AreEqual(expectedKey, storedKey);
         }
 
-        static void ClearCountsOnError(ClientSession<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
+        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
             luContext.exclusiveLockCount = 0;
         }
 
-        bool LockTableHasEntries() => OverflowBucketLockTableTests.LockTableHasEntries(fht.LockTable);
-        int LockTableEntryCount() => OverflowBucketLockTableTests.LockTableEntryCount(fht.LockTable);
+        void AssertTotalLockCounts(long expectedX, long expectedS) => OverflowBucketLockTableTests.AssertTotalLockCounts(fht, expectedX, expectedS);
 
         [Test]
         [Category(FasterKVTestCategory)]
@@ -281,9 +281,9 @@ namespace FASTER.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
 
-            void doTest(int key)
+            void doTest(long key)
             {
                 var status = session.Delete(key);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
@@ -309,9 +309,9 @@ namespace FASTER.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
 
-            void doTest(int key)
+            void doTest(long key)
             {
                 var status = session.Delete(key);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
@@ -375,9 +375,9 @@ namespace FASTER.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
 
-            void doTest(int key)
+            void doTest(long key)
             {
                 var status = session.Read(key, out var value);
                 Assert.IsTrue(status.Found, status.ToString());
@@ -420,8 +420,8 @@ namespace FASTER.test.ReadCacheTests
             PopulateAndEvict();
             CreateChain();
 
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            int input = 0, output = 0, key = lowChainKey - mod; // key must be in evicted region for this test
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            long input = 0, output = 0, key = lowChainKey - mod; // key must be in evicted region for this test
             ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail };
 
             var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
@@ -440,8 +440,8 @@ namespace FASTER.test.ReadCacheTests
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            int key = -1;
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            long key = -1;
 
             if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
             {
@@ -468,8 +468,8 @@ namespace FASTER.test.ReadCacheTests
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            int key = -1, output = -1;
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            long key = -1, output = -1;
 
             if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
             {
@@ -515,8 +515,8 @@ namespace FASTER.test.ReadCacheTests
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            int key = -1;
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            long key = -1;
 
             if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
             {
@@ -543,10 +543,10 @@ namespace FASTER.test.ReadCacheTests
             PopulateAndEvict();
             CreateChain();
 
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
-            Dictionary<int, LockType> locks = new()
+            Dictionary<long, LockType> locks = new()
             {
                 { lowChainKey, LockType.Exclusive },
                 { midChainKey, LockType.Shared },
@@ -564,20 +564,24 @@ namespace FASTER.test.ReadCacheTests
 
                 fht.ReadCache.FlushAndEvict(wait: true);
 
-                Assert.IsTrue(LockTableHasEntries());
-                Assert.AreEqual(locks.Count, LockTableEntryCount());
+                AssertTotalLockCounts(2, 1);
 
                 foreach (var key in locks.Keys)
                 {
                     var localKey = key;    // can't ref the iteration variable
-                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
-                    Assert.IsTrue(found);
+                    HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref localKey));
+                    OverflowBucketLockTableTests.GetBucket(fht, ref hei);
+
+                    var lockState = fht.LockTable.GetLockState(ref localKey, ref hei);
+                    Assert.IsTrue(lockState.IsFound);
                     var lockType = locks[key];
-                    Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                    Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
+                    Assert.AreEqual(lockType == LockType.Exclusive, lockState.IsLockedExclusive);
+                    Assert.AreEqual(lockType != LockType.Exclusive, lockState.NumLockedShared > 0);
 
                     luContext.Unlock(key, lockType);
-                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out recordInfo));
+                    lockState = fht.LockTable.GetLockState(ref localKey, ref hei);
+                    Assert.IsFalse(lockState.IsLockedExclusive);
+                    Assert.AreEqual(0, lockState.NumLockedShared);
                 }
             }
             catch (Exception)
@@ -591,91 +595,8 @@ namespace FASTER.test.ReadCacheTests
                 luContext.EndUnsafe();
             }
 
-            Assert.IsFalse(LockTableHasEntries());
-            Assert.AreEqual(0, LockTableEntryCount());
+            AssertTotalLockCounts(0, 0);
         }
-
-        [Test]
-        [Category(FasterKVTestCategory)]
-        [Category(ReadCacheTestCategory)]
-        [Category(SmokeTestCategory)]
-        public void TransferFromLockTableToReadCacheTest()
-        {
-            PopulateAndEvict();
-
-            // DO NOT create the chain here; do that below. Here, we create records in the lock table and THEN we create
-            // the chain, resulting in transfer of the locked records.
-            //CreateChain();
-
-            using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            var luContext = session.LockableUnsafeContext;
-
-            Dictionary<int, LockType> locks = new()
-            {
-                { lowChainKey, LockType.Exclusive },
-                { midChainKey, LockType.Shared },
-                { highChainKey, LockType.Exclusive }
-            };
-
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
-
-            try
-            {
-                // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
-                foreach (var key in locks.Keys.OrderBy(k => k))
-                    luContext.Lock(key, locks[key]);
-
-                fht.ReadCache.FlushAndEvict(wait: true);
-
-                // Verify the locks have been evicted to the lockTable
-                Assert.IsTrue(LockTableHasEntries());
-                Assert.AreEqual(locks.Count, LockTableEntryCount());
-
-                foreach (var key in locks.Keys)
-                {
-                    var localKey = key;    // can't ref the iteration variable
-                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
-                    Assert.IsTrue(found);
-                    var lockType = locks[key];
-                    Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                    Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
-                }
-
-                fht.Log.FlushAndEvict(wait: true);
-
-                // Create the readcache entries, which will transfer the locks from the locktable to the readcache
-                foreach (var key in locks.Keys)
-                {
-                    var status = luContext.Read(key, out _);
-                    Assert.IsTrue(status.IsPending, status.ToString());
-                    luContext.CompletePending(wait: true);
-
-                    var lockType = locks[key];
-                    var (exclusive, sharedCount) = luContext.IsLocked(key);
-                    Assert.AreEqual(lockType == LockType.Exclusive, exclusive);
-                    Assert.AreEqual(lockType != LockType.Exclusive, sharedCount > 0);
-
-                    luContext.Unlock(key, lockType);
-                    var localKey = key;    // can't ref the iteration variable
-                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out _));
-                }
-            }
-            catch (Exception)
-            {
-                ClearCountsOnError(session);
-                throw;
-            }
-            finally
-            {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
-            }
-
-            Assert.IsFalse(LockTableHasEntries());
-            Assert.AreEqual(0, LockTableEntryCount());
-        }
-    }
 
     class LongStressChainTests
     {

@@ -553,6 +553,32 @@ namespace FASTER.core
             UnsafeSuspendThread();
         }
 
+        /// <inheritdoc/>
+        public void ResetModified(ref Key key)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                UnsafeResetModified(ref key);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
+
+        /// <inheritdoc/>
+        public bool NeedKeyLockCode => this.fht.LockTable.IsEnabled ? this.fht.LockTable.NeedKeyLockCode : false;
+
+        /// <inheritdoc/>
+        public long GetLockCode(ref Key key)
+        {
+            var keyHash = this.fht.comparer.GetHashCode64(ref key);
+            return this.fht.LockTable.IsEnabled ? this.fht.LockTable.GetLockCode(ref key, keyHash) : keyHash;
+        }
+
+        /// <inheritdoc/>
+        public long GetLockCode(ref Key key, long keyHash) => this.fht.LockTable.IsEnabled ? this.fht.LockTable.GetLockCode(ref key, keyHash) : keyHash;
         #endregion IFasterContext
 
         #region Pending Operations
@@ -687,20 +713,6 @@ namespace FASTER.core
         #endregion Pending Operations
 
         #region Other Operations
-
-        /// <inheritdoc/>
-        public void ResetModified(ref Key key)
-        {
-            UnsafeResumeThread();
-            try
-            {
-                UnsafeResetModified(ref key);
-            }
-            finally
-            {
-                UnsafeSuspendThread();
-            }
-        }
 
         internal void UnsafeResetModified(ref Key key)
         {

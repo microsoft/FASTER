@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -8,9 +9,12 @@ namespace FASTER.core
 {
     internal struct OverflowBucketLockTable<TKey> : ILockTable<TKey>
     {
-        internal bool IsEnabled;
+        // THe number of buckets we have
+        internal long NumBuckets;
 
-        internal OverflowBucketLockTable(bool enabled) => this.IsEnabled = enabled;
+        internal bool IsEnabled => NumBuckets > 0;
+
+        internal OverflowBucketLockTable(long numBuckets) => this.NumBuckets = numBuckets;
 
         [Conditional("DEBUG")]
         void AssertLockAllowed() => Debug.Assert(IsEnabled, "Attempt to do Manual-locking lock when locking mode is LockingMode.EphemeralOnly");
@@ -20,6 +24,13 @@ namespace FASTER.core
 
         [Conditional("DEBUG")]
         void AssertQueryAllowed() => Debug.Assert(IsEnabled, "Attempt to do Manual-locking query when locking mode is LockingMode.EphemeralOnly");
+
+        internal long GetSize<TValue>(FasterKV<ConsoleKey, TValue> fht) => fht.state[fht.resizeInfo.version].size_mask;
+
+        public bool NeedKeyLockCode => IsEnabled;
+
+        /// <inheritdoc/>
+        public long GetLockCode(ref TKey key, long hash) => IsEnabled ? hash & NumBuckets : 0;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -506,6 +506,15 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc/>
+        public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
+
+        /// <inheritdoc/>
+        public long GetLockCode(ref Key key) => clientSession.GetLockCode(ref key);
+
+        /// <inheritdoc/>
+        public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
+
         #endregion IFasterContext
 
         #region IFasterSession

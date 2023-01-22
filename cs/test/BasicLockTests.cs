@@ -82,7 +82,7 @@ namespace FASTER.test.LockTests
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
-            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, comparer: new LocalComparer(), disableEphemeralLocking: false );
+            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, comparer: new LocalComparer() );
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 
@@ -110,8 +110,8 @@ namespace FASTER.test.LockTests
 
 #pragma warning disable IDE0200 // The lambdas cannot be simplified as it causes struct temporaries
                 XLockTest(numThreads, () => ri->TryLockExclusive(), () => { ri->UnlockExclusive(); return true; });
-                SLockTest(numThreads, () => ri->TryLockShared(), () => ri->TryUnlockShared());
-                XSLockTest(numThreads, () => ri->TryLockExclusive(), () => { ri->UnlockExclusive(); return true; }, () => ri->TryLockShared(), () => ri->TryUnlockShared());
+                SLockTest(numThreads, () => ri->TryLockShared(), () => ri->UnlockShared());
+                XSLockTest(numThreads, () => ri->TryLockExclusive(), () => ri->UnlockExclusive(), () => ri->TryLockShared(), () => ri->UnlockShared());
 #pragma warning restore IDE0200
             }
         }
@@ -141,7 +141,7 @@ namespace FASTER.test.LockTests
             }
         }
 
-        private void SLockTest(int numThreads, Func<bool> locker, Func<bool> unlocker)
+        private void SLockTest(int numThreads, Func<bool> locker, Action unlocker)
         {
             long lockTestValue = 1;
             long lockTestValueResult = 0;
@@ -162,12 +162,12 @@ namespace FASTER.test.LockTests
                         sw.SpinOnce(-1);
                     Interlocked.Add(ref lockTestValueResult, Interlocked.Read(ref lockTestValue));
                     Thread.Yield();
-                    Assert.IsTrue(unlocker());
+                    unlocker();
                 }
             }
         }
 
-        private void XSLockTest(int numThreads, Func<bool> xlocker, Func<bool> xunlocker, Func<bool> slocker, Func<bool> sunlocker)
+        private void XSLockTest(int numThreads, Func<bool> xlocker, Action xunlocker, Func<bool> slocker, Action sunlocker)
         {
             long lockTestValue = 0;
             long lockTestValueResult = 0;
@@ -191,7 +191,7 @@ namespace FASTER.test.LockTests
                     var temp = lockTestValue;
                     Thread.Yield();
                     lockTestValue = temp + 1;
-                    Assert.IsTrue(xunlocker());
+                    xunlocker();
                 }
             }
 
@@ -203,7 +203,7 @@ namespace FASTER.test.LockTests
                         sw.SpinOnce(-1);
                     Interlocked.Add(ref lockTestValueResult, 1);
                     Thread.Yield();
-                    Assert.IsTrue(sunlocker());
+                    sunlocker();
                 }
             }
         }

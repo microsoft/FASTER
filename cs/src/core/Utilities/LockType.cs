@@ -53,6 +53,7 @@ namespace FASTER.core
         internal bool IsLockedExclusive;
         internal bool IsFound;
         internal ushort NumLockedShared;
+        internal bool IsLockedShared => NumLockedShared > 0;
 
         internal bool IsLocked => IsLockedExclusive || NumLockedShared > 0;
     }
