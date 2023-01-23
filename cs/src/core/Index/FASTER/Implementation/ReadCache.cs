@@ -12,7 +12,7 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindInReadCache(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long untilAddress, bool alwaysFindLatestLA = true)
+        internal bool FindInReadCache(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long untilAddress, bool alwaysFindLatestLA = true)
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
         RestartChain:
@@ -117,7 +117,7 @@ namespace FASTER.core
 
         // Skip over all readcache records in this key's chain (advancing logicalAddress to the first non-readcache record we encounter).
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SkipReadCache(ref HashEntryInfo hei, ref long logicalAddress)
+        internal void SkipReadCache(ref HashEntryInfo hei, ref long logicalAddress)
         {
             while (!SkipReadCache(ref logicalAddress, out _, out _))
             {

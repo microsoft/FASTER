@@ -77,6 +77,17 @@ namespace FASTER.test.LockTests
             }
         }
 
+        internal class ChainComparer : IFasterEqualityComparer<int>
+        {
+            readonly int mod;
+
+            internal ChainComparer(int mod) => this.mod = mod;
+
+            public bool Equals(ref int k1, ref int k2) => k1 == k2;
+
+            public long GetHashCode64(ref int k) => k % mod;
+        }
+
         private FasterKV<int, int> fkv;
         private ClientSession<int, int, Input, int, Empty, Functions> session;
         private IDevice log;
@@ -88,7 +99,7 @@ namespace FASTER.test.LockTests
             log = Devices.CreateLogDevice(MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, ReadCacheSettings = readCacheSettings },
-                comparer: new ChainTests.ChainComparer(mod), disableEphemeralLocking: false);
+                comparer: new ChainComparer(mod), lockingMode: LockingMode.EphemeralOnly);
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 
@@ -282,7 +293,7 @@ namespace FASTER.test.LockTests
                     luContext.BeginUnsafe();
                     for (int key = 0; key < numKeys; key++)
                     {
-                        (bool isExclusive, byte isShared) = luContext.IsLocked(key);
+                        (bool isExclusive, ushort isShared) = luContext.IsLocked(key);
                         Assert.IsFalse(isExclusive);
                         Assert.AreEqual(0, isShared);
                     }

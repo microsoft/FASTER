@@ -538,7 +538,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void EvictFromReadCacheToLockTableTest()
+        public void VerifyLockCountsAfterReadCacheEvict()
         {
             PopulateAndEvict();
             CreateChain();
@@ -597,6 +597,7 @@ namespace FASTER.test.ReadCacheTests
 
             AssertTotalLockCounts(0, 0);
         }
+    }
 
     class LongStressChainTests
     {

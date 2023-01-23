@@ -19,7 +19,7 @@ namespace FASTER.core
             return stackCtx.recSrc.HasInMemorySrc;
         }
 
-        private bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset)
+        internal bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset)
         {
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)

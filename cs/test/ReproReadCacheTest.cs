@@ -88,7 +88,7 @@ namespace FASTER.test.ReadCacheTests
                     MemorySizeBits = 15,
                     PageSizeBits = 12,
                     ReadCacheSettings = readCacheSettings,
-                }, disableEphemeralLocking: disableEphemeralLocking);
+                }, lockingMode: disableEphemeralLocking ? LockingMode.Disabled : LockingMode.EphemeralOnly);
         }
 
         [TearDown]

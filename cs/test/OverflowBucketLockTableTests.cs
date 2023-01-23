@@ -111,6 +111,20 @@ namespace FASTER.test.LockTable
             Assert.AreEqual(expectedS, scount);
         }
 
+        internal void AssertBucketLockCount(long key, long expectedX, long expectedS) => AssertBucketLockCount(fht, key, expectedX, expectedS);
+
+        internal unsafe static void AssertBucketLockCount(FasterKV<long, long> fht, long key, long expectedX, long expectedS)
+        {
+            var bucketIndex = fht.LockTable.GetLockCode(ref key, fht.comparer.GetHashCode64(ref key));
+            var bucket = fht.state[fht.resizeInfo.version].tableAligned + bucketIndex;
+            Assert.AreEqual(expectedX, HashBucket.IsLatchedExclusive(bucket));
+            Assert.AreEqual(expectedS, HashBucket.NumLatchedShared(bucket));
+        }
+
+        internal int GetBucketIndex(long key) => GetBucketIndex(fht, key);
+
+        internal static int GetBucketIndex(FasterKV<long, long> fht, long key) => (int)fht.LockTable.GetLockCode(ref key, fht.comparer.GetHashCode64(ref key));
+
         [Test]
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void SingleKeyTest(UseSingleBucketComparer /* justToSignalSetup */ _)
