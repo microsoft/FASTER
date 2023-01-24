@@ -85,100 +85,94 @@ namespace FASTER.core
             if (sessionCtx.phase != Phase.REST)
             {
                 latchDestination = AcquireLatchDelete(sessionCtx, ref stackCtx.hei, ref status, ref latchOperation, stackCtx.recSrc.LogicalAddress);
+                if (latchDestination == LatchDestination.Retry)
+                    goto LatchRelease;
             }
             #endregion
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
-                #region Normal processing
+            #region Address and source record checks
 
-                if (latchDestination == LatchDestination.NormalProcessing)
+                if (stackCtx.recSrc.HasReadCacheSrc)
                 {
-                    if (stackCtx.recSrc.HasReadCacheSrc)
+                    // Use the readcache record as the CopyUpdater source.
+                    goto LockSourceRecord;
+                }
+
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
+                {
+                    // Mutable Region: Update the record in-place
+                    srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
+                    if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                        goto LatchRelease;
+
+                    if (srcRecordInfo.Tombstone)
                     {
-                        // Use the readcache record as the CopyUpdater source.
-                        goto LockSourceRecord;
+                        EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
+                        srcRecordInfo = ref dummyRecordInfo;
+                        status = OperationStatus.NOTFOUND;
+                        goto LatchRelease;
                     }
 
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
+                    if (!srcRecordInfo.IsValidUpdateOrLockSource)
                     {
-                        // Mutable Region: Update the record in-place
-                        srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                        if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                            goto LatchRelease;
-
-                        if (srcRecordInfo.Tombstone)
-                        {
-                            EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
-                            srcRecordInfo = ref dummyRecordInfo;
-                            status = OperationStatus.NOTFOUND;
-                            goto LatchRelease;
-                        }
-
-                        if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                        {
-                            EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
-                            srcRecordInfo = ref dummyRecordInfo;
-                            goto CreateNewRecord;
-                        }
+                        EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
+                        srcRecordInfo = ref dummyRecordInfo;
+                        goto CreateNewRecord;
+                    }
  
-                        deleteInfo.RecordInfo = srcRecordInfo;
-                        ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
-                        if (fasterSession.ConcurrentDeleter(ref hlog.GetKey(stackCtx.recSrc.PhysicalAddress), ref recordValue, ref srcRecordInfo, ref deleteInfo))
-                        {
-                            this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
-                            if (WriteDefaultOnDelete)
-                                recordValue = default;
-
-                            // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
-                            if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
-                            {
-                                // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
-                                // the hashtable entry has already been updated by someone else.
-                                var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
-                                stackCtx.hei.TryCAS(address, tag: 0);
-                            }
-
-                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                            goto LatchRelease;
-                        }
-                        if (deleteInfo.Action == DeleteAction.CancelOperation)
-                        {
-                            status = OperationStatus.CANCELED;
-                            goto LatchRelease;
-                        }
-
-                        stackCtx.recSrc.HasMainLogSrc = true;
-                        goto CreateNewRecord;
-                    }
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+                    deleteInfo.RecordInfo = srcRecordInfo;
+                    ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
+                    if (fasterSession.ConcurrentDeleter(ref hlog.GetKey(stackCtx.recSrc.PhysicalAddress), ref recordValue, ref srcRecordInfo, ref deleteInfo))
                     {
-                        // Only need to go below ReadOnly for locking and Sealing.
-                        stackCtx.recSrc.HasMainLogSrc = true;
-                        goto LockSourceRecord;
-                    }
-                    else
-                    {
-                        // Either on-disk or no record exists - check for lock before creating new record. First ensure any record lock has transitioned to the LockTable.
-                        if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
-                            SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, hlog);
-                        Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, stackCtx.hei.hash), "A Lockable-session Delete() of an on-disk or non-existent key requires a LockTable lock");
-                        if (LockTable.IsActive && !fasterSession.DisableEphemeralLocking && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, LockType.Exclusive, out stackCtx.recSrc.HasLockTableLock))
+                        this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
+                        if (WriteDefaultOnDelete)
+                            recordValue = default;
+
+                        // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
+                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
                         {
-                            status = OperationStatus.RETRY_LATER;
-                            goto LatchRelease;
+                            // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
+                            // the hashtable entry has already been updated by someone else.
+                            var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
+                            stackCtx.hei.TryCAS(address, tag: 0);
                         }
-                        goto CreateNewRecord;
+
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        goto LatchRelease;
                     }
+                    if (deleteInfo.Action == DeleteAction.CancelOperation)
+                    {
+                        status = OperationStatus.CANCELED;
+                        goto LatchRelease;
+                    }
+
+                    stackCtx.recSrc.HasMainLogSrc = true;
+                    goto CreateNewRecord;
                 }
-                else if (latchDestination == LatchDestination.Retry)
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
                 {
-                    goto LatchRelease;
+                    // Only need to go below ReadOnly for locking and Sealing.
+                    stackCtx.recSrc.HasMainLogSrc = true;
+                    goto LockSourceRecord;
+                }
+                else
+                {
+                    // Either on-disk or no record exists - check for lock before creating new record. First ensure any record lock has transitioned to the LockTable.
+                    if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
+                        SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, hlog);
+                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, stackCtx.hei.hash), "A Lockable-session Delete() of an on-disk or non-existent key requires a LockTable lock");
+                    if (LockTable.IsActive && !fasterSession.DisableEphemeralLocking && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, LockType.Exclusive, out stackCtx.recSrc.HasLockTableLock))
+                    {
+                        status = OperationStatus.RETRY_LATER;
+                        goto LatchRelease;
+                    }
+                    goto CreateNewRecord;
                 }
 
-                // All other regions: Create a record in the mutable region
-                #endregion Normal processing
+            #endregion Address and source record checks
 
             #region Lock source record
             LockSourceRecord:
