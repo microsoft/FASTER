@@ -130,7 +130,8 @@ namespace FASTER.core
         public static void ReleaseSharedLatch(ref HashEntryInfo hei)
         {
             ref long entry_word = ref hei.firstBucket->bucket_entries[Constants.kOverflowBucketIndex];
-            Debug.Assert((entry_word & kExclusiveLatchBitMask) == 0, "Trying to S unlatch an X latched record");
+            // X and S latches means an X latch is still trying to drain readers, like this one.
+            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched record");
             Debug.Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched record");
             Interlocked.Add(ref entry_word, -kSharedLatchIncrement);
         }

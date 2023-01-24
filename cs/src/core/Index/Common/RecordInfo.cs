@@ -38,6 +38,7 @@ namespace FASTER.core
         // Exclusive lock constants
         const int kExclusiveLockBitOffset = kLockShiftInWord + kSharedLockBits;
         const long kExclusiveLockBitMask = 1L << kExclusiveLockBitOffset;
+        const long kLockBitMask = kSharedLockMaskInWord | kExclusiveLockBitMask;
 
         // Other marker bits
         const int kTombstoneBitOffset = kExclusiveLockBitOffset + 1;
@@ -180,7 +181,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryUnlockShared()
         {
-            // Note: We cannot assert this is not XLocked, because LockExclusive sets the XLock bit and then waits for readers to drain.
+            // X and S locks means an X lock is still trying to drain readers, like this one.
+            Debug.Assert((word & kLockBitMask) != kExclusiveLockBitMask, "Trying to S unlock an X-only locked record");
             Debug.Assert(IsLockedShared, "Trying to S unlock an unlocked record");
             var current_word = Interlocked.Add(ref word, -kSharedLockIncrement);
 
