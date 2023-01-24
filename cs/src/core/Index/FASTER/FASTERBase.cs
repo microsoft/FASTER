@@ -111,7 +111,7 @@ namespace FASTER.core
             ref long entry_word = ref hei.firstBucket->bucket_entries[Constants.kOverflowBucketIndex];
             int spinCount = Constants.kMaxLockSpins;
 
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = entry_word;
                 if (((expected_word & kExclusiveLatchBitMask) == 0) // not exclusively locked
@@ -122,7 +122,6 @@ namespace FASTER.core
                 }
                 if (spinCount > 0 && --spinCount <= 0)
                     return false;
-                Thread.Yield();
             }
         }
 
@@ -143,7 +142,7 @@ namespace FASTER.core
             int spinCount = Constants.kMaxLockSpins;
 
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = entry_word;
                 if ((expected_word & kExclusiveLatchBitMask) == 0)
@@ -153,7 +152,6 @@ namespace FASTER.core
                 }
                 if (spinCount > 0 && --spinCount <= 0)
                     return false;
-                Thread.Yield();
             }
 
             // Wait for readers to drain. Another session may hold an SLock on this record and need an epoch refresh to unlock, so limit this to avoid deadlock.
@@ -179,11 +177,12 @@ namespace FASTER.core
         {
             ref long entry_word = ref hei.firstBucket->bucket_entries[Constants.kOverflowBucketIndex];
 
+            // We should not be calling this method unless we have successfully acquired the latch (all existing readers were drained).
             Debug.Assert((entry_word & kSharedLatchBitMask) == 0, "Trying to X unlatch an S latched record");
             Debug.Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched record");
 
             // The address in the overflow bucket may change from unassigned to assigned, so retry
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = entry_word;
                 if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word & ~kExclusiveLatchBitMask, expected_word))

@@ -136,7 +136,7 @@ namespace FASTER.core
             long tentativeBit = tentative ? kTentativeBitMask : 0;
 
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = word;
                 if (IsIntermediateOrInvalidWord(expected_word))
@@ -148,7 +148,6 @@ namespace FASTER.core
                 }
                 if (spinCount > 0 && --spinCount <= 0)
                     return false;
-                Thread.Yield();
             }
 
             // Wait for readers to drain. Another session may hold an SLock on this record and need an epoch refresh to unlock, so limit this to avoid deadlock.
@@ -200,7 +199,7 @@ namespace FASTER.core
             int spinCount = Constants.kMaxLockSpins;
 
             // Acquire shared lock
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = word;
                 if (IsIntermediateOrInvalidWord(expected_word))
@@ -215,7 +214,6 @@ namespace FASTER.core
                 }
                 if (spinCount > 0 && --spinCount <= 0) 
                     return false;
-                Thread.Yield();
             }
             return true;
         }
