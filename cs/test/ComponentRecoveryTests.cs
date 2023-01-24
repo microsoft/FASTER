@@ -104,6 +104,7 @@ namespace FASTER.test.recovery
             hash_table1.Initialize(size, 512);
 
             //do something
+            var firstBucket = default(HashBucket*);
             var bucket = default(HashBucket*);
             var slot = default(int);
 
@@ -116,7 +117,7 @@ namespace FASTER.test.recovery
                 var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                 var entry = default(HashBucketEntry);
-                hash_table1.FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, 0);
+                hash_table1.FindOrCreateTag(hash, tag, ref firstBucket, ref bucket, ref slot, ref entry, 0);
 
                 hash_table1.UpdateSlot(bucket, slot, entry.word, valueGenerator.Next(), out long found_word);
             }
@@ -134,7 +135,9 @@ namespace FASTER.test.recovery
             var keyGenerator2 = new Random(seed);
 
             var bucket1 = default(HashBucket*);
+            var firstBucket1 = default(HashBucket*);
             var bucket2 = default(HashBucket*);
+            var firstBucket2 = default(HashBucket*);
             var slot1 = default(int);
             var slot2 = default(int);
 
@@ -146,8 +149,8 @@ namespace FASTER.test.recovery
                 var hash = Utility.GetHashCode(key);
                 var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
-                var exists1 = hash_table1.FindTag(hash, tag, ref bucket1, ref slot1, ref entry1);
-                var exists2 = hash_table2.FindTag(hash, tag, ref bucket2, ref slot2, ref entry2);
+                var exists1 = hash_table1.FindTag(hash, tag, ref firstBucket1, ref bucket1, ref slot1, ref entry1);
+                var exists2 = hash_table2.FindTag(hash, tag, ref firstBucket2, ref bucket2, ref slot2, ref entry2);
 
                 Assert.AreEqual(exists2, exists1);
 

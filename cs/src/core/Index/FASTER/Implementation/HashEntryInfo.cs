@@ -9,7 +9,10 @@ namespace FASTER.core
     /// <summary>Hash table entry information for a key</summary>
     internal unsafe struct HashEntryInfo
     {
-        /// <summary>The hash bucket for this key</summary>
+        /// <summary>The first bucket in this chain for this hash bucket</summary>
+        internal HashBucket* firstBucket;
+
+        /// <summary>The hash bucket for this key (may be an overflow bucket)</summary>
         internal HashBucket* bucket;
 
         /// <summary>The hash bucket entry slot for this key</summary>
@@ -27,6 +30,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal HashEntryInfo(long hash)
         {
+            firstBucket = default;
             bucket = default;
             slot = default;
             entry = default;
@@ -114,19 +118,21 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe bool FindTag(ref HashEntryInfo hei)
         {
+            hei.firstBucket = default;
             hei.bucket = default;
             hei.slot = default;
             hei.entry = default;
-            return FindTag(hei.hash, hei.tag, ref hei.bucket, ref hei.slot, ref hei.entry);
+            return FindTag(hei.hash, hei.tag, ref hei.firstBucket, ref hei.bucket, ref hei.slot, ref hei.entry);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void FindOrCreateTag(ref HashEntryInfo hei)
         {
+            hei.firstBucket = default;
             hei.bucket = default;
             hei.slot = default;
             hei.entry = default;
-            FindOrCreateTag(hei.hash, hei.tag, ref hei.bucket, ref hei.slot, ref hei.entry, hlog.BeginAddress);
+            FindOrCreateTag(hei.hash, hei.tag, ref hei.firstBucket, ref hei.bucket, ref hei.slot, ref hei.entry, hlog.BeginAddress);
         }
     }
 }

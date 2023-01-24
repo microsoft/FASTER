@@ -228,10 +228,10 @@ namespace FASTER.core
                     switch (latchOperation)
                     {
                         case LatchOperation.Shared:
-                            HashBucket.ReleaseSharedLatch(stackCtx.hei.bucket);
+                            HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
                             break;
                         case LatchOperation.Exclusive:
-                            HashBucket.ReleaseExclusiveLatch(stackCtx.hei.bucket);
+                            HashBucket.ReleaseExclusiveLatch(ref stackCtx.hei);
                             break;
                         default:
                             break;
@@ -250,7 +250,7 @@ namespace FASTER.core
             {
                 case Phase.PREPARE:
                     {
-                        if (HashBucket.TryAcquireSharedLatch(hei.bucket))
+                        if (HashBucket.TryAcquireSharedLatch(ref hei))
                         {
                             // Set to release shared latch (default)
                             latchOperation = LatchOperation.Shared;
@@ -275,7 +275,7 @@ namespace FASTER.core
                     {
                         if (!CheckEntryVersionNew(logicalAddress))
                         {
-                            if (HashBucket.TryAcquireExclusiveLatch(hei.bucket))
+                            if (HashBucket.TryAcquireExclusiveLatch(ref hei))
                             {
                                 // Set to release exclusive latch (default)
                                 latchOperation = LatchOperation.Exclusive;
