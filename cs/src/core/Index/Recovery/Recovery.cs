@@ -884,6 +884,7 @@ namespace FASTER.core
             var tag = default(ushort);
             var pointer = default(long);
             var recordStart = default(long);
+            var firstBucket = default(HashBucket*);
             var bucket = default(HashBucket*);
             var entry = default(HashBucketEntry);
             var slot = default(int);
@@ -906,7 +907,7 @@ namespace FASTER.core
                     tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                     entry = default;
-                    FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
+                    FindOrCreateTag(hash, tag, ref firstBucket, ref bucket, ref slot, ref entry, hlog.BeginAddress);
 
                     bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.InNewVersion;
                     if (!options.undoNextVersion) ignoreRecord = false;

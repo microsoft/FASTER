@@ -154,8 +154,8 @@ namespace FASTER.core
                     if (!useStartAddress)
                     {
                         // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
-                        if (HashBucket.TryAcquireSharedLatch(stackCtx.hei.bucket))
-                            HashBucket.ReleaseSharedLatch(stackCtx.hei.bucket);
+                        if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
+                            HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
                         else
                             return OperationStatus.CPR_SHIFT_DETECTED;
                     }

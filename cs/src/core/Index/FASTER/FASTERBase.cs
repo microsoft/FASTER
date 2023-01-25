@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -39,7 +40,8 @@ namespace FASTER.core
         public const int kTagShift = 62 - kTagSize;
         public const long kTagMask = (1L << kTagSize) - 1;
         public const long kTagPositionMask = (kTagMask << kTagShift);
-        public const long kAddressMask = (1L << 48) - 1;
+        public const int kAddressBits = 48;
+        public const long kAddressMask = (1L << kAddressBits) - 1;
 
         // Position of tag in hash value (offset is always in the least significant bits)
         public const int kHashTagShift = 64 - kTagSize;
@@ -82,58 +84,110 @@ namespace FASTER.core
     [StructLayout(LayoutKind.Explicit, Size = Constants.kEntriesPerBucket * 8)]
     internal unsafe struct HashBucket
     {
-        public const long kPinConstant = (1L << 48);
+        // We use the first overflow bucket for latching, reusing all bits after the address.
+        const int kSharedLatchBits = 63 - Constants.kAddressBits;
+        const int kExclusiveLatchBits = 1;
 
-        public const long kExclusiveLatchBitMask = (1L << 63);
+        // Shift positions of latches in word
+        const int kSharedLatchBitOffset = Constants.kAddressBits;
+        const int kExclusiveLatchBitOffset = kSharedLatchBitOffset + kSharedLatchBits;
+
+        // Shared latch constants
+        const long kSharedLatchBitMask = ((1L << kSharedLatchBits) - 1) << kSharedLatchBitOffset;
+        const long kSharedLatchIncrement = 1L << kSharedLatchBitOffset;
+
+        // Exclusive latch constants
+        const long kExclusiveLatchBitMask = 1L << kExclusiveLatchBitOffset;
+
+        // Comnbined mask
+        const long kLatchBitMask = kSharedLatchBitMask | kExclusiveLatchBitMask;
 
         [FieldOffset(0)]
         public fixed long bucket_entries[Constants.kEntriesPerBucket];
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryAcquireSharedLatch(HashBucket* bucket)
+        public static bool TryAcquireSharedLatch(ref HashEntryInfo hei)
         {
-            return Interlocked.Add(ref bucket->bucket_entries[Constants.kOverflowBucketIndex],
-                                   kPinConstant) > 0;
-        }
+            ref long entry_word = ref hei.firstBucket->bucket_entries[Constants.kOverflowBucketIndex];
+            int spinCount = Constants.kMaxLockSpins;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ReleaseSharedLatch(HashBucket* bucket)
-        {
-            Interlocked.Add(ref bucket->bucket_entries[Constants.kOverflowBucketIndex],
-                            -kPinConstant);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryAcquireExclusiveLatch(HashBucket* bucket)
-        {
-            long expected_word = bucket->bucket_entries[Constants.kOverflowBucketIndex];
-            if ((expected_word & ~Constants.kAddressMask) == 0)
+            for (; ; Thread.Yield())
             {
-                long desired_word = expected_word | kExclusiveLatchBitMask;
-                var found_word = Interlocked.CompareExchange(
-                                    ref bucket->bucket_entries[Constants.kOverflowBucketIndex],
-                                    desired_word,
-                                    expected_word);
-                return found_word == expected_word;
+                long expected_word = entry_word;
+                if (((expected_word & kExclusiveLatchBitMask) == 0) // not exclusively locked
+                    && (expected_word & kSharedLatchBitMask) != kSharedLatchBitMask) // shared lock is not full
+                {
+                    if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word + kSharedLatchIncrement, expected_word))
+                        return true;
+                }
+                if (spinCount > 0 && --spinCount <= 0)
+                    return false;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void ReleaseSharedLatch(ref HashEntryInfo hei)
+        {
+            ref long entry_word = ref hei.firstBucket->bucket_entries[Constants.kOverflowBucketIndex];
+            // X and S latches means an X latch is still trying to drain readers, like this one.
+            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched record");
+            Debug.Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched record");
+            Interlocked.Add(ref entry_word, -kSharedLatchIncrement);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryAcquireExclusiveLatch(ref HashEntryInfo hei)
+        {
+            ref long entry_word = ref hei.firstBucket->bucket_entries[Constants.kOverflowBucketIndex];
+            int spinCount = Constants.kMaxLockSpins;
+
+            // Acquire exclusive lock (readers may still be present; we'll drain them later)
+            for (; ; Thread.Yield())
+            {
+                long expected_word = entry_word;
+                if ((expected_word & kExclusiveLatchBitMask) == 0)
+                {
+                    if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word | kExclusiveLatchBitMask, expected_word))
+                        break;
+                }
+                if (spinCount > 0 && --spinCount <= 0)
+                    return false;
+            }
+
+            // Wait for readers to drain. Another session may hold an SLock on this record and need an epoch refresh to unlock, so limit this to avoid deadlock.
+            for (var ii = 0; ii < Constants.kMaxReaderLockDrainSpins; ++ii)
+            {
+                if ((entry_word & kSharedLatchBitMask) == 0)
+                    return true;
+                Thread.Yield();
+            }
+
+            // Release the exclusive bit and return false so the caller will retry the operation. Since we still have readers, we must CAS.
+            for (; ; Thread.Yield())
+            {
+                long expected_word = entry_word;
+                if (Interlocked.CompareExchange(ref entry_word, expected_word & ~kExclusiveLatchBitMask, expected_word) == expected_word)
+                    break;
             }
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void ReleaseExclusiveLatch(HashBucket* bucket)
+        public static void ReleaseExclusiveLatch(ref HashEntryInfo hei)
         {
-            long expected_word = bucket->bucket_entries[Constants.kOverflowBucketIndex];
-            long desired_word = expected_word & Constants.kAddressMask;
-            var found_word = Interlocked.Exchange(
-                                ref bucket->bucket_entries[Constants.kOverflowBucketIndex],
-                                desired_word);
-        }
+            ref long entry_word = ref hei.firstBucket->bucket_entries[Constants.kOverflowBucketIndex];
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool NoSharedLatches(HashBucket* bucket)
-        {
-            long word = bucket->bucket_entries[Constants.kOverflowBucketIndex];
-            return (word & ~Constants.kAddressMask) == 0;
+            // We should not be calling this method unless we have successfully acquired the latch (all existing readers were drained).
+            Debug.Assert((entry_word & kSharedLatchBitMask) == 0, "Trying to X unlatch an S latched record");
+            Debug.Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched record");
+
+            // The address in the overflow bucket may change from unassigned to assigned, so retry
+            for (; ; Thread.Yield())
+            {
+                long expected_word = entry_word;
+                if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word & ~kExclusiveLatchBitMask, expected_word))
+                    break;
+            }
         }
     }
 
@@ -367,20 +421,15 @@ namespace FASTER.core
         /// A helper function that is used to find the slot corresponding to a
         /// key in the specified version of the hash table
         /// </summary>
-        /// <param name="hash"></param>
-        /// <param name="tag"></param>
-        /// <param name="bucket"></param>
-        /// <param name="slot"></param>
-        /// <param name="entry"></param>
         /// <returns>true if such a slot exists, false otherwise</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool FindTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
+        internal bool FindTag(long hash, ushort tag, ref HashBucket* firstBucket, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry)
         {
             var target_entry_word = default(long);
             var entry_slot_bucket = default(HashBucket*);
             var version = resizeInfo.version;
             var masked_entry_word = hash & state[version].size_mask;
-            bucket = state[version].tableAligned + masked_entry_word;
+            firstBucket = bucket = state[version].tableAligned + masked_entry_word;
             slot = Constants.kInvalidEntrySlot;
 
             do
@@ -418,19 +467,18 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void FindOrCreateTag(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry, long BeginAddress)
+        internal void FindOrCreateTag(long hash, ushort tag, ref HashBucket* firstBucket, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry, long BeginAddress)
         {
             var version = resizeInfo.version;
             var masked_entry_word = hash & state[version].size_mask;
 
             while (true)
             {
-                bucket = state[version].tableAligned + masked_entry_word;
+                firstBucket = bucket = state[version].tableAligned + masked_entry_word;
                 slot = Constants.kInvalidEntrySlot;
 
                 if (FindTagOrFreeInternal(hash, tag, ref bucket, ref slot, ref entry, BeginAddress))
                     return;
-
 
                 // Install tentative tag in free slot
                 entry = default;
@@ -458,85 +506,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindTagInternal(long hash, ushort tag, ref HashBucket* bucket, ref int slot)
-        {
-            var target_entry_word = default(long);
-            var entry_slot_bucket = default(HashBucket*);
-
-            do
-            {
-                // Search through the bucket looking for our key. Last entry is reserved
-                // for the overflow pointer.
-                for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
-                {
-                    target_entry_word = *(((long*)bucket) + index);
-                    if (0 == target_entry_word)
-                    {
-                        continue;
-                    }
-
-                    HashBucketEntry entry = default;
-                    entry.word = target_entry_word;
-                    if (tag == entry.Tag)
-                    {
-                        slot = index;
-                        if (!entry.Tentative)
-                            return true;
-                    }
-                }
-
-                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex) & Constants.kAddressMask;
-                // Go to next bucket in the chain
-
-
-                if (target_entry_word == 0)
-                {
-                    return false;
-                }
-                bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);
-            } while (true);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindTagMaybeTentativeInternal(long hash, ushort tag, ref HashBucket* bucket, ref int slot)
-        {
-            var target_entry_word = default(long);
-            var entry_slot_bucket = default(HashBucket*);
-
-            do
-            {
-                // Search through the bucket looking for our key. Last entry is reserved
-                // for the overflow pointer.
-                for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
-                {
-                    target_entry_word = *(((long*)bucket) + index);
-                    if (0 == target_entry_word)
-                    {
-                        continue;
-                    }
-
-                    HashBucketEntry entry = default;
-                    entry.word = target_entry_word;
-                    if (tag == entry.Tag)
-                    {
-                        slot = index;
-                        return true;
-                    }
-                }
-
-                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex) & Constants.kAddressMask;
-                // Go to next bucket in the chain
-
-
-                if (target_entry_word == 0)
-                {
-                    return false;
-                }
-                bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);
-            } while (true);
-        }
-
         /// <summary>
         /// Find existing entry (non-tenative)
         /// If not found, return pointer to some empty slot
@@ -552,7 +521,6 @@ namespace FASTER.core
         private bool FindTagOrFreeInternal(long hash, ushort tag, ref HashBucket* bucket, ref int slot, ref HashBucketEntry entry, long BeginAddress = 0)
         {
             var target_entry_word = default(long);
-            var recordExists = false;
             var entry_slot_bucket = default(HashBucket*);
 
             do
@@ -588,16 +556,14 @@ namespace FASTER.core
                     if (tag == entry.Tag && !entry.Tentative)
                     {
                         slot = index;
-                        recordExists = true;
-                        return recordExists;
+                        return true;
                     }
                 }
 
-                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex);
                 // Go to next bucket in the chain
+                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex);
 
-
-                if ((target_entry_word & Constants.kAddressMask) == 0)
+                while ((target_entry_word & Constants.kAddressMask) == 0)
                 {
                     if (slot == Constants.kInvalidEntrySlot)
                     {
@@ -618,31 +584,28 @@ namespace FASTER.core
                             // Install failed, undo allocation; use the winner's entry
                             overflowBucketsAllocator.Free(logicalBucketAddress);
                             target_entry_word = result_word;
+                            continue;
                         }
                         else
                         {
-                            // Install succeeded
+                            // Install of new overflow bucket succeeded; tag was not found, so return the first slot of the new bucket
                             bucket = physicalBucketAddress;
                             slot = 0;
                             entry = default;
-                            return recordExists;
+                            return false;
                         }
                     }
                     else
                     {
-                        if (!recordExists)
-                        {
-                            bucket = entry_slot_bucket;
-                        }
+                        // Tag was not found and an empty slot was found, so return the empty slot
+                        bucket = entry_slot_bucket;
                         entry = default;
-                        break;
+                        return false;
                     }
                 }
 
                 bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word & Constants.kAddressMask);
             } while (true);
-
-            return recordExists;
         }
 
 

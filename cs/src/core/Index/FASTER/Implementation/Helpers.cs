@@ -18,30 +18,6 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void AcquireSharedLatch(Key key)
-        {
-            var bucket = default(HashBucket*);
-            var slot = default(int);
-            var hash = comparer.GetHashCode64(ref key);
-            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-            var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
-            HashBucket.TryAcquireSharedLatch(bucket);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReleaseSharedLatch(Key key)
-        {
-            var bucket = default(HashBucket*);
-            var slot = default(int);
-            var hash = comparer.GetHashCode64(ref key);
-            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-            var entry = default(HashBucketEntry);
-            FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
-            HashBucket.ReleaseSharedLatch(bucket);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static ref RecordInfo WriteTentativeInfo(ref Key key, AllocatorBase<Key, Value> log, long newPhysicalAddress, bool inNewVersion, bool tombstone, long previousAddress)
         {
             ref RecordInfo recordInfo = ref log.GetInfo(newPhysicalAddress);
