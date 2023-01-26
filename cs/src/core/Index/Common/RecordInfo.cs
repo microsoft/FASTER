@@ -38,6 +38,7 @@ namespace FASTER.core
         // Exclusive lock constants
         const int kExclusiveLockBitOffset = kLockShiftInWord + kSharedLockBits;
         const long kExclusiveLockBitMask = 1L << kExclusiveLockBitOffset;
+        const long kLockBitMask = kSharedLockMaskInWord | kExclusiveLockBitMask;
 
         // Other marker bits
         const int kTombstoneBitOffset = kExclusiveLockBitOffset + 1;
@@ -137,7 +138,7 @@ namespace FASTER.core
             int spinCount = Constants.kMaxLockSpins;
 
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = word;
                 if (IsClosedWord(expected_word))
@@ -149,7 +150,6 @@ namespace FASTER.core
                 }
                 if (spinCount > 0 && --spinCount <= 0)
                     return false;
-                Thread.Yield();
             }
 
             // Wait for readers to drain. Another session may hold an SLock on this record and need an epoch refresh to unlock, so limit this to avoid deadlock.
@@ -180,7 +180,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockShared()
         {
-            // Note: We cannot assert this is not XLocked, because LockExclusive sets the XLock bit and then waits for readers to drain.
+            // X and S locks means an X lock is still trying to drain readers, like this one.
+            Debug.Assert((word & kLockBitMask) != kExclusiveLockBitMask, "Trying to S unlock an X-only locked record");
             Debug.Assert(IsLockedShared, "Trying to S unlock an unlocked record");
             Interlocked.Add(ref word, -kSharedLockIncrement);
         }
@@ -195,7 +196,7 @@ namespace FASTER.core
             int spinCount = Constants.kMaxLockSpins;
 
             // Acquire shared lock
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = word;
                 if (IsClosedWord(expected_word))
@@ -208,7 +209,6 @@ namespace FASTER.core
                 }
                 if (spinCount > 0 && --spinCount <= 0) 
                     return false;
-                Thread.Yield();
             }
             return true;
         }

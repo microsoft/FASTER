@@ -196,11 +196,9 @@ namespace FASTER.test.LockableUnsafeContext
                 Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
         }
 
-        static void AssertIsLocked(LockableUnsafeContext<long, long, long, long, Empty, LockableUnsafeFunctions> luContext, long key, bool xlock, bool slock)
+        void AssertIsLocked(LockableUnsafeContext<long, long, long, long, Empty, LockableUnsafeFunctions> luContext, long key, bool xlock, bool slock)
         {
-            var (isX, isS) = luContext.IsLocked(key);
-            Assert.AreEqual(xlock, isX, "xlock mismatch");
-            Assert.AreEqual(slock, isS > 0, "slock mismatch");
+            OverflowBucketLockTableTests.AssertLockCounts(fht, ref key, xlock, slock);
         }
 
         void PrepareRecordLocation(FlushMode recordLocation) => PrepareRecordLocation(this.fht, recordLocation);
@@ -383,7 +381,7 @@ namespace FASTER.test.LockableUnsafeContext
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void InMemorySimpleLockTxnTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
+        public void InMemorySimpleLockTxnTest([Values] ResultLockTarget resultLockTarget,
                                               [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase,
                                               [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
@@ -391,7 +389,6 @@ namespace FASTER.test.LockableUnsafeContext
             PrepareRecordLocation(flushMode);
 
             // SetUp also reads this to determine whether to supply ReadCacheSettings. If ReadCache is specified it wins over CopyToTail.
-            bool useReadCache = readCopyDestination == ReadCopyDestination.ReadCache && flushMode == FlushMode.OnDisk;
             var useRMW = updateOp == UpdateOp.RMW;
             const int readKey24 = 24, readKey51 = 51;
             long resultKey = resultLockTarget == ResultLockTarget.LockTable ? numRecords + 1 : readKey24 + readKey51;
@@ -438,7 +435,7 @@ namespace FASTER.test.LockableUnsafeContext
                             luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             Assert.True(completedOutputs.Next());
                             readValue24 = completedOutputs.Current.Output;
-                            Assert.AreEqual(24, readValue24);
+                            Assert.AreEqual(24 * valueMult, readValue24);
                             Assert.False(completedOutputs.Next());
                             completedOutputs.Dispose();
                         }
@@ -456,7 +453,7 @@ namespace FASTER.test.LockableUnsafeContext
                             luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             Assert.True(completedOutputs.Next());
                             readValue51 = completedOutputs.Current.Output;
-                            Assert.AreEqual(51, readValue51);
+                            Assert.AreEqual(51 * valueMult, readValue51);
                             Assert.False(completedOutputs.Next());
                             completedOutputs.Dispose();
                         }
@@ -1147,15 +1144,11 @@ namespace FASTER.test.LockableUnsafeContext
                 else
                     Assert.IsTrue(status.Record.Created, status.ToString());
 
-                var (xlock, slock) = luContext.IsLocked(key);
-                Assert.IsTrue(xlock);
-                Assert.AreEqual(0, slock);
+                OverflowBucketLockTableTests.AssertLockCounts(fht, key, true, 0);
 
                 luContext.Unlock(key, LockType.Exclusive);
                 blt.Decrement(GetBucketIndex(key), LockType.Exclusive);
-                (xlock, slock) = luContext.IsLocked(key);
-                Assert.IsFalse(xlock);
-                Assert.AreEqual(0, slock);
+                OverflowBucketLockTableTests.AssertLockCounts(fht, key, false, 0);
 
                 blt.AssertNoLocks();
                 AssertTotalLockCounts(0, 0);
@@ -1209,9 +1202,7 @@ namespace FASTER.test.LockableUnsafeContext
                     blt.Increment(GetBucketIndex(key), LockType.Exclusive);
                     for (var iter = 0; iter < 2; ++iter)
                     {
-                        var (xlock, slockCount) = luContext.IsLocked(key);
-                        Assert.IsTrue(xlock, $"Expected xlock; iter {iter}, key {key}");
-                        Assert.AreEqual(0, slockCount, $"Unexpected slock; iter {iter}, key {key}, count {slockCount}");
+                        OverflowBucketLockTableTests.AssertLockCounts(fht, key, true, 0);
                         updater(key, iter);
                     }
                     luContext.Unlock(key, LockType.Exclusive);
@@ -1435,18 +1426,14 @@ namespace FASTER.test.LockableUnsafeContext
                 {
                     luContext.Lock(key, LockType.Shared);
                     blt.Increment(GetBucketIndex(key), LockType.Shared);
-                    var (xlock, slockCount) = luContext.IsLocked(key);
-                    Assert.IsFalse(xlock);
-                    Assert.AreEqual(ii + 1, slockCount);
+                    OverflowBucketLockTableTests.AssertLockCounts(fht, key, false, ii + 1);
                 }
 
                 for (var ii = 0; ii < maxLocks; ++ii)
                 {
                     luContext.Unlock(key, LockType.Shared);
                     blt.Decrement(GetBucketIndex(key), LockType.Shared);
-                    var (xlock, slockCount) = luContext.IsLocked(key);
-                    Assert.IsFalse(xlock);
-                    Assert.AreEqual(maxLocks - ii - 1, slockCount);
+                    OverflowBucketLockTableTests.AssertLockCounts(fht, key, false, maxLocks - ii - 1);
                 }
 
                 blt.AssertNoLocks();
@@ -1549,9 +1536,7 @@ namespace FASTER.test.LockableUnsafeContext
                 {
                     foreach (var key in locks.Keys.OrderBy(k => k))
                     {
-                        var (exclusive, numShared) = luContext.IsLocked(key);
-                        Assert.IsFalse(exclusive, $"key: {key}");
-                        Assert.AreEqual(0, numShared, $"key: {key}");
+                        OverflowBucketLockTableTests.AssertLockCounts(fht, key, false, 0);
                     }
                 }
                 catch (Exception)

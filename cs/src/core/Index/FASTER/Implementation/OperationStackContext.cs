@@ -36,7 +36,13 @@ namespace FASTER.core
         /// If this is not <see cref="Constants.kInvalidAddress"/>, it is the logical Address allocated by CreateNewRecord*; if an exception
         /// occurs, this needs to be set invalid and non-tentative by the caller's 'finally' (to avoid another try/finally overhead).
         /// </summary>
-        internal long newLogicalAddress;
+        private long newLogicalAddress;
+
+        /// <summary>
+        /// Sets the new record to be handled on error recovery.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetNewRecord(long newRecordLogicalAddress) => this.newLogicalAddress = newRecordLogicalAddress;
 
         /// <summary>
         /// Called during normal operations when a record insertion fails, to set the new record invalid and non-tentative.
@@ -47,6 +53,12 @@ namespace FASTER.core
             newRecordInfo.SetInvalid();
             this.newLogicalAddress = Constants.kInvalidAddress;
         }
+
+        /// <summary>
+        /// Called during normal operations when a record insertion succeeds, to set the new record non-tentative (permanent).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ClearNewRecord() => this.newLogicalAddress = Constants.kInvalidAddress;
 
         /// <summary>
         /// Called during InternalXxx 'finally' handler, to set the new record invalid if an exception or other error occurred.

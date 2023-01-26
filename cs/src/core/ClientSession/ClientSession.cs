@@ -579,6 +579,12 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public long GetLockCode(ref Key key, long keyHash) => this.fht.LockTable.IsEnabled ? this.fht.LockTable.GetLockCode(ref key, keyHash) : keyHash;
+
+        /// <inheritdoc/>
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys)
+            where TLockableKey : ILockableKey 
+            => fht.LockTable.SortLockCodes(keys);
+
         #endregion IFasterContext
 
         #region Pending Operations
@@ -1142,7 +1148,7 @@ namespace FASTER.core
             {
                 if (_clientSession.fht.DisableEphemeralLocking)
                     return true;
-                if (!_clientSession.fht.DisableEphemeralLocking || _clientSession.fht.LockTable.TryLockEphemeralShared(ref key, ref stackCtx.hei))
+                if (!_clientSession.fht.LockTable.TryLockEphemeralShared(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasLockTableLock = true;
             }
@@ -1155,7 +1161,7 @@ namespace FASTER.core
 
             public void LockTableEphemeralSUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableEphemeralLocking)
+                if (!_clientSession.fht.DisableEphemeralLocking)
                     _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);
             }
             #endregion Ephemeral locking

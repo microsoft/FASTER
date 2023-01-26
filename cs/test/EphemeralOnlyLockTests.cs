@@ -2,17 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Threading;
 using FASTER.core;
 using NUnit.Framework;
 using FASTER.test.ReadCacheTests;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
-using FASTER.test.LockableUnsafeContext;
-using System.Diagnostics;
 using FASTER.test.LockTable;
 
 namespace FASTER.test.EphemeralOnlyLock
@@ -39,7 +34,7 @@ namespace FASTER.test.EphemeralOnlyLock
     internal class LockableUnsafeComparer : IFasterEqualityComparer<long>
     {
 //        internal int maxSleepMs;
-        readonly Random rng = new(101);
+//        readonly Random rng = new(101);
 
         public bool Equals(ref long k1, ref long k2) => k1 == k2;
 
@@ -100,7 +95,7 @@ namespace FASTER.test.EphemeralOnlyLock
 
             fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
                                             checkpointSettings: checkpointSettings, comparer: comparer,
-                                            lockingMode: LockingMode.SessionControlled);
+                                            lockingMode: LockingMode.EphemeralOnly);
             session = fht.For(functions).NewSession<EphemeralOnlyFunctions>();
         }
 
@@ -137,7 +132,7 @@ namespace FASTER.test.EphemeralOnlyLock
 
             HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref key));
 
-            if (!fht.UseReadCache && fht.FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress))
+            if (fht.UseReadCache && fht.FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress))
             {
                 var recordInfo = fht.hlog.GetInfo(fht.hlog.GetPhysicalAddress(stackCtx.hei.AbsoluteAddress));
                 Assert.IsFalse(recordInfo.IsLocked);
@@ -174,7 +169,7 @@ namespace FASTER.test.EphemeralOnlyLock
 
             if (this.fht.UseReadCache)
             {
-                using var iter = this.fht.ReadCache.Scan(this.fht.Log.BeginAddress, this.fht.Log.TailAddress);
+                using var iter = this.fht.ReadCache.Scan(this.fht.readcache.BeginAddress, this.fht.readcache.GetTailAddress());
                 while (iter.GetNext(out var recordInfo, out var key, out var value))
                 {
                     Assert.False(recordInfo.IsLocked, $"Unexpected Locked record for key {key}: {(recordInfo.IsLockedShared ? "S" : "")} {(recordInfo.IsLockedExclusive ? "X" : "")}");
@@ -187,15 +182,13 @@ namespace FASTER.test.EphemeralOnlyLock
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void InMemorySimpleLock([Values] ReadCopyDestination readCopyDestination,
-                                              [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase,
-                                              [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public void InMemorySimpleLockTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase,
+                                           [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
             PrepareRecordLocation(flushMode);
 
             // SetUp also reads this to determine whether to supply ReadCacheSettings. If ReadCache is specified it wins over CopyToTail.
-            bool useReadCache = readCopyDestination == ReadCopyDestination.ReadCache && flushMode == FlushMode.OnDisk;
             var useRMW = updateOp == UpdateOp.RMW;
             const int readKey24 = 24, readKey51 = 51;
             long resultKey = readKey24 + readKey51;
@@ -224,7 +217,7 @@ namespace FASTER.test.EphemeralOnlyLock
                 Assert.IsFalse(status.IsPending, status.ToString());
             }
             AssertIsNotLocked(readKey24);
-            Assert.AreEqual(24, readValue24);
+            Assert.AreEqual(24 * valueMult, readValue24);
 
             status = session.Read(readKey51, out var readValue51);
             if (flushMode == FlushMode.OnDisk)
@@ -243,14 +236,14 @@ namespace FASTER.test.EphemeralOnlyLock
                 Assert.IsFalse(status.IsPending, status.ToString());
             }
             AssertIsNotLocked(readKey51);
-            Assert.AreEqual(51, readValue51);
+            Assert.AreEqual(51 * valueMult, readValue51);
 
             // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
             session.ctx.phase = phase;
             long dummyInOut = 0;
             status = useRMW
-                ? session.RMW(ref resultKey, ref expectedResult, ref dummyInOut, out RecordMetadata recordMetadata)
-                : session.Upsert(ref resultKey, ref dummyInOut, ref expectedResult, ref dummyInOut, out recordMetadata);
+                ? session.RMW(ref resultKey, ref expectedResult, ref resultValue, out RecordMetadata recordMetadata)
+                : session.Upsert(ref resultKey, ref dummyInOut, ref expectedResult, ref resultValue, out recordMetadata);
             if (flushMode == FlushMode.OnDisk)
             {
                 if (status.IsPending)
@@ -258,6 +251,7 @@ namespace FASTER.test.EphemeralOnlyLock
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     Assert.True(completedOutputs.Next());
                     resultValue = completedOutputs.Current.Output;
+                    Assert.AreEqual(expectedResult, resultValue);
                     Assert.False(completedOutputs.Next());
                     completedOutputs.Dispose();
                 }
@@ -265,9 +259,9 @@ namespace FASTER.test.EphemeralOnlyLock
             else
             {
                 Assert.IsFalse(status.IsPending, status.ToString());
+                Assert.AreEqual(expectedResult, resultValue);
             }
             AssertIsNotLocked(resultKey);
-            Assert.AreEqual(expectedResult, resultValue);
 
             // Reread the destination to verify
             status = session.Read(resultKey, out resultValue);
@@ -290,8 +284,6 @@ namespace FASTER.test.EphemeralOnlyLock
             // Phase.INTERMEDIATE is to test the non-Phase.REST blocks
             Populate();
             PrepareRecordLocation(flushMode);
-
-            Dictionary<long, LockType> locks = new();
 
             // SetUp also reads this to determine whether to supply ReadCacheSettings. If ReadCache is specified it wins over CopyToTail.
             long resultKey = 75;
@@ -390,6 +382,7 @@ namespace FASTER.test.EphemeralOnlyLock
 
             var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());
+            session.CompletePending(wait: true);
 
             VerifyKeyIsSplicedInAndHasNoLocks(key);
         }
@@ -435,7 +428,7 @@ namespace FASTER.test.EphemeralOnlyLock
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void VerifyNoLocksAfterRMWTest([Values] ChainTests.RecordRegion recordRegion)
+        public void VerifyNoLocksAfterRMWToTailTest([Values] ChainTests.RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
@@ -445,7 +438,17 @@ namespace FASTER.test.EphemeralOnlyLock
             int key = recordRegion == ChainTests.RecordRegion.Immutable || recordRegion == ChainTests.RecordRegion.OnDisk
                 ? useExistingKey : useNewKey;
             var status = session.RMW(key, key * valueMult);
-            Assert.IsTrue(status.Record.Created, status.ToString());
+            if (recordRegion == ChainTests.RecordRegion.OnDisk)
+            {
+                Assert.IsTrue(status.IsPending, status.ToString());
+                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                (status, _) = GetSinglePendingResult(completedOutputs);
+                Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
+            }
+            else if (recordRegion == ChainTests.RecordRegion.Immutable)
+                Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
+            else
+                Assert.IsTrue(status.Record.Created, status.ToString());
 
             VerifyKeyIsSplicedInAndHasNoLocks(key);
         }
@@ -453,13 +456,13 @@ namespace FASTER.test.EphemeralOnlyLock
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void TransferFromLockTableToDeleteTest([Values] ChainTests.RecordRegion recordRegion)
+        public void VerifyNoLocksAfterDeleteToTailTest([Values] ChainTests.RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
             using var session = fht.NewSession(new SimpleFunctions<long, long>());
 
-            int key = -1;
+            long key = -1;
 
             if (recordRegion == ChainTests.RecordRegion.Immutable || recordRegion == ChainTests.RecordRegion.OnDisk)
             {
@@ -468,15 +471,18 @@ namespace FASTER.test.EphemeralOnlyLock
 
                 // Delete does not search outside mutable region so the key will not be found
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+
+                VerifyKeyIsSplicedInAndHasNoLocks(key);
             }
             else
             {
                 key = useNewKey;
                 var status = session.Delete(key);
                 Assert.IsFalse(status.Found, status.ToString());
-            }
 
-            VerifyKeyIsSplicedInAndHasNoLocks(key);
+                // This key was *not* inserted; Delete sees it does not exist so jumps out immediately.
+                Assert.IsFalse(fht.FindHashBucketEntryForKey(ref key, out _));
+            }
         }
 
         [Test]

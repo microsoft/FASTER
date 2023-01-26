@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using FASTER.core;
+using FASTER.test.LockTable;
 using NUnit.Framework;
 using static FASTER.test.TestUtils;
 
@@ -34,7 +35,7 @@ namespace FASTER.test.ModifiedTests
         {
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
             comparer = new ModifiedBitTestComparer();
-            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 }, comparer: comparer, lockingMode: LockingMode.EphemeralOnly);
+            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 }, comparer: comparer, lockingMode: LockingMode.SessionControlled);
             session = fht.For(new SimpleFunctions<int, int>()).NewSession<SimpleFunctions<int, int>>();
         }
 
@@ -55,35 +56,29 @@ namespace FASTER.test.ModifiedTests
                 Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
         }
 
-        static void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
-            var (isX, isS) = luContext.IsLocked(key);
+            OverflowBucketLockTableTests.AssertLockCounts(fht, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
-            Assert.AreEqual(xlock, isX, "xlock mismatch");
-            Assert.AreEqual(slock, isS > 0, "slock mismatch");
             Assert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        static void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
-            var (isX, isS) = luContext.IsLocked(key);
+            OverflowBucketLockTableTests.AssertLockCounts(fht, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
-            Assert.AreEqual(xlock, isX, "xlock mismatch");
-            Assert.AreEqual(slock, isS > 0, "slock mismatch");
             Assert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        static void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int>> session, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleFunctions<int, int>> session, int key, bool xlock, bool slock, bool modified = false)
         {
             var luContext = session.LockableUnsafeContext;
             luContext.BeginUnsafe();
-            luContext.BeginLockable();
-            var (isX, isS) = luContext.IsLocked(key);
+
+            OverflowBucketLockTableTests.AssertLockCounts(fht, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
-            Assert.AreEqual(xlock, isX, "xlock mismatch");
-            Assert.AreEqual(slock, isS > 0, "slock mismatch");
             Assert.AreEqual(modified, isM, "Modified mismatch");
-            luContext.EndLockable();
+
             luContext.EndUnsafe();
         }
 

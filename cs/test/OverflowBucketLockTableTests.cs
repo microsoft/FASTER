@@ -18,7 +18,8 @@ namespace FASTER.test.LockTable
         public long GetHashCode64(ref long k) => 42L;
     }
 
-    enum UseSingleBucketComparer { True }
+    // Used to signal Setup to use the SingleBucketComparer
+    public enum UseSingleBucketComparer { UseSingleBucket }
 
     [TestFixture]
     internal class OverflowBucketLockTableTests
@@ -58,6 +59,8 @@ namespace FASTER.test.LockTable
             fht = default;
             log?.Dispose();
             log = default;
+            comparer = default;
+            DeleteDirectory(MethodTestDir);
         }
 
         void TryLock(long key, LockType lockType, bool ephemeral, int expectedCurrentReadLocks, bool expectedLockResult)
@@ -67,7 +70,7 @@ namespace FASTER.test.LockTable
 
             // Check for existing lock
             var lockState = fht.LockTable.GetLockState(ref key, ref hei);
-            Assert.AreEqual(expectedCurrentReadLocks > 0, lockState.NumLockedShared);
+            Assert.AreEqual(expectedCurrentReadLocks, lockState.NumLockedShared);
 
             if (ephemeral)
                 Assert.AreEqual(expectedLockResult, fht.LockTable.TryLockEphemeral(ref key, ref hei, lockType));
@@ -91,6 +94,42 @@ namespace FASTER.test.LockTable
             var lockState = fht.LockTable.GetLockState(ref SingleBucketKey, ref hei);
             Assert.AreEqual(expectedX, lockState.IsLockedExclusive);
             Assert.AreEqual(expectedS, lockState.NumLockedShared);
+        }
+
+        internal static void AssertLockCounts<TKey, TValue>(FasterKV<TKey, TValue> fht, TKey key, bool expectedX, int expectedS)
+            => AssertLockCounts(fht, ref key, expectedX, expectedS);
+
+        internal static void AssertLockCounts<TKey, TValue>(FasterKV<TKey, TValue> fht, ref TKey key, bool expectedX, int expectedS)
+        {
+            HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref key));
+            if (fht.FindTag(ref hei))
+            {
+                var lockState = fht.LockTable.GetLockState(ref key, ref hei);
+                Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
+                Assert.AreEqual(expectedS, lockState.NumLockedShared, "SLock mismatch");
+                return;
+            }
+
+            Assert.IsFalse(expectedX, "Expected X lock but key was not found");
+            Assert.AreEqual(0, expectedS, "Expected S lock but key was not found");
+        }
+
+        internal static void AssertLockCounts<TKey, TValue>(FasterKV<TKey, TValue> fht, TKey key, bool expectedX, bool expectedS)
+            => AssertLockCounts(fht, ref key, expectedX, expectedS);
+
+        internal static void AssertLockCounts<TKey, TValue>(FasterKV<TKey, TValue> fht, ref TKey key, bool expectedX, bool expectedS)
+        {
+            HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref key));
+            if (fht.FindTag(ref hei))
+            {
+                var lockState = fht.LockTable.GetLockState(ref key, ref hei);
+                Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
+                Assert.AreEqual(expectedS, lockState.NumLockedShared > 0, "SLock mismatch");
+                return;
+            }
+
+            Assert.IsFalse(expectedX, "Expected X lock but key was not found");
+            Assert.IsFalse(expectedS, "Expected S lock but key was not found");
         }
 
         internal unsafe void AssertTotalLockCounts(long expectedX, long expectedS)
@@ -127,7 +166,7 @@ namespace FASTER.test.LockTable
 
         [Test]
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
-        public void SingleKeyTest(UseSingleBucketComparer /* justToSignalSetup */ _)
+        public void SingleKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
             GetBucket(ref hei);
@@ -155,7 +194,7 @@ namespace FASTER.test.LockTable
             AssertLockCounts(ref hei, false, 0);
 
             // Now exclusive should succeed
-            TryLock(key, LockType.Exclusive, ephemeral: false, expectedCurrentReadLocks: 2, expectedLockResult: true);
+            TryLock(key, LockType.Exclusive, ephemeral: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, true, 0);
             Unlock(key, LockType.Exclusive);
             AssertLockCounts(ref hei, false, 0);
@@ -163,7 +202,7 @@ namespace FASTER.test.LockTable
 
         [Test]
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
-        public void ThreeKeyTest(UseSingleBucketComparer /* justToSignalSetup */ _)
+        public void ThreeKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
             GetBucket(ref hei);
@@ -191,7 +230,7 @@ namespace FASTER.test.LockTable
             AssertLockCounts(ref hei, false, 0);
 
             // Now exclusive should succeed
-            TryLock(4, LockType.Exclusive, ephemeral: false, expectedCurrentReadLocks: 2, expectedLockResult: true);
+            TryLock(4, LockType.Exclusive, ephemeral: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, true, 0);
             Unlock(4, LockType.Exclusive);
             AssertLockCounts(ref hei, false, 0);
@@ -244,13 +283,20 @@ namespace FASTER.test.LockTable
         const int NumTestIterations = 15;
         const int maxSleepMs = 5;
 
-        internal struct ThreadStruct
+        internal struct ThreadStruct : ILockableKey
         {
             internal long key;
             internal long hash;
+            internal long lockCode;
             internal LockType lockType;
 
-            public override string ToString() => $"key {key}, hash {hash}, {lockType}";
+            #region ILockableKey
+            public long LockCode => lockCode;
+
+            public LockType LockType => lockType;
+            #endregion ILockableKey
+
+            public override string ToString() => $"key {key}, hash {hash}, lockCode {lockCode}, {lockType}";
         }
 
         private void AddThreads(List<Task> tasks, ref int lastTid, int numThreads, int maxNumKeys, int lowKey, int highKey, LockType lockType)
@@ -284,12 +330,13 @@ namespace FASTER.test.LockTable
                             key = key,
                             // LockType.None means split randomly between Shared and Exclusive
                             lockType = lockType == LockType.None ? (rng.Next(0, 100) > 50 ? LockType.Shared : LockType.Exclusive) : lockType,
-                            hash = comparer.GetHashCode64(ref key)
+                            hash = comparer.GetHashCode64(ref key),
                         };
+                        threadStructs[ii].lockCode = fht.LockTable.GetLockCode(ref key, threadStructs[ii].hash);
                     }
 
                     // Sort and lock
-                    Array.Sort(threadStructs, (x, y) => x.key.CompareTo(y.key));
+                    fht.LockTable.SortLockCodes(threadStructs);
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         HashEntryInfo hei = new(threadStructs[ii].hash);

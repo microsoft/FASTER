@@ -338,7 +338,7 @@ namespace FASTER.core
             }
 
             ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
-            stackCtx.newLogicalAddress = newLogicalAddress;
+            stackCtx.SetNewRecord(newLogicalAddress);
 
             UpsertInfo upsertInfo = new()
             {
@@ -367,6 +367,7 @@ namespace FASTER.core
                 CompleteUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
+                stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);

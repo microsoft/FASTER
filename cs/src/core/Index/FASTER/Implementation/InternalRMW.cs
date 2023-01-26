@@ -492,7 +492,7 @@ namespace FASTER.core
             }
 
             ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
-            stackCtx.newLogicalAddress = newLogicalAddress;
+            stackCtx.SetNewRecord(newLogicalAddress);
 
             rmwInfo.Address = newLogicalAddress;
             rmwInfo.KeyHash = stackCtx.hei.hash;
@@ -576,6 +576,7 @@ namespace FASTER.core
                     // Else it was a CopyUpdater so call PCU
                     fasterSession.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref newRecordInfo, ref rmwInfo);
                 }
+                stackCtx.ClearNewRecord();
 
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;

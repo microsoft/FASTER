@@ -34,8 +34,32 @@ namespace FASTER.core
                 case LockOperationType.Unlock:
                     this.LockTable.Unlock(ref key, ref stackCtx.hei, lockOp.LockType);
                     return OperationStatus.SUCCESS;
-                case LockOperationType.IsLocked:
-                    lockState = this.LockTable.GetLockState(ref key, ref stackCtx.hei);
+                default:
+                    Debug.Fail($"Unexpected {nameof(LockOperationType)}: {lockOp.LockOperationType}");
+                    break;
+            }
+            return OperationStatus.SUCCESS;
+        }
+
+        /// <summary>
+        /// Manual Lock operation for <see cref="HashBucket"/> locking . Locks the buckets corresponding to 'keys'.
+        /// </summary>
+        /// <param name="keyLockCode">Lock code of the key (<see cref="HashBucket"/>) to be locked or unlocked.</param>
+        /// <param name="lockOp">Lock operation being done.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus InternalLock(long keyLockCode, LockOperation lockOp)
+        {
+            Debug.Assert(epoch.ThisInstanceProtected(), "InternalLock must have protected epoch");
+            Debug.Assert(this.LockTable.IsEnabled, "ManualLockTable must be enabled for InternalLock");
+
+            switch (lockOp.LockOperationType)
+            {
+                case LockOperationType.Lock:
+                    if (!this.LockTable.TryLockManual(this, keyLockCode, lockOp.LockType))
+                        return OperationStatus.RETRY_LATER;
+                    return OperationStatus.SUCCESS;
+                case LockOperationType.Unlock:
+                    this.LockTable.Unlock(this, keyLockCode, lockOp.LockType);
                     return OperationStatus.SUCCESS;
                 default:
                     Debug.Fail($"Unexpected {nameof(LockOperationType)}: {lockOp.LockOperationType}");

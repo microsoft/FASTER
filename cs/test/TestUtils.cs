@@ -233,7 +233,7 @@ namespace FASTER.test
         {
             HashEntryInfo hei = new(fht.Comparer.GetHashCode64(ref key));
             var success = fht.FindTag(ref hei);
-            entry = success ? hei.entry : default;
+            entry = hei.entry;
             return success;
         }
     }

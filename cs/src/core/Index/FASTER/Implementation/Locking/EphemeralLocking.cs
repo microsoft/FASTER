@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace FASTER.core
 {
@@ -25,7 +24,7 @@ namespace FASTER.core
         {
             status = OperationStatus.SUCCESS;
             if (!this.EphemeralOnlyLocker.IsEnabled)
-                return false;
+                return true;
 
             // A failed lockOp means this is a Sealed record or we exhausted the spin count. Either must RETRY_LATER, as must a record that was Invalidated while we spun.
             if (!this.EphemeralOnlyLocker.TryLockExclusive(ref recordInfo))

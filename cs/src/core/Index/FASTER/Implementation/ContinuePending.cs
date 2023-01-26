@@ -50,8 +50,6 @@ namespace FASTER.core
 
                 while (true)
                 {
-                    Debug.Assert(!EphemeralOnlyLocker.IsEnabled, $"Should not have pending IO operations with {nameof(LockingMode.EphemeralOnly)}");
-
                     if (!FindTag(ref stackCtx.hei))
                         Debug.Fail("Expected to FindTag in InternalContinuePendingRead");
                     stackCtx.SetRecordSourceToHashEntry(hlog);
@@ -450,7 +448,7 @@ namespace FASTER.core
                 } while (stackCtx.hei.IsReadCache && newLogicalAddress < stackCtx.hei.AbsoluteAddress);
 
                 newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
-                stackCtx.newLogicalAddress = newLogicalAddress;
+                stackCtx.SetNewRecord(newLogicalAddress);
 
                 upsertInfo.Address = Constants.kInvalidAddress;     // We do not expose readcache addresses
                 advancedStatusCode |= StatusCode.CopiedRecordToReadCache;
@@ -476,7 +474,7 @@ namespace FASTER.core
                 }
 
                 newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: currentCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
-                stackCtx.newLogicalAddress = newLogicalAddress;
+                stackCtx.SetNewRecord(newLogicalAddress);
 
                 newRecordInfo.Tombstone = expired;
                 upsertInfo.Address = newLogicalAddress;
@@ -553,6 +551,7 @@ namespace FASTER.core
                 newRecordInfo.Modified = false;
                 pendingContext.recordInfo = newRecordInfo;
             }
+            stackCtx.ClearNewRecord();
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
 #endregion
         }

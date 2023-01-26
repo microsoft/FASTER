@@ -25,22 +25,36 @@ namespace FASTER.core
         [Conditional("DEBUG")]
         void AssertQueryAllowed() => Debug.Assert(IsEnabled, "Attempt to do Manual-locking query when locking mode is LockingMode.EphemeralOnly");
 
-        internal long GetSize<TValue>(FasterKV<ConsoleKey, TValue> fht) => fht.state[fht.resizeInfo.version].size_mask;
+        internal long GetSize<TValue>(FasterKV<TKey, TValue> fht) => fht.state[fht.resizeInfo.version].size_mask;
 
         public bool NeedKeyLockCode => IsEnabled;
 
         /// <inheritdoc/>
         public long GetLockCode(ref TKey key, long hash) => IsEnabled ? hash & NumBuckets : 0;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe HashBucket* GetBucket<TValue>(FasterKV<TKey, TValue> fht, long keyCode)
+            => fht.state[fht.resizeInfo.version].tableAligned + keyCode;
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockManual(ref TKey key, ref HashEntryInfo hei, LockType lockType)
+        public unsafe bool TryLockManual(ref TKey key, ref HashEntryInfo hei, LockType lockType) 
+            => TryLockManual(hei.firstBucket, lockType);
+
+        // The KeyCode approach is only for manual locking, to prevent a session from deadlocking itself; ephemeral always uses keys.
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe bool TryLockManual<TValue>(FasterKV<TKey, TValue> fht, long keyCode, LockType lockType) 
+            => TryLockManual(GetBucket(fht, keyCode), lockType);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe bool TryLockManual(HashBucket* bucket, LockType lockType)
         {
             AssertLockAllowed();
             return lockType switch
             {
-                LockType.Shared => HashBucket.TryAcquireSharedLatch(hei.firstBucket),
-                LockType.Exclusive => HashBucket.TryAcquireExclusiveLatch(hei.firstBucket),
+                LockType.Shared => HashBucket.TryAcquireSharedLatch(bucket),
+                LockType.Exclusive => HashBucket.TryAcquireExclusiveLatch(bucket),
                 _ => throw new FasterException("Attempt to lock with unknown LockType")
             };
         }
@@ -77,6 +91,21 @@ namespace FASTER.core
             {
                 Debug.Assert(lockType == LockType.Exclusive, "Attempt to unlock with unknown LockType");
                 UnlockExclusive(ref key, ref hei);
+            }
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe void Unlock<TValue>(FasterKV<TKey, TValue> fht, long keyCode, LockType lockType)
+        {
+            AssertUnlockAllowed();
+            HashBucket* bucket = GetBucket(fht, keyCode);
+            if (lockType == LockType.Shared)
+                HashBucket.ReleaseSharedLatch(bucket);
+            else
+            {
+                Debug.Assert(lockType == LockType.Exclusive, "Attempt to unlock with unknown LockType");
+                HashBucket.ReleaseExclusiveLatch(bucket);
             }
         }
 
@@ -122,15 +151,35 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe LockState GetLockState(ref TKey key, ref HashEntryInfo hei)
+        public unsafe LockState GetLockState(ref TKey key, ref HashEntryInfo hei) 
+            => GetLockState(hei.firstBucket);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe LockState GetLockState<TValue>(FasterKV<TKey, TValue> fht, long keyCode) 
+            => GetLockState(GetBucket(fht, keyCode));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe LockState GetLockState(HashBucket* bucket)
         {
             AssertQueryAllowed();
             return new()
             {
                 IsFound = true, // Always true for OverflowBucketLockTable
-                NumLockedShared = HashBucket.NumLatchedShared(hei.firstBucket),
-                IsLockedExclusive = HashBucket.IsLatchedExclusive(hei.firstBucket)
+                NumLockedShared = HashBucket.NumLatchedShared(bucket),
+                IsLockedExclusive = HashBucket.IsLatchedExclusive(bucket)
             };
+        }
+
+        private static int LockSortComparer(long code1, LockType lt1, long code2, LockType lt2)
+            => (code1 != code2) ? code1.CompareTo(code2) : -lt1.CompareTo(lt2);
+
+        /// <inheritdoc/>
+        internal void SortLockCodes<TData>(TData[] keyDatas)
+            where TData : ILockableKey
+        {
+            Debug.Assert(LockType.Exclusive > LockType.Shared, "LockType.Exclusive must be > LockType.Shared so LockSortComparer works properly");
+            Array.Sort(keyDatas, (data1, data2) => LockSortComparer(data1.LockCode, data1.LockType, data2.LockCode, data2.LockType));
         }
 
         /// <inheritdoc/>

@@ -46,6 +46,22 @@ namespace FASTER.core
     }
 
     /// <summary>
+    /// Interface that must be implemented to participate in keycode-based locking.
+    /// </summary>
+    public interface ILockableKey
+    {
+        /// <summary>
+        /// The lock code for a specific key, obtained from <see cref="ILockableContext{TKey}.GetLockCode(ref TKey)"/>
+        /// </summary>
+        public long LockCode { get; }
+
+        /// <summary>
+        /// The lock type for a specific key
+        /// </summary>
+        public LockType LockType { get; }
+    }
+
+    /// <summary>
     /// Lock state of a record
     /// </summary>
     internal struct LockState
@@ -56,14 +72,19 @@ namespace FASTER.core
         internal bool IsLockedShared => NumLockedShared > 0;
 
         internal bool IsLocked => IsLockedExclusive || NumLockedShared > 0;
+
+        public override string ToString()
+        {
+            var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";
+            return $"found {IsFound}, {locks}";
+        }
     }
 
     internal enum LockOperationType : byte
     {
         None,
         Lock,
-        Unlock,
-        IsLocked
+        Unlock
     }
 
     internal struct LockOperation

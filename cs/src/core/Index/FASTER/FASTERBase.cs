@@ -41,7 +41,8 @@ namespace FASTER.core
         public const int kTagShift = 62 - kTagSize;
         public const long kTagMask = (1L << kTagSize) - 1;
         public const long kTagPositionMask = (kTagMask << kTagShift);
-        public const long kAddressMask = (1L << 48) - 1;
+        public const int kAddressBits = 48;
+        public const long kAddressMask = (1L << kAddressBits) - 1;
 
         // Position of tag in hash value (offset is always in the least significant bits)
         public const int kHashTagShift = 64 - kTagSize;
@@ -49,7 +50,7 @@ namespace FASTER.core
         // Default number of entries in the lock table.
         public const int kDefaultLockTableSize = 16 * 1024;
 
-        public const int kMaxLockSpins = 100;   // TODO verify these
+        public const int kMaxLockSpins = 10;   // TODO verify these
         public const int kMaxReaderLockDrainSpins = kMaxLockSpins * 10;
 
         /// Invalid entry value
@@ -84,12 +85,12 @@ namespace FASTER.core
     [StructLayout(LayoutKind.Explicit, Size = Constants.kEntriesPerBucket * 8)]
     internal unsafe struct HashBucket
     {
-        // We use the first overflow bucket for latching, reusing the Tag bits.
-        const int kSharedLatchBits = Constants.kTagSize;
+        // We use the first overflow bucket for latching, reusing all bits after the address.
+        const int kSharedLatchBits = 63 - Constants.kAddressBits;
         const int kExclusiveLatchBits = 1;
 
         // Shift positions of latches in word
-        const int kSharedLatchBitOffset = Constants.kTagShift;
+        const int kSharedLatchBitOffset = Constants.kAddressBits;
         const int kExclusiveLatchBitOffset = kSharedLatchBitOffset + kSharedLatchBits;
 
         // Shared latch constants
@@ -111,7 +112,7 @@ namespace FASTER.core
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
             int spinCount = Constants.kMaxLockSpins;
 
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = entry_word;
                 if (((expected_word & kExclusiveLatchBitMask) == 0) // not exclusively locked
@@ -122,7 +123,6 @@ namespace FASTER.core
                 }
                 if (spinCount > 0 && --spinCount <= 0)
                     return false;
-                Thread.Yield();
             }
         }
 
@@ -130,7 +130,8 @@ namespace FASTER.core
         public static void ReleaseSharedLatch(HashBucket* bucket)
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
-            Debug.Assert((entry_word & kExclusiveLatchBitMask) == 0, "Trying to S unlatch an X latched record");
+            // X and S latches means an X latch is still trying to drain readers, like this one.
+            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched record");    
             Debug.Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched record");
             Interlocked.Add(ref entry_word, -kSharedLatchIncrement);
         }
@@ -142,7 +143,7 @@ namespace FASTER.core
             int spinCount = Constants.kMaxLockSpins;
 
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = entry_word;
                 if ((expected_word & kExclusiveLatchBitMask) == 0)
@@ -152,7 +153,6 @@ namespace FASTER.core
                 }
                 if (spinCount > 0 && --spinCount <= 0)
                     return false;
-                Thread.Yield();
             }
 
             // Wait for readers to drain. Another session may hold an SLock on this record and need an epoch refresh to unlock, so limit this to avoid deadlock.
@@ -178,11 +178,12 @@ namespace FASTER.core
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
 
+            // We should not be calling this method unless we have successfully acquired the latch (all existing readers were drained).
             Debug.Assert((entry_word & kSharedLatchBitMask) == 0, "Trying to X unlatch an S latched record");
-            Debug.Assert((entry_word & kExclusiveLatchBitMask) == 0, "Trying to X unlatch an unlatched record");
+            Debug.Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched record");
 
             // The address in the overflow bucket may change from unassigned to assigned, so retry
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = entry_word;
                 if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word & ~kExclusiveLatchBitMask, expected_word))
@@ -192,7 +193,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ushort NumLatchedShared(HashBucket* bucket) 
-            => (ushort)(bucket->bucket_entries[Constants.kOverflowBucketIndex] & kSharedLatchBitMask);
+            => (ushort)((bucket->bucket_entries[Constants.kOverflowBucketIndex] & kSharedLatchBitMask) >> kSharedLatchBitOffset);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsLatchedExclusive(HashBucket* bucket)

@@ -353,7 +353,7 @@ namespace FASTER.core
             }
 
             ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionCtx.InNewVersion, tombstone: true, stackCtx.recSrc.LatestLogicalAddress);
-            stackCtx.newLogicalAddress = newLogicalAddress;
+            stackCtx.SetNewRecord(newLogicalAddress);
 
             DeleteInfo deleteInfo = new()
             {
@@ -383,6 +383,7 @@ namespace FASTER.core
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
                 fasterSession.PostSingleDeleter(ref key, ref newRecordInfo, ref deleteInfo);
+                stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);

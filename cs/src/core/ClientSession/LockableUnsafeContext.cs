@@ -50,19 +50,12 @@ namespace FASTER.core
         #region Key Locking
 
         /// <inheritdoc/>
-        public unsafe void Lock(ref Key key, LockType lockType)
+        public void Lock(ref Key key, LockType lockType)
         {
             clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Lock()");
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
-            LockOperation lockOp = new(LockOperationType.Lock, lockType);
-
-            OperationStatus status;
-            do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out _);
-            while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
-            Debug.Assert(status == OperationStatus.SUCCESS);
-
+            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, key, new(LockOperationType.Lock, lockType));
             if (lockType == LockType.Exclusive)
                 ++clientSession.exclusiveLockCount;
             else
@@ -70,22 +63,15 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public unsafe void Lock(Key key, LockType lockType) => Lock(ref key, lockType);
+        public void Lock(Key key, LockType lockType) => Lock(ref key, lockType);
 
         /// <inheritdoc/>
         public void Unlock(ref Key key, LockType lockType)
         {
             clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Unlock()");
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Unlock()");
 
-            LockOperation lockOp = new(LockOperationType.Unlock, lockType);
-
-            OperationStatus status;
-            do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out _);
-            while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
-            Debug.Assert(status == OperationStatus.SUCCESS);
-
+            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, key, new(LockOperationType.Unlock, lockType));
             if (lockType == LockType.Exclusive)
                 --clientSession.exclusiveLockCount;
             else
@@ -96,24 +82,38 @@ namespace FASTER.core
         public void Unlock(Key key, LockType lockType) => Unlock(ref key, lockType);
 
         /// <inheritdoc/>
-        public (bool exclusive, ushort shared) IsLocked(ref Key key)
+        public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
+
+        /// <inheritdoc/>
+        public long GetLockCode(ref Key key) => clientSession.GetLockCode(ref key);
+
+        /// <inheritdoc/>
+        public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
+
+        /// <inheritdoc/>
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys)
+            where TLockableKey : ILockableKey
+            => clientSession.SortLockCodes(keys);
+
+        /// <inheritdoc/>
+        public void Lock<TLockableKey>(TLockableKey[] keys)
+            where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for IsLocked()");
+            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
 
-            LockOperation lockOp = new(LockOperationType.IsLocked, LockType.None);
-
-            OperationStatus status;
-            LockState lockState;
-            do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out lockState);
-            while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
-            Debug.Assert(status == OperationStatus.SUCCESS);
-            return (lockState.IsLockedExclusive, lockState.NumLockedShared);
+            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, LockOperationType.Lock);
         }
 
         /// <inheritdoc/>
-        public (bool exclusive, ushort shared) IsLocked(Key key) => IsLocked(ref key);
+        public void Unlock<TLockableKey>(TLockableKey[] keys)
+            where TLockableKey : ILockableKey
+        {
+            clientSession.CheckIsAcquiredLockable();
+            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Unlock()");
+
+            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, LockOperationType.Unlock);
+        }
 
         /// <summary>
         /// The session id of FasterSession
@@ -414,15 +414,6 @@ namespace FASTER.core
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
             clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
         }
-
-        /// <inheritdoc/>
-        public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
-
-        /// <inheritdoc/>
-        public long GetLockCode(ref Key key) => clientSession.GetLockCode(ref key);
-
-        /// <inheritdoc/>
-        public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
 
         #endregion IFasterContext
 

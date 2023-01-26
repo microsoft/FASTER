@@ -5,7 +5,7 @@ using FASTER.core;
 using NUnit.Framework;
 using System;
 using System.Threading;
-using FASTER.test.ReadCacheTests;
+using FASTER.test.LockTable;
 using static FASTER.test.TestUtils;
 using System.Threading.Tasks;
 
@@ -282,10 +282,10 @@ namespace FASTER.test.LockTests
                     luContext.EndUnsafe();
                 }
 
-            if (syncMode == SyncMode.Async)
-                await fht2.RecoverAsync(token);
-            else
-                fht2.Recover(token);
+                if (syncMode == SyncMode.Async)
+                    await fht2.RecoverAsync(token);
+                else
+                    fht2.Recover(token);
 
                 {   // Ensure there are no locks
                     using var session = fht2.NewSession(new SimpleFunctions<int, int>());
@@ -293,9 +293,7 @@ namespace FASTER.test.LockTests
                     luContext.BeginUnsafe();
                     for (int key = 0; key < numKeys; key++)
                     {
-                        (bool isExclusive, ushort isShared) = luContext.IsLocked(key);
-                        Assert.IsFalse(isExclusive);
-                        Assert.AreEqual(0, isShared);
+                        OverflowBucketLockTableTests.AssertLockCounts(fht2, ref key, false, 0);
                     }
                     luContext.EndUnsafe();
                 }

@@ -332,15 +332,6 @@ namespace FASTER.core
             clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
         }
 
-        /// <inheritdoc/>
-        public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
-
-        /// <inheritdoc/>
-        public long GetLockCode(ref Key key) => clientSession.GetLockCode(ref key);
-
-        /// <inheritdoc/>
-        public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
-
         #endregion IFasterContext
 
         #region IFasterSession
@@ -508,7 +499,7 @@ namespace FASTER.core
             {
                 if (_clientSession.fht.DisableEphemeralLocking)
                     return true;
-                if (!_clientSession.fht.DisableEphemeralLocking || _clientSession.fht.LockTable.TryLockEphemeralShared(ref key, ref stackCtx.hei))
+                if (!_clientSession.fht.LockTable.TryLockEphemeralShared(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasLockTableLock = true;
             }
@@ -521,7 +512,7 @@ namespace FASTER.core
 
             public void LockTableEphemeralSUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableEphemeralLocking)
+                if (!_clientSession.fht.DisableEphemeralLocking)
                     _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);
             }
             #endregion Ephemeral locking
