@@ -31,10 +31,11 @@ namespace FASTER.core
                     }
                     faster._hybridLogCheckpoint.info.version = next.Version;
                     faster._hybridLogCheckpoint.info.startLogicalAddress = faster.hlog.GetTailAddress();
+                    // Capture begin address before checkpoint starts
+                    faster._hybridLogCheckpoint.info.beginAddress = faster.hlog.BeginAddress;
                     break;
                 case Phase.WAIT_FLUSH:
                     faster._hybridLogCheckpoint.info.headAddress = faster.hlog.HeadAddress;
-                    faster._hybridLogCheckpoint.info.beginAddress = faster.hlog.BeginAddress;
                     faster._hybridLogCheckpoint.info.nextVersion = next.Version;
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
