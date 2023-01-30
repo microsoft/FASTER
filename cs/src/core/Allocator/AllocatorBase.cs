@@ -933,9 +933,7 @@ namespace FASTER.core
                 // Force eviction now if empty page count has increased
                 if (value >= oldEPC)
                 {
-                    bool prot = true;
-                    if (!epoch.ThisInstanceProtected())
-                        prot = false;
+                    bool prot = epoch.ThisInstanceProtected();
 
                     if (!prot) epoch.Resume();
                     try

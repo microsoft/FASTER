@@ -118,8 +118,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool VerifyInMemoryAddresses(ref OperationStackContext<Key, Value> stackCtx, long skipReadCacheStartAddress = Constants.kInvalidAddress)
         {
-            // If we have an in-memory source that was evicted, return false and the caller will RETRY.
-            if (stackCtx.recSrc.InMemorySourceWasEvicted())
+            // If we have an in-memory source that is pending eviction, return false and the caller will RETRY.
+            if (stackCtx.recSrc.InMemorySourceIsBelowHeadAddress())
                 return false;
 
             // If we're not using readcache or the splice point is still above readcache.HeadAddress, we're good.
@@ -163,8 +163,8 @@ namespace FASTER.core
                 // the readcache but is < readcache.HeadAddress, so wait until it is evicted.
                 SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LatestLogicalAddress, readcache);
 
-                // If we have an in-memory source that was evicted, return false and the caller will RETRY.
-                if (stackCtx.recSrc.InMemorySourceWasEvicted())
+                // If we have an in-memory source that is pending eviction, return false and the caller will RETRY.
+                if (stackCtx.recSrc.InMemorySourceIsBelowHeadAddress())
                     return false;
             }
         }

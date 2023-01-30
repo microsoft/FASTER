@@ -323,12 +323,15 @@ namespace FASTER.core
                 {
                     if (pendingContext.CopyReadsToTailFromReadOnly || readInfo.Action == ReadAction.Expire) // Expire adds a tombstoned record to tail
                     {
-                        do
+                        for (var retryImmediate = true; retryImmediate; /* set in loop */ )
                         {
                             status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
                                                             ref srcRecordInfo, untilLogicalAddress: stackCtx.recSrc.LatestLogicalAddress, fasterSession,
                                                             reason: WriteReason.CopyToTail, expired: readInfo.Action == ReadAction.Expire);
-                        } while (HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext));
+                            retryImmediate = HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext);
+                            if (retryImmediate && !VerifyInMemoryAddresses(ref stackCtx))
+                                return OperationStatus.RETRY_NOW;   // ITCTT did an epoch refresh that moved HeadAddress above source address
+                        }
 
                         // No copy to tail was done
                         if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
