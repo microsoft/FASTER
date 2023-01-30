@@ -335,8 +335,13 @@ namespace FASTER.core
                     var pa = readcache.GetPhysicalAddress(la);
                     ref RecordInfo ri = ref readcache.GetInfo(pa);
 
-                    // Due to collisions, we can compare the hash code but not the key
-                    Debug.Assert(comparer.GetHashCode64(ref readcache.GetKey(pa)) == hei.hash, "The keyHash of the hash-chain ReadCache entry does not match the one obtained from the initial readcache address");
+#if DEBUG
+                    // Due to collisions, we can compare the hash code *mask* (i.e. the hash bucket index), not the key
+                    var mask = state[resizeInfo.version].size_mask;
+                    var rc_mask = hei.hash & mask;
+                    var pa_mask = comparer.GetHashCode64(ref readcache.GetKey(pa)) & mask;
+                    Debug.Assert(rc_mask == pa_mask, "The keyHash mask of the hash-chain ReadCache entry does not match the one obtained from the initial readcache address");
+#endif
 
                     // If the record's address is above the eviction range, leave it there and track nextPhysicalAddress.
                     if (la >= rcToLogicalAddress)
