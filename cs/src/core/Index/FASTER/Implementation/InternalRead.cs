@@ -131,7 +131,7 @@ namespace FASTER.core
             // Immutable region
             else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
-                status = ReadFromImmutableRegion(ref key, ref input, ref output, ref stackCtx, ref pendingContext, fasterSession, sessionCtx);
+                status = ReadFromImmutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession, sessionCtx);
                 if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly
                     goto CreatePendingContext;
                 return status;
@@ -289,7 +289,7 @@ namespace FASTER.core
         }
 
         private OperationStatus ReadFromImmutableRegion<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
-                                    ref OperationStackContext<Key, Value> stackCtx,
+                                    bool useStartAddress, ref OperationStackContext<Key, Value> stackCtx,
                                     ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                     FasterExecutionContext<Input, Output, Context> sessionCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
@@ -307,7 +307,8 @@ namespace FASTER.core
                 RecordInfo = srcRecordInfo
             };
 
-            if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out var status))
+            OperationStatus status = OperationStatus.SUCCESS;
+            if (!useStartAddress && !TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                 return status;
 
             try
