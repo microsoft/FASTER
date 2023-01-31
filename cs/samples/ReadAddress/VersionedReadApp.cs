@@ -170,6 +170,8 @@ namespace ReadAddress
 
                 if (!ProcessRecord(store, status, recordMetadata.RecordInfo, lap, ref output))
                     break;
+
+                readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
             }
         }
 
