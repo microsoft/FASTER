@@ -307,6 +307,8 @@ namespace FASTER.core
                 RecordInfo = srcRecordInfo
             };
 
+            // If we are starting from a specified address in the immutable region, we may have a Sealed record from a previous RCW.
+            // For this case, do not try to lock, EphemeralSUnlock will see that we do not have a lock so will not try to update it.
             OperationStatus status = OperationStatus.SUCCESS;
             if (!useStartAddress && !TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                 return status;
