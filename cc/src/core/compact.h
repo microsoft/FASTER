@@ -27,6 +27,35 @@ struct CompactionThreadsContext {
   std::deque<std::atomic<bool>> done;
 };
 
+
+template<class F>
+struct ConcurrentCompactionThreadsContext {
+ public:
+  ConcurrentCompactionThreadsContext()
+    : iter{ nullptr }
+    , to_other_store{ false } {
+      active_threads.store(0);
+  }
+  // non-copyable
+  ConcurrentCompactionThreadsContext(const ConcurrentCompactionThreadsContext&) = delete;
+
+  void Initialize(ConcurrentLogPageIterator<F>* iter_, size_t n_threads_, bool to_other_store_) {
+    iter = iter_;
+    to_other_store = to_other_store_;
+
+    thread_finished.clear();
+    for (size_t idx = 0; idx < n_threads_; ++idx) {
+      thread_finished.emplace_back(false);
+    }
+  }
+
+  ConcurrentLogPageIterator<F>* iter;
+  std::deque<std::atomic<bool>> thread_finished;
+  std::atomic<uint16_t> active_threads;
+  bool to_other_store;
+};
+
+
 /// ConditionalInsert context used by compaction algorithm.
 /// NOTE: This context is used in both single-log & hot-cold cases
 template <class K, class V>
@@ -39,21 +68,26 @@ class CompactionConditionalInsertContext : public IAsyncContext {
   /// Constructs and returns a context given a pointer to a record.
   CompactionConditionalInsertContext(record_t* record, Address record_address,
                                       void* pending_records)
-   : record_{ record }
-   , address_{ record_address }
-   , pending_records_{ pending_records }
-  {}
+    : address_{ record_address }
+    , pending_records_{ pending_records } {
+    // Allocate memory to store this record
+    //record_ = reinterpret_cast<record_t*>(new uint8_t[record->size()]);
+    record_ = std::make_unique<uint8_t[]>(record->size());
+    memcpy(record_.get(), record, record->size());
+  }
 
   /// Copy constructor -- required for when operation goes async
-  CompactionConditionalInsertContext(const CompactionConditionalInsertContext& from)
-   : record_{ from.record_ }
-   , address_{ from.address_ }
-   , pending_records_{ from.pending_records_ }
-  {}
+  CompactionConditionalInsertContext(CompactionConditionalInsertContext& from)
+    : record_{ from.record_.get() }
+    , address_{ from.address_ }
+    , pending_records_{ from.pending_records_ } {
+      from.record_.release();
+  }
 
   /// Invoked from within FASTER.
   inline const key_t& key() const {
-    return record_->key();
+    //return record_->key();
+    return record()->key();
   }
   inline uint32_t key_size() const {
     return key().size();
@@ -65,14 +99,16 @@ class CompactionConditionalInsertContext : public IAsyncContext {
     return key() == other;
   }
   inline uint32_t value_size() const {
-    return record_->value().size();
+    //return record_->value().size();
+    return record()->value().size();
   }
   inline void write_deep_key_at(key_t* dst) const {
     // Copy the already "deep-written" key to the new destination
     memcpy(dst, &key(), key().size());
   }
   inline bool is_tombstone() const {
-    return record_->header.tombstone;
+    //return record_->header.tombstone;
+    return record()->header.tombstone;
   }
   inline Address orig_hlog_tail_address() const {
     // During compaction, both min_search_address & latest hash index address
@@ -81,16 +117,19 @@ class CompactionConditionalInsertContext : public IAsyncContext {
       "CompactionConditionalInsertContext.orig_hlog_tail_address() called" };
   }
   inline bool Insert(void* dest, uint32_t alloc_size) const {
-    if (alloc_size != record_->size()) {
+    //if (alloc_size != record_->size()) {
+    if (alloc_size != record()->size()) {
       return false;
     }
-    memcpy(dest, record_, alloc_size);
+    //memcpy(dest, record_, alloc_size);
+    memcpy(dest, record(), alloc_size);
     return true;
   }
   inline void Put(void* rec) {
     // Manually copy value contents to new destination
     record_t* dest = reinterpret_cast<record_t*>(rec);
-    memcpy(&dest->value(), &record_->value(), value_size());
+    //memcpy(&dest->value(), &record_->value(), value_size());
+    memcpy(&dest->value(), &record()->value(), value_size());
   }
   inline bool PutAtomic(void *rec) {
     // Cannot guarrantee atomic upsert
@@ -108,6 +147,9 @@ class CompactionConditionalInsertContext : public IAsyncContext {
   }
 
  protected:
+  inline record_t* record() const {
+    return reinterpret_cast<record_t*>(record_.get());
+  }
   /// Copies this context into a passed-in pointer if the operation goes
   /// asynchronous inside FASTER.
   Status DeepCopy_Internal(IAsyncContext*& context_copy) {
@@ -116,7 +158,8 @@ class CompactionConditionalInsertContext : public IAsyncContext {
 
  private:
   /// Pointer to the record
-  record_t* record_;
+  //record_t* record_;
+  std::unique_ptr<uint8_t[]> record_;
   /// The address of the record that was read
   Address address_;
   /// Pointer to the records info map (stored in Compact method)

@@ -106,6 +106,7 @@ class FasterKv {
   typedef typename D::log_file_t log_file_t;
 
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
+  typedef ConcurrentLogPage<key_t, value_t> concurrent_log_page_t;
 
   typedef H hash_index_t;
   typedef typename H::key_hash_t key_hash_t;
@@ -282,9 +283,11 @@ class FasterKv {
   OperationStatus InternalContinuePendingConditionalInsert(ExecutionContext& ctx,
       AsyncIOContext& io_context);
 
+  //template<class F>
+  //inline void InternalCompact(CompactionThreadsContext<F>* ct_ctx,
+  //                            bool to_other_store, int thread_idx);
   template<class F>
-  inline void InternalCompact(CompactionThreadsContext<F>* ct_ctx,
-                              bool to_other_store, int thread_idx);
+  inline void InternalCompact(int thread_id);
 
   template<class C>
   inline Address TraceBackForKeyMatchCtxt(const C& ctxt, Address from_address,
@@ -415,6 +418,10 @@ class FasterKv {
 
   /// Global count of number of truncations after compaction
   std::atomic<uint64_t> num_compaction_truncs_;
+
+  // Context of threads participating in the hybrid log compaction
+  //CompactionThreadsContext<faster_t> compaction_context_;
+  ConcurrentCompactionThreadsContext<faster_t> compaction_context_;
 
   /// Hlog begin address after the compaction & log trimming is finished
   AtomicAddress next_hlog_begin_address_;
@@ -3418,36 +3425,49 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
   }
 
   std::deque<std::thread> threads;
+  /*
   LogPageIterator<faster_t> iter(&hlog, hlog.begin_address.load(),
                                   Address(until_address), &disk);
-  CompactionThreadsContext<faster_t> threads_context{ &iter, n_threads-1 };
+  LogPageCollection<faster_t> pages (
+    LogPageCollection<faster_t>::kDefaultNumPages,
+    hlog.sector_size); // first GetNext() will return false
+
+  compaction_context_.Initialize(&iter, &pages, to_other_store);
+  */
+  //CompactionThreadsContext<faster_t> threads_context{ &iter, n_threads-1 };
+
+  ConcurrentLogPageIterator<faster_t> iter(&hlog, &disk, &epoch_, hlog.begin_address.load(), Address(until_address));
+  compaction_context_.Initialize(&iter, n_threads-1, to_other_store);
 
   // Spawn the threads first
-  for (int idx = 0; idx < n_threads - 1; ++idx) {
-    threads.emplace_back(&FasterKv<K, V, D, H, OH>::InternalCompact<faster_t>,
-                        this, &threads_context, to_other_store, idx);
+  for (size_t idx = 0; idx < n_threads-1; ++idx) {
+    threads.emplace_back(&FasterKv<K, V, D, H, OH>::InternalCompact<faster_t>, this, idx);
+    //threads[idx].detach();
   }
-  InternalCompact(&threads_context, to_other_store, -1); // participate in the compaction
+  InternalCompact<faster_t>(-1); // participate in the compaction
 
   // Wait for threads
   // NOTE: since we have an active session, we *must* periodically refresh
   //       in order to allow progress for remaining active threads
   //       Therefore, we cannot utilize the *blocking* `thread.join`
+  //while (compaction_context_.n_threads.load() > 0) {
   int remaining = n_threads - 1;
-  while (remaining > 0) {
-    for (int idx = 0; idx < n_threads - 1; ++idx) {
-      if (threads_context.done[idx].load() && threads[idx].joinable()) {
+  while (remaining > 0 || compaction_context_.active_threads.load() > 0) {
+    for (size_t idx = 0; idx < n_threads-1; ++idx) {
+      if (compaction_context_.thread_finished[idx].load() && threads[idx].joinable()) {
         threads[idx].join();
         --remaining;
       }
     }
+
     Refresh();
     if (to_other_store) {
       other_store_->Refresh();
     }
     std::this_thread::yield();
   }
-  assert(remaining == 0);
+  //assert(compaction_context_..load() == 0);
+  //assert(remaining == 0);
 
   if (checkpoint) {
     // index checkpoint
@@ -3572,10 +3592,14 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     } while(!success);
 
     // block until truncation & hash index update finishes
-    while(!log_truncated || !gc_completed) {
+    while (!log_truncated || !gc_completed) {
       CompletePending(false);
       if (to_other_store) {
         other_store_->CompletePending(false);
+      }
+      // Participate in GCing the hash index
+      if(thread_ctx().phase != Phase::REST) {
+        HeavyEnter();
       }
       std::this_thread::yield();
     }
@@ -3587,8 +3611,7 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 
 template <class K, class V, class D, class H, class OH>
 template <class F>
-inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F>* ct_ctx,
-                                                bool to_other_store, int thread_idx) {
+inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id) {
   static constexpr uint32_t kRefreshInterval = 64;
   static constexpr uint32_t kCompletePendingInterval = 512;
 
@@ -3606,22 +3629,26 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F
     records_info->erase(address);
   };
 
+  ++compaction_context_.active_threads; // one more thread taking part in compaction
+  bool to_other_store = compaction_context_.to_other_store;
+
   pending_records_t pending_records;
-  LogPageCollection<F> pages (
-    LogPageCollection<F>::kDefaultNumPages,
-    hlog.sector_size); // first GetNext() will return false
 
   // used locally when iterating log
   Address record_address;
   record_t* record;
 
-  // Start session for each thread that was spawned
-  if (thread_idx >= 0) {
+  // Start session for each thread that has not started one already
+  bool was_epoch_protected = epoch_.IsProtected();
+  if (!was_epoch_protected) {
     StartSession();
     if (to_other_store) {
       other_store_->StartSession();
     }
   }
+
+  ConcurrentLogPage<key_t, value_t>* page{ nullptr };
+  uint32_t old_page = Address::kMaxPage;
 
   size_t num_iter = 0;
   bool pages_available = true;
@@ -3631,20 +3658,42 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F
     }
 
     // get next record from hybrid log
-    record = pages.GetNextRecord(record_address);
-    if (record == nullptr) { // No more records in this page
-      if (!pending_records.empty()) {
+    //record = pages.GetNextRecord(record_address);
+    if (page != nullptr) {
+      record = page->GetNextRecord(record_address);
+    }
+
+    if (record == nullptr || page == nullptr) {
+      //if (!pending_records.empty()) {
         // Should not move to a new page, until all pending
         // requests for this page have been completed
-        goto complete_pending;
-      }
+      //  goto complete_pending;
+      //}
 
       // Try to get next page
-      if(!ct_ctx->iter->GetNextPage(pages)) {
+      while (pages_available) {
+        Refresh();
+        if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+        if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
+
+        // Try to get next page
+        page = compaction_context_.iter->GetNextPage(old_page, pages_available);
+        if (page != nullptr) {
+          old_page = page->id();
+          break;
+        }
+        std::this_thread::yield();
+      }
+      continue;
+
+      /*
+      if(!compaction_context_->iter->GetNextPage(page)) {
         pages_available = false; // No more pages
       }
       continue;
+      */
     }
+
     if (record->header.tombstone && !to_other_store)  {
       goto complete_pending; // do not compact tombstones
     }
@@ -3662,15 +3711,20 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(CompactionThreadsContext<F
                                         record_address, to_other_store);
       assert(status == Status::Ok || status == Status::Aborted || status == Status::Pending);
 
-      if (status != Status::Pending) {
+      if (status == Status::Ok || status == Status::Aborted) {
         // clear record info, since request it has been processed
         // (i.e. either inserted at the end, or didn't)
         pending_records.erase(record_address.control());
+      } else if (status == Status::NotFound) {
+        throw std::runtime_error{ "not possible" };
       }
     }
 
 complete_pending:
-    if (num_iter % kCompletePendingInterval && !pending_records.empty()) {
+    bool try_complete_pending = \
+      (num_iter % kCompletePendingInterval == 0) ||
+      (!pending_records.empty() ) || (record == nullptr);
+    if (try_complete_pending) {
       // Try to complete pending requests
       CompletePending(false);
       if (to_other_store) {
@@ -3694,7 +3748,7 @@ complete_pending:
   }
   assert(pending_records.empty());
 
-  if (thread_idx >= 0) {
+  if (!was_epoch_protected) {
     // This thread was spawned *only* for compaction and should have finished all activity
     if (to_other_store) { // hot-cold compaction
       assert(other_store_->thread_ctx().retry_requests.empty());
@@ -3708,14 +3762,18 @@ complete_pending:
   }
 
   // Stop session for each spawned thread
-  if (thread_idx >= 0) {
+  if (!was_epoch_protected) {
     StopSession();
     if (to_other_store) {
       other_store_->StopSession();
     }
-    // Mark thread as finished
-    ct_ctx->done[thread_idx].store(true);
   }
+  if (thread_id >= 0) {
+    assert(!was_epoch_protected);
+    // Mark thread as finished
+    compaction_context_.thread_finished[thread_id].store(true);
+  }
+  --compaction_context_.active_threads;
 }
 
 
