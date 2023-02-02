@@ -220,14 +220,15 @@ namespace FASTER.core
                 }
                 else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
                 {
-                    // Disk Region: Need to issue async io requests. Locking will be check on pending completion.
+                    // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
                     status = OperationStatus.RECORD_ON_DISK;
                     latchDestination = LatchDestination.CreatePendingContext;
                     goto CreatePendingContext;
                 }
                 else
                 {
-                    // No record exists - check for lock before creating new record.
+                    // No record exists - check for lock before creating new record. First ensure any record lock has transitioned to the LockTable.
+                    SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, hlog);
                     Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, stackCtx.hei.hash), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
                     if (LockTable.IsActive && !fasterSession.DisableEphemeralLocking 
                             && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, LockType.Exclusive, out stackCtx.recSrc.HasLockTableLock))

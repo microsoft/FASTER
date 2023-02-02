@@ -122,6 +122,8 @@ namespace FASTER.core
 
             #region Normal processing
 
+            var prevHA = hlog.HeadAddress;
+
             // Mutable region (even fuzzy region is included here)
             if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress)
             {
@@ -138,37 +140,39 @@ namespace FASTER.core
             }
 
             // On-Disk Region
-            else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
-            {
-#if DEBUG
-                SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LogicalAddress, hlog);
-                Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, stackCtx.hei.hash), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
-#endif
-                // Note: we do not lock here; we wait until reading from disk, then lock in the InternalContinuePendingRead chain.
-                if (hlog.IsNullDevice)
-                    return OperationStatus.NOTFOUND;
-
-                status = OperationStatus.RECORD_ON_DISK;
-                if (sessionCtx.phase == Phase.PREPARE)
-                {
-                    if (!useStartAddress)
-                    {
-                        // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
-                        if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
-                            HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
-                        else
-                            return OperationStatus.CPR_SHIFT_DETECTED;
-                    }
-                }
-
-                goto CreatePendingContext;
-            }
-
-            // No record found
             else
             {
-                Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, stackCtx.hei.hash), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
-                return OperationStatus.NOTFOUND;
+                SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LogicalAddress, hlog);
+
+                if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
+                {
+                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, stackCtx.hei.hash), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
+
+                    // Note: we do not lock here; we wait until reading from disk, then lock in the InternalContinuePendingRead chain.
+                    if (hlog.IsNullDevice)
+                        return OperationStatus.NOTFOUND;
+
+                    status = OperationStatus.RECORD_ON_DISK;
+                    if (sessionCtx.phase == Phase.PREPARE)
+                    {
+                        if (!useStartAddress)
+                        {
+                            // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
+                            if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
+                                HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
+                            else
+                                return OperationStatus.CPR_SHIFT_DETECTED;
+                        }
+                    }
+
+                    goto CreatePendingContext;
+                }
+                else
+                {
+                    // No record found
+                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, stackCtx.hei.hash), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
+                    return OperationStatus.NOTFOUND;
+                }
             }
 
         #endregion
@@ -326,17 +330,10 @@ namespace FASTER.core
                 {
                     if (pendingContext.CopyReadsToTailFromReadOnly || readInfo.Action == ReadAction.Expire) // Expire adds a tombstoned record to tail
                     {
-                        for (var retryImmediate = true; retryImmediate; /* set in loop */ )
-                        {
-                            status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
-                                                            ref srcRecordInfo, untilLogicalAddress: stackCtx.recSrc.LatestLogicalAddress, fasterSession,
-                                                            reason: WriteReason.CopyToTail, expired: readInfo.Action == ReadAction.Expire);
-                            retryImmediate = HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext);
-                            if (retryImmediate && !VerifyInMemoryAddresses(ref stackCtx))
-                                return OperationStatus.RETRY_NOW;   // ITCTT did an epoch refresh that moved HeadAddress above source address
-                        }
-
-                        // No copy to tail was done
+                        status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
+                                                        ref srcRecordInfo, untilLogicalAddress: stackCtx.recSrc.LatestLogicalAddress, fasterSession,
+                                                        reason: WriteReason.CopyToTail, expired: readInfo.Action == ReadAction.Expire);
+                        // status != SUCCESS means no copy to tail was done
                         if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
                             return readInfo.Action == ReadAction.Expire
                                 ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired)

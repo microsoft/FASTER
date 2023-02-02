@@ -92,7 +92,7 @@ namespace FASTER.core
             }
 
             Debug.Assert(!recordInfo.Tentative, "Tentative bit should have been removed when record was invalidated");
-            status = OperationStatus.RETRY_NOW; // An invalid record in the hash chain means the previous lock owner abandoned its operation and we can RETRY_NOW.
+            status = OperationStatus.RETRY_LATER;
             return false;
         }
 

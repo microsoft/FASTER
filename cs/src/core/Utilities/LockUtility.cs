@@ -31,7 +31,7 @@ namespace FASTER.core
                 Thread.Yield();
 
                 // A record is only Sealed or Invalidated in the hash chain after the new record has been successfully inserted.
-                internalStatus = OperationStatus.RETRY_NOW; // New record was inserted, so no epoch refresh is needed here.
+                internalStatus = OperationStatus.RETRY_LATER;
                 return true;
             }
             internalStatus = OperationStatus.SUCCESS;

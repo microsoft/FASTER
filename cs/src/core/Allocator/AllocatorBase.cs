@@ -172,7 +172,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"TA {GetTailAddress()}, ROA {ReadOnlyAddress}, SafeROA {SafeReadOnlyAddress}, HA {HeadAddress}, SafeHA {SafeHeadAddress}, CUA {ClosedUntilAddress}, FUA {FlushedUntilAddress}";
+            => $"TA {GetTailAddress()}, ROA {ReadOnlyAddress}, SafeROA {SafeReadOnlyAddress}, HA {HeadAddress}, SafeHA {SafeHeadAddress}, CUA {ClosedUntilAddress}, FUA {FlushedUntilAddress}, BA {BeginAddress}";
 
         #endregion
 
@@ -1294,36 +1294,42 @@ namespace FASTER.core
             Debug.Assert(newSafeHeadAddress > 0);
             if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
             {
-                // This thread is responsible for [oldSafeHeadAddress -- newSafeHeadAddress]
-                while (true)
+                // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
+                for (; ; Thread.Yield())
                 {
                     long _ongoingCloseUntilAddress = OngoingCloseUntilAddress;
-                    if (_ongoingCloseUntilAddress < newSafeHeadAddress)
+
+                    // If we are closing in the middle of an ongoing OPCWorker loop, exit.
+                    if (_ongoingCloseUntilAddress >= newSafeHeadAddress)
+                        break;
+
+                    // We'll continue the loop if we fail the CAS here; that means another thread extended the Ongoing range.
+                    if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, newSafeHeadAddress, _ongoingCloseUntilAddress) == _ongoingCloseUntilAddress)
                     {
-                        if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, newSafeHeadAddress, _ongoingCloseUntilAddress) == _ongoingCloseUntilAddress)
+                        if (_ongoingCloseUntilAddress == 0)
                         {
-                            if (_ongoingCloseUntilAddress == 0)
-                            {
-                                // This thread is responsible for closing until newSafeHeadAddress
-                                OnPagesClosedWorker();
-                            }
-                            // The ongoing close operation is successfully extended to include the new safe head address; we can return
-                            return;
+                            // There was no other thread running the OPCWorker loop, so this thread is responsible for closing [ClosedUntilAddress -> newSafeHeadAddress]
+                            OnPagesClosedWorker();
                         }
+                        else
+                        {
+                            // There was another thread runnning the OPCWorker loop, and its ongoing close operation was successfully extended to include the new safe
+                            // head address; we have no further work here.
+                        }
+                        return;
                     }
-                    else break;
                 }
             }
         }
 
         private void OnPagesClosedWorker()
         {
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long closeStartAddress = ClosedUntilAddress;
                 long closeEndAddress = OngoingCloseUntilAddress;
 
-                // Also shift begin address if we are using a null storage device
+                // If we are using a null storage device, we must also shift BeginAddress 
                 if (IsNullDevice)
                     Utility.MonotonicUpdate(ref BeginAddress, closeEndAddress, out _);
 
@@ -1335,10 +1341,8 @@ namespace FASTER.core
                     long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
                     long end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
-                    // If there are no active locking sessions, there should be no locks in the log.
                     if (OnLockEvictionObserver is not null)
                         MemoryPageScan(start, end, OnLockEvictionObserver);
-
                     if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
 
