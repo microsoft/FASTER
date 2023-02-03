@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static FASTER.core.Utility;
 
@@ -117,7 +118,7 @@ namespace FASTER.core
         {
             if (this.HasInMemorySrc)
             {
-                // Record is guaranteed to be in memory at this point, regardless of HeadAddress
+                this.AssertInMemorySourceWasNotEvicted();
                 if (this.HasReadCacheSrc)
                 {
                     // If the record was evicted, it won't be accessed, so we do not need to worry about setting it invalid.
@@ -148,7 +149,25 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool InMemorySourceWasEvicted() => this.HasInMemorySrc && this.LogicalAddress < this.Log.HeadAddress;
+        internal bool InMemorySourceIsBelowHeadAddress() => this.HasInMemorySrc && this.LogicalAddress < this.Log.HeadAddress;
+
+        [Conditional("DEBUG")]
+        internal void AssertInMemorySourceWasNotEvicted()
+        {
+            if (this.HasInMemorySrc)
+            {
+                // We should have called VerifyInMemoryAddresses when starting this operation to verify we were above HeadAddress.
+                // After that, HeadAddress may be increased by another session, but we should always hold the epoch here and thus
+                // OnPagesClosed (which does the actual eviction) cannot be called.
+
+                // This should not be called on failure/retry, or it will fire spuriously. For example:
+                //   - Lock a record that is on the next page to be evicted
+                //   - Call BlockAllocate, which evicts that page
+                //   - This will then fail the subsequent VerifyInMemoryAddresses call, because the record is now below HeadAddress
+                // In this case, the record has been legitimately evicted.
+                Debug.Assert(this.LogicalAddress >= this.Log.ClosedUntilAddress, "Record should always be in memory at this point, regardless of HeadAddress");
+            }
+        }
 
         public override string ToString()
         {

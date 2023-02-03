@@ -16,32 +16,50 @@ namespace MemOnlyCache
         /// <summary>
         /// Total database size
         /// </summary>
-        const int DbSize = 10_000_000;
+        static int DbSize = 10_000_000;
+        const string DbSizeArg = "--dbsize";
 
         /// <summary>
         /// Max key size; we choose actual size randomly
         /// </summary>
-        const int MaxKeySize = 100;
+        static int MaxKeySize = 100;
+        const string MaxKeySizeArg = "--keysize";
 
         /// <summary>
         /// Max value size; we choose actual size randomly
         /// </summary>
-        const int MaxValueSize = 1000;
+        static int MaxValueSize = 1000;
+        const string MaxValueSizeArg = "--valuesize";
 
         /// <summary>
         /// Number of threads accessing FASTER instances
         /// </summary>
-        const int kNumThreads = 1;
+        static int NumThreads = 1;
+        const string NumThreadsArg = "-t";
 
         /// <summary>
         /// Percentage of writes in incoming workload requests (remaining are reads)
         /// </summary>
-        const int WritePercent = 0;
+        static int WritePercent = 0;
+        const string WritePercentArg = "-w";
 
         /// <summary>
         /// Uniform random distribution (true) or Zipf distribution (false) of requests
         /// </summary>
-        const bool UseUniform = false;
+        static bool UseUniform = false;
+        const string UseUniformArg = "-u";
+
+        /// <summary>
+        /// Uniform random distribution (true) or Zipf distribution (false) of requests
+        /// </summary>
+        static bool UseReadCTT = true;
+        const string NoReadCTTArg = "--noreadctt";
+
+        /// <summary>
+        /// Uniform random distribution (true) or Zipf distribution (false) of requests
+        /// </summary>
+        static bool UseReadCache = false;
+        const string UseReadCacheArg = "--readcache";
 
         /// <summary>
         /// Skew factor (theta) of Zipf distribution
@@ -62,9 +80,102 @@ namespace MemOnlyCache
         static long statusNotFound = 0;
         static long statusFound = 0;
 
-        static void Main()
+        const string HelpArg1 = "-?";
+        const string HelpArg2 = "/?";
+        const string HelpArg3 = "--help";
+        static bool IsHelpArg(string arg) => arg == HelpArg1 || arg == HelpArg2 || arg == HelpArg3;
+
+        private static bool Usage()
+        {
+            Console.WriteLine("Reads 'linked lists' of records for each key by backing up the previous-address chain, including showing record versions");
+            Console.WriteLine("Usage:");
+            Console.WriteLine($"  {DbSizeArg}: Total database size. Default = {DbSize}");
+            Console.WriteLine($"  {MaxKeySizeArg}: Max key size; we choose actual size randomly. Default = {MaxKeySize}");
+            Console.WriteLine($"  {MaxValueSizeArg}: Max value size; we choose actual size randomly. Default = {MaxValueSize}");
+            Console.WriteLine($"  {NumThreadsArg}: Number of threads accessing FASTER instances. Default = {NumThreads}");
+            Console.WriteLine($"  {WritePercentArg}: Percentage of writes in incoming workload requests (remaining are reads). Default = {WritePercent}");
+            Console.WriteLine($"  {UseUniformArg}: Uniform random distribution (true) or Zipf distribution (false) of requests. Default = {UseUniform}");
+            Console.WriteLine($"  {NoReadCTTArg}: Copy Reads from Immutable region to tail of log. Default = {!UseReadCTT}");
+            Console.WriteLine($"  {UseReadCacheArg}: Use the ReadCache. Default = {UseReadCache}");
+            Console.WriteLine($"  {HelpArg1}, {HelpArg2}, {HelpArg3}: This screen.");
+            return false;
+        }
+
+        static bool GetArgs(string[] args)
+        {
+            for (var ii = 0; ii < args.Length; ++ii)
+            {
+                var arg = args[ii].ToLower();
+                var val = "n/a";
+                try
+                {
+                    if (IsHelpArg(arg))
+                        return Usage();
+
+                    // Flag args (no value)
+                    if (arg == UseUniformArg)
+                    {
+                        UseUniform = true;
+                        continue;
+                    }
+
+                    if (arg == NoReadCTTArg)
+                    {
+                        UseReadCTT = false;
+                        continue;
+                    }
+
+                    if (arg == UseReadCacheArg)
+                    {
+                        UseReadCache = true;
+                        continue;
+                    }
+
+                    // Args taking a value
+                    if (ii >= args.Length - 1)
+                    {
+                        Console.WriteLine($"Error: End of arg list encountered while processing arg {arg}; expected argument");
+                        return false;
+                    }
+                    val = args[++ii];
+                    if (arg == DbSizeArg)
+                    {
+                        DbSize = int.Parse(val);
+                        continue;
+                    }
+                    if (arg == MaxKeySizeArg)
+                    {
+                        MaxKeySize = int.Parse(val);
+                        continue;
+                    }
+                    if (arg == NumThreadsArg)
+                    {
+                        NumThreads = int.Parse(val);
+                        continue;
+                    }
+                    if (arg == WritePercentArg)
+                    {
+                        WritePercent = int.Parse(val);
+                        continue;
+                    }
+
+                    Console.WriteLine($"Unknown option: {arg}");
+                    return Usage();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error: Arg {arg}, value {val} encountered exception: {ex.Message}");
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        static void Main(string[] args)
         {
             // This sample shows the use of FASTER as a concurrent pure in-memory cache
+            if (!GetArgs(args))
+                return;
 
             var log = new NullDevice(); // no storage involved
 
@@ -73,10 +184,13 @@ namespace MemOnlyCache
             {
                 LogDevice = log, ObjectLogDevice = log,
                 MutableFraction = 0.9, // 10% of memory log is "read-only region"
-                ReadFlags = ReadFlags.CopyReadsToTail, // reads in read-only region are copied to tail
+                ReadFlags = UseReadCTT ? ReadFlags.CopyReadsToTail : ReadFlags.None, // reads in read-only region are copied to tail
                 PageSizeBits = 14, // Each page is sized at 2^14 bytes
                 MemorySizeBits = 25, // (2^25 / 24) = ~1.39M key-value pairs (log uses 24 bytes per KV pair)
             };
+
+            if (UseReadCache)
+                logSettings.ReadCacheSettings = new() { MemorySizeBits = logSettings.MemorySizeBits, PageSizeBits = logSettings.PageSizeBits };
 
             // Number of records in memory, assuming class keys and values and x64 platform
             // (8-byte key + 8-byte value + 8-byte header = 24 bytes per record)
@@ -118,13 +232,13 @@ namespace MemOnlyCache
 
         private static void ContinuousRandomWorkload()
         {
-            var threads = new Thread[kNumThreads];
-            for (int i = 0; i < kNumThreads; i++)
+            var threads = new Thread[NumThreads];
+            for (int i = 0; i < NumThreads; i++)
             {
                 var x = i;
                 threads[i] = new Thread(() => RandomWorkload(x));
             }
-            for (int i = 0; i < kNumThreads; i++)
+            for (int i = 0; i < NumThreads; i++)
                 threads[i].Start();
 
             Stopwatch sw = new();
@@ -207,6 +321,8 @@ namespace MemOnlyCache
 
                     if (!status.Found)
                     {
+                        if (status.IsFaulted)
+                            throw new Exception("Error!");
                         localStatusNotFound++;
                         if (UpsertOnCacheMiss)
                         {
@@ -214,14 +330,12 @@ namespace MemOnlyCache
                             session.Upsert(ref key, ref value);
                         }
                     }
-                    else if (status.Found)
+                    else
                     {
                         localStatusFound++;
                         if (output.value[0] != (byte)key.key)
                             throw new Exception("Read error!");
                     }
-                    else
-                        throw new Exception("Error!");
                 }
                 i++;
             }

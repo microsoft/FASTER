@@ -211,13 +211,19 @@ namespace FASTER.core
                 if (!stackCtx.recSrc.HasInMemorySrc)
                 {
                     bool found = this.LockTable.TryGet(ref key, stackCtx.hei.hash, out var ltriLT);
-                    Debug.Assert(found && ltriLT.IsLocked && !ltriLT.Tentative, "TODO remove: Error--non-InMemorySrc expected to find a non-tentative locked locktable entry");
+                    Debug.Assert(found && ltriLT.IsLocked && !ltriLT.Tentative, "Error--non-InMemorySrc expected to find a non-tentative locked locktable entry");
 
                     transferred = LockTable.IsActive && LockTable.TransferToLogRecord(ref key, stackCtx.hei.hash, ref newRecordInfo);
                     Debug.Assert(transferred, "ManualLocking Non-InMemory source should find a LockTable entry to transfer locks from");
                 }
+#if DEBUG
                 if (this.LockTable.TryGet(ref key, stackCtx.hei.hash, out var ltri))
-                    Debug.Assert(!ltri.IsLocked || ltri.Tentative, "TODO remove: Error--existing non-tentative lock in LT after CompleteTwoPhaseUpdate transfer");
+                {
+                    // If !recSrc.HasInMemorySrc, then we just did a LockTable transfer to an existing tentative log record, and that tentative record should have
+                    // prevented anyone from making a non-tentative LockTable entry. If we recSrc.HasInMemorySrc, then there should never be LockTable entry.
+                    Debug.Assert(!ltri.IsLocked || ltri.Tentative, $"Error--existing non-tentative LT entry in CompleteTwoPhaseUpdate transfer; HasInMemSrc = {stackCtx.recSrc.HasInMemorySrc}");
+                }
+#endif
                 if (!transferred)
                     newRecordInfo.InitializeLockExclusive();
             }
@@ -257,6 +263,8 @@ namespace FASTER.core
                 else
                 {
                     SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, stackCtx.recSrc.Log);
+                    if (!VerifyInMemoryAddresses(ref stackCtx))
+                        return false;
                     success = !LockTable.IsActive || LockTable.CompleteTwoPhaseCopyToTail(ref key, stackCtx.hei.hash, ref newRecordInfo,
                                                         allowXLock: fasterSession.IsManualLocking, removeEphemeralLock: stackCtx.recSrc.HasInMemoryLock);  // we acquired the lock via HasInMemoryLock
                 }

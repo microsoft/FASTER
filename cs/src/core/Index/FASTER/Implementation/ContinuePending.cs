@@ -514,7 +514,7 @@ namespace FASTER.core
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             // It is possible that we will successfully CAS but subsequently fail validation.
             bool success = true, casSuccess = false;
-            OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
+            OperationStatus failStatus = OperationStatus.RETRY_LATER;
             if (copyToReadCache || (stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress))
             {
                 Debug.Assert(!stackCtx.hei.IsReadCache || (readcacheNewAddressBit != 0), $"Inconsistent IsReadCache ({stackCtx.hei.IsReadCache}) vs. readcacheNewAddressBit ({readcacheNewAddressBit})");

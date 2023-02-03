@@ -30,8 +30,8 @@ namespace FASTER.core
             // Not in memory. First make sure the record has been transferred to the lock table if we did not find it because it was in the eviction region.
             var prevLogHA = hlog.HeadAddress;
             var prevReadCacheHA = UseReadCache ? readcache.HeadAddress : 0;
-            if (stackCtx.recSrc.LogicalAddress >= stackCtx.recSrc.Log.BeginAddress)
-                SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, stackCtx.recSrc.Log);
+            Debug.Assert(stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.Log.HeadAddress, "Expected record to be below HeadAddress as we did not find it in-memory");
+            SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, stackCtx.recSrc.Log);
 
             // Do LockTable operations
             if (lockOp.LockOperationType == LockOperationType.IsLocked)
