@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-namespace DurableTask.Netherite.Faster
+namespace FASTER.devices
 {
     using System;
     using System.Diagnostics;
