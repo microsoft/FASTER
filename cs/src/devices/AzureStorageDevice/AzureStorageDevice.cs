@@ -13,6 +13,7 @@ namespace FASTER.devices
     using System.Threading.Tasks;
     using Azure.Storage.Blobs.Models;
     using FASTER.core;
+    using Microsoft.Extensions.Logging;
 
     /// <summary>
     /// A IDevice Implementation that is backed by<see href="https://docs.microsoft.com/en-us/azure/storage/blobs/storage-blob-pageblob-overview">Azure Page Blob</see>.
@@ -21,7 +22,6 @@ namespace FASTER.devices
     class AzureStorageDevice : StorageDeviceBase
     {
         readonly ConcurrentDictionary<int, BlobEntry> blobs;
-        readonly BlobUtilsV12.BlobDirectory blockBlobDirectory;
         readonly BlobUtilsV12.BlobDirectory pageBlobDirectory;
         readonly string blobName;
         readonly bool underLease;
@@ -67,22 +67,20 @@ namespace FASTER.devices
         /// Constructs a new AzureStorageDevice instance, backed by Azure Page Blobs
         /// </summary>
         /// <param name="blobName">A descriptive name that will be the prefix of all segments created</param>
-        /// <param name="blockBlobDirectory">the directory containing the block blobs</param>
         /// <param name="pageBlobDirectory">the directory containing the page blobs</param>
         /// <param name="blobManager">the blob manager handling the leases</param>
         /// <param name="underLease">whether this device needs to be protected by the lease</param>
-        public AzureStorageDevice(string blobName, BlobUtilsV12.BlobDirectory blockBlobDirectory, BlobUtilsV12.BlobDirectory pageBlobDirectory, BlobManager blobManager, bool underLease)
-            : base($"{blockBlobDirectory}\\{blobName}", PAGE_BLOB_SECTOR_SIZE, Devices.CAPACITY_UNSPECIFIED)
+        public AzureStorageDevice(string blobName, BlobUtilsV12.BlobDirectory pageBlobDirectory, BlobManager blobManager = null, bool underLease = false)
+            : base($"{pageBlobDirectory}/{blobName}", PAGE_BLOB_SECTOR_SIZE, Devices.CAPACITY_UNSPECIFIED)
         {
             this.blobs = new ConcurrentDictionary<int, BlobEntry>();
             this.pendingReadWriteOperations = new ConcurrentDictionary<long, ReadWriteRequestInfo>();
             this.pendingRemoveOperations = new ConcurrentDictionary<long, RemoveRequestInfo>();
-            this.blockBlobDirectory = blockBlobDirectory;
             this.pageBlobDirectory = pageBlobDirectory;
             this.blobName = blobName;
             this.PartitionErrorHandler = blobManager.PartitionErrorHandler;
             this.PartitionErrorHandler.Token.Register(this.CancelAllRequests);
-            this.BlobManager = blobManager;
+            this.BlobManager = blobManager ?? new BlobManager(blobName, pageBlobDirectory, underLease, null, null, LogLevel.Information, null);
             this.underLease = underLease;
             this.hangCheckTimer = new Timer(this.DetectHangs, null, 0, 20000);
             this.singleWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
@@ -92,7 +90,7 @@ namespace FASTER.devices
         /// <inheritdoc/>
         public override string ToString()
         {
-            return $"AzureStorageDevice {this.blockBlobDirectory}{this.blobName}";
+            return $"AzureStorageDevice {this.pageBlobDirectory}{this.blobName}";
         }
 
         public async Task StartAsync()
@@ -102,7 +100,7 @@ namespace FASTER.devices
                 this.BlobManager?.StorageTracer?.FasterStorageProgress($"StorageOpCalled AzureStorageDevice.StartAsync target={this.pageBlobDirectory}{this.blobName}");
 
                 // list all the blobs representing the segments
-                var prefix = $"{this.blockBlobDirectory}{this.blobName}.";
+                var prefix = $"{this.pageBlobDirectory}{this.blobName}.";
 
                 string continuationToken = null;
                 IReadOnlyList<BlobItem> pageResults = null;

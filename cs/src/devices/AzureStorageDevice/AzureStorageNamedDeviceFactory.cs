@@ -72,7 +72,7 @@ namespace FASTER.devices
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
-            return new AzureStorageDevice(fileInfo.fileName, default, pageBlobDirectory.GetSubDirectory(fileInfo.directoryName), null, false);
+            return new AzureStorageDevice(fileInfo.fileName, pageBlobDirectory.GetSubDirectory(fileInfo.directoryName), null, false);
         }
 
         /// <inheritdoc />

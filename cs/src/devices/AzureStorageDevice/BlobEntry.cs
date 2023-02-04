@@ -29,6 +29,7 @@ namespace FASTER.devices
         /// Creates a new BlobEntry to represent a page blob that already exists in storage.
         /// </summary>
         /// <param name="pageBlob"></param>
+        /// <param name="eTag"></param>
         /// <param name="azureStorageDevice"></param>
         public BlobEntry(BlobUtilsV12.PageBlobClients pageBlob, Azure.ETag eTag, AzureStorageDevice azureStorageDevice)
         {
