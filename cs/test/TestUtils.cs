@@ -9,10 +9,12 @@ using FASTER.devices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace FASTER.test
 {
-    internal static class TestUtils
+    internal static partial class TestUtils
     {
         // Various categories used to group tests
         internal const string SmokeTestCategory = "Smoke";
@@ -165,11 +167,11 @@ namespace FASTER.test
             get
             {
                 var container = ConvertedClassName(forAzure: true).Replace('.', '-').ToLower();
-                Microsoft.Azure.Storage.NameValidator.ValidateContainerName(container);
+                NameValidator.ValidateContainerName(container);
                 return container;
             }
         }
-
+       
         internal static string AzureTestDirectory => TestContext.CurrentContext.Test.MethodName;
 
         internal const string AzureEmulatedStorageString = "UseDevelopmentStorage=true;";

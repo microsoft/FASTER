@@ -81,7 +81,9 @@ namespace FASTER.devices
             this.UseLocalFiles = false;
             this.TraceHelper = new FasterTraceHelper(logger, logLevelLimit, performanceLogger);
             this.PartitionErrorHandler = errorHandler;
-            this.shutDownOrTermination = CancellationTokenSource.CreateLinkedTokenSource(errorHandler.Token);
+            this.shutDownOrTermination = errorHandler == null ?
+                new CancellationTokenSource() :
+                CancellationTokenSource.CreateLinkedTokenSource(errorHandler.Token);
         }
 
         // For testing and debugging with local files

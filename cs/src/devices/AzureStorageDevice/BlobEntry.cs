@@ -39,7 +39,7 @@ namespace FASTER.devices
         }
 
         /// <summary>
-        /// Creates a new BlobEntry to represent a page blob that will be created by <see cref="CreateAsync(long, CloudPageBlob)"/>.
+        /// Creates a new BlobEntry to represent a page blob that will be created by <see cref="CreateAsync(long, BlobUtilsV12.PageBlobClients)"/>.
         /// </summary>
         public BlobEntry(AzureStorageDevice azureStorageDevice)
         {
