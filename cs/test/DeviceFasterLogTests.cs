@@ -23,7 +23,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public async ValueTask PageBlobFasterLogTest1([Values] LogChecksumType logChecksum, [Values]FasterLogTestBase.IteratorType iteratorType)
         {
-            //TestUtils.IgnoreIfNotRunningAzureTests();
+            TestUtils.IgnoreIfNotRunningAzureTests();
             var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlog.log", deleteOnClose: true);
             var checkpointManager = new DeviceLogCommitCheckpointManager(
                 new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
