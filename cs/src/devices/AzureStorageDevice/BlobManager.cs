@@ -40,7 +40,7 @@ namespace FASTER.devices
 
         internal BlobUtilsV12.ContainerClients PageBlobContainer => this.pageBlobContainer;
 
-        public IPartitionErrorHandler PartitionErrorHandler { get; private set; }
+        public IStorageErrorHandler StorageErrorHandler { get; private set; }
 
         internal static SemaphoreSlim AsynchronousStorageReadMaxConcurrency = new SemaphoreSlim(Math.Min(100, Environment.ProcessorCount * 10));
         internal static SemaphoreSlim AsynchronousStorageWriteMaxConcurrency = new SemaphoreSlim(Math.Min(50, Environment.ProcessorCount * 7));
@@ -74,13 +74,13 @@ namespace FASTER.devices
             ILogger logger,
             ILogger performanceLogger,
             LogLevel logLevelLimit,
-            IPartitionErrorHandler errorHandler)
+            IStorageErrorHandler errorHandler)
         {
             if (leaseBlobName != null) LeaseBlobName = leaseBlobName;
             this.pageBlobDirectory = pageBlobDirectory;
             this.UseLocalFiles = false;
             this.TraceHelper = new FasterTraceHelper(logger, logLevelLimit, performanceLogger);
-            this.PartitionErrorHandler = errorHandler;
+            this.StorageErrorHandler = errorHandler ?? new StorageErrorHandler(null, logLevelLimit, null, null);
             this.shutDownOrTermination = errorHandler == null ?
                 new CancellationTokenSource() :
                 CancellationTokenSource.CreateLinkedTokenSource(errorHandler.Token);
@@ -103,11 +103,11 @@ namespace FASTER.devices
         {
             if (blobName == null)
             {
-                this.PartitionErrorHandler.HandleError(where, message, e, isFatal, isWarning);
+                this.StorageErrorHandler.HandleError(where, message, e, isFatal, isWarning);
             }
             else
             {
-                this.PartitionErrorHandler.HandleError(where, $"{message} blob={blobName}", e, isFatal, isWarning);
+                this.StorageErrorHandler.HandleError(where, $"{message} blob={blobName}", e, isFatal, isWarning);
             }
         }
 
@@ -146,7 +146,7 @@ namespace FASTER.devices
 
             while (true)
             {
-                this.PartitionErrorHandler.Token.ThrowIfCancellationRequested();
+                this.StorageErrorHandler.Token.ThrowIfCancellationRequested();
                 numAttempts++;
 
                 try
@@ -158,7 +158,7 @@ namespace FASTER.devices
                         await this.leaseClient.AcquireAsync(
                             this.LeaseDuration,
                             null,
-                            this.PartitionErrorHandler.Token)
+                            this.StorageErrorHandler.Token)
                             .ConfigureAwait(false);
                         this.TraceHelper.LeaseAcquired();
                     }
@@ -175,7 +175,7 @@ namespace FASTER.devices
                     // the previous owner has not released the lease yet, 
                     // try again until it becomes available, should be relatively soon
                     // as the transport layer is supposed to shut down the previous owner when starting this
-                    await Task.Delay(TimeSpan.FromSeconds(1), this.PartitionErrorHandler.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(1), this.StorageErrorHandler.Token);
 
                     continue;
                 }
@@ -209,18 +209,18 @@ namespace FASTER.devices
 
                     continue;
                 }
-                catch (OperationCanceledException) when (this.PartitionErrorHandler.IsTerminated)
+                catch (OperationCanceledException) when (this.StorageErrorHandler.IsTerminated)
                 {
                     throw; // o.k. during termination or shutdown
                 }
-                catch (Exception e) when (this.PartitionErrorHandler.IsTerminated)
+                catch (Exception e) when (this.StorageErrorHandler.IsTerminated)
                 {
                     string message = $"Lease acquisition was canceled";
                     this.TraceHelper.LeaseProgress(message);
                     throw new OperationCanceledException(message, e);
                 }
                 catch (Exception ex) when (numAttempts < BlobManager.MaxRetries
-                    && !this.PartitionErrorHandler.IsTerminated && BlobUtils.IsTransientStorageError(ex))
+                    && !this.StorageErrorHandler.IsTerminated && BlobUtils.IsTransientStorageError(ex))
                 {
                     if (BlobUtils.IsTimeout(ex))
                     {
@@ -236,7 +236,7 @@ namespace FASTER.devices
                 }
                 catch (Exception e) when (!Utils.IsFatal(e))
                 {
-                    this.PartitionErrorHandler.HandleError(nameof(AcquireOwnership), "Could not acquire partition lease", e, true, false);
+                    this.StorageErrorHandler.HandleError(nameof(AcquireOwnership), "Could not acquire partition lease", e, true, false);
                     throw;
                 }
             }
@@ -254,7 +254,7 @@ namespace FASTER.devices
                 if (!this.UseLocalFiles)
                 {
                     this.TraceHelper.LeaseProgress($"Renewing lease at {this.leaseTimer.Elapsed.TotalSeconds - this.LeaseDuration.TotalSeconds}s");
-                    await this.leaseClient.RenewAsync(null, this.PartitionErrorHandler.Token).ConfigureAwait(false);
+                    await this.leaseClient.RenewAsync(null, this.StorageErrorHandler.Token).ConfigureAwait(false);
                     this.TraceHelper.LeaseRenewed(this.leaseTimer.Elapsed.TotalSeconds, this.leaseTimer.Elapsed.TotalSeconds - this.LeaseDuration.TotalSeconds);
 
                     if (nextLeaseTimer.ElapsedMilliseconds > 2000)
@@ -265,7 +265,7 @@ namespace FASTER.devices
 
                 this.leaseTimer = nextLeaseTimer;
             }
-            catch (OperationCanceledException) when (this.PartitionErrorHandler.IsTerminated)
+            catch (OperationCanceledException) when (this.StorageErrorHandler.IsTerminated)
             {
                 throw; // o.k. during termination or shutdown
             }
@@ -311,17 +311,17 @@ namespace FASTER.devices
             catch (Azure.RequestFailedException ex) when (BlobUtilsV12.LeaseConflict(ex))
             {
                 // We lost the lease to someone else. Terminate ownership immediately.
-                this.PartitionErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Lost partition lease", ex, true, true);
+                this.StorageErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Lost partition lease", ex, true, true);
             }
             catch (Exception e) when (!Utils.IsFatal(e))
             {
-                this.PartitionErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Could not maintain partition lease", e, true, false);
+                this.StorageErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Could not maintain partition lease", e, true, false);
             }
 
             this.TraceHelper.LeaseProgress("Exited lease maintenance loop");
 
             while (this.LeaseUsers > 0
-                && !this.PartitionErrorHandler.IsTerminated 
+                && !this.StorageErrorHandler.IsTerminated 
                 && (this.leaseTimer?.Elapsed < this.LeaseDuration))
             {
                 await Task.Delay(20); // give storage accesses that are in progress and require the lease a chance to complete
@@ -336,7 +336,7 @@ namespace FASTER.devices
                 {
                     this.TraceHelper.LeaseProgress("Releasing lease");
 
-                    await this.leaseClient.ReleaseAsync(null, this.PartitionErrorHandler.Token).ConfigureAwait(false);
+                    await this.leaseClient.ReleaseAsync(null, this.StorageErrorHandler.Token).ConfigureAwait(false);
                     this.TraceHelper.LeaseReleased(this.leaseTimer.Elapsed.TotalSeconds);
                 }
                 catch (OperationCanceledException)
@@ -350,11 +350,11 @@ namespace FASTER.devices
                 catch (Exception e)
                 {
                     // we swallow, but still report exceptions when releasing a lease
-                    this.PartitionErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Could not release partition lease during shutdown", e, false, true);
+                    this.StorageErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Could not release partition lease during shutdown", e, false, true);
                 }
             }
 
-            this.PartitionErrorHandler.TerminateNormally();
+            this.StorageErrorHandler.TerminateNormally();
 
             this.TraceHelper.LeaseProgress("Blob manager stopped");
         }

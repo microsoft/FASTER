@@ -155,6 +155,16 @@ namespace FASTER.devices
                 return list;
             }
 
+            public async Task<List<string>> GetBlobsAsync(string filePrefix, CancellationToken cancellationToken = default)
+            {
+                var list = new List<string>();
+                await foreach (var blob in this.client.WithRetries.GetBlobsAsync(prefix: $"{this.prefix}/{filePrefix}", cancellationToken: cancellationToken))
+                {
+                    list.Add(blob.Name);
+                }
+                return list;
+            }
+
             public override string ToString()
             {
                 return $"{this.prefix}/";

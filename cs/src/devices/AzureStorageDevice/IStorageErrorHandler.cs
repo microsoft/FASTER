@@ -4,18 +4,16 @@
 namespace FASTER.devices
 {
     using System;
-    using System.Collections.Generic;
-    using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
 
     /// <summary>
-    /// A handler for fatal or non-fatal errors encountered in a partition.
+    /// A handler for fatal or non-fatal errors encountered during storage operations.
     /// </summary>
-    public interface IPartitionErrorHandler
+    public interface IStorageErrorHandler
     {
         /// <summary>
-        /// A cancellation token that is cancelled when the partition is terminated.
+        /// A cancellation token that user can cancel when storage needs to terminate.
         /// </summary>
         CancellationToken Token { get; }
 
@@ -40,7 +38,7 @@ namespace FASTER.devices
         Task<bool> WaitForTermination(TimeSpan timeout);
 
         /// <summary>
-        /// Error handling for the partition.
+        /// Error handling.
         /// </summary>
         /// <param name="where">A brief description of the component that observed the error.</param>
         /// <param name="message">A message describing the circumstances.</param>

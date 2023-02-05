@@ -44,7 +44,8 @@ namespace FASTER.devices
             var dirName = string.Join("/", path.Skip(1));
 
             this.pageBlobContainer = BlobUtilsV12.GetContainerClients(this.pageBlobAccount, containerName);
-            await this.pageBlobContainer.WithRetries.CreateIfNotExistsAsync();
+            if (!await this.pageBlobContainer.WithRetries.ExistsAsync())
+                await this.pageBlobContainer.WithRetries.CreateIfNotExistsAsync();
 
             pageBlobDirectory = new BlobUtilsV12.BlobDirectory(pageBlobContainer, dirName);
         }
@@ -57,14 +58,17 @@ namespace FASTER.devices
 
             if (fileInfo.fileName != null)
             {
-                // We only delete shard 0
-                dir.GetPageBlobClient(fileInfo.fileName + ".0").Default.DeleteIfExists();
+                // We delete all files with fileName prefix, since shards have extensions as .0, .1, etc.
+                foreach (var blob in dir.GetBlobsAsync(fileInfo.fileName, default).GetAwaiter().GetResult())
+                {
+                    BlobUtilsV12.ForceDeleteAsync(pageBlobContainer.Default, blob).GetAwaiter().GetResult();
+                }
             }
             else
             {
-                foreach (var blob in dir.Client.WithRetries.GetBlobs())
+                foreach (var blob in dir.GetBlobsAsync(default).GetAwaiter().GetResult())
                 {
-                    dir.GetPageBlobClient(blob.Name).Default.DeleteIfExists();
+                    BlobUtilsV12.ForceDeleteAsync(pageBlobContainer.Default, blob).GetAwaiter().GetResult();
                 }
             }
         }

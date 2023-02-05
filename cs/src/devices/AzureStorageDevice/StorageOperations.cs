@@ -51,7 +51,7 @@ namespace FASTER.devices
                             await this.ConfirmLeaseIsGoodForAWhileAsync();
                         }
 
-                        this.PartitionErrorHandler?.Token.ThrowIfCancellationRequested();
+                        this.StorageErrorHandler?.Token.ThrowIfCancellationRequested();
 
                         this.StorageTracer?.FasterStorageProgress($"storage operation {name} ({intent}) started attempt {numAttempts}; target={target} {data}");
 
@@ -71,7 +71,7 @@ namespace FASTER.devices
 
                         return;
                     }
-                    catch (Exception e) when (this.PartitionErrorHandler.IsTerminated)
+                    catch (Exception e) when (this.StorageErrorHandler.IsTerminated)
                     {
                         string message = $"storage operation {name} ({intent}) was canceled";
                         this.StorageTracer?.FasterStorageProgress(message);
@@ -101,7 +101,7 @@ namespace FASTER.devices
                     }
                     catch (Exception exception)
                     {
-                        this.HandleStorageError(name, $"storage operation {name} ({intent}) failed on attempt {numAttempts}", target, exception, isCritical, this.PartitionErrorHandler.IsTerminated);
+                        this.HandleStorageError(name, $"storage operation {name} ({intent}) failed on attempt {numAttempts}", target, exception, isCritical, this.StorageErrorHandler.IsTerminated);
                         throw;
                     }
                     finally
@@ -146,7 +146,7 @@ namespace FASTER.devices
                         this.ConfirmLeaseIsGoodForAWhile();
                     }
 
-                    this.PartitionErrorHandler.Token.ThrowIfCancellationRequested();
+                    this.StorageErrorHandler.Token.ThrowIfCancellationRequested();
 
                     this.StorageTracer?.FasterStorageProgress($"storage operation {name} ({intent}) started attempt {numAttempts}; target={target} {data}");
                     stopwatch.Restart();
@@ -170,7 +170,7 @@ namespace FASTER.devices
 
                     return;
                 }
-                catch(Exception e) when (this.PartitionErrorHandler.IsTerminated)
+                catch(Exception e) when (this.StorageErrorHandler.IsTerminated)
                 {
                     string message = $"storage operation {name} ({intent}) was canceled";
                     this.StorageTracer?.FasterStorageProgress(message);
@@ -198,7 +198,7 @@ namespace FASTER.devices
                 }
                 catch (Exception exception)
                 {
-                    this.HandleStorageError(name, $"storage operation {name} ({intent}) failed on attempt {numAttempts}", target, exception, isCritical, this.PartitionErrorHandler.IsTerminated);
+                    this.HandleStorageError(name, $"storage operation {name} ({intent}) failed on attempt {numAttempts}", target, exception, isCritical, this.StorageErrorHandler.IsTerminated);
                     throw;
                 }
                 finally

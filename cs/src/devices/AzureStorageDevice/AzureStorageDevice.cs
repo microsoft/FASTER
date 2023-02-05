@@ -52,9 +52,9 @@ namespace FASTER.devices
             public DateTime TimeStamp;
         }
 
-        public SemaphoreSlim SingleWriterSemaphore => this.singleWriterSemaphore;
+        SemaphoreSlim SingleWriterSemaphore => this.singleWriterSemaphore;
 
-        internal IPartitionErrorHandler PartitionErrorHandler { get; private set; }
+        internal IStorageErrorHandler PartitionErrorHandler { get; private set; }
 
         // Azure Page Blobs have a fixed sector size of 512 bytes.
         const uint PAGE_BLOB_SECTOR_SIZE = 512;
@@ -98,7 +98,7 @@ namespace FASTER.devices
 
             this.BlobManager = blobManager ?? new BlobManager(blobName, pageBlobDirectory, underLease, null, null, LogLevel.Information, null);
 
-            this.PartitionErrorHandler = BlobManager.PartitionErrorHandler;
+            this.PartitionErrorHandler = BlobManager.StorageErrorHandler;
             this.PartitionErrorHandler?.Token.Register(this.CancelAllRequests);
             this.underLease = underLease;
             this.hangCheckTimer = new Timer(this.DetectHangs, null, 0, 20000);
@@ -123,9 +123,10 @@ namespace FASTER.devices
             this.pendingRemoveOperations = new ConcurrentDictionary<long, RemoveRequestInfo>();
             this.pageBlobDirectory = pageBlobDirectory;
             this.blobName = blobName;
-            this.PartitionErrorHandler = blobManager.PartitionErrorHandler;
-            this.PartitionErrorHandler.Token.Register(this.CancelAllRequests);
             this.BlobManager = blobManager ?? new BlobManager(blobName, pageBlobDirectory, underLease, null, null, LogLevel.Information, null);
+
+            this.PartitionErrorHandler = BlobManager.StorageErrorHandler;
+            this.PartitionErrorHandler.Token.Register(this.CancelAllRequests);
             this.underLease = underLease;
             this.hangCheckTimer = new Timer(this.DetectHangs, null, 0, 20000);
             this.singleWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
@@ -140,7 +141,7 @@ namespace FASTER.devices
             return $"AzureStorageDevice {this.pageBlobDirectory}{this.blobName}";
         }
 
-        public async Task StartAsync()
+        async Task StartAsync()
         {
             try
             {
@@ -249,7 +250,7 @@ namespace FASTER.devices
             {
                 if (kvp.Value.TimeStamp < threshold)
                 {
-                    this.BlobManager.PartitionErrorHandler.HandleError("DetectHangs", $"storage operation id={kvp.Key} has exceeded the time limit {this.limit}", null, true, false);
+                    this.BlobManager.StorageErrorHandler.HandleError("DetectHangs", $"storage operation id={kvp.Key} has exceeded the time limit {this.limit}", null, true, false);
                     return;
                 }
             }
@@ -257,7 +258,7 @@ namespace FASTER.devices
             {
                 if (kvp.Value.TimeStamp < threshold)
                 {
-                    this.BlobManager.PartitionErrorHandler.HandleError("DetectHangs", $"storage operation id={kvp.Key} has exceeded the time limit {this.limit}", null, true, false);
+                    this.BlobManager.StorageErrorHandler.HandleError("DetectHangs", $"storage operation id={kvp.Key} has exceeded the time limit {this.limit}", null, true, false);
                     return;
                 }
             }
