@@ -283,7 +283,7 @@ namespace FASTER.core
                 if (!recordInfo.Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
                     if (SpinWaitWhileTentativeAndReturnValidity(ref recordInfo))
-                        return newRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref recordInfo, allowXLock, seal: false, removeEphemeralLock);
+                        return newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref recordInfo, allowXLock, seal: false, removeEphemeralLock);
                 }
                 entry.word = recordInfo.PreviousAddress;
             }

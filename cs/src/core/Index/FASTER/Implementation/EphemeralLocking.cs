@@ -126,7 +126,7 @@ namespace FASTER.core
         {
             if (fasterSession.DisableEphemeralLocking)
             {
-                Debug.Assert(!stackCtx.recSrc.HasLockTableLock, "HasLockTableLock should only be true if we are doing ephemeral locking");
+                Debug.Assert(!stackCtx.recSrc.HasLock, "HasLock should only be true if we are doing ephemeral locking");
                 return;
             }
 
@@ -178,7 +178,7 @@ namespace FASTER.core
         {
             if (fasterSession.DisableEphemeralLocking)
             {
-                Debug.Assert(!stackCtx.recSrc.HasLockTableLock, "HasLockTableLock should only be true if we are doing ephemeral locking");
+                Debug.Assert(!stackCtx.recSrc.HasLock, "recSrc.HasLock should only be true if we are doing ephemeral locking");
                 return;
             }
 
@@ -199,7 +199,7 @@ namespace FASTER.core
                         ref RecordInfo srcRecordInfo, ref RecordInfo newRecordInfo, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            // We don't check for ephem eral xlocking here; we know we had that lock, but we don't need to actually lock the new record because
+            // We don't check for ephemeral xlocking here; we know we had that lock, but we don't need to actually lock the new record because
             // we know this is the last step and we are going to unlock it immediately; it is protected until we remove the Tentative bit.
 
             if (fasterSession.IsManualLocking)
@@ -251,24 +251,14 @@ namespace FASTER.core
             bool success = true;
             if (stackCtx.recSrc.HasInMemorySrc)
             {
-                // We're copying from immutable or readcache. If the locked record has gone below HeadAddress due to the BlockAllocate,
-                // we must wait until the record is closed and transferred to the lock table, then transfer the locks from there.
-                if (stackCtx.recSrc.LogicalAddress >= stackCtx.recSrc.Log.HeadAddress)  // TODO: This may not need to be checked, since we passed VerifyInMemoryAddresses
-                {
-                    // Unlock the ephemeral lock here; we mark the source so we *know* we will have an invalid unlock on srcRecordInfo and would have to chase
-                    // through InternalLock to unlock it, so we save the time by not transferring our ephemeral lock; 'Tentative' still protects the new record.
-                    newRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref srcRecordInfo, allowXLock: fasterSession.IsManualLocking,
-                                                                  seal: stackCtx.recSrc.HasMainLogSrc, removeEphemeralLock: stackCtx.recSrc.HasInMemoryLock);
-                }
-                else
-                {
-                    SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, stackCtx.recSrc.Log);
-                    if (!VerifyInMemoryAddresses(ref stackCtx))
-                        return false;
-                    success = !LockTable.IsActive || LockTable.CompleteTwoPhaseCopyToTail(ref key, stackCtx.hei.hash, ref newRecordInfo,
-                                                        allowXLock: fasterSession.IsManualLocking, removeEphemeralLock: stackCtx.recSrc.HasInMemoryLock);  // we acquired the lock via HasInMemoryLock
-                }
-                stackCtx.recSrc.HasInMemoryLock = false;
+                stackCtx.recSrc.AssertInMemorySourceWasNotEvicted();
+
+                // Unlock the ephemeral lock here; we mark the source so we *know* we will have an invalid unlock on srcRecordInfo and would have to chase
+                // through InternalLock to unlock it, so we save the time by not transferring our ephemeral lock; 'Tentative' still protects the new record.
+                success = newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref srcRecordInfo, allowXLock: fasterSession.IsManualLocking,
+                                                                    seal: stackCtx.recSrc.HasMainLogSrc, removeEphemeralLock: stackCtx.recSrc.HasInMemoryLock);
+                if (success)
+                    stackCtx.recSrc.HasInMemoryLock = false;
             }
             else
             {
@@ -285,7 +275,7 @@ namespace FASTER.core
                                                                                           removeEphemeralLock: stackCtx.recSrc.HasLockTableLock))
                               &&
                               (!UseReadCache || ReadCacheCompleteTwoPhaseCopyToTail(ref key, ref stackCtx.hei, ref newRecordInfo, allowXLock: fasterSession.IsManualLocking,
-                                                                                    removeEphemeralLock: stackCtx.recSrc.HasLockTableLock));
+                                                                                    removeEphemeralLock: stackCtx.recSrc.HasLockTableLock));     // HasLockTableLock because we checked HasInMemorySrc above
                     stackCtx.recSrc.HasLockTableLock = false;
                 }
             }

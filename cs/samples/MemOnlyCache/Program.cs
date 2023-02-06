@@ -4,6 +4,7 @@
 using FASTER.core;
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 
 #pragma warning disable IDE0079 // Remove unnecessary suppression
@@ -38,16 +39,38 @@ namespace MemOnlyCache
         const string NumThreadsArg = "-t";
 
         /// <summary>
-        /// Percentage of writes in incoming workload requests (remaining are reads)
+        /// Percentage of Reads in incoming workload requests (remaining is updates)
         /// </summary>
-        static int WritePercent = 0;
-        const string WritePercentArg = "-w";
+        static int ReadPercent = 100;
+
+        /// <summary>
+        /// Percentage of RMWs in incoming workload requests
+        /// </summary>
+        static int RmwPercent = 0;
+
+        /// <summary>
+        /// Percentage of Upserts in incoming workload requests
+        /// </summary>
+        static int UpsertPercent = 0;
+
+        /// <summary>
+        /// Percentage of Deletes in incoming workload requests
+        /// </summary>
+        static int DeletePercent = 0;
+
+        const string OpPercentArg = "-op-rmud%";
 
         /// <summary>
         /// Uniform random distribution (true) or Zipf distribution (false) of requests
         /// </summary>
         static bool UseUniform = false;
         const string UseUniformArg = "-u";
+
+        /// <summary>
+        /// If true, create a log file in the {tempdir}\MemOnlyCacheSample
+        /// </summary>
+        static bool UseLogFile = false;
+        const string UseLogFileArg = "-l";
 
         /// <summary>
         /// Uniform random distribution (true) or Zipf distribution (false) of requests
@@ -62,14 +85,21 @@ namespace MemOnlyCache
         const string UseReadCacheArg = "--readcache";
 
         /// <summary>
+        /// Percentage of Cache-miss RMWs
+        /// </summary>
+        static int CacheMissRmwPercent = 0;
+
+        /// <summary>
+        /// Percentage of Cache-miss Upserts
+        /// </summary>
+        static int CacheMissUpsertPercent = 100;
+
+        const string CacheMissInsertPercentArg = "--cm-mu%";
+
+        /// <summary>
         /// Skew factor (theta) of Zipf distribution
         /// </summary>
         const double Theta = 0.99;
-
-        /// <summary>
-        /// Whether to upsert the key on a cache miss
-        /// </summary>
-        const bool UpsertOnCacheMiss = true;
 
         static FasterKV<CacheKey, CacheValue> h;
         static CacheSizeTracker sizeTracker;
@@ -93,22 +123,25 @@ namespace MemOnlyCache
             Console.WriteLine($"  {MaxKeySizeArg}: Max key size; we choose actual size randomly. Default = {MaxKeySize}");
             Console.WriteLine($"  {MaxValueSizeArg}: Max value size; we choose actual size randomly. Default = {MaxValueSize}");
             Console.WriteLine($"  {NumThreadsArg}: Number of threads accessing FASTER instances. Default = {NumThreads}");
-            Console.WriteLine($"  {WritePercentArg}: Percentage of writes in incoming workload requests (remaining are reads). Default = {WritePercent}");
+            Console.WriteLine($"  {OpPercentArg}: Percentage of [(r)eads,r(m)ws,(u)pserts,(d)eletes] (summing to 0 or 100) in incoming workload requests. Default = {ReadPercent},{RmwPercent},{UpsertPercent},{DeletePercent}");
             Console.WriteLine($"  {UseUniformArg}: Uniform random distribution (true) or Zipf distribution (false) of requests. Default = {UseUniform}");
-            Console.WriteLine($"  {NoReadCTTArg}: Copy Reads from Immutable region to tail of log. Default = {!UseReadCTT}");
-            Console.WriteLine($"  {UseReadCacheArg}: Use the ReadCache. Default = {UseReadCache}");
+            Console.WriteLine($"  {UseLogFileArg}: Use log file (true) instead of NullDevice (false). Default = {UseLogFile}");
+            Console.WriteLine($"  {NoReadCTTArg}: Whether to copy reads from the Immutable region to tail of log. Default = {!UseReadCTT}");
+            Console.WriteLine($"  {UseReadCacheArg}: Whether to use the ReadCache. Default = {UseReadCache}");
+            Console.WriteLine($"  {CacheMissInsertPercentArg}: Whether to insert the key on a cache miss, and if so, the percentage of [r(m)ws,(u)pserts] (summing to 0 or 100) to do so. Default = {CacheMissRmwPercent},{CacheMissUpsertPercent}");
             Console.WriteLine($"  {HelpArg1}, {HelpArg2}, {HelpArg3}: This screen.");
             return false;
         }
 
         static bool GetArgs(string[] args)
         {
-            for (var ii = 0; ii < args.Length; ++ii)
+            string arg = string.Empty, val = string.Empty;
+            try
             {
-                var arg = args[ii].ToLower();
-                var val = "n/a";
-                try
+                for (var ii = 0; ii < args.Length; ++ii)
                 {
+                    arg = args[ii].ToLower();
+                    val = "n/a";
                     if (IsHelpArg(arg))
                         return Usage();
 
@@ -128,6 +161,12 @@ namespace MemOnlyCache
                     if (arg == UseReadCacheArg)
                     {
                         UseReadCache = true;
+                        continue;
+                    }
+
+                    if (arg == UseLogFileArg)
+                    {
+                        UseLogFile = true;
                         continue;
                     }
 
@@ -153,20 +192,55 @@ namespace MemOnlyCache
                         NumThreads = int.Parse(val);
                         continue;
                     }
-                    if (arg == WritePercentArg)
+                    if (arg == OpPercentArg)
                     {
-                        WritePercent = int.Parse(val);
+                        var percents = val.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        var success = percents.Length == 4;
+                        if (success)
+                        {
+                            ReadPercent = int.Parse(percents[0]);
+                            RmwPercent = int.Parse(percents[1]);
+                            UpsertPercent = int.Parse(percents[2]);
+                            DeletePercent = int.Parse(percents[3]);
+                            var total = ReadPercent + RmwPercent + UpsertPercent + DeletePercent;
+                            success = total == 0 || total == 100;
+                        }
+                        if (!success)
+                        {
+                            Console.WriteLine($"{arg} requires 4 values summing to 0 or 100: Percentage of [(r)eads,r(m)ws,(u)pserts,(d)eletes]");
+                            return false;
+                        }
+                        continue;
+                    }
+                    if (arg == CacheMissInsertPercentArg)
+                    {
+                        var percents = val.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        var success = percents.Length == 2;
+                        if (success)
+                        {
+                            CacheMissRmwPercent = int.Parse(percents[0]);
+                            CacheMissUpsertPercent = int.Parse(percents[1]);
+                            var total = CacheMissRmwPercent + CacheMissUpsertPercent;
+                            success = total == 0 || total == 100;
+                        }
+                        if (!success)
+                        {
+                            Console.WriteLine($"{arg} requires 2 values summing to 0 or 100: Percentage of [r(m)ws,(u)pserts]");
+                            return false;
+                        }
                         continue;
                     }
 
                     Console.WriteLine($"Unknown option: {arg}");
                     return Usage();
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error: Arg {arg}, value {val} encountered exception: {ex.Message}");
-                    return false;
-                }
+
+                // Note: Here we could verify parameter compatibility
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error: Arg {arg}, value {val} encountered exception: {ex.Message}");
+                return false;
             }
             return true;
         }
@@ -177,12 +251,31 @@ namespace MemOnlyCache
             if (!GetArgs(args))
                 return;
 
-            var log = new NullDevice(); // no storage involved
+            IDevice log, objectLog;
+            SerializerSettings<CacheKey, CacheValue> serializerSettings = null;
+            if (UseLogFile)
+            {
+                var path = Path.GetTempPath() + "MemOnlyCacheSample\\";
+                log = Devices.CreateLogDevice(path + "hlog.log");
+                objectLog = Devices.CreateLogDevice(path + "hlog_obj.log");
+
+                serializerSettings = new SerializerSettings<CacheKey, CacheValue>
+                {
+                    keySerializer = () => new CacheKeySerializer(),
+                    valueSerializer = () => new CacheValueSerializer()
+                };
+            }
+            else
+            {
+                // no storage involved
+                log = new NullDevice();
+                objectLog = log;
+            }
 
             // Define settings for log
             var logSettings = new LogSettings
             {
-                LogDevice = log, ObjectLogDevice = log,
+                LogDevice = log, ObjectLogDevice = objectLog,
                 MutableFraction = 0.9, // 10% of memory log is "read-only region"
                 ReadFlags = UseReadCTT ? ReadFlags.CopyReadsToTail : ReadFlags.None, // reads in read-only region are copied to tail
                 PageSizeBits = 14, // Each page is sized at 2^14 bytes
@@ -199,7 +292,7 @@ namespace MemOnlyCache
             // Set hash table size targeting 1 record per bucket
             var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
 
-            h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, comparer: new CacheKey());
+            h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, serializerSettings: serializerSettings, comparer: new CacheKey());
             sizeTracker = new CacheSizeTracker(h, targetSize);
 
             // Initially populate store
@@ -209,6 +302,8 @@ namespace MemOnlyCache
             ContinuousRandomWorkload();
             
             h.Dispose();
+            log.Dispose();
+            objectLog.Dispose();
 
             Console.WriteLine("Press <ENTER> to end");
             Console.ReadLine();
@@ -289,8 +384,8 @@ namespace MemOnlyCache
 
             using var session = h.For(new CacheFunctions(sizeTracker)).NewSession<CacheFunctions>();
 
-            var rnd = new Random(threadid);
-            var zipf = new ZipfGenerator(rnd, DbSize, Theta);
+            var rng = new Random(threadid);
+            var zipf = new ZipfGenerator(rng, DbSize, Theta);
 
             CacheValue output = default;
             int localStatusFound = 0, localStatusNotFound = 0;
@@ -305,40 +400,76 @@ namespace MemOnlyCache
                     Interlocked.Add(ref totalReads, 256);
                     localStatusFound = localStatusNotFound = 0;
                 }
-                int op = WritePercent == 0 ? 0 : rnd.Next(100);
-                long k = UseUniform ? rnd.Next(DbSize) : zipf.Next();
 
-                var key = new CacheKey(k, 1 + rnd.Next(MaxKeySize - 1));
+                var wantValue = RmwPercent + UpsertPercent > 0;
 
-                if (op < WritePercent)
-                {
-                    var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
-                    session.Upsert(ref key, ref value);
-                }
-                else
+                int op = ReadPercent < 100 ? rng.Next(100) : 99;    // rng.Next() is not inclusive of the upper bound
+                long k = UseUniform ? rng.Next(DbSize) : zipf.Next();
+
+                var key = new CacheKey(k, 1 + rng.Next(MaxKeySize - 1));
+
+                CacheValue createValue() => new CacheValue(1 + rng.Next(MaxValueSize - 1), (byte)key.key);
+                CacheValue value = wantValue ? createValue() : null;
+
+                if (op < ReadPercent)
                 {
                     var status = session.Read(ref key, ref output);
-
+                    if (status.IsPending)
+                        (status, output) = GetSinglePendingResult(session);
                     if (!status.Found)
                     {
                         if (status.IsFaulted)
-                            throw new Exception("Error!");
+                            throw new Exception("Unexpected Error!");
                         localStatusNotFound++;
-                        if (UpsertOnCacheMiss)
+                        if (CacheMissRmwPercent + CacheMissUpsertPercent > 0)
                         {
-                            var value = new CacheValue(1 + rnd.Next(MaxValueSize - 1), (byte)key.key);
-                            session.Upsert(ref key, ref value);
+                            value ??= createValue();
+                            var which = rng.Next(100);
+                            if (which < CacheMissRmwPercent)
+                            {
+                                status = session.RMW(ref key, ref value);
+                                if (status.IsPending)
+                                    session.CompletePending(wait: true);
+                            }
+                            else
+                                session.Upsert(ref key, ref value);
                         }
                     }
                     else
                     {
                         localStatusFound++;
                         if (output.value[0] != (byte)key.key)
-                            throw new Exception("Read error!");
+                            throw new Exception("Read value error!");
                     }
+                }
+                else if (op < ReadPercent + RmwPercent)
+                {
+                    var status = session.RMW(ref key, ref value);
+                    if (status.IsPending)
+                        session.CompletePending(wait: true);
+                }
+                else if (op < ReadPercent + RmwPercent + UpsertPercent)
+                {
+                    session.Upsert(ref key, ref value);
+                }
+                else
+                {
+                    session.Delete(ref key);
                 }
                 i++;
             }
+        }
+
+        internal static (Status status, CacheValue output) GetSinglePendingResult(ClientSession<CacheKey, CacheValue, CacheValue, CacheValue, Empty, CacheFunctions> session)
+        {
+            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            if (!completedOutputs.Next())
+                throw new Exception("Expected to read one result");
+            var result = (completedOutputs.Current.Status, completedOutputs.Current.Output);
+            if (completedOutputs.Next())
+                throw new Exception("Did not expect to read a second result");
+            completedOutputs.Dispose();
+            return result;
         }
     }
 }
