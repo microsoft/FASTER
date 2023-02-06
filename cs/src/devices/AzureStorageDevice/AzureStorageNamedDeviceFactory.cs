@@ -83,24 +83,42 @@ namespace FASTER.devices
         public IEnumerable<FileDescriptor> ListContents(string path)
         {
             var dir = pageBlobDirectory.GetSubDirectory(path);
-            var client = dir.Client.WithRetries;
-            foreach (var item in client.GetBlobsByHierarchy()
-                .OrderByDescending(f => dir.GetPageBlobClient(f.Blob.Name).Default.GetProperties().Value.LastModified))
+            var client = pageBlobContainer.Default;
+
+            HashSet<string> directories = new();
+            foreach (var item in client.GetBlobs(prefix: $"{dir.Prefix}/")
+                .OrderByDescending(f => client.GetBlobClient(f.Name).GetProperties().Value.LastModified)
+                )
             {
-                if (item.IsPrefix)
+                // get the directory name
+                var name = item.Name.Substring(dir.Prefix.Length + 1);
+                // get substring until first slash
+                var slash = name.IndexOf('/');
+                if (slash > 0)
                 {
-                    yield return new FileDescriptor
+                    // this is a directory
+                    var dirName = name.Substring(0, slash);
+                    if (!directories.Contains(dirName))
                     {
-                        directoryName = item.Prefix,
-                        fileName = ""
-                    };
+                        directories.Add(dirName);
+
+                        // find file name from path
+                        var fileName = name.Substring(name.LastIndexOf('/') + 1);
+
+                        yield return new FileDescriptor
+                        {
+                            directoryName = dirName,
+                            fileName = "",
+                        };
+                    }
                 }
                 else
                 {
+                    // this is a file
                     yield return new FileDescriptor
                     {
-                        directoryName = item.Blob.Name,
-                        fileName = ""
+                        directoryName = "",
+                        fileName = name,
                     };
                 }
             }
