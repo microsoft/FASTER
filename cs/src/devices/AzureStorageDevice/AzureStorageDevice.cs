@@ -319,7 +319,16 @@ namespace FASTER.devices
                 entry.Value.PageBlob.Default?.Delete();
             }
         }
-        
+
+        /// <inheritdoc/>
+        public override long GetFileSize(int segment)
+        {
+            if (!this.blobs.TryGetValue(segment, out BlobEntry blobEntry))
+                return 0;
+            long size = blobEntry.PageBlob.Default.GetProperties().Value.ContentLength;
+            return size;
+        }
+
         /// <summary>
         /// <see cref="IDevice.RemoveSegmentAsync(int, AsyncCallback, IAsyncResult)"/>
         /// </summary>
@@ -421,7 +430,7 @@ namespace FASTER.devices
             {
                 var nonLoadedBlob = this.pageBlobDirectory.GetPageBlobClient(this.GetSegmentBlobName(segmentId));
                 var exception = new InvalidOperationException("Attempt to read a non-loaded segment");
-                this.BlobManager?.HandleStorageError(nameof(ReadAsync), exception.Message, nonLoadedBlob.Default?.Name, exception, true, false);
+                this.BlobManager?.HandleStorageError(nameof(ReadAsync), exception.Message, nonLoadedBlob.Default?.Name, exception, false, true);
                 throw exception;
             }
 
