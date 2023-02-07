@@ -97,6 +97,12 @@ namespace FASTER.core
 
         private static bool IsInvalidOrSealedWord(long word) => (word & (kSealedBitMask | kValidBitMask)) != kValidBitMask;
 
+        public void CleanDiskImage()
+        {
+            // We ignore locks and temp bits for disk images
+            this.word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kTentativeBitMask | kSealedBitMask);
+        }
+
         public bool TryLock(LockType lockType)
         {
             if (lockType == LockType.Shared)

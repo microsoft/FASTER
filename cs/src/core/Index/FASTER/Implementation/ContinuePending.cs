@@ -38,11 +38,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
-            // We ignore locks and temp bits for disk images
-            srcRecordInfo.ClearLocks();
-            srcRecordInfo.Tentative = false;
-            srcRecordInfo.Unseal();
-            // Debug.Assert(!srcRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
+            srcRecordInfo.CleanDiskImage();
 
             if (request.logicalAddress >= hlog.BeginAddress)
             {
@@ -123,7 +119,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO(fasterSession, ctx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlock(fasterSession, ctx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 } // end while (true)
             }
@@ -175,12 +171,8 @@ namespace FASTER.core
 
             byte* recordPointer = request.record.GetValidPointer();
             ref var inputRIRef = ref hlog.GetInfoFromBytePointer(recordPointer);
-            // We ignore locks and temp bits for disk images
-            inputRIRef.ClearLocks();
-            inputRIRef.Tentative = false;
-            inputRIRef.Unseal();
-            RecordInfo inputRecordInfo = inputRIRef; // Not ref, as we don't want to write into request.record
-            // Debug.Assert(!inputRecordInfo.IsIntermediate, "Should always retrieve a non-Tentative, non-Sealed record from disk");
+            inputRIRef.CleanDiskImage();
+            RecordInfo inputRecordInfo = inputRIRef; // Not ref, as we don't want the operations below to write into request.record
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
             OperationStatus status;
@@ -337,7 +329,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO(fasterSession, currentCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlock(fasterSession, currentCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
             } while (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext));
@@ -444,14 +436,15 @@ namespace FASTER.core
             long readcacheNewAddressBit = 0L;
             if (copyToReadCache)
             {
+                localLog = readcache;
+                readcacheNewAddressBit = Constants.kReadCacheBitMask;
+
                 // Spin to make sure newLogicalAddress is > hei.Address (the .PreviousAddress and CAS comparison value).
                 do
                 {
                     if (!BlockAllocateReadCache(allocatedSize, out newLogicalAddress, ref pendingContext, out _))
                         return OperationStatus.SUCCESS; // We don't slow down Reads to handle allocation failure in the read cache, but don't return StatusCode.CopiedRecordToReadCache
                     newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
-                    localLog = readcache;
-                    readcacheNewAddressBit = Constants.kReadCacheBitMask;
 
                     if (!VerifyInMemoryAddresses(ref stackCtx))
                     {
@@ -464,7 +457,7 @@ namespace FASTER.core
                 } while (stackCtx.hei.IsReadCache && newLogicalAddress < stackCtx.hei.AbsoluteAddress);
 
                 newRecordInfo = ref WriteTentativeInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
-                stackCtx.newLogicalAddress = newLogicalAddress;
+                stackCtx.newLogicalAddress = newLogicalAddress | readcacheNewAddressBit;
 
                 upsertInfo.Address = Constants.kInvalidAddress;     // We do not expose readcache addresses
                 advancedStatusCode |= StatusCode.CopiedRecordToReadCache;
@@ -478,7 +471,7 @@ namespace FASTER.core
                     do
                     {
                         if (!BlockAllocate(allocatedSize, out newLogicalAddress, ref pendingContext, out OperationStatus status))
-                            return status;      // For CopyToTail, we do want to make sure the record is appended to the tail, so return the failing status.
+                            return status;      // For CopyToTail, we do want to make sure the record is appended to the tail, so return the failing status for retry
                         newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
 
                         if (!VerifyInMemoryAddresses(ref stackCtx))
@@ -504,7 +497,7 @@ namespace FASTER.core
             if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref localLog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref newRecordInfo, ref upsertInfo, reason))
             {
-                // No SaveAlloc here, but TODO this record could be reused later.
+                // No SaveAlloc here, but TODO this record could be reused later if not a readcache record.
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                 return (upsertInfo.Action == UpsertAction.CancelOperation) ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
             }

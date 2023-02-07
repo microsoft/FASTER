@@ -26,7 +26,7 @@ namespace MemOnlyCache
 
         public int GetSize => sizeof(long) + extra.Length + 48; // heap size incl. ~48 bytes ref/array overheads
 
-        public override string ToString() => $"key = {key}, len = {extra.Length}";
+        public override string ToString() => $"key {key}, len {extra.Length}";
     }
 
     public class CacheKeySerializer : BinaryObjectSerializer<CacheKey>
@@ -64,7 +64,7 @@ namespace MemOnlyCache
 
         public int GetSize => value.Length + 48; // heap size for byte array incl. ~48 bytes ref/array overheads
 
-        public override string ToString() => $"value[0] = {value[0]}, len = {value.Length}";
+        public override string ToString() => $"value[0] {value[0]}, len {value.Length}";
     }
 
     public class CacheValueSerializer : BinaryObjectSerializer<CacheValue>

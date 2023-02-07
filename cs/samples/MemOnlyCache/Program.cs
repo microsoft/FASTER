@@ -58,7 +58,7 @@ namespace MemOnlyCache
         /// </summary>
         static int DeletePercent = 0;
 
-        const string OpPercentArg = "-op-rmud%";
+        const string OpPercentArg = "--op-rmud%";
 
         /// <summary>
         /// Uniform random distribution (true) or Zipf distribution (false) of requests
@@ -71,6 +71,12 @@ namespace MemOnlyCache
         /// </summary>
         static bool UseLogFile = false;
         const string UseLogFileArg = "-l";
+
+        /// <summary>
+        /// Quiet; do not ask for ENTER to end
+        /// </summary>
+        static bool Quiet = false;
+        const string QuietArg = "-q";
 
         /// <summary>
         /// Uniform random distribution (true) or Zipf distribution (false) of requests
@@ -93,8 +99,13 @@ namespace MemOnlyCache
         /// Percentage of Cache-miss Upserts
         /// </summary>
         static int CacheMissUpsertPercent = 100;
-
         const string CacheMissInsertPercentArg = "--cm-mu%";
+
+        /// <summary>
+        /// Number of seconds to run
+        /// </summary>
+        static int RunTime = 0;
+        const string RunTimeArg = "--runtime";
 
         /// <summary>
         /// Skew factor (theta) of Zipf distribution
@@ -115,20 +126,24 @@ namespace MemOnlyCache
         const string HelpArg3 = "--help";
         static bool IsHelpArg(string arg) => arg == HelpArg1 || arg == HelpArg2 || arg == HelpArg3;
 
+        static bool done;
+
         private static bool Usage()
         {
-            Console.WriteLine("Reads 'linked lists' of records for each key by backing up the previous-address chain, including showing record versions");
+            Console.WriteLine("Runs a loop that illustrates an in-memory cache with dynamic size limit");
             Console.WriteLine("Usage:");
-            Console.WriteLine($"  {DbSizeArg}: Total database size. Default = {DbSize}");
-            Console.WriteLine($"  {MaxKeySizeArg}: Max key size; we choose actual size randomly. Default = {MaxKeySize}");
-            Console.WriteLine($"  {MaxValueSizeArg}: Max value size; we choose actual size randomly. Default = {MaxValueSize}");
-            Console.WriteLine($"  {NumThreadsArg}: Number of threads accessing FASTER instances. Default = {NumThreads}");
-            Console.WriteLine($"  {OpPercentArg}: Percentage of [(r)eads,r(m)ws,(u)pserts,(d)eletes] (summing to 0 or 100) in incoming workload requests. Default = {ReadPercent},{RmwPercent},{UpsertPercent},{DeletePercent}");
-            Console.WriteLine($"  {UseUniformArg}: Uniform random distribution (true) or Zipf distribution (false) of requests. Default = {UseUniform}");
-            Console.WriteLine($"  {UseLogFileArg}: Use log file (true) instead of NullDevice (false). Default = {UseLogFile}");
-            Console.WriteLine($"  {NoReadCTTArg}: Whether to copy reads from the Immutable region to tail of log. Default = {!UseReadCTT}");
+            Console.WriteLine($"  {DbSizeArg} #: Total database size. Default = {DbSize}");
+            Console.WriteLine($"  {MaxKeySizeArg} #: Max key size; we choose actual size randomly. Default = {MaxKeySize}");
+            Console.WriteLine($"  {MaxValueSizeArg} #: Max value size; we choose actual size randomly. Default = {MaxValueSize}");
+            Console.WriteLine($"  {OpPercentArg} #,#,#,#: Percentage of [(r)eads,r(m)ws,(u)pserts,(d)eletes] (summing to 0 or 100) operations in incoming workload requests. Default = {ReadPercent},{RmwPercent},{UpsertPercent},{DeletePercent}");
+            Console.WriteLine($"  {NoReadCTTArg}: Turn off (true) or allow (false) copying of reads from the Immutable region of the log to the tail of log. Default = {!UseReadCTT}");
             Console.WriteLine($"  {UseReadCacheArg}: Whether to use the ReadCache. Default = {UseReadCache}");
-            Console.WriteLine($"  {CacheMissInsertPercentArg}: Whether to insert the key on a cache miss, and if so, the percentage of [r(m)ws,(u)pserts] (summing to 0 or 100) to do so. Default = {CacheMissRmwPercent},{CacheMissUpsertPercent}");
+            Console.WriteLine($"  {CacheMissInsertPercentArg} #,#: Whether to insert the key on a cache miss, and if so, the percentage of [r(m)ws,(u)pserts] (summing to 0 or 100) operations to do so. Default = {CacheMissRmwPercent},{CacheMissUpsertPercent}");
+            Console.WriteLine($"  {RunTimeArg} #: If nonzero, limits the run to this many seconds. Default = {RunTime}");
+            Console.WriteLine($"  {NumThreadsArg} #: Number of threads accessing FASTER instances. Default = {NumThreads}");
+            Console.WriteLine($"  {UseUniformArg}: Uniform random distribution (true) or Zipf distribution (false) of requests. Default = {UseUniform}");
+            Console.WriteLine($"  {UseLogFileArg}: Use log file (true; written to '{GetLogPath()}') instead of NullDevice (false). Default = {UseLogFile}");
+            Console.WriteLine($"  {QuietArg}: Quiet; do not ask for ENTER to end. Default = {Quiet}");
             Console.WriteLine($"  {HelpArg1}, {HelpArg2}, {HelpArg3}: This screen.");
             return false;
         }
@@ -151,29 +166,31 @@ namespace MemOnlyCache
                         UseUniform = true;
                         continue;
                     }
-
                     if (arg == NoReadCTTArg)
                     {
                         UseReadCTT = false;
                         continue;
                     }
-
                     if (arg == UseReadCacheArg)
                     {
                         UseReadCache = true;
                         continue;
                     }
-
                     if (arg == UseLogFileArg)
                     {
                         UseLogFile = true;
+                        continue;
+                    }
+                    if (arg == QuietArg)
+                    {
+                        Quiet = true;
                         continue;
                     }
 
                     // Args taking a value
                     if (ii >= args.Length - 1)
                     {
-                        Console.WriteLine($"Error: End of arg list encountered while processing arg {arg}; expected argument");
+                        Console.WriteLine($"Error: End of arg list encountered while processing arg {arg}; either an unknown flag or a missing value");
                         return false;
                     }
                     val = args[++ii];
@@ -190,6 +207,11 @@ namespace MemOnlyCache
                     if (arg == NumThreadsArg)
                     {
                         NumThreads = int.Parse(val);
+                        continue;
+                    }
+                    if (arg == RunTimeArg)
+                    {
+                        RunTime = int.Parse(val);
                         continue;
                     }
                     if (arg == OpPercentArg)
@@ -245,6 +267,8 @@ namespace MemOnlyCache
             return true;
         }
 
+        static string GetLogPath() => Path.GetTempPath() + "MemOnlyCacheSample\\";
+
         static void Main(string[] args)
         {
             // This sample shows the use of FASTER as a concurrent pure in-memory cache
@@ -255,7 +279,7 @@ namespace MemOnlyCache
             SerializerSettings<CacheKey, CacheValue> serializerSettings = null;
             if (UseLogFile)
             {
-                var path = Path.GetTempPath() + "MemOnlyCacheSample\\";
+                var path = GetLogPath();
                 log = Devices.CreateLogDevice(path + "hlog.log");
                 objectLog = Devices.CreateLogDevice(path + "hlog_obj.log");
 
@@ -305,8 +329,15 @@ namespace MemOnlyCache
             log.Dispose();
             objectLog.Dispose();
 
-            Console.WriteLine("Press <ENTER> to end");
-            Console.ReadLine();
+            if (Quiet)
+            {
+                Console.WriteLine($"Completed RunTime of {RunTime} seconds; exiting");
+            }
+            else
+            { 
+                Console.WriteLine("Press <ENTER> to end");
+                Console.ReadLine();
+            }
         }
 
         private static void PopulateStore(int count)
@@ -339,15 +370,20 @@ namespace MemOnlyCache
             Stopwatch sw = new();
             sw.Start();
             var _lastReads = totalReads;
-            var _lastTime = sw.ElapsedMilliseconds;
+            var _lastTimeMs = sw.ElapsedMilliseconds;
             int count = 0;
-            while (true)
+            while (RunTime == 0 || (_lastTimeMs / 1000) < RunTime)
             {
                 Thread.Sleep(1500);
-                var tmp = totalReads;
-                var tmp2 = sw.ElapsedMilliseconds;
+                var currentReads = totalReads;
+                var currentTimeMs = sw.ElapsedMilliseconds;
+                var currentElapsed = currentTimeMs - _lastTimeMs;
+                var ts = TimeSpan.FromSeconds(currentTimeMs / 1000);
+                var totalElapsed = ts.ToString();
 
-                Console.WriteLine("Throughput: {0,8:0.00}K ops/sec; Hit rate: {1:N2}; Memory footprint: {2,11:N2}KB", (_lastReads - tmp) / (double)(_lastTime - tmp2), statusFound / (double)(statusFound + statusNotFound), sizeTracker.TotalSizeBytes / 1024.0);
+                Console.WriteLine("Throughput: {0,8:0.00}K ops/sec; Hit rate: {1:N2}; Memory footprint: {2,12:N2}KB, elapsed: {3:c}", 
+                                (currentReads - _lastReads) / (double)(currentElapsed), statusFound / (double)(statusFound + statusNotFound),
+                                sizeTracker.TotalSizeBytes / 1024.0, totalElapsed);
 
                 Interlocked.Exchange(ref statusFound, 0);
                 Interlocked.Exchange(ref statusNotFound, 0);
@@ -373,9 +409,13 @@ namespace MemOnlyCache
                     Console.WriteLine("**** Setting target memory: {0,11:N2}KB", targetSize / 1024.0);
                 }
 
-                _lastReads = tmp;
-                _lastTime = tmp2;
+                _lastReads = currentReads;
+                _lastTimeMs = currentTimeMs;
             }
+
+            done = true;
+            for (int i = 0; i < NumThreads; i++)
+                threads[i].Join();
         }
 
         private static void RandomWorkload(int threadid)
@@ -391,7 +431,7 @@ namespace MemOnlyCache
             int localStatusFound = 0, localStatusNotFound = 0;
 
             int i = 0;
-            while (true)
+            while (!done)
             {
                 if ((i % 256 == 0) && (i > 0))
                 {

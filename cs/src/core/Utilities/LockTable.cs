@@ -382,7 +382,7 @@ namespace FASTER.core
                 success = false;
             }
 
-            public void NotFound(ref TKey key) => success = true;
+            public void NotFound(ref TKey key) { /* If there is no entry, somone else moved it */ }
 
             public void FoundEntry(ref TKey key, ref RecordInfo recordInfo) 
                 => success = toRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref recordInfo, allowXLock, seal: false, this.removeEphemeralLock);
