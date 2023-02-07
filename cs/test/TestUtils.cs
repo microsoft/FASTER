@@ -49,11 +49,9 @@ namespace FASTER.test
                 }
             }
 
-            bool retry = true;
-            while (retry)
+            for (; ; Thread.Yield())
             {
                 // Exceptions may happen due to a handle briefly remaining held after Dispose().
-                retry = false;
                 try
                 {
                     Directory.Delete(path, true);
@@ -61,21 +59,10 @@ namespace FASTER.test
                 catch (Exception ex) when (ex is IOException ||
                                            ex is UnauthorizedAccessException)
                 {
-                    if (!wait)
-                    {
-                        try { Directory.Delete(path, true); }
-                        catch { }
-                        return;
-                    }
-                    retry = true;
                 }
+                if (!wait || !Directory.Exists(path))
+                    break;
             }
-            
-            if (!wait)
-                return;
-
-            while (Directory.Exists(path))
-                Thread.Yield();
         }
 
         /// <summary>
@@ -120,7 +107,7 @@ namespace FASTER.test
             bool preallocateFile = false;
             long capacity = Devices.CAPACITY_UNSPECIFIED;
             bool recoverDevice = false;
-            
+
             switch (testDeviceType)
             {
 #if WINDOWS
@@ -141,7 +128,7 @@ namespace FASTER.test
                     device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, capacity, recoverDevice);
                     break;
                 // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
-                case DeviceType.LocalMemory:  
+                case DeviceType.LocalMemory:
                     device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, sector_size: 512, latencyMs: latencyMs, fileName: filename);  // 64 MB (1L << 26) is enough for our test cases
                     break;
             }
@@ -169,7 +156,7 @@ namespace FASTER.test
                 return container;
             }
         }
-       
+
         internal static string AzureTestDirectory => TestContext.CurrentContext.Test.MethodName;
 
         internal const string AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
