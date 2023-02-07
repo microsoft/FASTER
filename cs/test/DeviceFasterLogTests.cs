@@ -38,7 +38,6 @@ namespace FASTER.test
         [Category("FasterLog")]
         public async ValueTask PageBlobFasterLogTestWithLease([Values] LogChecksumType logChecksum, [Values] FasterLogTestBase.IteratorType iteratorType)
         {
-            // Set up the blob manager so can set lease to it
             TestUtils.IgnoreIfNotRunningAzureTests();
             var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "fasterlogLease.log", deleteOnClose: true, underLease: true, blobManager: null);
             var checkpointManager = new DeviceLogCommitCheckpointManager(

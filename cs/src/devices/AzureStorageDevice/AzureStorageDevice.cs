@@ -30,6 +30,7 @@ namespace FASTER.devices
         readonly Timer hangCheckTimer;
         readonly SemaphoreSlim singleWriterSemaphore;
         readonly TimeSpan limit;
+        readonly bool localBlobManager;
 
         // Whether blob files are deleted on close
         private readonly bool deleteOnClose;
@@ -69,7 +70,7 @@ namespace FASTER.devices
         /// <summary>
         /// Constructs a new AzureStorageDevice instance, backed by Azure Page Blobs
         /// </summary>
-        /// <param name="connectionString"> The connection string to use when estblishing connection to Azure Blobs</param>
+        /// <param name="connectionString"> The connection string to use when establishing connection to Azure Blobs</param>
         /// <param name="containerName">Name of the Azure Blob container to use. If there does not exist a container with the supplied name, one is created</param>
         /// <param name="directoryName">Directory within blob container to use.</param>
         /// <param name="blobName">A descriptive name that will be the prefix of all blobs created with this device</param>
@@ -79,8 +80,9 @@ namespace FASTER.devices
         /// True if the program should delete all blobs created on call to <see cref="Dispose">Close</see>. False otherwise. 
         /// The container is not deleted even if it was created in this constructor
         /// </param>
-        /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
-        public AzureStorageDevice(string connectionString, string containerName, string directoryName, string blobName, BlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED)
+        /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        /// <param name="logger">Logger</param>
+        public AzureStorageDevice(string connectionString, string containerName, string directoryName, string blobName, BlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, ILogger logger = null)
             : base($"{connectionString}/{containerName}/{directoryName}/{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             var pageBlobAccount = BlobUtilsV12.GetServiceClients(connectionString);
@@ -96,7 +98,8 @@ namespace FASTER.devices
             this.pageBlobDirectory = pageBlobDirectory;
             this.blobName = blobName;
 
-            this.BlobManager = blobManager ?? new BlobManager(blobName, pageBlobDirectory, underLease, null, null, LogLevel.Information, null);
+            if (blobManager == null) localBlobManager = true;
+            this.BlobManager = blobManager ?? new BlobManager(logger, logger, LogLevel.Information, null, underLease, pageBlobDirectory, blobName);
 
             this.PartitionErrorHandler = BlobManager.StorageErrorHandler;
             this.PartitionErrorHandler?.Token.Register(this.CancelAllRequests);
@@ -115,7 +118,8 @@ namespace FASTER.devices
         /// <param name="pageBlobDirectory">the directory containing the page blobs</param>
         /// <param name="blobManager">the blob manager handling the leases</param>
         /// <param name="underLease">whether this device needs to be protected by the lease</param>
-        internal AzureStorageDevice(string blobName, BlobUtilsV12.BlobDirectory pageBlobDirectory, BlobManager blobManager = null, bool underLease = false)
+        /// <param name="logger">Logger</param>
+        internal AzureStorageDevice(string blobName, BlobUtilsV12.BlobDirectory pageBlobDirectory, BlobManager blobManager = null, bool underLease = false, ILogger logger = null)
         : base($"{pageBlobDirectory}/{blobName}", PAGE_BLOB_SECTOR_SIZE, Devices.CAPACITY_UNSPECIFIED)
         {
             this.blobs = new ConcurrentDictionary<int, BlobEntry>();
@@ -123,7 +127,7 @@ namespace FASTER.devices
             this.pendingRemoveOperations = new ConcurrentDictionary<long, RemoveRequestInfo>();
             this.pageBlobDirectory = pageBlobDirectory;
             this.blobName = blobName;
-            this.BlobManager = blobManager ?? new BlobManager(blobName, pageBlobDirectory, underLease, null, null, LogLevel.Information, null);
+            this.BlobManager = blobManager ?? new BlobManager(logger, logger, LogLevel.Information, null, underLease, pageBlobDirectory, blobName);
 
             this.PartitionErrorHandler = BlobManager.StorageErrorHandler;
             this.PartitionErrorHandler.Token.Register(this.CancelAllRequests);
@@ -298,6 +302,9 @@ namespace FASTER.devices
         /// </summary>
         public override void Dispose()
         {
+            if (localBlobManager)
+                BlobManager.StopAsync().Wait();
+
             this.hangCheckTimer.Dispose();
             this.singleWriterSemaphore?.Dispose();
 

@@ -3,7 +3,6 @@
 
 namespace FASTER.devices
 {
-    using FASTER.core;
     using Microsoft.Extensions.Logging;
     using System;
     using System.Diagnostics;
@@ -15,19 +14,14 @@ namespace FASTER.devices
     /// <summary>
     /// Provides management of blobs and blob names associated with a partition, and logic for partition lease maintenance and termination.
     /// </summary>
-    partial class BlobManager
+    public partial class BlobManager
     {
-        readonly uint partitionId;
         readonly CancellationTokenSource shutDownOrTermination;
-        readonly string taskHubPrefix;
 
-        BlobUtilsV12.ServiceClients pageBlobAccount;
-        BlobUtilsV12.ContainerClients pageBlobContainer;
-        BlobUtilsV12.BlockBlobClients eventLogCommitBlob;
+        BlobUtilsV12.BlockBlobClients leaseBlob;
         BlobLeaseClient leaseClient;
-
-        BlobUtilsV12.BlobDirectory pageBlobDirectory;
-        BlobUtilsV12.BlobDirectory blockBlobPartitionDirectory;
+        BlobUtilsV12.BlobDirectory leaseBlobDirectory;
+        readonly string LeaseBlobName = "commit-lease";
 
         readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(45); // max time the lease stays after unclean shutdown
         readonly TimeSpan LeaseRenewal = TimeSpan.FromSeconds(30); // how often we renew the lease
@@ -36,10 +30,9 @@ namespace FASTER.devices
         internal FasterTraceHelper TraceHelper { get; private set; }
         internal FasterTraceHelper StorageTracer => this.TraceHelper.IsTracingAtMostDetailedLevel ? this.TraceHelper : null;
 
-        public DateTime IncarnationTimestamp { get; private set; }
-
-        internal BlobUtilsV12.ContainerClients PageBlobContainer => this.pageBlobContainer;
-
+        /// <summary>
+        /// Error handler for storage accesses
+        /// </summary>
         public IStorageErrorHandler StorageErrorHandler { get; private set; }
 
         internal static SemaphoreSlim AsynchronousStorageReadMaxConcurrency = new SemaphoreSlim(Math.Min(100, Environment.ProcessorCount * 10));
@@ -49,53 +42,61 @@ namespace FASTER.devices
 
         volatile Stopwatch leaseTimer;
 
-        internal const long HashTableSize = 1L << 14; // 16 k buckets, 1 MB
-        internal const long HashTableSizeBytes = HashTableSize * 64;
+        const int MaxRetries = 10;
 
-        public const int MaxRetries = 10;
+        readonly bool maintainLease = false;
 
+        /// <summary>
+        /// Get delay between retries
+        /// </summary>
+        /// <param name="numAttempts"></param>
+        /// <returns></returns>
         public static TimeSpan GetDelayBetweenRetries(int numAttempts)
             => TimeSpan.FromSeconds(Math.Pow(2, (numAttempts - 1)));
 
         /// <summary>
         /// Create a blob manager.
         /// </summary>
-        /// <param name="leaseBlobName"></param>
-        /// <param name="pageBlobDirectory"></param>
-        /// <param name="underLease"></param>
         /// <param name="logger">A logger for logging</param>
         /// <param name="performanceLogger"></param>
         /// <param name="logLevelLimit">A limit on log event level emitted</param>
         /// <param name="errorHandler">A handler for errors encountered in this partition</param>
+        /// <param name="maintainLease">Whether lease should be maintained by blob manager</param>
+        /// <param name="leaseBlobDirectory">Lease bob is stored in this directory</param>
+        /// <param name="leaseBlobName">Name of lease blob (default is commit-lease)</param>
         internal BlobManager(
-            string leaseBlobName,
-            BlobUtilsV12.BlobDirectory pageBlobDirectory,
-            bool underLease,
             ILogger logger,
             ILogger performanceLogger,
             LogLevel logLevelLimit,
-            IStorageErrorHandler errorHandler)
+            IStorageErrorHandler errorHandler,
+            bool maintainLease = false,
+            BlobUtilsV12.BlobDirectory leaseBlobDirectory = default,
+            string leaseBlobName = null)
         {
-            if (leaseBlobName != null) LeaseBlobName = leaseBlobName;
-            this.pageBlobDirectory = pageBlobDirectory;
-            this.UseLocalFiles = false;
+            this.maintainLease = maintainLease;
+            this.leaseBlobDirectory = leaseBlobDirectory;
+            this.LeaseBlobName = leaseBlobName ?? LeaseBlobName;
             this.TraceHelper = new FasterTraceHelper(logger, logLevelLimit, performanceLogger);
             this.StorageErrorHandler = errorHandler ?? new StorageErrorHandler(null, logLevelLimit, null, null);
             this.shutDownOrTermination = errorHandler == null ?
                 new CancellationTokenSource() :
                 CancellationTokenSource.CreateLinkedTokenSource(errorHandler.Token);
+            if (maintainLease)
+                StartAsync().Wait();
         }
 
-        // For testing and debugging with local files
-        bool UseLocalFiles { get; }
-        string LeaseBlobName = "commit-lease";
+        
         Task LeaseMaintenanceLoopTask = Task.CompletedTask;
         volatile Task NextLeaseRenewalTask = Task.CompletedTask;
 
+        /// <summary>
+        /// Start lease maintenance loop
+        /// </summary>
+        /// <returns></returns>
         public async Task StartAsync()
         {
-            this.eventLogCommitBlob = this.pageBlobDirectory.GetBlockBlobClient(LeaseBlobName);
-            this.leaseClient = this.eventLogCommitBlob.WithRetries.GetBlobLeaseClient();
+            this.leaseBlob = this.leaseBlobDirectory.GetBlockBlobClient(LeaseBlobName);
+            this.leaseClient = this.leaseBlob.WithRetries.GetBlobLeaseClient();
             await this.AcquireOwnership();
         }
 
@@ -153,17 +154,13 @@ namespace FASTER.devices
                 {
                     newLeaseTimer.Restart();
 
-                    if (!this.UseLocalFiles)
-                    {
-                        await this.leaseClient.AcquireAsync(
-                            this.LeaseDuration,
-                            null,
-                            this.StorageErrorHandler.Token)
-                            .ConfigureAwait(false);
-                        this.TraceHelper.LeaseAcquired();
-                    }
+                    await this.leaseClient.AcquireAsync(
+                        this.LeaseDuration,
+                        null,
+                        this.StorageErrorHandler.Token)
+                        .ConfigureAwait(false);
+                    this.TraceHelper.LeaseAcquired();
 
-                    this.IncarnationTimestamp = DateTime.UtcNow;
                     this.leaseTimer = newLeaseTimer;
                     this.LeaseMaintenanceLoopTask = Task.Run(() => this.MaintenanceLoopAsync());
                     return;
@@ -188,14 +185,14 @@ namespace FASTER.devices
                         "CloudBlockBlob.UploadFromByteArrayAsync",
                         "CreateCommitLog",
                         "",
-                        this.eventLogCommitBlob.Default.Name,
+                        this.leaseBlob.Default.Name,
                         2000,
                         true,
                         async (numAttempts) =>
                         {
                             try
                             {
-                                var client = numAttempts > 2 ? this.eventLogCommitBlob.Default : this.eventLogCommitBlob.Aggressive;
+                                var client = numAttempts > 2 ? this.leaseBlob.Default : this.leaseBlob.Aggressive;
                                 await client.UploadAsync(new MemoryStream());
                             }
                             catch (Azure.RequestFailedException ex2) when (BlobUtilsV12.LeaseConflictOrExpired(ex2))
@@ -251,16 +248,13 @@ namespace FASTER.devices
                 var nextLeaseTimer = new System.Diagnostics.Stopwatch();
                 nextLeaseTimer.Start();
 
-                if (!this.UseLocalFiles)
-                {
-                    this.TraceHelper.LeaseProgress($"Renewing lease at {this.leaseTimer.Elapsed.TotalSeconds - this.LeaseDuration.TotalSeconds}s");
-                    await this.leaseClient.RenewAsync(null, this.StorageErrorHandler.Token).ConfigureAwait(false);
-                    this.TraceHelper.LeaseRenewed(this.leaseTimer.Elapsed.TotalSeconds, this.leaseTimer.Elapsed.TotalSeconds - this.LeaseDuration.TotalSeconds);
+                this.TraceHelper.LeaseProgress($"Renewing lease at {this.leaseTimer.Elapsed.TotalSeconds - this.LeaseDuration.TotalSeconds}s");
+                await this.leaseClient.RenewAsync(null, this.StorageErrorHandler.Token).ConfigureAwait(false);
+                this.TraceHelper.LeaseRenewed(this.leaseTimer.Elapsed.TotalSeconds, this.leaseTimer.Elapsed.TotalSeconds - this.LeaseDuration.TotalSeconds);
 
-                    if (nextLeaseTimer.ElapsedMilliseconds > 2000)
-                    {
-                        this.TraceHelper.FasterPerfWarning($"RenewLeaseAsync took {nextLeaseTimer.Elapsed.TotalSeconds:F1}s, which is excessive; {this.leaseTimer.Elapsed.TotalSeconds - this.LeaseDuration.TotalSeconds}s past expiry");
-                    }
+                if (nextLeaseTimer.ElapsedMilliseconds > 2000)
+                {
+                    this.TraceHelper.FasterPerfWarning($"RenewLeaseAsync took {nextLeaseTimer.Elapsed.TotalSeconds:F1}s, which is excessive; {this.leaseTimer.Elapsed.TotalSeconds - this.LeaseDuration.TotalSeconds}s past expiry");
                 }
 
                 this.leaseTimer = nextLeaseTimer;
@@ -330,28 +324,25 @@ namespace FASTER.devices
             this.TraceHelper.LeaseProgress("Waited for lease users to complete");
 
             // release the lease
-            if (!this.UseLocalFiles)
+            try
             {
-                try
-                {
-                    this.TraceHelper.LeaseProgress("Releasing lease");
+                this.TraceHelper.LeaseProgress("Releasing lease");
 
-                    await this.leaseClient.ReleaseAsync(null, this.StorageErrorHandler.Token).ConfigureAwait(false);
-                    this.TraceHelper.LeaseReleased(this.leaseTimer.Elapsed.TotalSeconds);
-                }
-                catch (OperationCanceledException)
-                {
-                    // it's o.k. if termination is triggered while waiting
-                }
-                catch (Azure.RequestFailedException e) when (e.InnerException != null && e.InnerException is OperationCanceledException)
-                {
-                    // it's o.k. if termination is triggered while we are releasing the lease
-                }
-                catch (Exception e)
-                {
-                    // we swallow, but still report exceptions when releasing a lease
-                    this.StorageErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Could not release partition lease during shutdown", e, false, true);
-                }
+                await this.leaseClient.ReleaseAsync(null, this.StorageErrorHandler.Token).ConfigureAwait(false);
+                this.TraceHelper.LeaseReleased(this.leaseTimer.Elapsed.TotalSeconds);
+            }
+            catch (OperationCanceledException)
+            {
+                // it's o.k. if termination is triggered while waiting
+            }
+            catch (Azure.RequestFailedException e) when (e.InnerException != null && e.InnerException is OperationCanceledException)
+            {
+                // it's o.k. if termination is triggered while we are releasing the lease
+            }
+            catch (Exception e)
+            {
+                // we swallow, but still report exceptions when releasing a lease
+                this.StorageErrorHandler.HandleError(nameof(MaintenanceLoopAsync), "Could not release partition lease during shutdown", e, false, true);
             }
 
             this.StorageErrorHandler.TerminateNormally();

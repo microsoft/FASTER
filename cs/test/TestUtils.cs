@@ -9,12 +9,10 @@ using FASTER.devices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using System.Globalization;
-using System.Text.RegularExpressions;
 
 namespace FASTER.test
 {
-    internal static partial class TestUtils
+    internal static class TestUtils
     {
         // Various categories used to group tests
         internal const string SmokeTestCategory = "Smoke";

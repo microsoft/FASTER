@@ -174,7 +174,6 @@ namespace FASTER.devices
         /// <summary>
         /// Forcefully deletes a blob.
         /// </summary>
-        /// <param name="blob">The CloudBlob to delete.</param>
         /// <returns>A task that completes when the operation is finished.</returns>
         public static async Task<bool> ForceDeleteAsync(BlobContainerClient containerClient, string blobName)
         {
