@@ -118,19 +118,26 @@ namespace FASTER.devices
         /// <param name="pageBlobDirectory">the directory containing the page blobs</param>
         /// <param name="blobManager">the blob manager handling the leases</param>
         /// <param name="underLease">whether this device needs to be protected by the lease</param>
+        /// <param name="deleteOnClose">
+        /// True if the program should delete all blobs created on call to <see cref="Dispose">Close</see>. False otherwise. 
+        /// The container is not deleted even if it was created in this constructor
+        /// </param>
         /// <param name="logger">Logger</param>
-        internal AzureStorageDevice(string blobName, BlobUtilsV12.BlobDirectory pageBlobDirectory, BlobManager blobManager = null, bool underLease = false, ILogger logger = null)
+        internal AzureStorageDevice(string blobName, BlobUtilsV12.BlobDirectory pageBlobDirectory, BlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, ILogger logger = null)
         : base($"{pageBlobDirectory}/{blobName}", PAGE_BLOB_SECTOR_SIZE, Devices.CAPACITY_UNSPECIFIED)
         {
+            this.deleteOnClose = deleteOnClose;
             this.blobs = new ConcurrentDictionary<int, BlobEntry>();
             this.pendingReadWriteOperations = new ConcurrentDictionary<long, ReadWriteRequestInfo>();
             this.pendingRemoveOperations = new ConcurrentDictionary<long, RemoveRequestInfo>();
             this.pageBlobDirectory = pageBlobDirectory;
             this.blobName = blobName;
+
+            if (blobManager == null) localBlobManager = true;
             this.BlobManager = blobManager ?? new BlobManager(logger, logger, LogLevel.Information, null, underLease, pageBlobDirectory, blobName);
 
             this.PartitionErrorHandler = BlobManager.StorageErrorHandler;
-            this.PartitionErrorHandler.Token.Register(this.CancelAllRequests);
+            this.PartitionErrorHandler?.Token.Register(this.CancelAllRequests);
             this.underLease = underLease;
             this.hangCheckTimer = new Timer(this.DetectHangs, null, 0, 20000);
             this.singleWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
