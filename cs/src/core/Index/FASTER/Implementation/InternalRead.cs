@@ -122,8 +122,6 @@ namespace FASTER.core
 
             #region Normal processing
 
-            var prevHA = hlog.HeadAddress;
-
             // Mutable region (even fuzzy region is included here)
             if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress)
             {

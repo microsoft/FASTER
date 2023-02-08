@@ -44,33 +44,37 @@ namespace FASTER.core
                 // Use a non-ref local, because we update it below to remove the readcache bit.
                 RecordInfo recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
 
-                // When traversing the readcache, we skip Invalid records. The semantics of Seal are that the operation is retried, so if we leave
-                // Sealed records in the readcache, we'll never get past them. Therefore, we go from Tentative to Invalid if the Tentative record
-                // has to be invalidated. There is only one scenario where we go Tentative -> Invalid in the readcache: when an updated record was
-                // added to the main log. This record is *after* the Invalidated one, so it is safe to proceed. We don't go Tentative -> Invalid for
-                // Read/CopyToReadCache; InternalContinuePendingRead makes sure there is not already a record in the readcache for a record just read
-                // from disk, and the usual CAS-into-hashbucket operation to add a new readcache record will catch the case a subsequent one was added.
-                if (recordInfo.Tentative && waitForTentative)
-                {
-                    // This is not a ref, so we have to re-get it.
-                    ref var ri = ref readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
-                    SpinWaitWhileTentativeAndReturnValidity(ref ri);
-                    recordInfo = ri;
-                }
-
                 // Return true if we find a read cache entry matching the key. Skip Invalid but *not* Intermediate; that's tested as part of lock acquisition.
                 if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress > untilAddress && !stackCtx.recSrc.HasReadCacheSrc
                     && comparer.Equals(ref key, ref readcache.GetKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)))
                 {
-                    // Keep these at the current readcache location; they'll be the caller's source record.
-                    stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
-                    stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
-                    stackCtx.recSrc.HasReadCacheSrc = true;
-                    stackCtx.recSrc.Log = readcache;
+                    // When traversing the readcache, we skip Invalid records. The semantics of Seal are that the operation is retried, so if we leave
+                    // Sealed records in the readcache, we'll never get past them. Therefore, we go from Tentative to Invalid if the Tentative record
+                    // has to be invalidated. There is only one scenario where we go Tentative -> Invalid in the readcache: when an updated record was
+                    // added to the main log. This record is *after* the Invalidated one, so it is safe to proceed. We don't go Tentative -> Invalid for
+                    // Read/CopyToReadCache; InternalContinuePendingRead makes sure there is not already a record in the readcache for a record just read
+                    // from disk, and the usual CAS-into-hashbucket operation to add a new readcache record will catch the case a subsequent one was added.
+                    bool valid = true;
+                    if (recordInfo.Tentative && waitForTentative)
+                    {
+                        // This is not a ref, so we have to re-get it.
+                        ref var ri = ref readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
+                        valid = SpinWaitWhileTentativeAndReturnValidity(ref ri);
+                        recordInfo = ri;
+                    }
 
-                    // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
-                    if (!alwaysFindLatestLA)
-                        return true;
+                    if (valid)
+                    { 
+                        // Keep these at the current readcache location; they'll be the caller's source record.
+                        stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
+                        stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
+                        stackCtx.recSrc.HasReadCacheSrc = true;
+                        stackCtx.recSrc.Log = readcache;
+
+                        // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
+                        if (!alwaysFindLatestLA)
+                            return true;
+                    }
                 }
 
                 // Is the previous record a main log record? If so, break out.
@@ -283,7 +287,7 @@ namespace FASTER.core
                 if (!recordInfo.Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
                     if (SpinWaitWhileTentativeAndReturnValidity(ref recordInfo))
-                        return newRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref recordInfo, allowXLock, seal: false, removeEphemeralLock);
+                        return newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref recordInfo, allowXLock, seal: false, removeEphemeralLock);
                 }
                 entry.word = recordInfo.PreviousAddress;
             }

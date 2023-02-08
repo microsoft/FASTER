@@ -25,6 +25,26 @@ namespace MemOnlyCache
         public bool Equals(ref CacheKey k1, ref CacheKey k2) => k1.key == k2.key;
 
         public int GetSize => sizeof(long) + extra.Length + 48; // heap size incl. ~48 bytes ref/array overheads
+
+        public override string ToString() => $"key {key}, len {extra.Length}";
+    }
+
+    public class CacheKeySerializer : BinaryObjectSerializer<CacheKey>
+    {
+        public override void Deserialize(out CacheKey obj)
+        {
+            obj = new CacheKey();
+            obj.key = reader.ReadInt64();
+            int size = reader.ReadInt32();
+            obj.extra = reader.ReadBytes(size);
+        }
+
+        public override void Serialize(ref CacheKey obj)
+        {
+            writer.Write(obj.key);
+            writer.Write(obj.extra.Length);
+            writer.Write(obj.extra);
+        }
     }
 
     public sealed class CacheValue
@@ -37,7 +57,29 @@ namespace MemOnlyCache
             value[0] = firstByte;
         }
 
+        public CacheValue(byte[] serializedValue)
+        {
+            value = serializedValue;
+        }
+
         public int GetSize => value.Length + 48; // heap size for byte array incl. ~48 bytes ref/array overheads
+
+        public override string ToString() => $"value[0] {value[0]}, len {value.Length}";
+    }
+
+    public class CacheValueSerializer : BinaryObjectSerializer<CacheValue>
+    {
+        public override void Deserialize(out CacheValue obj)
+        {
+            int size = reader.ReadInt32();
+            obj = new CacheValue(reader.ReadBytes(size));
+        }
+
+        public override void Serialize(ref CacheValue obj)
+        {
+            writer.Write(obj.value.Length);
+            writer.Write(obj.value);
+        }
     }
 
     /// <summary>

@@ -95,6 +95,14 @@ namespace FASTER.core
 
         private static bool IsIntermediateOrInvalidWord(long word) => (word & (kTentativeBitMask | kSealedBitMask | kValidBitMask)) != kValidBitMask;
 
+        private static bool IsInvalidOrSealedWord(long word) => (word & (kSealedBitMask | kValidBitMask)) != kValidBitMask;
+
+        public void CleanDiskImage()
+        {
+            // We ignore locks and temp bits for disk images
+            this.word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kTentativeBitMask | kSealedBitMask);
+        }
+
         public bool TryLock(LockType lockType)
         {
             if (lockType == LockType.Shared)
@@ -269,14 +277,20 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TransferReadLocksFromAndMarkSourceAtomic(ref RecordInfo source, bool allowXLock, bool seal, bool removeEphemeralLock)
+        public bool CopyReadLocksFromAndMarkSourceAtomic(ref RecordInfo source, bool allowXLock, bool seal, bool removeEphemeralLock)
         {
-            // This is called when tranferring read locks from the read cache or Lock Table to a tentative log record.
+            // This is called when transferring read locks from the read cache or Lock Table to a tentative log record. This does not remove
+            // locks from the source record because if they exist it means other threads have the record locked and must be allowed to
+            // unlock it (and observe the 'false' return of that unlock due to the Seal/Invalid, and then go chase the record where it is now).
             Debug.Assert(this.Tentative, "Must only transfer locks to a tentative recordInfo");
-            Debug.Assert(!this.IsLockedExclusive, "Must only transfer readlocks");
+            Debug.Assert((word & (kExclusiveLockBitMask | kSharedLockMaskInWord)) != kExclusiveLockBitMask, "Must only transfer readlocks");
             for (; ; Thread.Yield())
             {
                 long expected_word = source.word;
+
+                // If this is invalid or sealed, someone else won the race.
+                if (IsInvalidOrSealedWord(expected_word))
+                    return false;
                 var new_word = expected_word;
 
                 // Fail if there is an established XLock. Having both X and S locks means the other thread is still in the read-lock draining portion
@@ -296,11 +310,12 @@ namespace FASTER.core
                 if (removeEphemeralLock)
                     new_word -= kSharedLockIncrement;
 
-                // Update the source record; this ensures we atomically transfer the lock count while setting the mark bit.
+                // Update the source record; this ensures we atomically copy the lock count while setting the mark bit.
                 // If that succeeds, then we update our own word.
                 if (expected_word == Interlocked.CompareExchange(ref source.word, new_word, expected_word))
                 {
-                    this.word = (new_word & ~kSealedBitMask) | kValidBitMask;
+                    this.word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
+                    this.word |= new_word & (kExclusiveLockBitMask | kSharedLockMaskInWord);
                     return true;
                 }
             }
@@ -352,6 +367,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ClearTentativeBitAtomic()
         {
+            Debug.Assert(this.Tentative, "Should only ClearTentative a tentative record");
+
             // Call this when locking or splicing may be done simultaneously
             while (true)
             {
@@ -421,8 +438,6 @@ namespace FASTER.core
         }
 
         public void SetDirtyAndModified() => word |= kDirtyBitMask | kModifiedBitMask;
-        public void SetModified() => word |= kModifiedBitMask;
-        public void ClearModified() => word &= (~kModifiedBitMask);
         public void SetDirty() => word |= kDirtyBitMask;
         public void SetTombstone() => word |= kTombstoneBitMask;
         public void SetValid() => word |= kValidBitMask;

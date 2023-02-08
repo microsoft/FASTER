@@ -243,5 +243,8 @@ namespace FASTER.core
             currentAddress = -1;
             nextAddress = beginAddress;
         }
+
+        /// <inheritdoc/>
+        public override string ToString() => $"BA {BeginAddress}, EA {EndAddress}, CA {CurrentAddress}, NA {NextAddress}";
     }
 }
