@@ -9,6 +9,7 @@ using FASTER.devices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.test
 {
@@ -26,6 +27,8 @@ namespace FASTER.test
         internal const string MallocFixedPageSizeCategory = "MallocFixedPageSize";
         internal const string RMWTestCategory = "RMW";
         internal const string ModifiedBitTestCategory = "ModifiedBitTest";
+
+        public static ILoggerFactory TestLoggerFactory = CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Trace);
 
         /// <summary>
         /// Delete a directory recursively
@@ -78,12 +81,29 @@ namespace FASTER.test
             Directory.CreateDirectory(path);
         }
 
+        /// <summary>
+        /// Create logger factory for given TextWriter and loglevel
+        /// E.g. Use with TestContext.Progress to print logs while test is running.
+        /// </summary>
+        /// <param name="textWriter"></param>
+        /// <param name="logLevel"></param>
+        /// <param name="scope"></param>
+        /// <returns></returns>
+        public static ILoggerFactory CreateLoggerFactoryInstance(TextWriter textWriter, LogLevel logLevel, string scope = "")
+        {
+            return LoggerFactory.Create(builder =>
+            {
+                builder.AddProvider(new NUnitLoggerProvider(textWriter, scope));
+                builder.SetMinimumLevel(logLevel);
+            });
+        }
+        
         internal static bool IsRunningAzureTests => "yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")) || "yes".Equals(Environment.GetEnvironmentVariable("RUNAZURETESTS"));
 
         internal static void IgnoreIfNotRunningAzureTests()
         {
             // Need this environment variable set AND Azure Storage Emulator running
-            //if (!IsRunningAzureTests)
+            if (!IsRunningAzureTests)
                 Assert.Ignore("Environment variable RunAzureTests is not defined");
         }
 
@@ -122,7 +142,7 @@ namespace FASTER.test
 #endif
                 case DeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
-                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose);
+                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose, logger: TestLoggerFactory.CreateLogger("asd"));
                     break;
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, capacity, recoverDevice);
