@@ -15,10 +15,10 @@ namespace MemOnlyCache
     class Program
     {
         /// <summary>
-        /// Total database size
+        /// Maximum number of keys in the database
         /// </summary>
-        static int DbSize = 10_000_000;
-        const string DbSizeArg = "--dbsize";
+        static int MaxKeys = 10_000_000;
+        const string MaxKeyArg = "--maxkeys";
 
         /// <summary>
         /// Max key size; we choose actual size randomly
@@ -31,6 +31,24 @@ namespace MemOnlyCache
         /// </summary>
         static int MaxValueSize = 1000;
         const string MaxValueSizeArg = "--valuesize";
+
+        /// <summary>
+        /// Total in-memory size bits
+        /// </summary>
+        static int MemorySizeBits = 25; // (2^25 / 24) = ~1.39M key-value pairs (log uses 24 bytes per KV pair)
+        const string MemorySizeBitsArg = "--memsizebits";
+
+        /// <summary>
+        /// Page size bits
+        /// </summary>
+        static int PageSizeBits = 14;   // Each page is sized at 2^14 bytes
+        const string PageSizeBitsArg = "--pagesizebits";
+
+        /// <summary>
+        /// Average collisions
+        /// </summary>
+        static int TagChainLength = 1;   // No collisions
+        const string TagChainLengthArg = "--tagchainlen";
 
         /// <summary>
         /// Number of threads accessing FASTER instances
@@ -132,9 +150,12 @@ namespace MemOnlyCache
         {
             Console.WriteLine("Runs a loop that illustrates an in-memory cache with dynamic size limit");
             Console.WriteLine("Usage:");
-            Console.WriteLine($"  {DbSizeArg} #: Total database size. Default = {DbSize}");
+            Console.WriteLine($"  {MaxKeyArg} #: Maximum number of keys in the database. Default = {MaxKeys}");
             Console.WriteLine($"  {MaxKeySizeArg} #: Max key size; we choose actual size randomly. Default = {MaxKeySize}");
             Console.WriteLine($"  {MaxValueSizeArg} #: Max value size; we choose actual size randomly. Default = {MaxValueSize}");
+            Console.WriteLine($"  {MemorySizeBitsArg} #: In-memory size of the log, in bits. Default = {MemorySizeBits}");
+            Console.WriteLine($"  {PageSizeBitsArg} #: Page size, in bits. Default = {PageSizeBits}");
+            Console.WriteLine($"  {TagChainLengthArg} #: Average length of the hash collision chain for each tag. Default = {TagChainLength}");
             Console.WriteLine($"  {OpPercentArg} #,#,#,#: Percentage of [(r)eads,r(m)ws,(u)pserts,(d)eletes] (summing to 0 or 100) operations in incoming workload requests. Default = {ReadPercent},{RmwPercent},{UpsertPercent},{DeletePercent}");
             Console.WriteLine($"  {NoReadCTTArg}: Turn off (true) or allow (false) copying of reads from the Immutable region of the log to the tail of log. Default = {!UseReadCTT}");
             Console.WriteLine($"  {UseReadCacheArg}: Whether to use the ReadCache. Default = {UseReadCache}");
@@ -194,14 +215,29 @@ namespace MemOnlyCache
                         return false;
                     }
                     val = args[++ii];
-                    if (arg == DbSizeArg)
+                    if (arg == MaxKeyArg)
                     {
-                        DbSize = int.Parse(val);
+                        MaxKeys = int.Parse(val);
                         continue;
                     }
                     if (arg == MaxKeySizeArg)
                     {
                         MaxKeySize = int.Parse(val);
+                        continue;
+                    }
+                    if (arg == MemorySizeBitsArg)
+                    {
+                        MemorySizeBits = int.Parse(val);
+                        continue;
+                    }
+                    if (arg == PageSizeBitsArg)
+                    {
+                        PageSizeBits = int.Parse(val);
+                        continue;
+                    }
+                    if (arg == TagChainLengthArg)
+                    {
+                        TagChainLength = int.Parse(val);
                         continue;
                     }
                     if (arg == NumThreadsArg)
@@ -257,7 +293,7 @@ namespace MemOnlyCache
                     return Usage();
                 }
 
-                // Note: Here we could verify parameter compatibility
+                // Note: Here we could verify parameter values and compatibility
             }
             catch (Exception ex)
             {
@@ -301,9 +337,9 @@ namespace MemOnlyCache
             {
                 LogDevice = log, ObjectLogDevice = objectLog,
                 MutableFraction = 0.9, // 10% of memory log is "read-only region"
-                ReadFlags = UseReadCTT ? ReadFlags.CopyReadsToTail : ReadFlags.None, // reads in read-only region are copied to tail
-                PageSizeBits = 14, // Each page is sized at 2^14 bytes
-                MemorySizeBits = 25, // (2^25 / 24) = ~1.39M key-value pairs (log uses 24 bytes per KV pair)
+                ReadFlags = UseReadCTT ? ReadFlags.CopyReadsToTail : ReadFlags.None, // whether reads in read-only region are copied to tail
+                PageSizeBits = PageSizeBits,
+                MemorySizeBits = MemorySizeBits
             };
 
             if (UseReadCache)
@@ -311,10 +347,11 @@ namespace MemOnlyCache
 
             // Number of records in memory, assuming class keys and values and x64 platform
             // (8-byte key + 8-byte value + 8-byte header = 24 bytes per record)
-            int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / 24);
+            const int recordSize = 24;
+            int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / recordSize);
 
             // Set hash table size targeting 1 record per bucket
-            var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)); 
+            var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)) / TagChainLength; 
 
             h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, serializerSettings: serializerSettings, comparer: new CacheKey());
             sizeTracker = new CacheSizeTracker(h, targetSize);
@@ -349,7 +386,7 @@ namespace MemOnlyCache
 
             for (int i = 0; i < count; i++)
             {
-                int k = r.Next(DbSize);
+                int k = r.Next(MaxKeys);
                 var key = new CacheKey(k, 1 + r.Next(MaxKeySize - 1));
                 var value = new CacheValue(1 + r.Next(MaxValueSize - 1), (byte)key.key);
                 s.Upsert(ref key, ref value);
@@ -420,12 +457,12 @@ namespace MemOnlyCache
 
         private static void RandomWorkload(int threadid)
         {
-            Console.WriteLine("Issuing {0} random read workload of {1} reads from thread {2}", UseUniform ? "uniform" : "zipf", DbSize, threadid);
+            Console.WriteLine("Issuing {0} random read workload of {1} reads from thread {2}", UseUniform ? "uniform" : "zipf", MaxKeys, threadid);
 
             using var session = h.For(new CacheFunctions(sizeTracker)).NewSession<CacheFunctions>();
 
             var rng = new Random(threadid);
-            var zipf = new ZipfGenerator(rng, DbSize, Theta);
+            var zipf = new ZipfGenerator(rng, MaxKeys, Theta);
 
             CacheValue output = default;
             int localStatusFound = 0, localStatusNotFound = 0;
@@ -444,7 +481,7 @@ namespace MemOnlyCache
                 var wantValue = RmwPercent + UpsertPercent > 0;
 
                 int op = ReadPercent < 100 ? rng.Next(100) : 99;    // rng.Next() is not inclusive of the upper bound
-                long k = UseUniform ? rng.Next(DbSize) : zipf.Next();
+                long k = UseUniform ? rng.Next(MaxKeys) : zipf.Next();
 
                 var key = new CacheKey(k, 1 + rng.Next(MaxKeySize - 1));
 
