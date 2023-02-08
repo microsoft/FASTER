@@ -930,6 +930,7 @@ namespace FASTER.core
                     emptyPageCount = value;
                     headOffsetLagSize -= emptyPageCount;
 
+                    // Lag addresses are the number of pages "behind" TailPageOffset (the tail in the circular buffer).
                     ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
                     HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
                 }
@@ -942,6 +943,7 @@ namespace FASTER.core
                     if (!prot) epoch.Resume();
                     try
                     {
+                        // These shifts adjust via application of the lag addresses.
                         var _tailAddress = GetTailAddress();
                         PageAlignedShiftReadOnlyAddress(_tailAddress);
                         PageAlignedShiftHeadAddress(_tailAddress);

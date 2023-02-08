@@ -45,10 +45,10 @@ namespace MemOnlyCache
         const string PageSizeBitsArg = "--pagesizebits";
 
         /// <summary>
-        /// Average collisions
+        /// Hashtable size bits
         /// </summary>
-        static int TagChainLength = 1;   // No collisions
-        const string TagChainLengthArg = "--tagchainlen";
+        static int HashSizeBits = 20;   // Default is 'no collisions'
+        const string HashSizeBitsArg = "--hashsizebits";
 
         /// <summary>
         /// Number of threads accessing FASTER instances
@@ -155,7 +155,7 @@ namespace MemOnlyCache
             Console.WriteLine($"  {MaxValueSizeArg} #: Max value size; we choose actual size randomly. Default = {MaxValueSize}");
             Console.WriteLine($"  {MemorySizeBitsArg} #: In-memory size of the log, in bits. Default = {MemorySizeBits}");
             Console.WriteLine($"  {PageSizeBitsArg} #: Page size, in bits. Default = {PageSizeBits}");
-            Console.WriteLine($"  {TagChainLengthArg} #: Average length of the hash collision chain for each tag. Default = {TagChainLength}");
+            Console.WriteLine($"  {HashSizeBitsArg} #: Number of bits in the hash table (recordSize is 24, so '{nameof(MemorySizeBitsArg)}' - '{nameof(HashSizeBitsArg)}' - 5, if positive, is a rough log2 of average tag chain length). Default = {HashSizeBits}");
             Console.WriteLine($"  {OpPercentArg} #,#,#,#: Percentage of [(r)eads,r(m)ws,(u)pserts,(d)eletes] (summing to 0 or 100) operations in incoming workload requests. Default = {ReadPercent},{RmwPercent},{UpsertPercent},{DeletePercent}");
             Console.WriteLine($"  {NoReadCTTArg}: Turn off (true) or allow (false) copying of reads from the Immutable region of the log to the tail of log. Default = {!UseReadCTT}");
             Console.WriteLine($"  {UseReadCacheArg}: Whether to use the ReadCache. Default = {UseReadCache}");
@@ -235,9 +235,9 @@ namespace MemOnlyCache
                         PageSizeBits = int.Parse(val);
                         continue;
                     }
-                    if (arg == TagChainLengthArg)
+                    if (arg == HashSizeBitsArg)
                     {
-                        TagChainLength = int.Parse(val);
+                        HashSizeBits = int.Parse(val);
                         continue;
                     }
                     if (arg == NumThreadsArg)
@@ -350,10 +350,7 @@ namespace MemOnlyCache
             const int recordSize = 24;
             int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / recordSize);
 
-            // Set hash table size targeting 1 record per bucket
-            var numBucketBits = (int)Math.Ceiling(Math.Log2(numRecords)) / TagChainLength; 
-
-            h = new FasterKV<CacheKey, CacheValue>(1L << numBucketBits, logSettings, serializerSettings: serializerSettings, comparer: new CacheKey());
+            h = new FasterKV<CacheKey, CacheValue>(1L << HashSizeBits, logSettings, serializerSettings: serializerSettings, comparer: new CacheKey());
             sizeTracker = new CacheSizeTracker(h, targetSize);
 
             // Initially populate store
