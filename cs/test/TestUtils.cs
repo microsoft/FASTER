@@ -49,11 +49,9 @@ namespace FASTER.test
                 }
             }
 
-            bool retry = true;
-            while (retry)
+            for (; ; Thread.Yield())
             {
                 // Exceptions may happen due to a handle briefly remaining held after Dispose().
-                retry = false;
                 try
                 {
                     Directory.Delete(path, true);
@@ -61,21 +59,10 @@ namespace FASTER.test
                 catch (Exception ex) when (ex is IOException ||
                                            ex is UnauthorizedAccessException)
                 {
-                    if (!wait)
-                    {
-                        try { Directory.Delete(path, true); }
-                        catch { }
-                        return;
-                    }
-                    retry = true;
                 }
+                if (!wait || !Directory.Exists(path))
+                    break;
             }
-            
-            if (!wait)
-                return;
-
-            while (Directory.Exists(path))
-                Thread.Yield();
         }
 
         /// <summary>
