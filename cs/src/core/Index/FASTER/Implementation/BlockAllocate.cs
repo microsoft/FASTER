@@ -57,6 +57,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void SaveAllocationForRetry<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, long logicalAddress, long physicalAddress, int allocatedSize)
         {
+#if false
             ref var recordInfo = ref hlog.GetInfo(physicalAddress);
             recordInfo.SetInvalid();    // so log scan will skip it
 
@@ -69,11 +70,15 @@ namespace FASTER.core
             // Use Key in case we have ushort or byte Key/Value; blittable types do not 8-byte align the record size, and it's easier than figure out where Value starts.
             *(int*)Unsafe.AsPointer(ref hlog.GetKey(physicalAddress)) = allocatedSize;
             pendingContext.retryNewLogicalAddress = logicalAddress;
+#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool GetAllocationForRetry<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, long minAddress, int minSize, out long newLogicalAddress, out long newPhysicalAddress)
         {
+            newLogicalAddress = newPhysicalAddress = 0;
+            return false;
+#if false
             // Use an earlier allocation from a failed operation, if possible.
             newLogicalAddress = pendingContext.retryNewLogicalAddress;
             pendingContext.retryNewLogicalAddress = 0;
@@ -87,6 +92,7 @@ namespace FASTER.core
             int recordSize = *len_ptr;
             *len_ptr = 0;
             return recordSize >= minSize;
+#endif
         }
     }
 }
