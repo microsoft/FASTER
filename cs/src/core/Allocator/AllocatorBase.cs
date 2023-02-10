@@ -1331,10 +1331,6 @@ namespace FASTER.core
                 long closeStartAddress = ClosedUntilAddress;
                 long closeEndAddress = OngoingCloseUntilAddress;
 
-                // If we are using a null storage device, we must also shift BeginAddress 
-                if (IsNullDevice)
-                    Utility.MonotonicUpdate(ref BeginAddress, closeEndAddress, out _);
-
                 if (ReadCache)
                     EvictCallback(closeStartAddress, closeEndAddress);
 
@@ -1347,6 +1343,10 @@ namespace FASTER.core
                         MemoryPageScan(start, end, OnLockEvictionObserver);
                     if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
+
+                    // If we are using a null storage device, we must also shift BeginAddress 
+                    if (IsNullDevice)
+                        Utility.MonotonicUpdate(ref BeginAddress, end, out _);
 
                     // If the end of the closing range is at the end of the page, free the page
                     if (end == closePageAddress + PageSize)
