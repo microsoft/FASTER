@@ -55,7 +55,7 @@ namespace FASTER.devices
             => TimeSpan.FromSeconds(Math.Pow(2, (numAttempts - 1)));
 
         /// <summary>
-        /// Create a blob manager.
+        /// Create a blob manager to handle tracing, leases, and storage operations
         /// </summary>
         /// <param name="logger">A logger for logging</param>
         /// <param name="performanceLogger"></param>

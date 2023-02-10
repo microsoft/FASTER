@@ -55,7 +55,7 @@ namespace FASTER.devices
 
         SemaphoreSlim SingleWriterSemaphore => this.singleWriterSemaphore;
 
-        internal IStorageErrorHandler PartitionErrorHandler { get; private set; }
+        internal IStorageErrorHandler StorageErrorHandler { get; private set; }
 
         // Azure Page Blobs have a fixed sector size of 512 bytes.
         const uint PAGE_BLOB_SECTOR_SIZE = 512;
@@ -101,8 +101,8 @@ namespace FASTER.devices
             if (blobManager == null) localBlobManager = true;
             this.BlobManager = blobManager ?? new BlobManager(logger, logger, LogLevel.Information, null, underLease, pageBlobDirectory, blobName);
 
-            this.PartitionErrorHandler = BlobManager.StorageErrorHandler;
-            this.PartitionErrorHandler?.Token.Register(this.CancelAllRequests);
+            this.StorageErrorHandler = BlobManager.StorageErrorHandler;
+            this.StorageErrorHandler.Token.Register(this.CancelAllRequests);
             this.underLease = underLease;
             this.hangCheckTimer = new Timer(this.DetectHangs, null, 0, 20000);
             this.singleWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
@@ -136,8 +136,8 @@ namespace FASTER.devices
             if (blobManager == null) localBlobManager = true;
             this.BlobManager = blobManager ?? new BlobManager(logger, logger, LogLevel.Information, null, underLease, pageBlobDirectory, blobName);
 
-            this.PartitionErrorHandler = BlobManager.StorageErrorHandler;
-            this.PartitionErrorHandler?.Token.Register(this.CancelAllRequests);
+            this.StorageErrorHandler = BlobManager.StorageErrorHandler;
+            this.StorageErrorHandler.Token.Register(this.CancelAllRequests);
             this.underLease = underLease;
             this.hangCheckTimer = new Timer(this.DetectHangs, null, 0, 20000);
             this.singleWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
@@ -181,7 +181,7 @@ namespace FASTER.devices
 
                             var page = await client.GetBlobsAsync(
                                 prefix: prefix,
-                                cancellationToken: this.PartitionErrorHandler.Token)
+                                cancellationToken: this.StorageErrorHandler.Token)
                                 .AsPages(continuationToken, 100)
                                 .FirstAsync();
 
@@ -209,7 +209,7 @@ namespace FASTER.devices
 
                 // make sure we did not lose the lease while iterating to find the blobs
                 await this.BlobManager.ConfirmLeaseIsGoodForAWhileAsync();
-                this.PartitionErrorHandler.Token.ThrowIfCancellationRequested();
+                this.StorageErrorHandler.Token.ThrowIfCancellationRequested();
 
 
                 // find longest contiguous sequence at end
@@ -378,7 +378,7 @@ namespace FASTER.devices
                     async (numAttempts) =>
                     {
                         var client = (numAttempts > 1) ? entry.PageBlob.Default : entry.PageBlob.Aggressive;
-                        await client.DeleteAsync(cancellationToken: this.PartitionErrorHandler.Token);
+                        await client.DeleteAsync(cancellationToken: this.StorageErrorHandler.Token);
                         return 1;
                     });
             }
@@ -413,7 +413,7 @@ namespace FASTER.devices
                     async (numAttempts) =>
                     {
                         var client = (numAttempts > 1) ? entry.PageBlob.Default : entry.PageBlob.Aggressive;
-                        await client.DeleteAsync(cancellationToken: this.PartitionErrorHandler.Token);
+                        await client.DeleteAsync(cancellationToken: this.StorageErrorHandler.Token);
                         return 1;
                     });
             }
@@ -543,7 +543,7 @@ namespace FASTER.devices
                                  transactionalContentHash: null,
                                  conditions: this.underLease ? new PageBlobRequestConditions() { IfMatch = blobEntry.ETag } : null,
                                  progressHandler: null,
-                                 cancellationToken: this.PartitionErrorHandler.Token).ConfigureAwait(false);
+                                 cancellationToken: this.StorageErrorHandler.Token).ConfigureAwait(false);
 
                             blobEntry.ETag = response.Value.ETag;
                         }
@@ -597,7 +597,7 @@ namespace FASTER.devices
                                     range: new Azure.HttpRange(sourceAddress + offset, length),
                                     conditions: null,
                                     rangeGetContentHash: false,
-                                    cancellationToken: this.PartitionErrorHandler.Token)
+                                    cancellationToken: this.StorageErrorHandler.Token)
                                     .ConfigureAwait(false);
 
                                 await response.Value.Content.CopyToAsync(stream).ConfigureAwait(false);

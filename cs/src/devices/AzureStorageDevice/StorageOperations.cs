@@ -51,7 +51,7 @@ namespace FASTER.devices
                             await this.ConfirmLeaseIsGoodForAWhileAsync();
                         }
 
-                        this.StorageErrorHandler?.Token.ThrowIfCancellationRequested();
+                        this.StorageErrorHandler.Token.ThrowIfCancellationRequested();
 
                         this.StorageTracer?.FasterStorageProgress($"storage operation {name} ({intent}) started attempt {numAttempts}; target={target} {data}");
 

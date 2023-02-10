@@ -76,7 +76,7 @@ namespace FASTER.devices
                     var response = await client.CreateAsync(
                     size: size,
                     conditions: new Azure.Storage.Blobs.Models.PageBlobRequestConditions() { IfNoneMatch = Azure.ETag.All },
-                    cancellationToken: this.azureStorageDevice.PartitionErrorHandler.Token);
+                    cancellationToken: this.azureStorageDevice.StorageErrorHandler.Token);
 
                     this.ETag = response.Value.ETag;
                     return 1;
