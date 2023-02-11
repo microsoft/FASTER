@@ -97,7 +97,9 @@ namespace FASTER.core
         public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
 
         /// <summary>
-        /// Whether we have allocated exactly the requested number of pages on the log (based on BufferSize and EmptyPageCount)
+        /// Whether we have allocated exactly the requested number of pages on the log (based on BufferSize and EmptyPageCount).
+        /// This can take some time between increasing EmptyPageCount and the actual page eviction (decrementing AllocatedPageCount),
+        /// or between decreasing EmptyPageCount and the time the page is allocated (increasing AllocatedPageCount).
         /// </summary>
         public bool PageAllocationStabilized() => allocator.AllocatedPageCount == allocator.BufferSize - allocator.EmptyPageCount + 1;
 

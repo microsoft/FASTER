@@ -930,6 +930,7 @@ namespace FASTER.core
                     emptyPageCount = value;
                     headOffsetLagSize -= emptyPageCount;
 
+                    // Lag addresses are the number of pages "behind" TailPageOffset (the tail in the circular buffer).
                     ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
                     HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
                 }
@@ -942,6 +943,7 @@ namespace FASTER.core
                     if (!prot) epoch.Resume();
                     try
                     {
+                        // These shifts adjust via application of the lag addresses.
                         var _tailAddress = GetTailAddress();
                         PageAlignedShiftReadOnlyAddress(_tailAddress);
                         PageAlignedShiftHeadAddress(_tailAddress);
@@ -1329,10 +1331,6 @@ namespace FASTER.core
                 long closeStartAddress = ClosedUntilAddress;
                 long closeEndAddress = OngoingCloseUntilAddress;
 
-                // If we are using a null storage device, we must also shift BeginAddress 
-                if (IsNullDevice)
-                    Utility.MonotonicUpdate(ref BeginAddress, closeEndAddress, out _);
-
                 if (ReadCache)
                     EvictCallback(closeStartAddress, closeEndAddress);
 
@@ -1345,6 +1343,10 @@ namespace FASTER.core
                         MemoryPageScan(start, end, OnLockEvictionObserver);
                     if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
+
+                    // If we are using a null storage device, we must also shift BeginAddress 
+                    if (IsNullDevice)
+                        Utility.MonotonicUpdate(ref BeginAddress, end, out _);
 
                     // If the end of the closing range is at the end of the page, free the page
                     if (end == closePageAddress + PageSize)
