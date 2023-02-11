@@ -14,13 +14,13 @@ namespace FASTER.devices
     /// <summary>
     /// Provides management of blobs and blob names associated with a partition, and logic for partition lease maintenance and termination.
     /// </summary>
-    public partial class BlobManager
+    internal partial class BlobManager : IBlobManager
     {
         readonly CancellationTokenSource shutDownOrTermination;
 
         BlobUtilsV12.BlockBlobClients leaseBlob;
         BlobLeaseClient leaseClient;
-        BlobUtilsV12.BlobDirectory leaseBlobDirectory;
+        readonly BlobUtilsV12.BlobDirectory leaseBlobDirectory;
         readonly string LeaseBlobName = "commit-lease";
 
         readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(45); // max time the lease stays after unclean shutdown
@@ -28,15 +28,25 @@ namespace FASTER.devices
         readonly TimeSpan LeaseSafetyBuffer = TimeSpan.FromSeconds(10); // how much time we want left on the lease before issuing a protected access
 
         internal FasterTraceHelper TraceHelper { get; private set; }
-        internal FasterTraceHelper StorageTracer => this.TraceHelper.IsTracingAtMostDetailedLevel ? this.TraceHelper : null;
+
+        /// <summary>
+        /// Storage tracer
+        /// </summary>
+        public FasterTraceHelper StorageTracer => this.TraceHelper.IsTracingAtMostDetailedLevel ? this.TraceHelper : null;
 
         /// <summary>
         /// Error handler for storage accesses
         /// </summary>
         public IStorageErrorHandler StorageErrorHandler { get; private set; }
 
-        internal static SemaphoreSlim AsynchronousStorageReadMaxConcurrency = new SemaphoreSlim(Math.Min(100, Environment.ProcessorCount * 10));
-        internal static SemaphoreSlim AsynchronousStorageWriteMaxConcurrency = new SemaphoreSlim(Math.Min(50, Environment.ProcessorCount * 7));
+        static readonly SemaphoreSlim AsynchronousStorageReadMaxConcurrencyStatic = new(Math.Min(100, Environment.ProcessorCount * 10));
+        static readonly SemaphoreSlim AsynchronousStorageWriteMaxConcurrencyStatic = new(Math.Min(50, Environment.ProcessorCount * 7));
+
+        /// <inheritdoc />
+        public SemaphoreSlim AsynchronousStorageReadMaxConcurrency => AsynchronousStorageReadMaxConcurrencyStatic;
+
+        /// <inheritdoc />
+        public SemaphoreSlim AsynchronousStorageWriteMaxConcurrency => AsynchronousStorageWriteMaxConcurrencyStatic;
 
         internal volatile int LeaseUsers;
 
@@ -93,13 +103,14 @@ namespace FASTER.devices
         /// Start lease maintenance loop
         /// </summary>
         /// <returns></returns>
-        public async Task StartAsync()
+        async Task StartAsync()
         {
             this.leaseBlob = this.leaseBlobDirectory.GetBlockBlobClient(LeaseBlobName);
             this.leaseClient = this.leaseBlob.WithRetries.GetBlobLeaseClient();
             await this.AcquireOwnership();
         }
 
+        /// <inheritdoc />
         public void HandleStorageError(string where, string message, string blobName, Exception e, bool isFatal, bool isWarning)
         {
             if (blobName == null)
@@ -112,7 +123,9 @@ namespace FASTER.devices
             }
         }
 
-        // clean shutdown, wait for everything, then terminate
+        /// <summary>
+        /// clean shutdown, wait for everything, then terminate
+        /// </summary>
         public async Task StopAsync()
         {
             this.shutDownOrTermination.Cancel(); // has no effect if already cancelled
@@ -120,6 +133,7 @@ namespace FASTER.devices
             await this.LeaseMaintenanceLoopTask; // wait for loop to terminate cleanly
         }
 
+        /// <inheritdoc />
         public ValueTask ConfirmLeaseIsGoodForAWhileAsync()
         {
             if (this.leaseTimer?.Elapsed < this.LeaseDuration - this.LeaseSafetyBuffer && !this.shutDownOrTermination.IsCancellationRequested)

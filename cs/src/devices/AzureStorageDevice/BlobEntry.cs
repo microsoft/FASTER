@@ -61,7 +61,7 @@ namespace FASTER.devices
             }
 
             await this.azureStorageDevice.BlobManager.PerformWithRetriesAsync(
-                BlobManager.AsynchronousStorageReadMaxConcurrency,
+                this.azureStorageDevice.BlobManager.AsynchronousStorageReadMaxConcurrency,
                 true,
                 "PageBlobClient.CreateAsync",
                 "CreateDevice",

@@ -82,7 +82,7 @@ namespace FASTER.devices
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="logger">Logger</param>
-        public AzureStorageDevice(string connectionString, string containerName, string directoryName, string blobName, BlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, ILogger logger = null)
+        public AzureStorageDevice(string connectionString, string containerName, string directoryName, string blobName, IBlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, ILogger logger = null)
             : base($"{connectionString}/{containerName}/{directoryName}/{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             var pageBlobAccount = BlobUtilsV12.GetServiceClients(connectionString);
@@ -246,7 +246,7 @@ namespace FASTER.devices
         /// <summary>
         /// Is called on exceptions, if non-null; can be set by application
         /// </summary>
-        internal BlobManager BlobManager { get; set; }
+        internal IBlobManager BlobManager { get; set; }
 
         string GetSegmentBlobName(int segmentId)
         {
@@ -487,7 +487,7 @@ namespace FASTER.devices
 
             if (!this.blobs.TryGetValue(segmentId, out BlobEntry blobEntry))
             {
-                BlobEntry entry = new BlobEntry(this);
+                BlobEntry entry = new(this);
                 if (this.blobs.TryAdd(segmentId, entry))
                 {
                     var pageBlob = this.pageBlobDirectory.GetPageBlobClient(this.GetSegmentBlobName(segmentId));
