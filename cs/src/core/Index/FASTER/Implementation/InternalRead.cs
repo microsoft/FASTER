@@ -75,6 +75,7 @@ namespace FASTER.core
             }
             else
             {
+                FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);   // set firstBucket
                 if (startAddress < hlog.BeginAddress)
                     return OperationStatus.NOTFOUND;
                 stackCtx.hei.entry.Address = startAddress;

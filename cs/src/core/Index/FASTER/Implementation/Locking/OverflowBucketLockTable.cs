@@ -9,12 +9,13 @@ namespace FASTER.core
 {
     internal struct OverflowBucketLockTable<TKey> : ILockTable<TKey>
     {
-        // THe number of buckets we have
-        internal long NumBuckets;
+        private long size_mask;     // As in the main hash table
 
-        internal bool IsEnabled => NumBuckets > 0;
+        internal long NumBuckets => size_mask + 1;
 
-        internal OverflowBucketLockTable(long numBuckets) => this.NumBuckets = numBuckets;
+        internal bool IsEnabled => size_mask > 0;
+
+        internal OverflowBucketLockTable(long size_mask) => this.size_mask = size_mask;
 
         [Conditional("DEBUG")]
         void AssertLockAllowed() => Debug.Assert(IsEnabled, "Attempt to do Manual-locking lock when locking mode is LockingMode.EphemeralOnly");
@@ -30,10 +31,10 @@ namespace FASTER.core
         public bool NeedKeyLockCode => IsEnabled;
 
         /// <inheritdoc/>
-        public long GetLockCode(ref TKey key, long hash) => IsEnabled ? hash & NumBuckets : 0;
+        public long GetLockCode(ref TKey key, long hash) => IsEnabled ? hash & size_mask : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe HashBucket* GetBucket<TValue>(FasterKV<TKey, TValue> fht, long keyCode)
+        internal unsafe HashBucket* GetBucket<TValue>(FasterKV<TKey, TValue> fht, long keyCode)
             => fht.state[fht.resizeInfo.version].tableAligned + keyCode;
 
         /// <inheritdoc/>
@@ -152,22 +153,13 @@ namespace FASTER.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe LockState GetLockState(ref TKey key, ref HashEntryInfo hei) 
-            => GetLockState(hei.firstBucket);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe LockState GetLockState<TValue>(FasterKV<TKey, TValue> fht, long keyCode) 
-            => GetLockState(GetBucket(fht, keyCode));
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe LockState GetLockState(HashBucket* bucket)
         {
             AssertQueryAllowed();
             return new()
             {
                 IsFound = true, // Always true for OverflowBucketLockTable
-                NumLockedShared = HashBucket.NumLatchedShared(bucket),
-                IsLockedExclusive = HashBucket.IsLatchedExclusive(bucket)
+                NumLockedShared = HashBucket.NumLatchedShared(hei.firstBucket),
+                IsLockedExclusive = HashBucket.IsLatchedExclusive(hei.firstBucket)
             };
         }
 

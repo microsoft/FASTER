@@ -13,13 +13,11 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key">key of the record.</param>
         /// <param name="lockOp">Lock operation being done.</param>
-        /// <param name="lockState">Receives the lock state of the record being locked or queried</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalLock(ref Key key, LockOperation lockOp, out LockState lockState)
+        internal OperationStatus InternalLock(ref Key key, LockOperation lockOp)
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalLock must have protected epoch");
             Debug.Assert(this.LockTable.IsEnabled, "ManualLockTable must be enabled for InternalLock");
-            lockState = default;
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
             FindTag(ref stackCtx.hei);

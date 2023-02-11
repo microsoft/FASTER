@@ -571,9 +571,9 @@ namespace FASTER.core
         public bool NeedKeyLockCode => this.fht.LockTable.IsEnabled ? this.fht.LockTable.NeedKeyLockCode : false;
 
         /// <inheritdoc/>
-        public long GetLockCode(ref Key key)
+        public long GetLockCode(ref Key key, out long keyHash)
         {
-            var keyHash = this.fht.comparer.GetHashCode64(ref key);
+            keyHash = this.fht.comparer.GetHashCode64(ref key);
             return this.fht.LockTable.IsEnabled ? this.fht.LockTable.GetLockCode(ref key, keyHash) : keyHash;
         }
 
@@ -1135,7 +1135,7 @@ namespace FASTER.core
             #endregion IFunctions - Checkpointing
 
             #region Ephemeral locking
-            public bool TryLockTableEphemeralXLock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public bool TryLockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 if (_clientSession.fht.DisableEphemeralLocking)
                     return true;
@@ -1144,7 +1144,7 @@ namespace FASTER.core
                 return stackCtx.recSrc.HasLockTableLock = true;
             }
 
-            public bool TryLockTableEphemeralSLock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public bool TryLockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 if (_clientSession.fht.DisableEphemeralLocking)
                     return true;
@@ -1153,13 +1153,13 @@ namespace FASTER.core
                 return stackCtx.recSrc.HasLockTableLock = true;
             }
 
-            public void LockTableEphemeralXUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void UnlockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 if (!_clientSession.fht.DisableEphemeralLocking)
                     _clientSession.fht.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
             }
 
-            public void LockTableEphemeralSUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void UnlockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 if (!_clientSession.fht.DisableEphemeralLocking)
                     _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);

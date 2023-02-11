@@ -85,7 +85,7 @@ namespace FASTER.core
         public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
 
         /// <inheritdoc/>
-        public long GetLockCode(ref Key key) => clientSession.GetLockCode(ref key);
+        public long GetLockCode(ref Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
 
         /// <inheritdoc/>
         public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
@@ -100,7 +100,7 @@ namespace FASTER.core
             where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
             LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, LockOperationType.Lock);
         }
@@ -110,7 +110,7 @@ namespace FASTER.core
             where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Unlock()");
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Unlock()");
 
             LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, LockOperationType.Unlock);
         }
@@ -571,7 +571,7 @@ namespace FASTER.core
             #endregion IFunctions - Checkpointing
 
             #region Ephemeral locking
-            public bool TryLockTableEphemeralXLock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public bool TryLockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
@@ -580,7 +580,7 @@ namespace FASTER.core
                 return true;
             }
 
-            public bool TryLockTableEphemeralSLock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public bool TryLockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.LockTable.IsLocked(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock):"
@@ -589,7 +589,7 @@ namespace FASTER.core
                 return true;
             }
 
-            public void LockTableEphemeralXUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void UnlockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
                             $"Attempting to unlock a non-XLocked key in a Lockable context (requesting XLock):"
@@ -597,7 +597,7 @@ namespace FASTER.core
                             + $" Slocked {_clientSession.fht.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
             }
 
-            public void LockTableEphemeralSUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void UnlockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.LockTable.IsLockedShared(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"

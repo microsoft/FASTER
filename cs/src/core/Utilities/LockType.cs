@@ -51,7 +51,7 @@ namespace FASTER.core
     public interface ILockableKey
     {
         /// <summary>
-        /// The lock code for a specific key, obtained from <see cref="ILockableContext{TKey}.GetLockCode(ref TKey)"/>
+        /// The lock code for a specific key, obtained from <see cref="ILockableContext{TKey}.GetLockCode(ref TKey, long)"/>
         /// </summary>
         public long LockCode { get; }
 
@@ -59,6 +59,57 @@ namespace FASTER.core
         /// The lock type for a specific key
         /// </summary>
         public LockType LockType { get; }
+    }
+
+    /// <summary>
+    /// A utility class to carry a fixed-length key (blittable or object type) and its assciated info for Locking
+    /// </summary>
+    /// <typeparam name="TKey"></typeparam>
+    public struct FixedLengthLockableKeyStruct<TKey> : ILockableKey
+    {
+        /// <summary>
+        /// The key that is acquiring or releasing a lock
+        /// </summary>
+        public TKey Key;
+
+        /// <summary>
+        /// The hash code of the key that is acquiring or releasing a lock
+        /// </summary>
+        public long KeyHash;
+
+        #region ILockableKey
+        /// <inheritdoc/>
+        public long LockCode { get; set; }
+
+        /// <inheritdoc/>
+        public LockType LockType { get; set; }
+        #endregion ILockableKey
+
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        public FixedLengthLockableKeyStruct(TKey key, LockType lockType, ILockableContext<TKey> context) : this(ref key, lockType, context) { }
+
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        public FixedLengthLockableKeyStruct(ref TKey key, LockType lockType, ILockableContext<TKey> context)
+        {
+            Key = key;
+            LockType = lockType;
+            LockCode = context.GetLockCode(ref key, out KeyHash);
+        }
+
+        /// <summary>
+        /// Sort the passed key array for use in <see cref="ILockableContext{TKey}.Lock{TLockableKey}(TLockableKey[])"/>
+        /// and <see cref="ILockableContext{TKey}.Unlock{TLockableKey}(TLockableKey[])"/>
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="context"></param>
+        public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortLockCodes(keys);
+
+        /// <inheritdoc/>
+        public override string ToString() => $"key {Key}, hash {KeyHash}, lockCode {LockCode}, lockType {LockType}";
     }
 
     /// <summary>
@@ -76,7 +127,7 @@ namespace FASTER.core
         public override string ToString()
         {
             var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";
-            return $"found {IsFound}, {locks}";
+            return $"found {IsFound}, locks {locks}";
         }
     }
 

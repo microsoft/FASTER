@@ -111,7 +111,7 @@ namespace FASTER.core
         {
             if (lockType == LockType.Shared)
                 this.UnlockShared();
-            if (lockType == LockType.Exclusive)
+            else if (lockType == LockType.Exclusive)
                 this.UnlockExclusive();
             else
                 Debug.Fail($"Unexpected LockType: {lockType}");
@@ -158,7 +158,7 @@ namespace FASTER.core
                 if ((word & kSharedLockMaskInWord) == 0)
                 {
                     // Someone else may have transferred/invalidated the record while we were draining reads.
-                    if ((this.word & (kSealedBitMask | kValidBitMask)) == kValidBitMask)
+                    if (!IsClosedWord(this.word))
                         return true;
                     break;
                 }

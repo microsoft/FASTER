@@ -66,7 +66,7 @@ namespace FASTER.test.LockTable
         void TryLock(long key, LockType lockType, bool ephemeral, int expectedCurrentReadLocks, bool expectedLockResult)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
-            GetBucket(ref hei);
+            PopulateHei(ref hei);
 
             // Check for existing lock
             var lockState = fht.LockTable.GetLockState(ref key, ref hei);
@@ -81,13 +81,13 @@ namespace FASTER.test.LockTable
         void Unlock(long key, LockType lockType)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
-            GetBucket(ref hei);
+            PopulateHei(ref hei);
             fht.LockTable.Unlock(ref key, ref hei, lockType);
         }
 
-        void GetBucket(ref HashEntryInfo hei) => GetBucket(fht, ref hei);
+        internal void PopulateHei(ref HashEntryInfo hei) => PopulateHei(fht, ref hei);
 
-        internal static void GetBucket(FasterKV<long, long> fht, ref HashEntryInfo hei) => fht.FindOrCreateTag(ref hei, fht.Log.BeginAddress);
+        internal static void PopulateHei<TKey, TValue>(FasterKV<TKey, TValue> fht, ref HashEntryInfo hei) => fht.FindOrCreateTag(ref hei, fht.Log.BeginAddress);
 
         internal void AssertLockCounts(ref HashEntryInfo hei, bool expectedX, long expectedS)
         {
@@ -102,34 +102,32 @@ namespace FASTER.test.LockTable
         internal static void AssertLockCounts<TKey, TValue>(FasterKV<TKey, TValue> fht, ref TKey key, bool expectedX, int expectedS)
         {
             HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref key));
-            if (fht.FindTag(ref hei))
-            {
-                var lockState = fht.LockTable.GetLockState(ref key, ref hei);
-                Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
-                Assert.AreEqual(expectedS, lockState.NumLockedShared, "SLock mismatch");
-                return;
-            }
-
-            Assert.IsFalse(expectedX, "Expected X lock but key was not found");
-            Assert.AreEqual(0, expectedS, "Expected S lock but key was not found");
+            PopulateHei(fht, ref hei);
+            var lockState = fht.LockTable.GetLockState(ref key, ref hei);
+            Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
+            Assert.AreEqual(expectedS, lockState.NumLockedShared, "SLock mismatch");
         }
-
-        internal static void AssertLockCounts<TKey, TValue>(FasterKV<TKey, TValue> fht, TKey key, bool expectedX, bool expectedS)
-            => AssertLockCounts(fht, ref key, expectedX, expectedS);
 
         internal static void AssertLockCounts<TKey, TValue>(FasterKV<TKey, TValue> fht, ref TKey key, bool expectedX, bool expectedS)
         {
-            HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref key));
-            if (fht.FindTag(ref hei))
+            FixedLengthLockableKeyStruct<TKey> keyStruct = new ()
             {
-                var lockState = fht.LockTable.GetLockState(ref key, ref hei);
-                Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
-                Assert.AreEqual(expectedS, lockState.NumLockedShared > 0, "SLock mismatch");
-                return;
-            }
+                Key = key,
+                KeyHash = fht.comparer.GetHashCode64(ref key),
+                LockType = LockType.None,   // Not used for this call
+            };
+            keyStruct.LockCode = fht.LockTable.GetLockCode(ref key, keyStruct.KeyHash);
+            AssertLockCounts(fht, ref keyStruct, expectedX, expectedS);
+        }
 
-            Assert.IsFalse(expectedX, "Expected X lock but key was not found");
-            Assert.IsFalse(expectedS, "Expected S lock but key was not found");
+
+        internal static void AssertLockCounts<TKey, TValue>(FasterKV<TKey, TValue> fht, ref FixedLengthLockableKeyStruct<TKey> key, bool expectedX, bool expectedS)
+        {
+            HashEntryInfo hei = new(key.KeyHash);
+            PopulateHei(fht, ref hei);
+            var lockState = fht.LockTable.GetLockState(ref key.Key, ref hei);
+            Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
+            Assert.AreEqual(expectedS, lockState.NumLockedShared > 0, "SLock mismatch");
         }
 
         internal unsafe void AssertTotalLockCounts(long expectedX, long expectedS)
@@ -150,26 +148,22 @@ namespace FASTER.test.LockTable
             Assert.AreEqual(expectedS, scount);
         }
 
-        internal void AssertBucketLockCount(long key, long expectedX, long expectedS) => AssertBucketLockCount(fht, key, expectedX, expectedS);
+        internal void AssertBucketLockCount(ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS) => AssertBucketLockCount(fht, ref key, expectedX, expectedS);
 
-        internal unsafe static void AssertBucketLockCount(FasterKV<long, long> fht, long key, long expectedX, long expectedS)
+        internal unsafe static void AssertBucketLockCount(FasterKV<long, long> fht, ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS)
         {
-            var bucketIndex = fht.LockTable.GetLockCode(ref key, fht.comparer.GetHashCode64(ref key));
+            var bucketIndex = key.LockCode;
             var bucket = fht.state[fht.resizeInfo.version].tableAligned + bucketIndex;
-            Assert.AreEqual(expectedX, HashBucket.IsLatchedExclusive(bucket));
+            Assert.AreEqual(expectedX == 1, HashBucket.IsLatchedExclusive(bucket));
             Assert.AreEqual(expectedS, HashBucket.NumLatchedShared(bucket));
         }
-
-        internal int GetBucketIndex(long key) => GetBucketIndex(fht, key);
-
-        internal static int GetBucketIndex(FasterKV<long, long> fht, long key) => (int)fht.LockTable.GetLockCode(ref key, fht.comparer.GetHashCode64(ref key));
 
         [Test]
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void SingleKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
-            GetBucket(ref hei);
+            PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
             // No entries
@@ -205,7 +199,7 @@ namespace FASTER.test.LockTable
         public void ThreeKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
-            GetBucket(ref hei);
+            PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
             TryLock(1, LockType.Shared, ephemeral: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
@@ -283,22 +277,6 @@ namespace FASTER.test.LockTable
         const int NumTestIterations = 15;
         const int maxSleepMs = 5;
 
-        internal struct ThreadStruct : ILockableKey
-        {
-            internal long key;
-            internal long hash;
-            internal long lockCode;
-            internal LockType lockType;
-
-            #region ILockableKey
-            public long LockCode => lockCode;
-
-            public LockType LockType => lockType;
-            #endregion ILockableKey
-
-            public override string ToString() => $"key {key}, hash {hash}, lockCode {lockCode}, {lockType}";
-        }
-
         private void AddThreads(List<Task> tasks, ref int lastTid, int numThreads, int maxNumKeys, int lowKey, int highKey, LockType lockType)
         {
             void runThread(int tid)
@@ -307,14 +285,14 @@ namespace FASTER.test.LockTable
 
                 // maxNumKeys < 0 means use random number of keys
                 int numKeys = maxNumKeys < 0 ? rng.Next(1, -maxNumKeys) : maxNumKeys;
-                ThreadStruct[] threadStructs = new ThreadStruct[numKeys];
+                FixedLengthLockableKeyStruct<long>[] threadStructs = new FixedLengthLockableKeyStruct<long>[numKeys];
 
                 long getNextKey()
                 {
                     while (true)
                     {
                         var key = rng.Next(lowKey, highKey + 1);    // +1 because the end # is not included
-                        if (!Array.Exists(threadStructs, it => it.key == key ))
+                        if (!Array.Exists(threadStructs, it => it.Key == key ))
                             return key;
                     }
                 }
@@ -327,21 +305,21 @@ namespace FASTER.test.LockTable
                         var key = getNextKey();
                         threadStructs[ii] = new()   // local var for debugging
                         {
-                            key = key,
+                            Key = key,
                             // LockType.None means split randomly between Shared and Exclusive
-                            lockType = lockType == LockType.None ? (rng.Next(0, 100) > 50 ? LockType.Shared : LockType.Exclusive) : lockType,
-                            hash = comparer.GetHashCode64(ref key),
+                            LockType = lockType == LockType.None ? (rng.Next(0, 100) > 50 ? LockType.Shared : LockType.Exclusive) : lockType,
+                            KeyHash = comparer.GetHashCode64(ref key),
                         };
-                        threadStructs[ii].lockCode = fht.LockTable.GetLockCode(ref key, threadStructs[ii].hash);
+                        threadStructs[ii].LockCode = fht.LockTable.GetLockCode(ref key, threadStructs[ii].KeyHash);
                     }
 
                     // Sort and lock
                     fht.LockTable.SortLockCodes(threadStructs);
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        HashEntryInfo hei = new(threadStructs[ii].hash);
-                        GetBucket(ref hei);
-                        while (!fht.LockTable.TryLockManual(ref threadStructs[ii].key, ref hei, threadStructs[ii].lockType))
+                        HashEntryInfo hei = new(threadStructs[ii].KeyHash);
+                        PopulateHei(ref hei);
+                        while (!fht.LockTable.TryLockManual(ref threadStructs[ii].Key, ref hei, threadStructs[ii].LockType))
                             ;
                     }
 
@@ -351,9 +329,9 @@ namespace FASTER.test.LockTable
                     // Unlock
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        HashEntryInfo hei = new(threadStructs[ii].hash);
-                        GetBucket(ref hei);
-                        fht.LockTable.Unlock(ref threadStructs[ii].key, ref hei, threadStructs[ii].lockType);
+                        HashEntryInfo hei = new(threadStructs[ii].KeyHash);
+                        PopulateHei(ref hei);
+                        fht.LockTable.Unlock(ref threadStructs[ii].Key, ref hei, threadStructs[ii].LockType);
                     }
                     Array.Clear(threadStructs);
                 }

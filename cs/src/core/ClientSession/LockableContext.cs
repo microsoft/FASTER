@@ -47,7 +47,7 @@ namespace FASTER.core
         {
             OperationStatus status;
             do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out _);
+                status = clientSession.fht.InternalLock(ref key, lockOp);
             while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, fasterSession));
             Debug.Assert(status == OperationStatus.SUCCESS);
         }
@@ -104,7 +104,7 @@ namespace FASTER.core
         public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
 
         /// <inheritdoc/>
-        public long GetLockCode(ref Key key) => clientSession.GetLockCode(ref key);
+        public long GetLockCode(ref Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
 
         /// <inheritdoc/>
         public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
@@ -122,31 +122,42 @@ namespace FASTER.core
             where TLockableKey : ILockableKey
         {
             // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
-            // which allows the session to do shared as well of course, so we take the first occurrence of each key code.
-            long prevKeyCode = keys[0].LockCode == 0 ? 1 : 0;
-            foreach (var key in keys)
+            // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
+            // Unlock has to be done in the reverse order of locking, so we take the *last* occurrence of each key there.
+            OperationStatus status;
+            if (lockOpType == LockOperationType.Lock)
             {
-                var lockCode = key.LockCode;
-                if (lockCode == prevKeyCode)
-                    continue;
-                var lockType = key.LockType;
-
-                OperationStatus status;
-                do
-                    status = clientSession.fht.InternalLock(lockCode, new(lockOpType, lockType));
-                while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, fasterSession));
-                Debug.Assert(status == OperationStatus.SUCCESS);
-
-                if (lockOpType == LockOperationType.Lock)
+                for (int ii = 0; ii < keys.Length; ++ii)
                 {
-                    if (lockType == LockType.Exclusive)
-                        ++clientSession.exclusiveLockCount;
-                    else
-                        ++clientSession.sharedLockCount;
+                    ref var key = ref keys[ii];
+                    if (ii == 0 || key.LockCode != keys[ii - 1].LockCode)
+                    { 
+                        do
+                            status = clientSession.fht.InternalLock(key.LockCode, new(lockOpType, key.LockType));
+                        while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, fasterSession));
+                        Debug.Assert(status == OperationStatus.SUCCESS);
+
+                        if (key.LockType == LockType.Exclusive)
+                            ++clientSession.exclusiveLockCount;
+                        else
+                            ++clientSession.sharedLockCount;
+                    }
                 }
-                else
+                return;
+            }
+
+            // LockOperationType.Unlock
+            for (int ii = keys.Length - 1; ii >= 0; --ii)
+            {
+                ref var key = ref keys[ii];
+                if (ii == 0 || key.LockCode != keys[ii - 1].LockCode)
                 {
-                    if (lockType == LockType.Exclusive)
+                    do
+                        status = clientSession.fht.InternalLock(key.LockCode, new(lockOpType, key.LockType));
+                    while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, fasterSession));
+                    Debug.Assert(status == OperationStatus.SUCCESS);
+
+                    if (key.LockType == LockType.Exclusive)
                         --clientSession.exclusiveLockCount;
                     else
                         --clientSession.sharedLockCount;
@@ -727,7 +738,7 @@ namespace FASTER.core
             #endregion IFunctions - Checkpointing
 
             #region Ephemeral locking
-            public bool TryLockTableEphemeralXLock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public bool TryLockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
@@ -736,7 +747,7 @@ namespace FASTER.core
                 return true;
             }
 
-            public bool TryLockTableEphemeralSLock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public bool TryLockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.LockTable.IsLocked(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock):"
@@ -745,7 +756,7 @@ namespace FASTER.core
                 return true;
             }
 
-            public void LockTableEphemeralXUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void UnlockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
                             $"Attempting to unlock a non-XLocked key in a Lockable context (requesting XLock):"
@@ -753,7 +764,7 @@ namespace FASTER.core
                             + $" Slocked {_clientSession.fht.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
             }
 
-            public void LockTableEphemeralSUnlock(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void UnlockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(_clientSession.fht.LockTable.IsLockedShared(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"

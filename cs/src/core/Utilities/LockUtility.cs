@@ -8,6 +8,7 @@ namespace FASTER.core
 {
     internal static class LockUtility
     {
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool TryLockOperation(this ref RecordInfo recordInfo, LockOperation lockOp)
         {

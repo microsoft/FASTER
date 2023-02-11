@@ -570,7 +570,7 @@ namespace FASTER.test.ReadCacheTests
                 {
                     var localKey = key;    // can't ref the iteration variable
                     HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref localKey));
-                    OverflowBucketLockTableTests.GetBucket(fht, ref hei);
+                    OverflowBucketLockTableTests.PopulateHei(fht, ref hei);
 
                     var lockState = fht.LockTable.GetLockState(ref localKey, ref hei);
                     Assert.IsTrue(lockState.IsFound);

@@ -177,7 +177,7 @@ namespace FASTER.test.EphemeralOnlyLock
             }
         }
 
-        void GetBucket(ref HashEntryInfo hei) => OverflowBucketLockTableTests.GetBucket(fht, ref hei);
+        void GetBucket(ref HashEntryInfo hei) => OverflowBucketLockTableTests.PopulateHei(fht, ref hei);
 
         [Test]
         [Category(LockableUnsafeContextTestCategory)]

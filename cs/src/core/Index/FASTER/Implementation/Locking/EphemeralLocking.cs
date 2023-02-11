@@ -44,7 +44,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-            if (!this.LockTable.IsEnabled || fasterSession.TryLockTableEphemeralXLock(ref key, ref stackCtx))
+            if (!this.LockTable.IsEnabled || fasterSession.TryLockEphemeralExclusive(ref key, ref stackCtx))
                 return true;
             status = OperationStatus.RETRY_LATER;
             return false;
@@ -58,7 +58,7 @@ namespace FASTER.core
 
             if (this.LockTable.IsEnabled)
             {
-                if (!fasterSession.TryLockTableEphemeralSLock(ref key, ref stackCtx))
+                if (!fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
                 {
                     status = OperationStatus.RETRY_LATER;
                     return false;
@@ -114,7 +114,7 @@ namespace FASTER.core
             {
                 Debug.Assert(this.LockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
                 Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have an InMemoryLock when we have an ephemeral lock with ManualLockTable enabled");
-                fasterSession.LockTableEphemeralSUnlock(ref key, ref stackCtx);
+                fasterSession.UnlockEphemeralShared(ref key, ref stackCtx);
                 stackCtx.recSrc.HasLockTableLock = false;
             }
         }
@@ -161,7 +161,7 @@ namespace FASTER.core
             {
                 Debug.Assert(this.LockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
                 Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have an InMemoryLock when we have an ephemeral lock with ManualLockTable enabled");
-                fasterSession.LockTableEphemeralXUnlock(ref key, ref stackCtx);
+                fasterSession.UnlockEphemeralExclusive(ref key, ref stackCtx);
                 stackCtx.recSrc.HasLockTableLock = false;
             }
         }
@@ -188,8 +188,6 @@ namespace FASTER.core
                         ref RecordInfo srcRecordInfo, ref RecordInfo newRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (!this.EphemeralOnlyLocker.IsEnabled)
-                return;
             if (UseReadCache)
                 ReadCacheCompleteUpdate(ref key, ref stackCtx.hei);
 
@@ -207,9 +205,6 @@ namespace FASTER.core
                         ref RecordInfo srcRecordInfo, ref RecordInfo newRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (!this.EphemeralOnlyLocker.IsEnabled)
-                return;
-
             if (UseReadCache)
                 ReadCacheCompleteCopyToTail(ref key, ref stackCtx.hei, ref newRecordInfo, removeEphemeralLock: true);
 

@@ -213,11 +213,7 @@ namespace FASTER.core
         public long word;
         public long Address
         {
-            readonly get
-            {
-                return word & Constants.kAddressMask;
-            }
-
+            readonly get => word & Constants.kAddressMask;
             set
             {
                 word &= ~Constants.kAddressMask;
@@ -229,11 +225,7 @@ namespace FASTER.core
 
         public ushort Tag
         {
-            readonly get
-            {
-                return (ushort)((word & Constants.kTagPositionMask) >> Constants.kTagShift);
-            }
-
+            readonly get => (ushort)((word & Constants.kTagPositionMask) >> Constants.kTagShift);
             set
             {
                 word &= ~Constants.kTagPositionMask;
@@ -243,61 +235,37 @@ namespace FASTER.core
 
         public bool Pending
         {
-            readonly get
-            {
-                return (word & Constants.kPendingBitMask) != 0;
-            }
-
+            readonly get => (word & Constants.kPendingBitMask) != 0;
             set
             {
                 if (value)
-                {
                     word |= Constants.kPendingBitMask;
-                }
                 else
-                {
                     word &= ~Constants.kPendingBitMask;
-                }
             }
         }
 
         public bool Tentative
         {
-            readonly get
-            {
-                return (word & Constants.kTentativeBitMask) != 0;
-            }
-
+            readonly get => (word & Constants.kTentativeBitMask) != 0;
             set
             {
                 if (value)
-                {
                     word |= Constants.kTentativeBitMask;
-                }
                 else
-                {
                     word &= ~Constants.kTentativeBitMask;
-                }
             }
         }
 
         public bool ReadCache
         {
-            readonly get
-            {
-                return (word & Constants.kReadCacheBitMask) != 0;
-            }
-
+            readonly get => (word & Constants.kReadCacheBitMask) != 0;
             set
             {
                 if (value)
-                {
                     word |= Constants.kReadCacheBitMask;
-                }
                 else
-                {
                     word &= ~Constants.kReadCacheBitMask;
-                }
             }
         }
 
@@ -467,6 +435,8 @@ namespace FASTER.core
                 target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex) & Constants.kAddressMask;
                 if (target_entry_word == 0)
                 {
+                    // We lock the firstBucket, so it can't be cleared.
+                    hei.bucket = default;
                     hei.entry = default;
                     return false;
                 }
