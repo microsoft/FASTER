@@ -66,8 +66,9 @@ namespace FASTER.core
                 return true;
             }
 
+            // If neither locking mode is enabled, return true so the operation continues, but don't set any Has*Lock
             if (!this.EphemeralOnlyLocker.IsEnabled)
-                return false;
+                return true;
 
             // A failed lockOp means this is a Sealed record or we exhausted the spin count. Either must RETRY_LATER, as must a record that was Invalidated while we spun.
             if (!this.EphemeralOnlyLocker.TryLockShared(ref recordInfo))
@@ -205,9 +206,6 @@ namespace FASTER.core
                         ref RecordInfo srcRecordInfo, ref RecordInfo newRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (UseReadCache)
-                ReadCacheCompleteCopyToTail(ref key, ref stackCtx.hei, ref newRecordInfo, removeEphemeralLock: true);
-
             // (See also comments in EphemeralSUnlock): If we are doing EphemeralOnly locking, we have to transfer the S locks from a
             // readonly record--either from the main-log immutable region or readcache--to the new record. However, other sessions holding
             // those read locks have to be able to release them; EphemeralSUnlock will handle that.
@@ -217,8 +215,12 @@ namespace FASTER.core
             {
                 // Unlock the current ephemeral lock here; we mark the source so we *know* we will have an invalid unlock on srcRecordInfo and would have to chase
                 // through InternalLock to unlock it, so we save the time by not transferring our ephemeral lock; 'Tentative' still protects the new record.
-                newRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref srcRecordInfo, seal: stackCtx.recSrc.HasMainLogSrc, removeEphemeralLock: true);
+                newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref srcRecordInfo, seal: stackCtx.recSrc.HasMainLogSrc, removeEphemeralLock: stackCtx.recSrc.HasInMemoryLock);
             }
+
+            // This must come after CopyReadLocksFromAndMarkSourceAtomic, so CopyReadLocksFromAndMarkSourceAtomic does not see an invalid record.
+            if (UseReadCache)
+                ReadCacheCompleteCopyToTail(ref key, ref stackCtx.hei, ref newRecordInfo, removeEphemeralLock: stackCtx.recSrc.HasInMemoryLock);
         }
     }
 }

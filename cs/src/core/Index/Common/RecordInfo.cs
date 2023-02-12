@@ -96,27 +96,6 @@ namespace FASTER.core
 
         public bool IsClosed => IsClosedWord(word);
 
-        public bool TryLock(LockType lockType)
-        {
-            if (lockType == LockType.Shared)
-                return this.TryLockShared();
-            if (lockType == LockType.Exclusive)
-                return this.TryLockExclusive();
-            else
-                Debug.Fail($"Unexpected LockType: {lockType}");
-            return false;
-        }
-
-        public void Unlock(LockType lockType)
-        {
-            if (lockType == LockType.Shared)
-                this.UnlockShared();
-            else if (lockType == LockType.Exclusive)
-                this.UnlockExclusive();
-            else
-                Debug.Fail($"Unexpected LockType: {lockType}");
-        }
-
         /// <summary>
         /// Unlock RecordInfo that was previously locked for exclusive access, via <see cref="TryLockExclusive"/>
         /// </summary>
@@ -244,23 +223,20 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void TransferLocksFrom(ref RecordInfo source)
+        public void CopyReadLocksFromAndMarkSourceAtomic(ref RecordInfo source, bool seal, bool removeEphemeralLock)
         {
-            // This is called only in the Lock Table, when we have an exclusive bucket lock, so no interlock is needed and we clear the locks
-            // to make it InActive and to ensure that ReadCache won't double-copy if there is a CAS failure during ReadCacheEvict.
-            this.word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
-            this.word |= source.word & (kExclusiveLockBitMask | kSharedLockMaskInWord);
-            source.word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void TransferReadLocksFromAndMarkSourceAtomic(ref RecordInfo source, bool seal, bool removeEphemeralLock)
-        {
-            // This is called when tranferring read locks from the read cache or Lock Table read-only region to a new log record.
-            Debug.Assert(!this.IsLockedExclusive, "Must only transfer readlocks (there can be only one exclusive lock so it is handled directly)");
+            // This is called when tranferring read locks from the read cache or read-only region to a new log record. This does not remove
+            // locks from the source record because if they exist it means other threads have the record locked and must be allowed to
+            // unlock it (and observe the 'false' return of that unlock due to the Seal/Invalid, and then go chase the record where it is now).
+            Debug.Assert((word & (kExclusiveLockBitMask | kSharedLockMaskInWord)) != kExclusiveLockBitMask, "Must only transfer readlocks");
+            Debug.Assert(!removeEphemeralLock || NumLockedShared > 0, "There is no ephemeral lock to remove");
             for (; ; Thread.Yield())
             {
                 long expected_word = source.word;
+
+                // If this is invalid or sealed, someone else won the race.
+                if (IsClosedWord(expected_word))
+                    return;
                 var new_word = expected_word;
 
                 // Mark the source record atomically with the transfer.
@@ -273,11 +249,12 @@ namespace FASTER.core
                 if (removeEphemeralLock)
                     new_word -= kSharedLockIncrement;
 
-                // Update the source record; this ensures we atomically transfer the lock count while setting the mark bit.
+                // Update the source record; this ensures we atomically copy the lock count while setting the mark bit.
                 // If that succeeds, then we update our own word.
                 if (expected_word == Interlocked.CompareExchange(ref source.word, new_word, expected_word))
                 {
-                    this.word = (new_word & ~kSealedBitMask) | kValidBitMask;
+                    this.word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
+                    this.word |= new_word & (kExclusiveLockBitMask | kSharedLockMaskInWord);
                     return;
                 }
             }

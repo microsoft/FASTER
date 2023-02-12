@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static FASTER.core.LockUtility;
 using static FASTER.core.Utility;
 
 namespace FASTER.core
@@ -261,7 +260,7 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
                 if (!recordInfo.Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
-                    newRecordInfo.TransferReadLocksFromAndMarkSourceAtomic(ref recordInfo, seal: false, removeEphemeralLock);
+                    newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref recordInfo, seal: false, removeEphemeralLock);
                     return;
                 }
                 entry.word = recordInfo.PreviousAddress;

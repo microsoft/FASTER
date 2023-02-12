@@ -3,6 +3,7 @@
 
 using System;
 using FASTER.core;
+using static FASTER.test.TestUtils;
 using NUnit.Framework;
 using System.Threading.Tasks;
 
@@ -145,7 +146,7 @@ namespace FASTER.test.readaddress
 
             internal long[] InsertAddresses = new long[numKeys];
 
-            internal TestStore(bool useReadCache, ReadFlags readFlags, bool flush)
+            internal TestStore(bool useReadCache, ReadFlags readFlags, bool flush, LockingMode lockingMode)
             {
                 this.testDir = TestUtils.MethodTestDir;
                 TestUtils.DeleteDirectory(this.testDir, wait:true);
@@ -169,7 +170,7 @@ namespace FASTER.test.readaddress
                     checkpointSettings: new CheckpointSettings { CheckpointDir = $"{this.testDir}/CheckpointDir" },
                     serializerSettings: null,
                     comparer: new Key.Comparer(),
-                    lockingMode: LockingMode.Disabled
+                    lockingMode: lockingMode
                     );
             }
 
@@ -260,14 +261,14 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.SessionControlled)]
         [Category("FasterKV"), Category("Read")]
-        public void VersionedReadSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
+        public void VersionedReadSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
-            using var testStore = new TestStore(useReadCache, readFlags, flush);
+            using var testStore = new TestStore(useReadCache, readFlags, flush, lockingMode);
             testStore.Populate(useRMW, useAsync:false).GetAwaiter().GetResult();
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -298,14 +299,14 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.SessionControlled)]
         [Category("FasterKV"), Category("Read")]
-        public async Task VersionedReadAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
+        public async Task VersionedReadAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
-            using var testStore = new TestStore(useReadCache, readFlags, flush);
+            using var testStore = new TestStore(useReadCache, readFlags, flush, lockingMode);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -330,14 +331,14 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.SessionControlled)]
         [Category("FasterKV"), Category("Read")]
-        public void ReadAtAddressSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
+        public void ReadAtAddressSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
-            using var testStore = new TestStore(useReadCache, readFlags, flush);
+            using var testStore = new TestStore(useReadCache, readFlags, flush, lockingMode);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -385,14 +386,14 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.SessionControlled)]
         [Category("FasterKV"), Category("Read")]
-        public async Task ReadAtAddressAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
+        public async Task ReadAtAddressAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
-            using var testStore = new TestStore(useReadCache, readFlags, flush);
+            using var testStore = new TestStore(useReadCache, readFlags, flush, lockingMode);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -430,14 +431,14 @@ namespace FASTER.test.readaddress
         }
 
         // Test is similar to others but tests the Overload where RadFlag.none is set -- probably don't need all combinations of test but doesn't hurt 
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.SessionControlled)]
         [Category("FasterKV"), Category("Read")]
-        public async Task ReadAtAddressAsyncReadFlagsNoneTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
+        public async Task ReadAtAddressAsyncReadFlagsNoneTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
-            using var testStore = new TestStore(useReadCache, readFlags, flush);
+            using var testStore = new TestStore(useReadCache, readFlags, flush, lockingMode);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -475,14 +476,14 @@ namespace FASTER.test.readaddress
         }
 
         // Test is similar to others but tests the Overload where ReadFlag.SkipReadCache is set
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.SessionControlled)]
         [Category("FasterKV"), Category("Read")]
-        public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
+        public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
-            using var testStore = new TestStore(useReadCache, readFlags, flush);
+            using var testStore = new TestStore(useReadCache, readFlags, flush, lockingMode);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -521,14 +522,14 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.SessionControlled)]
         [Category("FasterKV"), Category("Read")]
-        public void ReadNoKeySyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
+        public void ReadNoKeySyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
         {
             var useReadCache = urc == UseReadCache.ReadCache;
-            using var testStore = new TestStore(useReadCache, readFlags, flush);
+            using var testStore = new TestStore(useReadCache, readFlags, flush, lockingMode);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -564,14 +565,14 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.SessionControlled)]
         [Category("FasterKV"), Category("Read")]
-        public async Task ReadNoKeyAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush)
+        public async Task ReadNoKeyAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, LockingMode lockingMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
-            using var testStore = new TestStore(useReadCache, readFlags, flush);
+            using var testStore = new TestStore(useReadCache, readFlags, flush, lockingMode);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -674,7 +675,7 @@ namespace FASTER.test.readaddress
     }
 
     [TestFixture]
-    public class ReadMinAddressTests
+    class ReadMinAddressTests
     {
         const int numOps = 500;
 
@@ -689,8 +690,19 @@ namespace FASTER.test.readaddress
 
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest1.log", deleteOnClose: true);
 
+            var lockingMode = LockingMode.EphemeralOnly;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is LockingMode locking_mode)
+                {
+                    lockingMode = locking_mode;
+                    break;
+                }
+            }
+
             fht = new FasterKV<long, long>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 }
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                lockingMode: lockingMode
                 );
 
             session = fht.NewSession(new SimpleFunctions<long, long>());
@@ -711,7 +723,7 @@ namespace FASTER.test.readaddress
 
         [Test]
         [Category("FasterKV"), Category("Read")]
-        public async ValueTask ReadMinAddressTest([Values] bool isAsync)
+        public async ValueTask ReadMinAddressTest([Values] SyncMode syncMode, [Values] LockingMode lockingMode)
         {
             long minAddress = core.Constants.kInvalidAddress;
             var pivotKey = numOps / 2;
@@ -733,7 +745,7 @@ namespace FASTER.test.readaddress
                 Status status;
                 long output = 0;
                 ReadOptions readOptions = new() { StopAddress = minAddress };
-                if (isAsync)
+                if (syncMode == SyncMode.Async)
                     (status, output) = (await session.ReadAsync(ref key, ref input, ref readOptions)).Complete();
                 else
                 {
@@ -741,7 +753,7 @@ namespace FASTER.test.readaddress
                     if (status.IsPending)
                     {
                         Assert.IsTrue(session.CompletePendingWithOutputs(out var completedOutputs, wait: true));
-                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
                     }
                 }
                 Assert.AreEqual(expectedStatus, status);

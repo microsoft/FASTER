@@ -3,6 +3,8 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using System.Diagnostics;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -17,8 +19,19 @@ namespace FASTER.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BlittableLogCompactionTests.log", deleteOnClose: true);
+
+            var lockingMode = LockingMode.EphemeralOnly;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is LockingMode locking_mode)
+                {
+                    lockingMode = locking_mode;
+                    break;
+                }
+            }
+
             fht = new FasterKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 }, lockingMode: lockingMode);
         }
 
         [TearDown]
@@ -36,7 +49,8 @@ namespace FASTER.test
         [Category("Compaction")]
         [Category("Smoke")]
 
-        public void BlittableLogCompactionTest1([Values] CompactionType compactionType)
+        public void BlittableLogCompactionTest1([Values] CompactionType compactionType,
+                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)] LockingMode lockingMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -85,7 +99,8 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        public void BlittableLogCompactionTest2([Values] CompactionType compactionType)
+        public void BlittableLogCompactionTest2([Values] CompactionType compactionType,
+                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)] LockingMode lockingMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -145,7 +160,8 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        public void BlittableLogCompactionTest3([Values] CompactionType compactionType)
+        public void BlittableLogCompactionTest3([Values] CompactionType compactionType,
+                                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)] LockingMode lockingMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -211,7 +227,9 @@ namespace FASTER.test
         [Category("Compaction")]
         [Category("Smoke")]
 
-        public void BlittableLogCompactionCustomFunctionsTest1([Values] CompactionType compactionType)
+        public void BlittableLogCompactionCustomFunctionsTest1([Values] CompactionType compactionType,
+                                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)]
+        LockingMode lockingMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -270,8 +288,9 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-
-        public void BlittableLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType, [Values]bool flushAndEvict)
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "lockingMode is used by Setup")]
+        public void BlittableLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType, [Values]bool flushAndEvict,
+                                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)] LockingMode lockingMode)
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy
@@ -280,13 +299,19 @@ namespace FASTER.test
 
             var key = new KeyStruct { kfield1 = 100, kfield2 = 101 };
             var value = new ValueStruct { vfield1 = 10, vfield2 = 20 };
+            var input = default(InputStruct);
+            var output = default(OutputStruct);
 
             session.Upsert(ref key, ref value, 0, 0);
+            var status = session.Read(ref key, ref input, ref output, 0, 0);
+            Debug.Assert(status.Found);
 
             fht.Log.Flush(true);
 
             value = new ValueStruct { vfield1 = 11, vfield2 = 21 };
             session.Upsert(ref key, ref value, 0, 0);
+            status = session.Read(ref key, ref input, ref output, 0, 0);
+            Debug.Assert(status.Found);
 
             if (flushAndEvict)
                 fht.Log.FlushAndEvict(true);
@@ -296,9 +321,7 @@ namespace FASTER.test
             var compactUntil = session.Compact(fht.Log.TailAddress, compactionType);
             fht.Log.Truncate();
 
-            var input = default(InputStruct);
-            var output = default(OutputStruct);
-            var status = session.Read(ref key, ref input, ref output, 0, 0);
+            status = session.Read(ref key, ref input, ref output, 0, 0);
             if (status.IsPending)
             {
                 Assert.IsTrue(session.CompletePendingWithOutputs(out var outputs, wait: true));

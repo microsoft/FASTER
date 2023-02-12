@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static FASTER.core.LockUtility;
 
 namespace FASTER.core
 {

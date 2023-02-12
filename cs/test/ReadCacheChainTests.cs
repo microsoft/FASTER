@@ -10,6 +10,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
 using FASTER.test.LockTable;
+using FASTER.test.LockableUnsafeContext;
 
 namespace FASTER.test.ReadCacheTests
 {
@@ -546,11 +547,11 @@ namespace FASTER.test.ReadCacheTests
             using var session = fht.NewSession(new SimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
-            Dictionary<long, LockType> locks = new()
+            var keys = new[]
             {
-                { lowChainKey, LockType.Exclusive },
-                { midChainKey, LockType.Shared },
-                { highChainKey, LockType.Exclusive }
+                new FixedLengthLockableKeyStruct<long>(lowChainKey, LockType.Exclusive, luContext),
+                new FixedLengthLockableKeyStruct<long>(midChainKey, LockType.Shared, luContext),
+                new FixedLengthLockableKeyStruct<long>(highChainKey, LockType.Exclusive, luContext)
             };
 
             luContext.BeginUnsafe();
@@ -558,31 +559,40 @@ namespace FASTER.test.ReadCacheTests
 
             try
             {
+                luContext.SortLockCodes(keys);
+
                 // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
-                foreach (var key in locks.Keys.OrderBy(k => k))
-                    luContext.Lock(key, locks[key]);
+                luContext.Lock(keys);
 
                 fht.ReadCache.FlushAndEvict(wait: true);
 
-                AssertTotalLockCounts(2, 1);
-
-                foreach (var key in locks.Keys)
+                int xlocks = 0, slocks = 0;
+                foreach (var idx in LockableUnsafeContextTests.EnumActionKeyIndices(keys, LockOperationType.Unlock))
                 {
-                    var localKey = key;    // can't ref the iteration variable
-                    HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref localKey));
+                    if (keys[idx].LockType == LockType.Exclusive)
+                        ++xlocks;
+                    else
+                        ++slocks;
+                }
+                AssertTotalLockCounts(xlocks, slocks);
+
+                foreach (var idx in LockableUnsafeContextTests.EnumActionKeyIndices(keys, LockOperationType.Unlock))
+                {
+                    ref var key = ref keys[idx];
+                    HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref key.Key));
                     OverflowBucketLockTableTests.PopulateHei(fht, ref hei);
 
-                    var lockState = fht.LockTable.GetLockState(ref localKey, ref hei);
+                    var lockState = fht.LockTable.GetLockState(ref key.Key, ref hei);
                     Assert.IsTrue(lockState.IsFound);
-                    var lockType = locks[key];
-                    Assert.AreEqual(lockType == LockType.Exclusive, lockState.IsLockedExclusive);
-                    Assert.AreEqual(lockType != LockType.Exclusive, lockState.NumLockedShared > 0);
+                    Assert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
+                    Assert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
 
-                    luContext.Unlock(key, lockType);
-                    lockState = fht.LockTable.GetLockState(ref localKey, ref hei);
+                    luContext.Unlock(key.Key, key.LockType);
+                    lockState = fht.LockTable.GetLockState(ref key.Key, ref hei);
                     Assert.IsFalse(lockState.IsLockedExclusive);
                     Assert.AreEqual(0, lockState.NumLockedShared);
                 }
+                AssertTotalLockCounts(0, 0);
             }
             catch (Exception)
             {
