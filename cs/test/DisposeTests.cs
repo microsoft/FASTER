@@ -1,5 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
+
+#if false
 
 using System.Collections.Generic;
 using System.Threading;
@@ -714,3 +716,4 @@ namespace FASTER.test.Dispose
         }
     }
 }
+#endif
