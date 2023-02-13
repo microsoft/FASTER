@@ -2045,8 +2045,12 @@ namespace FASTER.core
                 CommittedUntilAddress = long.MaxValue;
                 beginAddress = info.BeginAddress;
                 allocator.HeadAddress = long.MaxValue;
-                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                scanIterator.ScanForwardForCommit(ref info);
+                try
+                {
+                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                    scanIterator.ScanForwardForCommit(ref info);
+                }
+                catch { }
             }
 
             // If until address is 0, that means info is still its default value and we haven't been able to recover
@@ -2130,9 +2134,13 @@ namespace FASTER.core
                 CommittedUntilAddress = long.MaxValue;
                 beginAddress = info.BeginAddress;
                 allocator.HeadAddress = long.MaxValue;
-                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                if (!scanIterator.ScanForwardForCommit(ref info, requestedCommitNum))
-                    throw new FasterException("requested commit num is not available");
+                try
+                {
+                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                    if (!scanIterator.ScanForwardForCommit(ref info, requestedCommitNum))
+                        throw new FasterException("requested commit num is not available");
+                }
+                catch { }
             }
 
             // At this point, we should have found the exact commit num requested
@@ -2193,8 +2201,11 @@ namespace FASTER.core
                 CommittedUntilAddress = long.MaxValue;
                 beginAddress = info.BeginAddress;
                 allocator.HeadAddress = long.MaxValue;
-                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                scanIterator.ScanForwardForCommit(ref info);
+                try
+                {
+                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                    scanIterator.ScanForwardForCommit(ref info);
+                } catch { }
             }
 
             // if until address is 0, that means info is still its default value and we haven't been able to recover

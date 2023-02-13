@@ -175,7 +175,8 @@ namespace FASTER.core
             var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
+            return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, pa {PhysicalAddress:x}"
+                 + $" lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)}, lrcpa {LowestReadCachePhysicalAddress:x}"
                  + $" hasMLsrc {bstr(HasMainLogSrc)}, hasRCsrc {bstr(HasReadCacheSrc)}, hasIMlock {bstr(HasInMemoryLock)}, hasLTlock {bstr(HasLockTableLock)}";
         }
     }

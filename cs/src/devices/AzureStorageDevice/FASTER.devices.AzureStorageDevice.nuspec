@@ -17,19 +17,20 @@
     <repository type="git" url="https://github.com/microsoft/FASTER" />
     <dependencies>
       <group targetFramework="netstandard2.0">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.3" />
+        <dependency id="Azure.Storage.Blobs" version="12.14.1" />
         <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
       <group targetFramework="netstandard2.1">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.3" />
+        <dependency id="Azure.Storage.Blobs" version="12.14.1" />
+        <dependency id="System.Interactive.Async" version="6.0.1" />
         <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
       <group targetFramework="net6.0">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.3" />
+        <dependency id="Azure.Storage.Blobs" version="12.14.1" />
         <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
       <group targetFramework="net7.0">
-        <dependency id="Microsoft.Azure.Storage.Blob" version="11.2.3" />
+        <dependency id="Azure.Storage.Blobs" version="12.14.1" />
         <dependency id="Microsoft.FASTER.Core" version="$version$" />
       </group>
 	</dependencies>

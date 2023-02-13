@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#if false
+
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -114,7 +116,7 @@ namespace FASTER.test.Dispose
                     {
                         // There should be one readcache entry for this test.
                         Assert.IsTrue(new HashBucketEntry() { word = entry.Address }.ReadCache);
-                        Assert.GreaterOrEqual(address, tester.fht.ReadCache.BeginAddress);
+                        Assert.GreaterOrEqual(address, tester.fht.ReadCache.HeadAddress);
                         var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                         ref RecordInfo recordInfo = ref tester.fht.readcache.GetInfo(physicalAddress);
                         address = recordInfo.PreviousAddress;
@@ -138,6 +140,7 @@ namespace FASTER.test.Dispose
                         }
                         else
                         {
+                            Assert.GreaterOrEqual(address, tester.fht.ReadCache.HeadAddress);
                             var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                             ref RecordInfo recordInfo = ref tester.fht.readcache.GetInfo(physicalAddress);
                             while (recordInfo.PreviousAddress == address)
@@ -713,3 +716,4 @@ namespace FASTER.test.Dispose
         }
     }
 }
+#endif

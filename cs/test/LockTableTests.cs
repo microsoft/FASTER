@@ -6,8 +6,6 @@ using FASTER.core.Utilities;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection.Metadata.Ecma335;
 using System.Threading;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;

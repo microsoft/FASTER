@@ -808,5 +808,40 @@ namespace FASTER.test
             s.Read(ref key, ref output);
             Assert.AreEqual(10, output);
         }
+
+        [Test]
+        [Category("FasterKV")]
+        public static void UshortKeyByteValueTest()
+        {
+            using var log = Devices.CreateLogDevice($"{TestUtils.MethodTestDir}/hlog.log", deleteOnClose: false);
+            using var store = new FasterKV<ushort, byte>(1L << 20, new LogSettings { LogDevice = log });
+            using var s = store.NewSession(new SimpleFunctions<ushort, byte>());
+            ushort key = 1024;
+            byte value = 1, input = 10, output = 0;
+
+            // For blittable types, the records are not 8-byte aligned; RecordSize is sizeof(RecordInfo) + sizeof(ushort) + sizeof(byte)
+            const int expectedRecordSize = sizeof(long) + sizeof(ushort) + sizeof(byte);
+            Assert.AreEqual(11, expectedRecordSize);
+            long prevTailLogicalAddress = store.hlog.GetTailAddress();
+            long prevTailPhysicalAddress = store.hlog.GetPhysicalAddress(prevTailLogicalAddress);
+            for (var ii = 0; ii < 5; ++ii, ++key, ++value, ++input)
+            {
+                output = 0;
+                s.Upsert(ref key, ref value);
+                s.Read(ref key, ref output);
+                Assert.AreEqual(value, output);
+                s.RMW(ref key, ref input);
+                s.Read(ref key, ref output);
+                Assert.AreEqual(input, output);
+
+                var tailLogicalAddress = store.hlog.GetTailAddress();
+                Assert.AreEqual(expectedRecordSize, tailLogicalAddress - prevTailLogicalAddress);
+                long tailPhysicalAddress = store.hlog.GetPhysicalAddress(tailLogicalAddress);
+                Assert.AreEqual(expectedRecordSize, tailPhysicalAddress - prevTailPhysicalAddress);
+
+                prevTailLogicalAddress = tailLogicalAddress;
+                prevTailPhysicalAddress = tailPhysicalAddress;
+            }
+        }
     }
 }
