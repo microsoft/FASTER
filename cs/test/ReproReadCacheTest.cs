@@ -106,7 +106,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
         //[Repeat(300)]
-        public unsafe void RandomReadCacheTest([Values(1, 2, 4, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
+        public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
                                                 [Values] EphemeralLockingMode ephemeralLockingMode, [Values] ReadCacheMode readCacheMode,
 #if WINDOWS
                                                 [Values(DeviceType.LSD

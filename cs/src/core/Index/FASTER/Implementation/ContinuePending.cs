@@ -190,16 +190,25 @@ namespace FASTER.core
                 RecordInfo dummyRecordInfo = default;
                 ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
-                // During the pending operation, the record may have been added to any of the possible locations.
-                if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress))
-                    srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-
                 try
                 {
-                    // pendingContext.entry.Address is the previous latestLogicalAddress; if recSrc.LatestLogicalAddress (set by FindRecordInReadCacheOrLockTable)
-                    // is greater than the previous latestLogicalAddress, then another thread inserted or spliced in a new record and we must do InternalRMW.
-                    if (stackCtx.recSrc.LatestLogicalAddress > pendingContext.entry.Address)
-                        break;
+                    // During the pending operation, the record may have been added to any of the possible locations.
+                    if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress))
+                    {
+                        // pendingContext.entry.Address is the previous latestLogicalAddress; if recSrc.LatestLogicalAddress (set by FindRecordInReadCacheOrLockTable)
+                        // is greater than the previous latestLogicalAddress, then another thread inserted or spliced in a new record and we must do InternalRMW.
+                        if (stackCtx.recSrc.LatestLogicalAddress > pendingContext.entry.Address)
+                            break;
+
+                        srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+                        if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                            goto CheckRetry;
+                        if (!srcRecordInfo.IsValidUpdateOrLockSource)
+                        {
+                            status = OperationStatus.RETRY_LATER;
+                            goto CheckRetry;
+                        }
+                    }
 
                     // Here, the input* data for 'doingCU' is the from the request, so create a RecordSource copy for that.
                     RecordSource<Key, Value> inputSrc = new()
@@ -212,16 +221,17 @@ namespace FASTER.core
 
                     status = CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
                                                 ref pendingContext, fasterSession, sessionCtx, ref stackCtx, ref srcRecordInfo, ref inputSrc, inputRecordInfo, fromPending: true);
-
-                    // Retries should drop down to InternalRMW
-                    if (!HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext))
-                        return status;
                 }
                 finally
                 {
                     stackCtx.HandleNewRecordOnError(this);
                     EphemeralXUnlockAfterUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                 }
+
+                // Must do this *after* Unlocking. Retries should drop down to InternalRMW
+            CheckRetry:
+                if (!HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext))
+                    return status;
             } // end while (true)
 
             do

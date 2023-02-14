@@ -82,19 +82,19 @@ namespace FASTER.core
             if (!TryLockTableEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
                 return status;
 
-            #region Entry latch operation
-            if (sessionCtx.phase != Phase.REST)
-            {
-                latchDestination = AcquireLatchUpsert(sessionCtx, ref stackCtx.hei, ref status, ref latchOperation, stackCtx.recSrc.LogicalAddress);
-                if (latchDestination == LatchDestination.Retry)
-                    goto LatchRelease;
-            }
-            #endregion
-
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
-            #region Address and source record checks
+                #region Entry latch operation
+                if (sessionCtx.phase != Phase.REST)
+                {
+                    latchDestination = AcquireLatchUpsert(sessionCtx, ref stackCtx.hei, ref status, ref latchOperation, stackCtx.recSrc.LogicalAddress);
+                    if (latchDestination == LatchDestination.Retry)
+                        goto LatchRelease;
+                }
+                #endregion Entry latch operation
+
+                #region Address and source record checks
 
                 if (stackCtx.recSrc.HasReadCacheSrc)
                 {
@@ -112,12 +112,11 @@ namespace FASTER.core
                     if (srcRecordInfo.Tombstone)
                         goto CreateNewRecord;
 
-                        if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                        {
-                            EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
-                            srcRecordInfo = ref dummyRecordInfo;
-                            goto CreateNewRecord;
-                        }
+                    if (!srcRecordInfo.IsValidUpdateOrLockSource)
+                    {
+                        status = OperationStatus.RETRY_LATER;
+                        goto LatchRelease;
+                    }
 
                     upsertInfo.RecordInfo = srcRecordInfo;
                     ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
@@ -161,8 +160,8 @@ namespace FASTER.core
                     goto LatchRelease;
                 if (!srcRecordInfo.IsValidUpdateOrLockSource)
                 {
-                    EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
-                    srcRecordInfo = ref dummyRecordInfo;
+                    status = OperationStatus.RETRY_LATER;
+                    goto LatchRelease;
                 }
                 goto CreateNewRecord;
             #endregion Lock source record

@@ -663,7 +663,8 @@ namespace FASTER.test.ReadCacheTests
                 }
             }
 
-            fht = new FasterKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange));
+            fht = new FasterKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange),
+                lockingMode: LockingMode.EphemeralOnly);
         }
 
         [TearDown]
@@ -878,7 +879,8 @@ namespace FASTER.test.ReadCacheTests
                 }
             }
 
-            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: new SpanByteComparerModulo(modRange));
+            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: new SpanByteComparerModulo(modRange),
+                lockingMode: LockingMode.SessionControlled);
         }
 
         [TearDown]

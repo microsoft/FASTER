@@ -157,12 +157,13 @@ namespace FASTER.core
 
         /// <summary>Unlock RecordInfo that was previously locked for shared access, via <see cref="TryLockShared"/></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockShared()
+        public bool TryUnlockShared()
         {
             // X and S locks means an X lock is still trying to drain readers, like this one.
             Debug.Assert((word & kLockBitMask) != kExclusiveLockBitMask, "Trying to S unlock an X-only locked record");
             Debug.Assert(IsLockedShared, "Trying to S unlock an unlocked record");
-            Interlocked.Add(ref word, -kSharedLockIncrement);
+            var result_word = Interlocked.Add(ref word, -kSharedLockIncrement);
+            return !IsClosedWord(result_word);
         }
 
         /// <summary>
@@ -369,12 +370,12 @@ namespace FASTER.core
 
         public bool Invalid => (word & kValidBitMask) == 0;
 
-        public bool SkipOnScan => (word & (kValidBitMask | kSealedBitMask)) != kValidBitMask;
+        public bool SkipOnScan => IsClosedWord(word);
 
         /// <summary>
         /// Indicates whether this RecordInfo is a valid source for updates or record locks.
         /// </summary>
-        public bool IsValidUpdateOrLockSource => (word & (kValidBitMask | kSealedBitMask)) == kValidBitMask;
+        public bool IsValidUpdateOrLockSource => !IsClosedWord(word);
 
         public long PreviousAddress
         {
@@ -410,7 +411,7 @@ namespace FASTER.core
             var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";
             static string bstr(bool value) => value ? "T" : "F";
             return $"prev {this.AbsolutePreviousAddress}{paRC}, locks {locks}, valid {bstr(Valid)}, mod {bstr(Modified)},"
-                 + $" tomb {bstr(Tombstone)}, seal {bstr(Sealed)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused2)}, Un2 {bstr(Unused1)}";
+                 + $" tomb {bstr(Tombstone)}, seal {bstr(Sealed)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
         }
     }
 }

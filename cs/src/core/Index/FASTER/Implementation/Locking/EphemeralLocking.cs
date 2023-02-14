@@ -75,7 +75,8 @@ namespace FASTER.core
                 status = OperationStatus.RETRY_LATER;
             else if (!IsRecordValid(recordInfo, out status))
             {
-                this.EphemeralOnlyLocker.UnlockShared(ref recordInfo);
+                // We know this is invalid, so ignore the return value from Unlock
+                this.EphemeralOnlyLocker.TryUnlockShared(ref recordInfo);
                 status = OperationStatus.RETRY_LATER;
             }
             else
@@ -85,7 +86,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void EphemeralSUnlock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, 
-                ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo recordInfo)
+                ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (!stackCtx.recSrc.HasLock)
@@ -97,8 +98,6 @@ namespace FASTER.core
                 // while we hold the epoch.
                 Debug.Assert(stackCtx.recSrc.HasInMemoryLock, "Should have an InMemoryLock when we have an ephemeral lock with RecordInfoLocker enabled");
 
-                this.EphemeralOnlyLocker.UnlockShared(ref recordInfo);
-
                 // (See comments in CompleteCopyToTail also) Because this is an S lock, then if the source record is in ReadOnly or ReadCache, it is possible
                 // that the source record (specifically its locks) was transferred by another session that did CopyToTail or CopyToReadCache (it would not have
                 // been a copy due to update, because that would've taken an X lock). If this happens then the record is Closed (Sealed or Invalid) after the
@@ -106,7 +105,7 @@ namespace FASTER.core
                 //
                 // If this happens in a tightly memory-constrained environment, the new location could drop below HeadAddress. Despite this, it cannot be
                 // evicted while we hold the epoch, so use ClosedUntilAddress when searching.
-                if (recordInfo.IsClosed)
+                if (!this.EphemeralOnlyLocker.TryUnlockShared(ref srcRecordInfo)) 
                     FindAndUnlockTransferredRecord(ref key, stackCtx.hei.hash);
 
                 stackCtx.recSrc.HasInMemoryLock = false;
@@ -135,8 +134,7 @@ namespace FASTER.core
 
                 stackCtx.recSrc.SetPhysicalAddress();
                 var recordInfo = stackCtx.recSrc.GetSrcRecordInfo();
-                recordInfo.UnlockShared();
-                if (!recordInfo.IsClosed)
+                if (recordInfo.TryUnlockShared())
                     break;
             }
         }
@@ -168,14 +166,6 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            EphemeralXUnlockAfterUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
-            stackCtx.recSrc.ClearSrc();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, 
                 ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
@@ -189,6 +179,8 @@ namespace FASTER.core
                         ref RecordInfo srcRecordInfo, ref RecordInfo newRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            Debug.Assert(!srcRecordInfo.IsLockedShared, "Should not have a shared lock at CompleteUpdate");
+
             if (UseReadCache)
                 ReadCacheCompleteUpdate(ref key, ref stackCtx.hei);
 
@@ -214,13 +206,14 @@ namespace FASTER.core
             if (stackCtx.recSrc.HasInMemorySrc)
             {
                 // Unlock the current ephemeral lock here; we mark the source so we *know* we will have an invalid unlock on srcRecordInfo and would have to chase
-                // through InternalLock to unlock it, so we save the time by not transferring our ephemeral lock; 'Tentative' still protects the new record.
+                // through InternalLock to unlock it, so we save the time by not transferring our ephemeral lock.
                 newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref srcRecordInfo, seal: stackCtx.recSrc.HasMainLogSrc, removeEphemeralLock: stackCtx.recSrc.HasInMemoryLock);
             }
 
             // This must come after CopyReadLocksFromAndMarkSourceAtomic, so CopyReadLocksFromAndMarkSourceAtomic does not see an invalid record.
             if (UseReadCache)
                 ReadCacheCompleteCopyToTail(ref key, ref stackCtx.hei, ref newRecordInfo, removeEphemeralLock: stackCtx.recSrc.HasInMemoryLock);
+            stackCtx.recSrc.HasInMemoryLock = false;
         }
     }
 }

@@ -109,7 +109,14 @@ namespace FASTER.core
         public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortLockCodes(keys);
 
         /// <inheritdoc/>
-        public override string ToString() => $"key {Key}, hash {KeyHash}, lockCode {LockCode}, lockType {LockType}";
+        public override string ToString()
+        {
+            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
+            var hashSign = KeyHash < 0 ? "-" : string.Empty;
+            var absHash = this.KeyHash >= 0 ? this.KeyHash : -this.KeyHash;
+            return $"key {Key}, hash {hashSign}{absHash}, lockCode {LockCode}, {LockType}";
+        }
+
     }
 
     /// <summary>

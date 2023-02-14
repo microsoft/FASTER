@@ -110,8 +110,8 @@ namespace FASTER.test.LockTests
 
 #pragma warning disable IDE0200 // The lambdas cannot be simplified as it causes struct temporaries
                 XLockTest(numThreads, () => ri->TryLockExclusive(), () => { ri->UnlockExclusive(); return true; });
-                SLockTest(numThreads, () => ri->TryLockShared(), () => ri->UnlockShared());
-                XSLockTest(numThreads, () => ri->TryLockExclusive(), () => ri->UnlockExclusive(), () => ri->TryLockShared(), () => ri->UnlockShared());
+                SLockTest(numThreads, () => ri->TryLockShared(), () => ri->TryUnlockShared());
+                XSLockTest(numThreads, () => ri->TryLockExclusive(), () => ri->UnlockExclusive(), () => ri->TryLockShared(), () => ri->TryUnlockShared());
 #pragma warning restore IDE0200
             }
         }

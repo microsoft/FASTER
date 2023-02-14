@@ -36,10 +36,10 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void UnlockShared(ref RecordInfo recordInfo)
+        public unsafe bool TryUnlockShared(ref RecordInfo recordInfo)
         {
             AssertUnlockAllowed();
-            recordInfo.UnlockShared();
+            return recordInfo.TryUnlockShared();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

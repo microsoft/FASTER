@@ -777,6 +777,12 @@ namespace FASTER.test.LockableUnsafeContext
             const int numIncrement = 5;
             const int numIterations = 1000;
 
+            IEnumerable<int> enumKeys(Random rng)
+            {
+                for (var key = baseKey + rng.Next(numIncrement); key < baseKey + numKeys; key += rng.Next(1, numIncrement))
+                    yield return key;
+            }
+
             void runManualLockThread(int tid)
             {
                 BucketLockTracker blt = new();
@@ -790,7 +796,7 @@ namespace FASTER.test.LockableUnsafeContext
 
                 IEnumerable<FixedLengthLockableKeyStruct<long>> enumKeysToLock()
                 {
-                    for (var key = baseKey + rng.Next(numIncrement); key < baseKey + numKeys; key += rng.Next(1, numIncrement))
+                    foreach (var key in enumKeys(rng))
                     {
                         var lockType = rng.Next(100) < 60 ? LockType.Shared : LockType.Exclusive;
                         yield return new(key, lockType, luContext);
@@ -818,7 +824,7 @@ namespace FASTER.test.LockableUnsafeContext
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var key = baseKey + rng.Next(numIncrement); key < baseKey + numKeys; key += rng.Next(1, numIncrement))
+                    foreach (var key in enumKeys(rng))
                     {
                         var rand = rng.Next(100);
                         if (rand < 33)

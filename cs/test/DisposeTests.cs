@@ -44,7 +44,8 @@ namespace FASTER.test.Dispose
             }
 
             fht = new FasterKV<MyKey, MyValue>(128, logSettings: logSettings, comparer: new MyKeyComparer(),
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
+                lockingMode: LockingMode.EphemeralOnly  // SessionControlled will deadlock as both keys map to the same LockCode
                 );
         }
 
@@ -114,7 +115,7 @@ namespace FASTER.test.Dispose
                     {
                         // There should be one readcache entry for this test.
                         Assert.IsTrue(new HashBucketEntry() { word = entry.Address }.ReadCache);
-                        Assert.GreaterOrEqual(address, tester.fht.ReadCache.BeginAddress);
+                        Assert.GreaterOrEqual(entry.AbsoluteAddress, tester.fht.ReadCache.BeginAddress);
                         var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                         ref RecordInfo recordInfo = ref tester.fht.readcache.GetInfo(physicalAddress);
                         address = recordInfo.PreviousAddress;
@@ -138,6 +139,7 @@ namespace FASTER.test.Dispose
                         }
                         else
                         {
+                            Assert.GreaterOrEqual(entry.AbsoluteAddress, tester.fht.ReadCache.BeginAddress);
                             var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                             ref RecordInfo recordInfo = ref tester.fht.readcache.GetInfo(physicalAddress);
                             while (recordInfo.PreviousAddress == address)
@@ -488,9 +490,6 @@ namespace FASTER.test.Dispose
 
             // Make it immutable so we don't simply set Tombstone.
             DoFlush(flushMode);
-
-            // This is necessary for FlushMode.ReadOnly to test the readonly range in Delete() (otherwise we can't test SingleDeleter there)
-            var luc = fht.NewSession(new DisposeFunctionsNoSync()).LockableUnsafeContext;
 
             void DoDelete(DisposeFunctions functions)
             {
