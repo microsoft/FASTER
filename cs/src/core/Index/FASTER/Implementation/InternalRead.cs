@@ -351,6 +351,7 @@ namespace FASTER.core
             {
                 // Unlock the record. If doing CopyReadsToTailFromReadOnly, then we have already copied the locks to the new record;
                 // this unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
+                stackCtx.HandleNewRecordOnError(this);
                 EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
         }

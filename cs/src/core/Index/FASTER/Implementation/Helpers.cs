@@ -81,19 +81,6 @@ namespace FASTER.core
             Exclusive
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static bool IsRecordValid(RecordInfo recordInfo, out OperationStatus status)
-        {
-            if (recordInfo.Valid)
-            {
-                status = OperationStatus.SUCCESS;
-                return true;
-            }
-
-            status = OperationStatus.RETRY_NOW; // An invalid record in the hash chain means the previous lock owner abandoned its operation and we can RETRY_NOW.
-            return false;
-        }
-
         internal void SetRecordInvalid(long logicalAddress)
         {
             // This is called on exception recovery for a newly-inserted record.
@@ -117,7 +104,15 @@ namespace FASTER.core
         {
             // If we have an in-memory source that was evicted, return false and the caller will RETRY.
             if (stackCtx.recSrc.InMemorySourceWasEvicted())
+            {
+                // We are doing EphemeralOnly locking and the recordInfo has gone below where we can reliably access due to BlockAllocate
+                // causing an epoch refresh (or similar); the page may have been evicted. Therefore, clear any in-memory lock flag before
+                // we return RETRY_LATER. Note that this doesn't happen if other threads also have S locks on this address, because in that
+                // case they will hold the epoch and prevent BlockAllocate from running OnPages Closed.
+                Debug.Assert(!stackCtx.recSrc.HasInMemoryLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
+                stackCtx.recSrc.HasInMemoryLock = false;
                 return false;
+            }
 
             // If we're not using readcache or the splice point is still above readcache.HeadAddress, we're good.
             if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress)

@@ -64,7 +64,7 @@ namespace FASTER.benchmark
             {
                 0 => LockingMode.Disabled,
                 1 => LockingMode.EphemeralOnly,
-                2 => LockingMode.SessionControlled,
+                2 => LockingMode.Mixed,
                 _ => throw new InvalidOperationException($"Unknown Locking mode int: {Options.LockingMode}")
             };
             if (!verifyOption(Enum.IsDefined(typeof(LockingMode), this.LockingMode), "LockingMode"))

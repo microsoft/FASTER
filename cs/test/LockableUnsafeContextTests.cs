@@ -182,7 +182,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
                                             checkpointSettings: checkpointSettings, comparer: comparer,
-                                            lockingMode: LockingMode.SessionControlled);
+                                            lockingMode: LockingMode.Mixed);
             session = fht.For(functions).NewSession<LockableUnsafeFunctions>();
         }
 

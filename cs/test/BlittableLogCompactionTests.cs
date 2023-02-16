@@ -50,7 +50,7 @@ namespace FASTER.test
         [Category("Smoke")]
 
         public void BlittableLogCompactionTest1([Values] CompactionType compactionType,
-                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)] LockingMode lockingMode)
+                                                [Values(LockingMode.EphemeralOnly, LockingMode.Mixed)] LockingMode lockingMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -100,7 +100,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         [Category("Compaction")]
         public void BlittableLogCompactionTest2([Values] CompactionType compactionType,
-                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)] LockingMode lockingMode)
+                                                [Values(LockingMode.EphemeralOnly, LockingMode.Mixed)] LockingMode lockingMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -161,7 +161,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         [Category("Compaction")]
         public void BlittableLogCompactionTest3([Values] CompactionType compactionType,
-                                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)] LockingMode lockingMode)
+                                                                [Values(LockingMode.EphemeralOnly, LockingMode.Mixed)] LockingMode lockingMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -228,7 +228,7 @@ namespace FASTER.test
         [Category("Smoke")]
 
         public void BlittableLogCompactionCustomFunctionsTest1([Values] CompactionType compactionType,
-                                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)]
+                                                                [Values(LockingMode.EphemeralOnly, LockingMode.Mixed)]
         LockingMode lockingMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -290,7 +290,7 @@ namespace FASTER.test
         [Category("Compaction")]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "lockingMode is used by Setup")]
         public void BlittableLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType, [Values]bool flushAndEvict,
-                                                                [Values(LockingMode.EphemeralOnly, LockingMode.SessionControlled)] LockingMode lockingMode)
+                                                                [Values(LockingMode.EphemeralOnly, LockingMode.Mixed)] LockingMode lockingMode)
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy

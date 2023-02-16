@@ -194,10 +194,39 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitializeLockShared() => this.word += kSharedLockIncrement;
+        internal void MarkTentative()
+        {
+            // While we are inserting a record and don't want others to access it until we are done, we XLock it.
+            // This is called before the record is CAS'd into the chain, so this does not have to do CAS.
+            this.word |= kExclusiveLockBitMask;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitializeLockExclusive() => this.word |= kExclusiveLockBitMask;
+        internal void ClearTentative()
+        {
+            // We had an XLock so nobody else should be modifying the record, so this does not have to do CAS.
+            this.word &= ~kExclusiveLockBitMask;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsMixedModeTentativeOrClosed() 
+        {
+            // This is called only in Mixed locking mode; this does not normally lock RecordInfo, so if there is an
+            // an XLock it is *only* there to mark a Tentative insertion during the "CAS -> Complete" phase, where Complete
+            // means "Transfer locks and check for readcache consistency, etc". If there is no XLock, the record is good.
+            // (For EphemeralOnly mode, this is handled as a normal part of locking: the XLock is either cleared and the
+            // record remains valid, or SetInvalid is called on failure and any thread trying to lock sees a Closed record).
+            int spinCount = Constants.kMaxLockSpins;
+
+            // Acquire shared lock
+            for (; ; Thread.Yield())
+            {
+                if (!this.IsLockedExclusive)
+                    return this.IsClosed;
+                if (spinCount > 0 && --spinCount <= 0)
+                    return true;
+            }
+        }
 
         /// <summary>
         /// Try to reset the modified bit of the RecordInfo
@@ -207,7 +236,7 @@ namespace FASTER.core
         internal bool TryResetModifiedAtomic()
         {
             int spinCount = Constants.kMaxLockSpins;
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = word;
                 if (IsClosedWord(expected_word))
@@ -218,7 +247,6 @@ namespace FASTER.core
                     break;
                 if (spinCount > 0 && --spinCount <= 0)
                     return false;
-                Thread.Yield();
             }
             return true;
         }
@@ -229,8 +257,8 @@ namespace FASTER.core
             // This is called when tranferring read locks from the read cache or read-only region to a new log record. This does not remove
             // locks from the source record because if they exist it means other threads have the record locked and must be allowed to
             // unlock it (and observe the 'false' return of that unlock due to the Seal/Invalid, and then go chase the record where it is now).
-            Debug.Assert((word & (kExclusiveLockBitMask | kSharedLockMaskInWord)) != kExclusiveLockBitMask, "Must only transfer readlocks");
-            Debug.Assert(!removeEphemeralLock || NumLockedShared > 0, "There is no ephemeral lock to remove");
+            Debug.Assert(!removeEphemeralLock || source.NumLockedShared > 0, "There is no ephemeral lock to remove");
+            Debug.Assert(!this.IsLockedShared, "This should only be called when transferring to a new record, with only the insertion 'tentative' XLock");
             for (; ; Thread.Yield())
             {
                 long expected_word = source.word;
@@ -254,8 +282,8 @@ namespace FASTER.core
                 // If that succeeds, then we update our own word.
                 if (expected_word == Interlocked.CompareExchange(ref source.word, new_word, expected_word))
                 {
-                    this.word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
-                    this.word |= new_word & (kExclusiveLockBitMask | kSharedLockMaskInWord);
+                    // We add to existing locks rather than replace; so there will be our "tentative" insertion XLock and these readlocks we transfer in (if any).
+                    this.word += new_word & kSharedLockMaskInWord;
                     return;
                 }
             }
@@ -299,12 +327,11 @@ namespace FASTER.core
 
         public void ClearDirtyAtomic()
         {
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kDirtyBitMask, expected_word))
                     break;
-                Thread.Yield();
             }
         }
 
@@ -349,22 +376,19 @@ namespace FASTER.core
         }
 
         public void SetDirtyAndModified() => word |= kDirtyBitMask | kModifiedBitMask;
-        public void SetModified() => word |= kModifiedBitMask;
-        public void ClearModified() => word &= (~kModifiedBitMask);
         public void SetDirty() => word |= kDirtyBitMask;
         public void SetTombstone() => word |= kTombstoneBitMask;
         public void SetValid() => word |= kValidBitMask;
-        public void SetInvalid() => word &= ~kValidBitMask;
+        public void SetInvalid() => word &= ~(kValidBitMask | kExclusiveLockBitMask);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetInvalidAtomic()
         {
-            while (true)
+            for (; ; Thread.Yield())
             {
                 long expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kValidBitMask, expected_word))
                     return;
-                Thread.Yield();
             }
         }
 

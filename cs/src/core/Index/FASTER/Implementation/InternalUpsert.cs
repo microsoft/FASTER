@@ -106,7 +106,7 @@ namespace FASTER.core
                     // Mutable Region: Update the record in-place
                     // We perform mutable updates only if we are in normal processing phase of checkpointing
                     srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                    if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                    if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                         goto LatchRelease;
 
                     if (srcRecordInfo.Tombstone)
@@ -156,7 +156,7 @@ namespace FASTER.core
             LockSourceRecord:
                 // This would be a local function to reduce "goto", but 'ref' variables and parameters aren't supported on local functions.
                 srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                     goto LatchRelease;
                 if (!srcRecordInfo.IsValidUpdateOrLockSource)
                 {
@@ -190,7 +190,7 @@ namespace FASTER.core
             finally
             {
                 stackCtx.HandleNewRecordOnError(this);
-                EphemeralXUnlockAfterUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                EphemeralXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
 
         #region Create pending context
@@ -360,12 +360,14 @@ namespace FASTER.core
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             upsertInfo.RecordInfo = newRecordInfo;
+            newRecordInfo.MarkTentative();
             bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
             if (success)
             {
                 CompleteUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
+                newRecordInfo.ClearTentative();
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;

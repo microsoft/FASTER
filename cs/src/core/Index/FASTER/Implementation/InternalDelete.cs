@@ -110,7 +110,7 @@ namespace FASTER.core
                     {
                         // Mutable Region: Update the record in-place
                         srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                        if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                        if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                             goto LatchRelease;
 
                         if (srcRecordInfo.Tombstone)
@@ -179,7 +179,7 @@ namespace FASTER.core
             LockSourceRecord:
                 // This would be a local function to reduce "goto", but 'ref' variables and parameters aren't supported on local functions.
                 srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                     goto LatchRelease;
 
                 if (srcRecordInfo.Tombstone)
@@ -221,7 +221,7 @@ namespace FASTER.core
             finally
             {
                 stackCtx.HandleNewRecordOnError(this);
-                EphemeralXUnlockAfterUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                EphemeralXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
 
         #region Create pending context
@@ -372,6 +372,7 @@ namespace FASTER.core
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             deleteInfo.RecordInfo = newRecordInfo;
+            newRecordInfo.MarkTentative();
             bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
             if (success)
             {
@@ -380,6 +381,7 @@ namespace FASTER.core
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
                 fasterSession.PostSingleDeleter(ref key, ref newRecordInfo, ref deleteInfo);
+                newRecordInfo.ClearTentative();
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;

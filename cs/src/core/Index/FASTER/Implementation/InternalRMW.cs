@@ -176,7 +176,7 @@ namespace FASTER.core
                 {
                     // Mutable Region: Update the record in-place
                     srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                    if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                    if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                         goto LatchRelease;
 
                     if (srcRecordInfo.Tombstone)
@@ -240,7 +240,7 @@ namespace FASTER.core
             LockSourceRecord:
                 // This would be a local function to reduce "goto", but 'ref' variables and parameters aren't supported on local functions.
                 srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                if (!TryEphemeralOnlyXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
                     goto LatchRelease;
                 if (!srcRecordInfo.IsValidUpdateOrLockSource)
                 {
@@ -276,7 +276,7 @@ namespace FASTER.core
             finally
             {
                 stackCtx.HandleNewRecordOnError(this);
-                EphemeralXUnlockAfterUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                EphemeralXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
 
         #region Create pending context
@@ -558,6 +558,7 @@ namespace FASTER.core
         DoCAS:
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             rmwInfo.RecordInfo = newRecordInfo;
+            newRecordInfo.MarkTentative();
             bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
             if (success)
             {
@@ -575,6 +576,7 @@ namespace FASTER.core
                     // Else it was a CopyUpdater so call PCU
                     fasterSession.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref newRecordInfo, ref rmwInfo);
                 }
+                newRecordInfo.ClearTentative();
                 stackCtx.ClearNewRecord();
 
                 pendingContext.recordInfo = newRecordInfo;

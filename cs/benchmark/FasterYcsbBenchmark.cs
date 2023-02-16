@@ -315,7 +315,7 @@ namespace FASTER.benchmark
 
             (Key key, LockType kind) xlock = (new Key { value = long.MaxValue }, LockType.Exclusive);
             (Key key, LockType kind) slock = (new Key { value = long.MaxValue - 1 }, LockType.Shared);
-            if (testLoader.LockingMode == LockingMode.SessionControlled)
+            if (testLoader.LockingMode == LockingMode.Mixed)
             {
                 session = store.For(functions).NewSession<Functions>();
                 luContext = session.LockableUnsafeContext;
@@ -432,7 +432,7 @@ namespace FASTER.benchmark
                 worker.Join();
             }
 
-            if (testLoader.LockingMode == LockingMode.SessionControlled)
+            if (testLoader.LockingMode == LockingMode.Mixed)
             {
                 luContext.Unlock(xlock.key, xlock.kind);
                 luContext.Unlock(slock.key, slock.kind);

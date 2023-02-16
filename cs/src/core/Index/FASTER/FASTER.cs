@@ -65,7 +65,7 @@ namespace FASTER.core
         int maxSessionID;
 
         internal readonly bool DisableEphemeralLocking;
-        internal readonly RecordInfoLocker EphemeralOnlyLocker;
+        internal readonly RecordInfoLocker RecordInfoLocker;
         internal readonly OverflowBucketLockTable<Key> LockTable;
 
         internal void IncrementNumLockingSessions()
@@ -104,7 +104,7 @@ namespace FASTER.core
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, LockingMode lockingMode = LockingMode.SessionControlled,
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, LockingMode lockingMode = LockingMode.Mixed,
             ILoggerFactory loggerFactory = null, ILogger logger = null, int lockTableSize = Constants.kDefaultLockTableSize)
         {
             this.loggerFactory = loggerFactory;
@@ -224,8 +224,8 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.EphemeralOnlyLocker = new RecordInfoLocker(lockingMode == LockingMode.EphemeralOnly);
-            this.LockTable = new OverflowBucketLockTable<Key>(lockingMode == LockingMode.SessionControlled ? state[resizeInfo.version].size_mask : 0);
+            this.RecordInfoLocker = new RecordInfoLocker(lockingMode == LockingMode.EphemeralOnly);
+            this.LockTable = new OverflowBucketLockTable<Key>(lockingMode == LockingMode.Mixed ? state[resizeInfo.version].size_mask : 0);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

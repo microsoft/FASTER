@@ -49,7 +49,7 @@ namespace FASTER.test.LockTable
             comparer ??= new LongFasterEqualityComparer();
 
             fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
-                                            comparer: comparer, lockingMode: LockingMode.SessionControlled);
+                                            comparer: comparer, lockingMode: LockingMode.Mixed);
         }
 
         [TearDown]

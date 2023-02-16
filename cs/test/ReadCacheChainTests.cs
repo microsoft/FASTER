@@ -880,7 +880,7 @@ namespace FASTER.test.ReadCacheTests
             }
 
             fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: new SpanByteComparerModulo(modRange),
-                lockingMode: LockingMode.SessionControlled);
+                lockingMode: LockingMode.Mixed);
         }
 
         [TearDown]

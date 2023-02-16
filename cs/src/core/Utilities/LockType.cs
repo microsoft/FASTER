@@ -32,7 +32,7 @@ namespace FASTER.core
         /// <summary>
         /// Locking may be manual or ephemeral; a separate lock table is used rather than the <see cref="RecordInfo"/>.
         /// </summary>
-        SessionControlled,
+        Mixed,
 
         /// <summary>
         /// Only ephemeral locking is done; all locks are in-memory via the <see cref="RecordInfo"/>.

@@ -25,7 +25,8 @@ namespace FASTER.core
             stackCtx.recSrc.LatestLogicalAddress &= ~Constants.kReadCacheBitMask;
             if (stackCtx.recSrc.LatestLogicalAddress < readcache.HeadAddress)
             {
-                // The first entry in the hash chain is a readcache entry that is targeted for eviction.
+                // The first entry in the hash chain is a readcache entry that is targeted for eviction. We can't trace the 
+                // chain into the main log until we have waited for ReadCacheEvict to complete.
                 SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LatestLogicalAddress, readcache);
                 stackCtx.UpdateRecordSourceToCurrentHashEntry();
                 goto RestartChain;
@@ -44,7 +45,7 @@ namespace FASTER.core
                 RecordInfo recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
 
                 // When traversing the readcache, we skip Invalid records. The semantics of Seal are that the operation is retried, so if we leave
-                // Sealed records in the readcache, we'll never get past them. Therefore, we go to Invalid to mark a ReadCache record as closed.
+                // Sealed records in the readcache, we'll never get past them. Therefore, we use Invalid to mark a ReadCache record as closed.
                 // Return true if we find a Valid read cache entry matching the key.
                 if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress > untilAddress && !stackCtx.recSrc.HasReadCacheSrc
                     && comparer.Equals(ref key, ref readcache.GetKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)))
@@ -215,16 +216,23 @@ namespace FASTER.core
             }
             return success;
         }
- 
-        // Called to check if another session added a readcache entry from a pending read while we were inserting an updated record. If so, then if
-        // it is not locked, it is obsolete and can be Invalidated, and the update continues. Otherwise, the inserted record is either obsolete or
-        // its update is disallowed because a read lock or better exists on that key, and so the inserted record must be invalidated.
+
+        // Called to check if another session added a readcache entry from a pending read while we were inserting a record at the tail of the log.
+        // If so, then it must be invalidated, and its *read* locks must be transferred to the new record. Why not X locks?
+        //      - There can be only one X lock so we optimize its handling in CompleteUpdate, rather than transfer them like S locks (because there
+        //        can be multiple S locks).
+        //      - The thread calling this has "won the CAS" if it has gotten this far; this is, it has CAS'd in a new record at the tail of the log
+        //        (or spliced it at the end of the readcache prefix chain).
+        //          - It is still holding its "tentative" X lock on the newly-inserted log-tail record while calling this.
+        //          - If there is another thread holding an X lock on this readcache record, it will fail its CAS, give up its X lock, and RETRY_LATER.
         // Note: The caller will do no epoch-refreshing operations after re-verifying the readcache chain following record allocation, so it is not
-        // possible for the chain to be disrupted and the new insertion lost, even if hei.Address falls below readcache.HeadAddress.
+        // possible for the chain to be disrupted and the new insertion lost, even if readcache.HeadAddress is raised above hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCompleteUpdate(ref Key key, ref HashEntryInfo hei)
+        private void ReadCacheCompleteInsertAtTail(ref Key key, ref HashEntryInfo hei, ref RecordInfo newRecordInfo)
         {
-            Debug.Assert(UseReadCache, "Should not call ReadCacheCompleteUpdate if !UseReadCache");
+            Debug.Assert(UseReadCache, "Should not call ReadCacheCompleteInsertAtTail if !UseReadCache");
+
+            // We already searched from hei.Address down; so now we search from hei.CurrentAddress down to just above hei.Address.
             HashBucketEntry entry = new() { word = hei.CurrentAddress };
             HashBucketEntry untilEntry = new() { word = hei.Address };
 
@@ -235,7 +243,8 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
                 if (!recordInfo.Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
-                    recordInfo.SetInvalidAtomic();
+                    // We don't release the ephemeral lock because we don't have a lock on this readcache record; it sneaked in behind us.
+                    newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref recordInfo, seal: false, removeEphemeralLock: false);
                     return;
                 }
                 entry.word = recordInfo.PreviousAddress;
@@ -244,32 +253,6 @@ namespace FASTER.core
             // If we're here, no (valid) record for 'key' was found.
             return;
         }
-
-        // Called to check if another session added a readcache entry from a pending read while we were doing CopyToTail of a pending read.
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCompleteCopyToTail(ref Key key, ref HashEntryInfo hei, ref RecordInfo newRecordInfo, bool removeEphemeralLock)
-        {
-            Debug.Assert(UseReadCache, "Should not call ReadCacheCompleteCopyToTail if !UseReadCache");
-            HashBucketEntry entry = new() { word = hei.CurrentAddress };
-            HashBucketEntry untilEntry = new() { word = hei.Address };
-
-            // Traverse for the key above untilAddress (which may not be in the readcache if there were no readcache records when it was retrieved).
-            while (entry.ReadCache && (entry.Address > untilEntry.Address || !untilEntry.ReadCache))
-            {
-                var physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
-                ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
-                if (!recordInfo.Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
-                {
-                    newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref recordInfo, seal: false, removeEphemeralLock);
-                    return;
-                }
-                entry.word = recordInfo.PreviousAddress;
-            }
-
-            // If we're here, no (valid) record for 'key' was found.
-            return;
-        }
-
         internal void ReadCacheEvict(long rcLogicalAddress, long rcToLogicalAddress)
         {
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.

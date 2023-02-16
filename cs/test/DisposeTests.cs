@@ -45,7 +45,7 @@ namespace FASTER.test.Dispose
 
             fht = new FasterKV<MyKey, MyValue>(128, logSettings: logSettings, comparer: new MyKeyComparer(),
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                lockingMode: LockingMode.EphemeralOnly  // SessionControlled will deadlock as both keys map to the same LockCode
+                lockingMode: LockingMode.EphemeralOnly  // MixedMode locking will deadlock as both keys map to the same LockCode
                 );
         }
 
