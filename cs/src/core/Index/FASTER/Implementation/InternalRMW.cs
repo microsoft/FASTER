@@ -472,23 +472,8 @@ namespace FASTER.core
                 inputSrc.Log.GetRecordSize(inputSrc.PhysicalAddress, ref input, fasterSession) :
                 hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
 
-            var status = OperationStatus.SUCCESS;
-            if (!GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress))
-            {
-                // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
-                do
-                {
-                    if (!BlockAllocate(allocatedSize, out newLogicalAddress, ref pendingContext, out status))
-                        return status;
-                    newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-
-                    if (!VerifyInMemoryAddresses(ref stackCtx, stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress | Constants.kReadCacheBitMask : Constants.kInvalidAddress))
-                    {
-                        SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
-                        return OperationStatus.RETRY_LATER;
-                    }
-                } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
-            }
+            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+                return status;
 
             ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);

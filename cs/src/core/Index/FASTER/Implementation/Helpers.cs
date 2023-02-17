@@ -100,30 +100,21 @@ namespace FASTER.core
         // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.
         // This refreshes the HashEntryInfo, so the caller needs to recheck to confirm the BlockAllocated address is still > hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool VerifyInMemoryAddresses(ref OperationStackContext<Key, Value> stackCtx, long skipReadCacheStartAddress = Constants.kInvalidAddress)
+        private bool VerifyInMemoryAddresses(ref OperationStackContext<Key, Value> stackCtx)
         {
+            Debug.Assert(!stackCtx.recSrc.HasInMemoryLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
+
             // If we have an in-memory source that was evicted, return false and the caller will RETRY.
             if (stackCtx.recSrc.InMemorySourceWasEvicted())
-            {
-                // We are doing EphemeralOnly locking and the recordInfo has gone below where we can reliably access due to BlockAllocate
-                // causing an epoch refresh (or similar); the page may have been evicted. Therefore, clear any in-memory lock flag before
-                // we return RETRY_LATER. Note that this doesn't happen if other threads also have S locks on this address, because in that
-                // case they will hold the epoch and prevent BlockAllocate from running OnPages Closed.
-                Debug.Assert(!stackCtx.recSrc.HasInMemoryLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
-                stackCtx.recSrc.HasInMemoryLock = false;
                 return false;
-            }
 
             // If we're not using readcache or the splice point is still above readcache.HeadAddress, we're good.
             if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress)
                 return true;
 
-            // Make sure skipReadCacheStartAddress is a readcache address (it likely is not only in the case where there are no readcache records).
-            // This also ensures the comparison to readcache.HeadAddress below works correctly.
-            if ((skipReadCacheStartAddress & Constants.kReadCacheBitMask) == 0)
-                skipReadCacheStartAddress = Constants.kInvalidAddress;
-            else
-                skipReadCacheStartAddress &= ~Constants.kReadCacheBitMask;
+            // The splice-point readcache record was evicted, so re-get it. If we have a readcache source address then we can start skipping
+            // there (we've verified above it's still >= HeadAddress). Otherwise we must start from the beginning of the readcache.
+            var skipReadCacheStartAddress = stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress;
 
             // The splice-point readcache record was evicted, so re-get it.
             while (true)

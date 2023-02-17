@@ -413,6 +413,9 @@ namespace FASTER.core
             hei.firstBucket = hei.bucket = state[version].tableAligned + masked_entry_word;
             hei.slot = Constants.kInvalidEntrySlot;
             hei.entry = default;
+#if DEBUG
+            hei.LockCode = masked_entry_word;
+#endif // DEBUG
 
             do
             {
@@ -449,6 +452,9 @@ namespace FASTER.core
         {
             var version = resizeInfo.version;
             var masked_entry_word = hei.hash & state[version].size_mask;
+#if DEBUG
+            hei.LockCode = masked_entry_word;
+#endif // DEBUG
 
             while (true)
             {

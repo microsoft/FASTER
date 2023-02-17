@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -131,7 +132,7 @@ namespace FASTER.core
         private void FindAndUnlockTransferredRecord(ref Key key, long hash)
         {
             // Loop because it may have transferred again in a highly threaded and memory-constrained scenario.
-            while (true)
+            for (; ; Thread.Yield())
             { 
                 OperationStackContext<Key, Value> stackCtx = new(hash);
                 FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
@@ -142,9 +143,11 @@ namespace FASTER.core
                     break;
 
                 stackCtx.recSrc.SetPhysicalAddress();
-                var recordInfo = stackCtx.recSrc.GetSrcRecordInfo();
+                ref var recordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
                 if (recordInfo.TryUnlockShared())
                     break;
+
+                // Not doing an epoch refresh now because if the record was invalid, that means another was already CAS'd in.
             }
         }
 
@@ -198,7 +201,7 @@ namespace FASTER.core
                 // (Note: If we are doing MixedMode locking, then we will have a lock table entry separate from the recordInfo for both
                 // manual and ephemeral locks; no transfer or marking is needed.)
                 stackCtx.recSrc.MarkSourceRecordAfterSuccessfulCopy<Input, Output, Context, FasterSession>(fasterSession, ref srcRecordInfo);
-                // We don't clear HasInMemorySrc here because XUnlock does not return failure.
+                // Don't clear HasInMemorySrc; the XLock wasn't removed from the record or copied to the new record, and XUnlock does not return failure.
                 return;
             }
             

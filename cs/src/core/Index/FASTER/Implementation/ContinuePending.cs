@@ -436,24 +436,11 @@ namespace FASTER.core
             long readcacheNewAddressBit = 0L;
             if (copyToReadCache)
             {
-                // Spin to make sure newLogicalAddress is > hei.Address (the .PreviousAddress and CAS comparison value).
-                do
-                {
-                    if (!BlockAllocateReadCache(allocatedSize, out newLogicalAddress, ref pendingContext, out _))
-                        return OperationStatus.SUCCESS; // We don't slow down Reads to handle allocation failure in the read cache, but don't return StatusCode.CopiedRecordToReadCache
-                    newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
-                    localLog = readcache;
-                    readcacheNewAddressBit = Constants.kReadCacheBitMask;
+                localLog = readcache;
+                readcacheNewAddressBit = Constants.kReadCacheBitMask;
 
-                    if (!VerifyInMemoryAddresses(ref stackCtx))
-                    {
-                        // We don't save readcache addresses (they'll eventually be evicted)
-                        ref var ri = ref readcache.GetInfo(newPhysicalAddress);
-                        ri.SetInvalid();                                        // We haven't yet set stackCtx.newLogicalAddress, so do this directly here
-                        ri.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
-                        return OperationStatus.RETRY_LATER;
-                    }
-                } while (stackCtx.hei.IsReadCache && newLogicalAddress < stackCtx.hei.AbsoluteAddress);
+                if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, allocatedSize, out newLogicalAddress, out newPhysicalAddress, out OperationStatus status))
+                    return status;
 
                 newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
                 stackCtx.SetNewRecord(newLogicalAddress);
@@ -464,22 +451,8 @@ namespace FASTER.core
             }
             else
             {
-                if (!GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, allocatedSize, out newLogicalAddress, out newPhysicalAddress))
-                {
-                    // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value). TODO: save record for reuse
-                    do
-                    {
-                        if (!BlockAllocate(allocatedSize, out newLogicalAddress, ref pendingContext, out OperationStatus status))
-                            return status;      // For CopyToTail, we do want to make sure the record is appended to the tail, so return the failing status.
-                        newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-
-                        if (!VerifyInMemoryAddresses(ref stackCtx))
-                        {
-                            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
-                            return OperationStatus.RETRY_LATER;
-                        }
-                    } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
-                }
+                if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: true, out newLogicalAddress, out newPhysicalAddress, out OperationStatus status))
+                    return status;
 
                 newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: currentCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
                 stackCtx.SetNewRecord(newLogicalAddress);

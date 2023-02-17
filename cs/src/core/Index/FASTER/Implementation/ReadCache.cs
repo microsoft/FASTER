@@ -72,9 +72,7 @@ namespace FASTER.core
                 recordInfo.PreviousAddress &= ~Constants.kReadCacheBitMask;
                 if (recordInfo.PreviousAddress < readcache.HeadAddress)
                 {
-                    // We must wait until possible locks are transferred to the lock table by ReadCacheEvict. Due to address ordering, waiting for
-                    // latestLogicalAddress also waits for any lower-address readcache records. This wait also ensures that ReadCacheEvict is complete
-                    // for this chain, so the returned "lowest readcache addresses" are correct.
+                    // As above, we can't trace the chain into the main log until we have waited for ReadCacheEvict to complete.
                     var prevHeadAddress = readcache.HeadAddress;
                     SpinWaitUntilAddressIsClosed(recordInfo.PreviousAddress, readcache);
                     if (readcache.HeadAddress == prevHeadAddress)
@@ -198,7 +196,6 @@ namespace FASTER.core
             if (lowest_rcri.PreviousAddress > untilLogicalAddress)
             {
                 // Someone added a new record in the splice region. It won't be readcache; that would've been added at tail. See if it's our key.
-                // We want this whether it's Tentative or not, so don't wait for Tentative.
                 var minAddress = untilLogicalAddress > hlog.HeadAddress ? untilLogicalAddress : hlog.HeadAddress;
                 if (TraceBackForKeyMatch(ref key, lowest_rcri.PreviousAddress, minAddress + 1, out long prevAddress, out _))
                     success = false;
@@ -253,6 +250,15 @@ namespace FASTER.core
             // If we're here, no (valid) record for 'key' was found.
             return;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void ReadCacheAbandonRecord(long physicalAddress)
+        {
+            ref var ri = ref readcache.GetInfo(physicalAddress);
+            ri.SetInvalid();
+            ri.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
+        }
+
         internal void ReadCacheEvict(long rcLogicalAddress, long rcToLogicalAddress)
         {
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.

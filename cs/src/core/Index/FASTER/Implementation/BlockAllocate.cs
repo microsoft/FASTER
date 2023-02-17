@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace FASTER.core
 {
@@ -51,6 +53,88 @@ namespace FASTER.core
             pendingContext.flushEvent = default;
             allocator.TryComplete();
             internalStatus = OperationStatus.RETRY_LATER;
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool TryAllocateRecord<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, ref OperationStackContext<Key, Value> stackCtx,
+                                                       int allocatedSize, bool recycle, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
+        {
+            status = OperationStatus.SUCCESS;
+            if (recycle && GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, allocatedSize, out newLogicalAddress, out newPhysicalAddress))
+                return true;
+
+            // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
+            for (; ; Thread.Yield() )
+            {
+                if (!BlockAllocate(allocatedSize, out newLogicalAddress, ref pendingContext, out status))
+                    break;
+
+                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                if (VerifyInMemoryAddresses(ref stackCtx))
+                {
+                    if (newLogicalAddress > stackCtx.recSrc.LatestLogicalAddress)
+                        return true;
+
+                    // This allocation is below the necessary address so abandon it and repeat the loop.
+                    hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
+                    continue;
+                }
+
+                // In-memory source dropped below HeadAddress during BlockAllocate.
+                if (recycle)
+                    SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
+                else
+                    hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
+                status = OperationStatus.RETRY_LATER;
+                break;
+            }
+
+            return AllocationFailed(ref stackCtx, out newPhysicalAddress);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool TryAllocateRecordReadCache<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, ref OperationStackContext<Key, Value> stackCtx,
+                                                       int allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
+        {
+            // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
+            for (; ; Thread.Yield())
+            {
+                if (!BlockAllocateReadCache(allocatedSize, out newLogicalAddress, ref pendingContext, out status))
+                    break;
+
+                newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
+                if (VerifyInMemoryAddresses(ref stackCtx))
+                {
+                    if (!stackCtx.hei.IsReadCache || newLogicalAddress > stackCtx.hei.AbsoluteAddress)
+                        return true;
+
+                    // This allocation is below the necessary address so abandon it and repeat the loop.
+                    ReadCacheAbandonRecord(newPhysicalAddress);
+                    continue;
+                }
+
+                // In-memory source dropped below HeadAddress during BlockAllocate.
+                ReadCacheAbandonRecord(newPhysicalAddress);                // We don't save readcache addresses (they'll eventually be evicted)
+                status = OperationStatus.RETRY_LATER;
+                break;
+            }
+
+            return AllocationFailed(ref stackCtx, out newPhysicalAddress);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool AllocationFailed(ref OperationStackContext<Key, Value> stackCtx, out long newPhysicalAddress)
+        {
+            // Either BlockAllocate returned false or an in-memory source dropped below HeadAddress. If we have an in-memory lock it
+            // means we are doing EphemeralOnly locking and if the recordInfo has gone below where we can reliably access it due to
+            // BlockAllocate causing an epoch refresh, the page may have been evicted. Therefore, clear any in-memory lock flag before
+            // we return RETRY_LATER. This eviction doesn't happen if other threads also have S locks on this address, because in that
+            // case they will hold the epoch and prevent BlockAllocate from running OnPagesClosed.
+            Debug.Assert(!stackCtx.recSrc.HasInMemoryLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
+            if (stackCtx.recSrc.InMemorySourceWasEvicted())
+                stackCtx.recSrc.HasInMemoryLock = false;
+            newPhysicalAddress = 0;
             return false;
         }
 
