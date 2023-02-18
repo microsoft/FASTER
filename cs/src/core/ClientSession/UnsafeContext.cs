@@ -506,14 +506,18 @@ namespace FASTER.core
 
             public void UnlockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DisableEphemeralLocking)
-                    _clientSession.fht.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
+                if (_clientSession.fht.DisableEphemeralLocking)
+                    return;
+                _clientSession.fht.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
+                stackCtx.recSrc.HasLockTableLock = false;
             }
 
             public void UnlockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DisableEphemeralLocking)
-                    _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);
+                if (_clientSession.fht.DisableEphemeralLocking)
+                    return;
+                _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);
+                stackCtx.recSrc.HasLockTableLock = false;
             }
             #endregion Ephemeral locking
 

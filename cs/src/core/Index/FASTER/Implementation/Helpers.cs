@@ -102,7 +102,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool VerifyInMemoryAddresses(ref OperationStackContext<Key, Value> stackCtx)
         {
-            Debug.Assert(!stackCtx.recSrc.HasInMemoryLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
+            Debug.Assert(!stackCtx.recSrc.HasRecordInfoLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
 
             // If we have an in-memory source that was evicted, return false and the caller will RETRY.
             if (stackCtx.recSrc.InMemorySourceWasEvicted())

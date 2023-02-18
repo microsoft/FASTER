@@ -116,6 +116,7 @@ namespace FASTER.core
 #if DEBUG
             result += $", lockCode {LockCode}";
 #endif // DEBUG
+            result += $", Bkt1 [{HashBucket.ToString(firstBucket)}]";
             return result;
         }
     }

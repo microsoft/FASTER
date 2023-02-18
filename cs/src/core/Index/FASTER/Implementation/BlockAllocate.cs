@@ -131,9 +131,9 @@ namespace FASTER.core
             // BlockAllocate causing an epoch refresh, the page may have been evicted. Therefore, clear any in-memory lock flag before
             // we return RETRY_LATER. This eviction doesn't happen if other threads also have S locks on this address, because in that
             // case they will hold the epoch and prevent BlockAllocate from running OnPagesClosed.
-            Debug.Assert(!stackCtx.recSrc.HasInMemoryLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
+            Debug.Assert(!stackCtx.recSrc.HasRecordInfoLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
             if (stackCtx.recSrc.InMemorySourceWasEvicted())
-                stackCtx.recSrc.HasInMemoryLock = false;
+                stackCtx.recSrc.HasRecordInfoLock = false;
             newPhysicalAddress = 0;
             return false;
         }

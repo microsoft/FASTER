@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -202,6 +201,12 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsLatched(HashBucket* bucket)
             => (bucket->bucket_entries[Constants.kOverflowBucketIndex] & kLatchBitMask) != 0;
+
+        public static string ToString(HashBucket* bucket)
+        {
+            var locks = $"{(IsLatchedExclusive(bucket) ? "x" : string.Empty)}{NumLatchedShared(bucket)}";
+            return $"locks {locks}";
+        }
     }
 
     // Long value layout: [1-bit tentative][15-bit TAG][48-bit address]

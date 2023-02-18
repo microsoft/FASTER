@@ -3,20 +3,22 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using static FASTER.core.Utility;
 
 namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset)
-        {
-            if (!UseReadCache || !FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress))
-            {
-                TryFindRecordInMainLog(ref key, ref stackCtx, minOffset);
-            }
-            return stackCtx.recSrc.HasInMemorySrc;
-        }
+        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset) 
+            => UseReadCache && FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress)
+                || TryFindRecordInMainLog(ref key, ref stackCtx, minOffset);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TryFindRecordInMemoryAfterPendingIO(ref Key key, ref OperationStackContext<Key, Value> stackCtx,
+                            LockType lockType, long prevHighestKeyHashAddress = Constants.kInvalidAddress) 
+            => UseReadCache && FindInReadCache(ref key, ref stackCtx, untilAddress: IsReadCache(prevHighestKeyHashAddress) ? prevHighestKeyHashAddress : Constants.kInvalidAddress)
+                || TryFindRecordInMainLog(ref key, ref stackCtx, minOffset: hlog.HeadAddress);
 
         internal bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset)
         {

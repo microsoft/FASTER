@@ -62,24 +62,12 @@ namespace FASTER.core
         /// <summary>
         /// Set by caller to indicate whether it has an ephemeral lock on the InMemorySrc record's <see cref="RecordInfo"/> (this may be mainlog or readcache).
         /// </summary>
-        internal bool HasInMemoryLock;
+        internal bool HasRecordInfoLock;
 
         /// <summary>
         /// Set by caller to indicate whether it has an ephemeral lock in the LockTable for the operation Key.
         /// </summary>
         internal bool HasLockTableLock;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearSrc()
-        {
-            this.LogicalAddress = Constants.kInvalidAddress;
-            this.PhysicalAddress = 0;
-            this.Log = default;
-            this.HasMainLogSrc = false;
-            this.HasReadCacheSrc = false;
-            this.HasInMemoryLock = false;
-            this.HasLockTableLock = false;
-        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ref RecordInfo GetSrcRecordInfo() => ref Log.GetInfo(PhysicalAddress);
@@ -90,7 +78,7 @@ namespace FASTER.core
 
         internal bool HasSrc => HasInMemorySrc || HasLockTableLock;
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
-        internal bool HasLock => HasInMemoryLock || HasLockTableLock;
+        internal bool HasLock => HasRecordInfoLock || HasLockTableLock;
 
         /// <summary>
         /// Initialize to the latest logical address from the caller.
@@ -103,8 +91,10 @@ namespace FASTER.core
             LowestReadCachePhysicalAddress = default;
             HasMainLogSrc = false;
             HasReadCacheSrc = default;
-            this.HasInMemoryLock = false;
-            HasLockTableLock = false;
+            this.HasRecordInfoLock = false;
+            
+            // Do not clear the locktable lock; this is not affected by record transfers, eviction, etc.
+            //HasLockTableLock = false;
 
             this.LatestLogicalAddress = this.LogicalAddress = AbsoluteAddress(latestLogicalAddress);
             this.Log = srcLog;
@@ -154,7 +144,7 @@ namespace FASTER.core
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
-                 + $" hasMLsrc {bstr(HasMainLogSrc)}, hasRCsrc {bstr(HasReadCacheSrc)}, hasIMlock {bstr(HasInMemoryLock)}, hasLTlock {bstr(HasLockTableLock)}";
+                 + $" hasLogSrc {bstr(HasMainLogSrc)}, hasRCsrc {bstr(HasReadCacheSrc)}, hasRIlock {bstr(HasRecordInfoLock)}, hasLTlock {bstr(HasLockTableLock)}";
         }
     }
 }

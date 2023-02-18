@@ -65,6 +65,7 @@ namespace FASTER.core
                         return status;
                     }
 
+                    var expired = false;
                     try
                     {
                         // Wait until after locking to check this.
@@ -80,7 +81,6 @@ namespace FASTER.core
                         };
 
                         ref var value = ref hlog.GetContextRecordValue(ref request);
-                        var expired = false;
                         if (!fasterSession.SingleReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref srcRecordInfo, ref readInfo))
                         {
                             if (readInfo.Action == ReadAction.CancelOperation)
@@ -101,13 +101,6 @@ namespace FASTER.core
                             status = InternalTryCopyToTail(ctx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
                                                 ref stackCtx, ref srcRecordInfo, untilLogicalAddress: pendingContext.PrevLatestLogicalAddress,
                                                 fasterSession, copyToTail ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
-                            if (!HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext))
-                            {
-                                // If no copy to tail was done.
-                                if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
-                                    return expired ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired) : OperationStatus.SUCCESS;
-                                return status;
-                            }
                         }
                         else
                         {
@@ -118,8 +111,18 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
+
+                    // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
+                    if (!HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext))
+                    {
+                        // If no copy to tail was done.
+                        if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
+                            return expired ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired) : OperationStatus.SUCCESS;
+                        return status;
+                    }
+
                 } // end while (true)
             }
 
@@ -329,7 +332,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnError(this);
-                        EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                        EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
             } while (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext));

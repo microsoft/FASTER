@@ -196,8 +196,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkTentative()
         {
-            // While we are inserting a record and don't want others to access it until we are done, we XLock it.
-            // This is called before the record is CAS'd into the chain, so this does not have to do CAS.
+            // While we are inserting a record in EphemeralOnly locking and don't want others to access it until we are done, we XLock it.
+            // This is called before the record is CAS'd into the chain, so this does not have to do CAS. MixedMode ignores it.
             this.word |= kExclusiveLockBitMask;
         }
 
@@ -206,26 +206,6 @@ namespace FASTER.core
         {
             // We had an XLock so nobody else should be modifying the record, so this does not have to do CAS.
             this.word &= ~kExclusiveLockBitMask;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsMixedModeTentativeOrClosed() 
-        {
-            // This is called only in Mixed locking mode; this does not normally lock RecordInfo, so if there is an
-            // an XLock it is *only* there to mark a Tentative insertion during the "CAS -> Complete" phase, where Complete
-            // means "Transfer locks and check for readcache consistency, etc". If there is no XLock, the record is good.
-            // (For EphemeralOnly mode, this is handled as a normal part of locking: the XLock is either cleared and the
-            // record remains valid, or SetInvalid is called on failure and any thread trying to lock sees a Closed record).
-            int spinCount = Constants.kMaxLockSpins;
-
-            // Acquire shared lock
-            for (; ; Thread.Yield())
-            {
-                if (!this.IsLockedExclusive)
-                    return this.IsClosed;
-                if (spinCount > 0 && --spinCount <= 0)
-                    return true;
-            }
         }
 
         /// <summary>

@@ -10,27 +10,13 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemoryAfterPendingIO(ref Key key, ref OperationStackContext<Key, Value> stackCtx,
-                            LockType lockType, long prevHighestKeyHashAddress = Constants.kInvalidAddress)
-        {
-            if (UseReadCache && FindInReadCache(ref key, ref stackCtx,
-                                                untilAddress: (prevHighestKeyHashAddress & Constants.kReadCacheBitMask) != 0 ? prevHighestKeyHashAddress : Constants.kInvalidAddress))
-                return true;
-            return TryFindRecordInMainLog(ref key, ref stackCtx, minOffset: hlog.HeadAddress);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref RecordSource<Key, Value> recSrc, ref RecordInfo srcRecordInfo, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
             if (!this.RecordInfoLocker.IsEnabled)
             {
-                if (srcRecordInfo.IsMixedModeTentativeOrClosed())
-                {
-                    status = OperationStatus.RETRY_LATER;
-                    return false;
-                }
+                // Note: In MixedMode we ignore "Tentative" locks in the RecordInfo; we have an XLock so there is no conflict possible.
                 return true;
             }
 
@@ -42,7 +28,7 @@ namespace FASTER.core
             }
 
             Debug.Assert(!srcRecordInfo.IsClosed, "RecordInfo XLock should have failed if the record is closed");
-            return recSrc.HasInMemoryLock = true;
+            return recSrc.HasRecordInfoLock = true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -65,18 +51,13 @@ namespace FASTER.core
 
             if (this.LockTable.IsEnabled)
             {
-                if (srcRecordInfo.IsMixedModeTentativeOrClosed())
-                {
-                    status = OperationStatus.RETRY_LATER;
-                    return false;
-                }
+                // Note: In MixedMode we ignore "Tentative" locks in the RecordInfo; for Reads we can use the value from the readcache or fall through to IO,
+                // and if there was an update, there would be a Hashbucket XLock.
 
-                if (!fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
-                {
-                    status = OperationStatus.RETRY_LATER;
-                    return false;
-                }
-                return true;
+                if (fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
+                    return true;
+                status = OperationStatus.RETRY_LATER;
+                return false;
             }
 
             // If neither locking mode is enabled, return true so the operation continues, but don't set any Has*Lock
@@ -91,7 +72,7 @@ namespace FASTER.core
             }
 
             Debug.Assert(!srcRecordInfo.IsClosed, "RecordInfo SLock should have failed if the record is closed");
-            return stackCtx.recSrc.HasInMemoryLock = true;
+            return stackCtx.recSrc.HasRecordInfoLock = true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -102,11 +83,12 @@ namespace FASTER.core
             if (!stackCtx.recSrc.HasLock)
                 return;
 
+            // This unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
             if (this.RecordInfoLocker.IsEnabled)
             {
                 // We precheck that the address was above HeadAddress before we get this far, so even if HeadAddress changes, the record can't be evicted
                 // while we hold the epoch.
-                Debug.Assert(stackCtx.recSrc.HasInMemoryLock, "Should have an InMemoryLock when we have an ephemeral lock with RecordInfoLocker enabled");
+                Debug.Assert(stackCtx.recSrc.HasRecordInfoLock, "Should have an InMemoryLock when we have an ephemeral lock with RecordInfoLocker enabled");
 
                 // (See comments in CompleteCopyToTail also) Because this is an S lock, then if the source record is in ReadOnly or ReadCache, it is possible
                 // that the source record (specifically its locks) was transferred by another session that did CopyToTail or CopyToReadCache (it would not have
@@ -117,16 +99,13 @@ namespace FASTER.core
                 // evicted while we hold the epoch, so use ClosedUntilAddress when searching.
                 if (!this.RecordInfoLocker.TryUnlockShared(ref srcRecordInfo)) 
                     FindAndUnlockTransferredRecord(ref key, stackCtx.hei.hash);
+                stackCtx.recSrc.HasRecordInfoLock = false;
+                return;
+            }
 
-                stackCtx.recSrc.HasInMemoryLock = false;
-            }
-            else
-            {
-                Debug.Assert(this.LockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
-                Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have an InMemoryLock when we have an ephemeral lock with ManualLockTable enabled");
-                fasterSession.UnlockEphemeralShared(ref key, ref stackCtx);
-                stackCtx.recSrc.HasLockTableLock = false;
-            }
+            Debug.Assert(this.LockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
+            Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have a LockTable lock when we have an ephemeral lock with ManualLockTable enabled");
+            fasterSession.UnlockEphemeralShared(ref key, ref stackCtx);
         }
 
         private void FindAndUnlockTransferredRecord(ref Key key, long hash)
@@ -147,7 +126,7 @@ namespace FASTER.core
                 if (recordInfo.TryUnlockShared())
                     break;
 
-                // Not doing an epoch refresh now because if the record was invalid, that means another was already CAS'd in.
+                // Not doing an epoch refresh here because if the record was invalid, that means another was already CAS'd in.
             }
         }
 
@@ -164,26 +143,15 @@ namespace FASTER.core
             {
                 // We precheck that the address was above HeadAddress before we get this far, so even if HeadAddress changes, the record can't be evicted
                 // while we hold the epoch.
-                Debug.Assert(stackCtx.recSrc.HasInMemoryLock, "Should have an InMemoryLock when we have an ephemeral lock with RecordInfoLocker enabled");
+                Debug.Assert(stackCtx.recSrc.HasRecordInfoLock, "Should have an InMemoryLock when we have an ephemeral lock with RecordInfoLocker enabled");
                 this.RecordInfoLocker.UnlockExclusive(ref srcRecordInfo);
-                stackCtx.recSrc.HasInMemoryLock = false;
+                stackCtx.recSrc.HasRecordInfoLock = false;
+                return;
             }
-            else
-            {
-                Debug.Assert(this.LockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
-                Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have an InMemoryLock when we have an ephemeral lock with ManualLockTable enabled");
-                fasterSession.UnlockEphemeralExclusive(ref key, ref stackCtx);
-                stackCtx.recSrc.HasLockTableLock = false;
-            }
-        }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void EphemeralSUnlockAfterPendingIO<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, 
-                ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            // This unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
-            EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+            Debug.Assert(this.LockTable.IsEnabled, "If we're here, one of the locking systems should be enabled");
+            Debug.Assert(stackCtx.recSrc.HasLockTableLock, "Should have a LockTable lock when we have an ephemeral lock with ManualLockTable enabled");
+            fasterSession.UnlockEphemeralExclusive(ref key, ref stackCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -224,8 +192,8 @@ namespace FASTER.core
             {
                 // Unlock the current ephemeral lock here; we mark the source so we *know* we will have an invalid unlock on srcRecordInfo and would have to chase
                 // through InternalLock to unlock it, so we save the time by not transferring our ephemeral lock.
-                newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref srcRecordInfo, seal: stackCtx.recSrc.HasMainLogSrc, removeEphemeralLock: stackCtx.recSrc.HasInMemoryLock);
-                stackCtx.recSrc.HasInMemoryLock = false;
+                newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref srcRecordInfo, seal: stackCtx.recSrc.HasMainLogSrc, removeEphemeralLock: stackCtx.recSrc.HasRecordInfoLock);
+                stackCtx.recSrc.HasRecordInfoLock = false;
                 return;
             }
 

@@ -72,5 +72,12 @@ namespace FASTER.core
                 this.newLogicalAddress = Constants.kInvalidAddress;
             }
         }
+
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            var delimiter = "    ";  // Environment.NewLine doesn't display in VS
+            return $"hei: {hei}{delimiter}newLA {newLogicalAddress}{delimiter}recSrc: {recSrc}";
+        }
     }
 }
