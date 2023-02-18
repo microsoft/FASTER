@@ -112,44 +112,19 @@ namespace FASTER.core
             if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress)
                 return true;
 
-            // The splice-point readcache record was evicted, so re-get it. If we have a readcache source address then we can start skipping
-            // there (we've verified above it's still >= HeadAddress). Otherwise we must start from the beginning of the readcache.
-            var skipReadCacheStartAddress = stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress;
+            // The splice-point readcache record may have been evicted, so re-get it.
+            stackCtx.hei.SetToCurrent();
 
-            // The splice-point readcache record was evicted, so re-get it.
-            while (true)
-            {
-                stackCtx.hei.SetToCurrent();
-                stackCtx.recSrc.LatestLogicalAddress = stackCtx.hei.Address;
-                if (!stackCtx.hei.IsReadCache)
-                {
-                    stackCtx.recSrc.LowestReadCacheLogicalAddress = Constants.kInvalidAddress;
-                    stackCtx.recSrc.LowestReadCachePhysicalAddress = 0;
-                    Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "ReadCacheSrc should not be evicted before SpinWaitUntilAddressIsClosed is called");
-                    return true;
-                }
+            // If we have a readcache source address then we can start skipping there (we've verified above it's still >= HeadAddress).
+            // Otherwise we must start from the beginning of the readcache. The initial address must have kReadCacheBitMask.
+            stackCtx.recSrc.LatestLogicalAddress = stackCtx.recSrc.HasReadCacheSrc
+                ? stackCtx.recSrc.LogicalAddress | Constants.kReadCacheBitMask
+                : stackCtx.hei.Address;
 
-                // Skip from the start address if it's valid, but do not overwrite the Has*Src information in recSrc.
-                // We stripped the readcache bit from it above, so add it back here (if it's valid).
-                if (skipReadCacheStartAddress < readcache.HeadAddress)
-                    skipReadCacheStartAddress = Constants.kInvalidAddress;
-                else
-                    stackCtx.recSrc.LatestLogicalAddress = skipReadCacheStartAddress | Constants.kReadCacheBitMask;
-
-                if (UseReadCache && SkipReadCache(ref stackCtx.recSrc.LatestLogicalAddress, out stackCtx.recSrc.LowestReadCacheLogicalAddress, out stackCtx.recSrc.LowestReadCachePhysicalAddress))
-                {
-                    Debug.Assert(stackCtx.hei.IsReadCache || stackCtx.hei.Address == stackCtx.recSrc.LatestLogicalAddress, "For non-readcache chains, recSrc.LatestLogicalAddress should == hei.Address");
-                    return true;
-                }
-
-                // A false return from SkipReadCache means we traversed to where recSrc.LatestLogicalAddress is still in
-                // the readcache but is < readcache.HeadAddress, so wait until it is evicted.
-                SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LatestLogicalAddress, readcache);
-
-                // If we have an in-memory source that was evicted, return false and the caller will RETRY.
-                if (stackCtx.recSrc.InMemorySourceWasEvicted())
-                    return false;
-            }
+            SkipReadCache(ref stackCtx);
+            Debug.Assert(stackCtx.hei.IsReadCache || stackCtx.hei.Address == stackCtx.recSrc.LatestLogicalAddress, "For non-readcache chains, recSrc.LatestLogicalAddress should == hei.Address");
+            stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+            return true;
         }
     }
 }

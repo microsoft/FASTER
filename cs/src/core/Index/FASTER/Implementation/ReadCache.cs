@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using static FASTER.core.Utility;
 
 namespace FASTER.core
@@ -19,21 +20,11 @@ namespace FASTER.core
             if (!stackCtx.hei.IsReadCache)
                 return false;
 
+            // This is also part of the initialization process for stackCtx.recSrc for each API/InternalXxx call.
             stackCtx.recSrc.LogicalAddress = Constants.kInvalidAddress;
             stackCtx.recSrc.PhysicalAddress = 0;
 
             stackCtx.recSrc.LatestLogicalAddress &= ~Constants.kReadCacheBitMask;
-            if (stackCtx.recSrc.LatestLogicalAddress < readcache.HeadAddress)
-            {
-                // The first entry in the hash chain is a readcache entry that is targeted for eviction. We can't trace the 
-                // chain into the main log until we have waited for ReadCacheEvict to complete.
-                SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LatestLogicalAddress, readcache);
-                stackCtx.UpdateRecordSourceToCurrentHashEntry();
-                goto RestartChain;
-            }
-
-            stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-            stackCtx.recSrc.LowestReadCachePhysicalAddress = readcache.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
             // untilAddress, if present, comes from the pre-pendingIO entry.Address; there may have been no readcache entries then.
             Debug.Assert((untilAddress & Constants.kReadCacheBitMask) != 0 || untilAddress == Constants.kInvalidAddress, "untilAddress must be readcache or kInvalidAddress");
@@ -41,6 +32,16 @@ namespace FASTER.core
 
             while (true)
             {
+                if (ReadCacheNeedToWaitForEviction(ref stackCtx))
+                {
+                    untilAddress |= Constants.kReadCacheBitMask;    // Restore this to pass the assert
+                    goto RestartChain;
+                }
+
+                // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
+                stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+                stackCtx.recSrc.LowestReadCachePhysicalAddress = readcache.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
+
                 // Use a non-ref local, because we update it below to remove the readcache bit.
                 RecordInfo recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
 
@@ -69,29 +70,7 @@ namespace FASTER.core
                     goto InMainLog;
                 }
 
-                recordInfo.PreviousAddress &= ~Constants.kReadCacheBitMask;
-                if (recordInfo.PreviousAddress < readcache.HeadAddress)
-                {
-                    // As above, we can't trace the chain into the main log until we have waited for ReadCacheEvict to complete.
-                    var prevHeadAddress = readcache.HeadAddress;
-                    SpinWaitUntilAddressIsClosed(recordInfo.PreviousAddress, readcache);
-                    if (readcache.HeadAddress == prevHeadAddress)
-                    {
-                        // HeadAddress is the same, so ReadCacheEvict should have updated the lowest readcache entry's .PreviousAddress to point to the main log.
-                        recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);  // refresh the local copy
-                        Debug.Assert(!recordInfo.PreviousAddressIsReadCache, "SpinWaitUntilRecordIsClosed should set recordInfo.PreviousAddress to a main-log entry if Headaddress is unchanged");
-                        stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
-                        goto InMainLog;
-                    }
-
-                    // SpinWaitUntilRecordIsClosed updated readcache.HeadAddress, so we must restart the chain.
-                    stackCtx.UpdateRecordSourceToCurrentHashEntry();
-                    goto RestartChain;
-                }
-
-                stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
-                stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-                stackCtx.recSrc.LowestReadCachePhysicalAddress = readcache.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
+                stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress & ~Constants.kReadCacheBitMask;
             }
 
         InMainLog:
@@ -105,6 +84,23 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<Key, Value> stackCtx)
+        {
+            if (stackCtx.recSrc.LatestLogicalAddress < readcache.SafeHeadAddress)
+            {
+                // We hold the epoch so if a record was above HeadAddress when we started, then even if HeadAddress is incremented so it is above the record, we can
+                // still access the record in memory because it won't be evicted until we release the epoch. *However*, there is a race where we may encounter a 
+                // record that was below HeadAddress when we started; ReadCacheEvict was already imminent, but hadn't gotten to it yet. In that case, if the record
+                // is below SafeHeadAddress (which is incremented before the OnPagesClosed loop executes), pause and then restart the loop. This is conceptually
+                // similar to finding a record below HeadAddress and "issuing IO"; here, the "IO" is "wait for ReadCacheEvict to fix up the chain".
+                Thread.Yield();
+                stackCtx.UpdateRecordSourceToCurrentHashEntry();
+                return true;
+            }
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool SpliceIntoHashChainAtReadCacheBoundary(ref RecordSource<Key, Value> recSrc, long newLogicalAddress)
         {
             // Splice into the gap of the last readcache/first main log entries.
@@ -113,51 +109,41 @@ namespace FASTER.core
             return rcri.TryUpdateAddress(recSrc.LatestLogicalAddress, newLogicalAddress);
         }
 
-        // Skip over all readcache records in this key's chain (advancing logicalAddress to the first non-readcache record we encounter).
+        // Skip over all readcache records in this key's chain, advancing stackCtx.recSrc to the first non-readcache record we encounter.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SkipReadCache(ref HashEntryInfo hei, ref long logicalAddress)
-        {
-            while (!SkipReadCache(ref logicalAddress, out _, out _))
-            {
-                hei.SetToCurrent();
-                logicalAddress = hei.Address;
-            }
-        }
-
-        // Skip over all readcache records in this key's chain (advancing logicalAddress to the first non-readcache record we encounter
-        // and returning the lowest readcache logical and phyical addresses). If we go below readcache.HeadAddress we can't find the
-        // 'lowestReadCache*' output params, so return false and let the caller issue a retry. Otherwise, we reached the end of the 
-        // readcache chain (if any), so return true.
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool SkipReadCache(ref long logicalAddress, out long lowestReadCacheLogicalAddress, out long lowestReadCachePhysicalAddress)
+        internal void SkipReadCache(ref OperationStackContext<Key, Value> stackCtx)
         {
             Debug.Assert(UseReadCache, "Should not call SkipReadCache if !UseReadCache");
-            var entry = new HashBucketEntry() { word = logicalAddress };
-            logicalAddress = entry.AbsoluteAddress;
-            if (!entry.ReadCache || logicalAddress < readcache.HeadAddress)
-            {
-                lowestReadCacheLogicalAddress = Constants.kInvalidAddress;
-                lowestReadCachePhysicalAddress = 0;
-                return !entry.ReadCache;
-            }
+        RestartChain:
+            // 'recSrc' has already been initialized to the address in 'hei'.
+            if (!stackCtx.hei.IsReadCache)
+                return;
 
-            var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+            // This is FindInReadCache without the key comparison or untilAddress.
+            stackCtx.recSrc.LogicalAddress = Constants.kInvalidAddress;
+            stackCtx.recSrc.PhysicalAddress = 0;
+
+            stackCtx.recSrc.LatestLogicalAddress &= ~Constants.kReadCacheBitMask;
 
             while (true)
             {
-                lowestReadCacheLogicalAddress = logicalAddress;
-                lowestReadCachePhysicalAddress = physicalAddress;
+                if (ReadCacheNeedToWaitForEviction(ref stackCtx))
+                    goto RestartChain;
 
-                var recordInfo = readcache.GetInfo(physicalAddress);
+                // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
+                stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+                stackCtx.recSrc.LowestReadCachePhysicalAddress = readcache.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
-                // Look ahead to see if we're at the end of the readcache chain.
-                entry.word = recordInfo.PreviousAddress;
-                logicalAddress = entry.AbsoluteAddress;
-
-                if (!entry.ReadCache || logicalAddress < readcache.HeadAddress)
-                    return !entry.ReadCache;
-
-                physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+                RecordInfo recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
+                if (!recordInfo.PreviousAddressIsReadCache)
+                {
+                    Debug.Assert(recordInfo.PreviousAddress >= hlog.BeginAddress, "Read cache chain should always end with a main-log entry");
+                    stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
+                    stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+                    stackCtx.recSrc.PhysicalAddress = 0;
+                    return;
+                }
+                stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress & ~Constants.kReadCacheBitMask;
             }
         }
 
@@ -259,8 +245,12 @@ namespace FASTER.core
             ri.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
         }
 
+        System.Collections.Generic.List<(long, long)> rcClosedRanges = new();
+
         internal void ReadCacheEvict(long rcLogicalAddress, long rcToLogicalAddress)
         {
+            rcClosedRanges.Add(new(rcLogicalAddress, rcToLogicalAddress));
+
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.
             while (rcLogicalAddress < rcToLogicalAddress)
             {

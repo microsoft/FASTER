@@ -522,7 +522,7 @@ namespace FASTER.core
                         continue;
                     }
 
-                    // If the entry points to an address that has been evicted, it's free; try to reclaim it by setting its word to 0.
+                    // If the entry points to an address that has been truncated, it's free; try to reclaim it by setting its word to 0.
                     hei.entry.word = target_entry_word;
                     if (hei.entry.Address < BeginAddress && hei.entry.Address != Constants.kTempInvalidAddress)
                     {

@@ -17,22 +17,21 @@ namespace FASTER.core
             if (fromAddress < hlog.HeadAddress)
                 fromAddress = hlog.HeadAddress;
 
-            long physicalAddress;
-            HashEntryInfo hei = new (comparer.GetHashCode64(ref key));
+            OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
             if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hei.hash, sessionCtx, fasterSession);
+                HeavyEnter(stackCtx.hei.hash, sessionCtx, fasterSession);
 
-            if (FindTag(ref hei))
+            if (FindTag(ref stackCtx.hei))
             {
-                logicalAddress = hei.Address;
+                stackCtx.SetRecordSourceToHashEntry(hlog);
 
                 if (UseReadCache)
-                    SkipReadCache(ref hei, ref logicalAddress);
+                    SkipReadCache(ref stackCtx);
 
-                if (logicalAddress >= fromAddress)
+                if (stackCtx.recSrc.LogicalAddress >= fromAddress)
                 {
-                    physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                    var physicalAddress = stackCtx.recSrc.SetPhysicalAddress();
                     ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                     if (recordInfo.Invalid || !comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
                     {
@@ -40,11 +39,12 @@ namespace FASTER.core
                         TraceBackForKeyMatch(ref key, logicalAddress, fromAddress, out logicalAddress, out _);
                     }
 
-                    if (logicalAddress < fromAddress)
+                    if (stackCtx.recSrc.LogicalAddress < fromAddress)
                     {
                         logicalAddress = 0;
                         return new(StatusCode.NotFound);
                     }
+                    logicalAddress = stackCtx.recSrc.LogicalAddress;
                     return new(StatusCode.Found);
                 }
                 logicalAddress = 0;

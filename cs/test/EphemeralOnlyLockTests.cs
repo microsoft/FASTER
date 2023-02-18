@@ -136,7 +136,7 @@ namespace FASTER.test.EphemeralOnlyLock
             {
                 var recordInfo = fht.hlog.GetInfo(fht.hlog.GetPhysicalAddress(stackCtx.hei.AbsoluteAddress));
                 Assert.IsFalse(recordInfo.IsLocked);
-                fht.SkipReadCache(ref stackCtx.hei, ref stackCtx.recSrc.LogicalAddress);
+                fht.SkipReadCache(ref stackCtx);
             }
             if (fht.TryFindRecordInMainLog(ref key, ref stackCtx, fht.hlog.BeginAddress))
             {

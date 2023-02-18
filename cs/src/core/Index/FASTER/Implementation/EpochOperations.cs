@@ -55,52 +55,5 @@ namespace FASTER.core
                 Thread.Yield();
             }
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SpinWaitUntilRecordIsClosed(ref Key key, long keyHash, long logicalAddress, AllocatorBase<Key, Value> log)
-        {
-            Debug.Assert(logicalAddress < log.HeadAddress, "SpinWaitUntilRecordIsClosed should not be called for addresses above HeadAddress");
-
-            // The caller checks for logicalAddress < HeadAddress, so we must ProtectAndDrain at least once, even if logicalAddress >= ClosedUntilAddress.
-            // Otherwise, let's say we have two OnPagesClosed operations in the epoch drainlist:
-            //      old epoch: old HeadAddress -> [ClosedUntilAddress is somewhere in here] -> intermediate HeadAddress
-            //      middle epoch: we hold this
-            //      newer epoch: intermediate HeadAddress -> current HeadAddress
-            // If we find the record above ClosedUntilAddress and return immediately, the caller will retry -- but we haven't given the second
-            // OnPagesClosed a chance to run and we're holding an epoch below it, so the caller will again see logicalAddress < HeadAddress... forever.
-            // However, we don't want the caller to check for logicalAddress < ClosedUntilAddress instead of HeadAddress; this allows races where
-            // lock are split between the record and the LockTable:
-            //      lock -> eviction to lock table -> unlock -> ClosedUntilAddress updated
-            // So the caller has to check for logicalAddress < HeadAddress and we have to run this loop at least once.
-            while (true)
-            {
-                epoch.ProtectAndDrain();
-                Thread.Yield();
-
-                // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.
-                if (logicalAddress < log.ClosedUntilAddress)
-                    break;
-
-                // Note: We cannot jump out here if the Lock Table contains the key, because it may be an older version of the record.
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SpinWaitUntilAddressIsClosed(long logicalAddress, AllocatorBase<Key, Value> log)
-        {
-            Debug.Assert(logicalAddress < log.HeadAddress, "SpinWaitUntilAddressIsClosed should not be called for addresses above HeadAddress");
-
-            // This is nearly identical to SpinWaitUntilRecordIsClosed (see comments there), but here we are called during chain traversal
-            // (e.g. ReadCacheEvict) and thus do not want to short-circuit if the key is found (the address may be for a colliding key).
-            while (true)
-            {
-                epoch.ProtectAndDrain();
-                Thread.Yield();
-
-                // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.
-                if (logicalAddress < log.ClosedUntilAddress)
-                    break;
-            }
-        }
     }
 }
