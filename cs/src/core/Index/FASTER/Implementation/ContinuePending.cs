@@ -172,9 +172,8 @@ namespace FASTER.core
             SpinWaitUntilClosed(request.logicalAddress);
 
             byte* recordPointer = request.record.GetValidPointer();
-            ref var inputRIRef = ref hlog.GetInfoFromBytePointer(recordPointer);
-            inputRIRef.ClearBitsForDiskImages();
-            RecordInfo inputRecordInfo = inputRIRef; // Not ref, as we don't want to write into request.record
+            var srcRecordInfo = hlog.GetInfoFromBytePointer(recordPointer); // Not ref, as we don't want to write into request.record
+            srcRecordInfo.ClearBitsForDiskImages();
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
             OperationStatus status;
@@ -183,10 +182,6 @@ namespace FASTER.core
             {
                 FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
                 stackCtx.SetRecordSourceToHashEntry(hlog);
-
-                // A 'ref' variable must be initialized. If we find a record for the key, we reassign the reference.
-                RecordInfo dummyRecordInfo = default;
-                ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
                 // During the pending operation, a record for the key may have been added to the log.
                 if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
@@ -206,17 +201,13 @@ namespace FASTER.core
 
                 try
                 {
-                    // Here, the input* data for 'doingCU' is the from the request, so create a RecordSource copy for that.
-                    RecordSource<Key, Value> inputSrc = new()
-                    {
-                        LogicalAddress = request.logicalAddress,
-                        PhysicalAddress = (long)recordPointer,
-                        HasMainLogSrc = (request.logicalAddress >= hlog.BeginAddress) && !inputRecordInfo.Tombstone,
-                        Log = hlog
-                    };
+                    // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
+                    stackCtx.recSrc.LogicalAddress = request.logicalAddress;
+                    stackCtx.recSrc.PhysicalAddress = (long)recordPointer;
 
                     status = CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
-                                                ref pendingContext, fasterSession, sessionCtx, ref stackCtx, ref srcRecordInfo, ref inputSrc, inputRecordInfo, fromPending: true);
+                                                ref pendingContext, fasterSession, sessionCtx, ref stackCtx, ref srcRecordInfo,
+                                                doingCU: request.logicalAddress >= hlog.BeginAddress && !srcRecordInfo.Tombstone);
                 }
                 finally
                 {

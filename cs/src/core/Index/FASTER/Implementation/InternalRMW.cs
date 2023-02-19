@@ -168,7 +168,7 @@ namespace FASTER.core
 
                     // Here, the input* data for 'doingCU' is the same as recSrc.
                     status = CreateNewRecordRMW(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, sessionCtx, ref stackCtx, ref srcRecordInfo,
-                                                inputSrc: ref stackCtx.recSrc, inputRecordInfo: srcRecordInfo);
+                                                doingCU: stackCtx.recSrc.HasInMemorySrc && !srcRecordInfo.Tombstone);
                     if (!OperationStatusUtils.IsAppend(status))
                     {
                         // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
@@ -304,39 +304,20 @@ namespace FASTER.core
         /// <param name="fasterSession">The current session</param>
         /// <param name="sessionCtx">The current session context</param> // TODO can this be replaced with fasterSession.clientSession.ctx?
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
-        ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
+        ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions. If called from pending IO,
+        ///     this is populated from the data read from disk.</param>
         /// <param name="srcRecordInfo">If <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value}.HasInMemorySrc"/>,
-        ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value}.LogicalAddress"/></param>
-        /// <param name="inputSrc">If <paramref name="fromPending"/>, this is populated from the request record; otherwise it is <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value}"/></param>
-        /// <param name="inputRecordInfo">If <paramref name="fromPending"/>, this is the <see cref="RecordInfo"/> for the request record.
-        ///     Otherwise it is a copy of <paramref name="srcRecordInfo"/>.</param>
-        /// <param name="fromPending">Whether we are being called from pending path</param>
-        /// <remarks><paramref name="inputSrc"></paramref> vs. <paramref name="stackCtx"/> is a critically important distinction for pending RMW:
-        /// <list type="bullet">
-        ///     <item><b>NonPending</b>: <paramref name="stackCtx"/> is the usual source for locking and copying; <paramref name="inputSrc"/> is an alias</item>
-        ///     <item><b>Pending</b>: <paramref name="stackCtx"/> is the source for locking *only*; <paramref name="inputSrc"/> contains the property valus for actual data read from disk.
-        ///         In particular:
-        ///         <list type="bullet">
-        ///             <item><paramref name="inputSrc"/>.<see cref="RecordSource{Key, Value}.Log"/> always is hlog; <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value}.Log"/>
-        ///                 may be the readcache. Cross-log address accesses are a Bad Thing.</item>
-        ///             <item><paramref name="inputSrc"/>.<see cref="RecordSource{Key, Value}.HasInMemorySrc"/> reflects the request's logicalAddress rather than the locking record's</item>
-        ///             <item><paramref name="inputSrc"/> has no readcache or LockTable information.</item>
-        ///         </list>
-        ///         Therefore, for Pending RMW it is important to use <paramref name="inputSrc"/> rather than <paramref name="stackCtx"/> for all operations on input data.</item>
-        /// </list>
-        /// </remarks>
+        ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value}.LogicalAddress"/>. Otherwise, if called from pending IO,
+        ///     this is the <see cref="RecordInfo"/> read from disk. If neither of these, it is a default <see cref="RecordInfo"/>.</param>
+        /// <param name="doingCU">Whether we are doing a CopyUpdate, either from in-memory or pending IO</param>
         /// <returns></returns>
         private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output,
                                                                                           ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
                                                                                           FasterExecutionContext<Input, Output, Context> sessionCtx, 
-                                                                                          ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, 
-                                                                                          ref RecordSource<Key, Value> inputSrc, RecordInfo inputRecordInfo, bool fromPending = false)
+                                                                                          ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, bool doingCU)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             bool forExpiration = false;
-
-            // Alias this here
-            var doingCU = inputSrc.HasInMemorySrc && !srcRecordInfo.Tombstone;
 
         RetryNow:
 
@@ -345,14 +326,14 @@ namespace FASTER.core
                 SessionType = fasterSession.SessionType,
                 Version = sessionCtx.version,
                 SessionID = sessionCtx.sessionID,
-                Address = inputSrc.HasMainLogSrc ? inputSrc.LogicalAddress : Constants.kInvalidAddress,
+                Address = doingCU ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
                 KeyHash = stackCtx.hei.hash
             };
 
             // Perform Need*
             if (doingCU)
             {
-                rmwInfo.RecordInfo = inputRecordInfo;
+                rmwInfo.RecordInfo = srcRecordInfo;
                 if (!fasterSession.NeedCopyUpdate(ref key, ref input, ref value, ref output, ref rmwInfo))
                 {
                     if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -376,7 +357,7 @@ namespace FASTER.core
 
             // Allocate and initialize the new record
             var (actualSize, allocatedSize) = doingCU ?
-                inputSrc.Log.GetRecordSize(inputSrc.PhysicalAddress, ref input, fasterSession) :
+                stackCtx.recSrc.Log.GetRecordSize(stackCtx.recSrc.PhysicalAddress, ref input, fasterSession) :
                 hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
 
             if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
