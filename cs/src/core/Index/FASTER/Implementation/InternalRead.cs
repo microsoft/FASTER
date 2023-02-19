@@ -62,16 +62,11 @@ namespace FASTER.core
 
             #region Trace back for record in readcache and in-memory HybridLog
 
-            // This tracks the address pointed to by the hash bucket; it may or may not be in the readcache, in-memory, on-disk, or < BeginAddress (in which
-            // case we return NOTFOUND and this value is not used). InternalContinuePendingRead can stop comparing keys immediately above this address.
-            long prevHighestKeyHashAddress = Constants.kInvalidAddress;
-
             var useStartAddress = startAddress != Constants.kInvalidAddress && !pendingContext.HasMinAddress;
             if (!useStartAddress)
             {
                 if (!FindTag(ref stackCtx.hei) || (!stackCtx.hei.IsReadCache && stackCtx.hei.Address < pendingContext.minAddress))
                     return OperationStatus.NOTFOUND;
-                prevHighestKeyHashAddress = stackCtx.hei.Address;
             }
             else
             {
@@ -114,47 +109,45 @@ namespace FASTER.core
             }
             #endregion
 
+            // These track the latest main-log address in the tag chain; InternalContinuePendingRead uses them to check for new inserts.
+            pendingContext.InitialEntryAddress = stackCtx.hei.Address;
+            pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+
             if (sessionCtx.phase == Phase.PREPARE && CheckBucketVersionNew(ref stackCtx.hei.entry))
-            {
                 return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
-            }
 
             #region Normal processing
 
-            // Mutable region (even fuzzy region is included here)
             if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress)
             {
+                // Mutable region (even fuzzy region is included here)
                 return ReadFromMutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession, sessionCtx);
             }
-
-            // Immutable region
             else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
+                // Immutable region
                 status = ReadFromImmutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession, sessionCtx);
                 if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly
                     goto CreatePendingContext;
                 return status;
             }
-
-            // On-Disk Region
             else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
             {
+                // On-Disk Region
                 Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
+
                 // Note: we do not lock here; we wait until reading from disk, then lock in the InternalContinuePendingRead chain.
                 if (hlog.IsNullDevice)
                     return OperationStatus.NOTFOUND;
 
                 status = OperationStatus.RECORD_ON_DISK;
-                if (sessionCtx.phase == Phase.PREPARE)
+                if (sessionCtx.phase == Phase.PREPARE && !useStartAddress)
                 {
-                    if (!useStartAddress)
-                    {
-                        // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
-                        if (HashBucket.TryAcquireSharedLatch(stackCtx.hei.bucket))
-                            HashBucket.ReleaseSharedLatch(stackCtx.hei.bucket);
-                        else
-                            return OperationStatus.CPR_SHIFT_DETECTED;
-                    }
+                    // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
+                    if (HashBucket.TryAcquireSharedLatch(stackCtx.hei.bucket))
+                        HashBucket.ReleaseSharedLatch(stackCtx.hei.bucket);
+                    else
+                        return OperationStatus.CPR_SHIFT_DETECTED;
                 }
 
                 goto CreatePendingContext;
@@ -183,11 +176,9 @@ namespace FASTER.core
                     heapConvertible.ConvertToHeap();
 
                 pendingContext.userContext = userContext;
-                pendingContext.PrevLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
-                pendingContext.PrevHighestKeyHashAddress = prevHighestKeyHashAddress;
             }
             #endregion
 
@@ -201,7 +192,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-            if (FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress, alwaysFindLatestLA: false))
+            if (FindInReadCache(ref key, ref stackCtx, minAddress: Constants.kInvalidAddress, alwaysFindLatestLA: false))
             {
                 // Note: When session is in PREPARE phase, a read-cache record cannot be new-version. This is because a new-version record
                 // insertion would have invalidated the read-cache entry, and before the new-version record can go to disk become eligible

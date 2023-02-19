@@ -445,24 +445,21 @@ namespace FASTER.test.Dispose
 
             // The way this works for OnDisk is:
             //   SUT sees that the address in the hash entry is below HeadAddress (because everything has been flushed to disk)
+            //      SUT records InitialEntryAddress with the original hash entry address
             //      SUT goes pending, gets to InternalContinuePendingRMW, calls CreateNewRecordRMW, which calls CopyUpdater
             //          SUT (in CopyUpdater) signals Other, then blocks
-            //      SUT has recorded prevHighestKeyHashAddress with the original hash entry address
             //   Other calls InternalRMW and also sees that the address in the hash entry is below HeadAddress, so it goes pending
             //      Other gets to InternalContinuePendingRMW, sees its key does not exist, and calls InitialUpdater, which signals SUT
             //      Other returns from InternalContinuePendingRMW, which enqueues DeserializedFromDisk into functions2.handlerQueue
             //   SUT is now unblocked and returns from CopyUpdater. CAS fails due to Other's insertion
             //      SUT does the RETRY loop in InternalContinuePendingRMW
-            //      This second loop iteration sees that prevHighestKeyHashAddress is less than the current hash table entry, so drops down to do InternalRMW.
-            //      InternalRMW does TracebackForKeyMatch, which passes Other's inserted collision and goes below HeadAddress
-            //      InternalRMW thus enqueues another pending IO
-            //      InternalContinuePendingRMW returns, which enqueues DeserializedFromDisk into functions1.handlerQueue
-            //      The final pending IO calls InternalContinuePendingRMW, which operates normally now as there is no conflict.
-            //      InternalContinuePendingRMW returns, which enqueues another DeserializedFromDisk into functions1.handlerQueue
+            //      This second loop iteration searches for the record in-memory down to InitialEntryAddress and does not find it.
+            //          It verifies that the lower bound of the search guarantees we searched all in-memory records.
+            //      Therefore SUT calls CreateNewRecordRMW again, which succeeds.
+            //      SUT returns from InternalContinuePendingRMW, which enqueues DeserializedFromDisk into functions1.handlerQueue
             Assert.AreEqual(DisposeHandler.CopyUpdater, functions1.handlerQueue.Dequeue());
             if (flushMode == FlushMode.OnDisk)
             {
-                Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions1.handlerQueue.Dequeue());
                 Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions1.handlerQueue.Dequeue());
                 Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions2.handlerQueue.Dequeue());
             }
@@ -632,6 +629,7 @@ namespace FASTER.test.Dispose
                     Assert.IsTrue(status.IsPending, status.ToString());
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, output) = GetSinglePendingResult(completedOutputs);
+                    Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(TestInitialValue, output.value.value);
                 }
                 else

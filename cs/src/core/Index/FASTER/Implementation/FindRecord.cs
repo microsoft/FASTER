@@ -3,30 +3,40 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static FASTER.core.Utility;
 
 namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset) 
-            => UseReadCache && FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress)
-                || TryFindRecordInMainLog(ref key, ref stackCtx, minOffset);
+        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress)
+        {
+            if (UseReadCache && FindInReadCache(ref key, ref stackCtx, minAddress: Constants.kInvalidAddress))
+                return true;
+            return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minAddress < hlog.HeadAddress ? hlog.HeadAddress : minAddress);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemoryAfterPendingIO(ref Key key, ref OperationStackContext<Key, Value> stackCtx,
-                            LockType lockType, long prevHighestKeyHashAddress = Constants.kInvalidAddress) 
-            => UseReadCache && FindInReadCache(ref key, ref stackCtx, untilAddress: IsReadCache(prevHighestKeyHashAddress) ? prevHighestKeyHashAddress : Constants.kInvalidAddress)
-                || TryFindRecordInMainLog(ref key, ref stackCtx, minOffset: hlog.HeadAddress);
+        private bool TryFindRecordInMemory<Input, Output, Context>(ref Key key, ref OperationStackContext<Key, Value> stackCtx,
+                                                                   ref PendingContext<Input, Output, Context> pendingContext)
+        {
+            if (UseReadCache)
+            { 
+                var minRC = pendingContext.InitialEntryAddress < readcache.HeadAddress ? readcache.HeadAddress : pendingContext.InitialEntryAddress;
+                if (FindInReadCache(ref key, ref stackCtx, minAddress: minRC))
+                    return true;
+            }
+            var minLog = pendingContext.InitialLatestLogicalAddress < hlog.HeadAddress ? hlog.HeadAddress : pendingContext.InitialLatestLogicalAddress;
+            return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minLog);
+        }
 
-        internal bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minOffset)
+        internal bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress)
         {
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
                 stackCtx.recSrc.SetPhysicalAddress();
-                TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minOffset);
+                TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minAddress);
             }
             return stackCtx.recSrc.HasInMemorySrc;
         }
@@ -45,6 +55,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TraceBackForKeyMatch(ref Key key, long fromLogicalAddress, long minAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
         {
+            // This overload is called when the record at the "current" logical address does not match 'key'; fromLogicalAddress is its .PreviousAddress.
             foundLogicalAddress = fromLogicalAddress;
             while (foundLogicalAddress >= minAddress)
             {

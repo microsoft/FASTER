@@ -54,8 +54,8 @@ namespace FASTER.core
                         Debug.Fail("Expected to FindTag in InternalContinuePendingRead");
                     stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                    // During the pending operation, the record may have been added to the log or readcache.
-                    if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Shared, pendingContext.PrevHighestKeyHashAddress))
+                    // During the pending operation, a record for the key may have been added to the log or readcache.
+                    if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
                         srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
 
                     if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out var status))
@@ -95,11 +95,11 @@ namespace FASTER.core
 
                         // See if we are copying to read cache or tail of log. If we are copying to readcache but already found the record in the readcache, we're done.
                         var copyToTail = expired || pendingContext.CopyReadsToTail;
-                        var copyToRC = !stackCtx.recSrc.HasReadCacheSrc && UseReadCache && !pendingContext.DisableReadCacheUpdates;
+                        var copyToRC = !stackCtx.recSrc.HasInMemorySrc && UseReadCache && !pendingContext.DisableReadCacheUpdates;
                         if (copyToRC || copyToTail)
                         {
                             status = InternalTryCopyToTail(ctx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
-                                                ref stackCtx, ref srcRecordInfo, untilLogicalAddress: pendingContext.PrevLatestLogicalAddress,
+                                                ref stackCtx, ref srcRecordInfo, untilLogicalAddress: pendingContext.InitialLatestLogicalAddress,
                                                 fasterSession, copyToTail ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
                         }
                         else
@@ -188,15 +188,17 @@ namespace FASTER.core
                 RecordInfo dummyRecordInfo = default;
                 ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
-                // During the pending operation, the record may have been added to any of the possible locations.
-                if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress))
-                {
-                    srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                    if (srcRecordInfo.IsClosed)
-                    {
-                        status = OperationStatus.RETRY_LATER;
-                        goto CheckRetry;
-                    }
+                // During the pending operation, a record for the key may have been added to the log.
+                if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
+                    break;
+
+                // We didn't find a record for the key in memory, but if recSrc.LogicalAddress (which is the .PreviousAddress of the lowest record
+                // above InitialLatestLogicalAddress we could reach) is > InitialLatestLogicalAddress, then it means InitialLatestLogicalAddress is
+                // now below HeadAddress and there is at least one record below HeadAddress but above InitialLatestLogicalAddress. We must do InternalRMW.
+                if (stackCtx.recSrc.LogicalAddress > pendingContext.InitialLatestLogicalAddress)
+                { 
+                    Debug.Assert(pendingContext.InitialLatestLogicalAddress < hlog.HeadAddress, "Failed to search all in-memory records");
+                    break;
                 }
 
                 if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out status))
@@ -204,11 +206,6 @@ namespace FASTER.core
 
                 try
                 {
-                    // pendingContext.entry.Address is the previous latestLogicalAddress; if recSrc.LatestLogicalAddress (set by FindRecordInReadCacheOrLockTable)
-                    // is greater than the previous latestLogicalAddress, then another thread inserted or spliced in a new record and we must do InternalRMW.
-                    if (stackCtx.recSrc.LatestLogicalAddress > pendingContext.entry.Address)
-                        break;
-
                     // Here, the input* data for 'doingCU' is the from the request, so create a RecordSource copy for that.
                     RecordSource<Key, Value> inputSrc = new()
                     {
@@ -299,7 +296,7 @@ namespace FASTER.core
                     }
                     else
                     {
-                        if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress))
+                        if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
                             srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
                     }
                 }

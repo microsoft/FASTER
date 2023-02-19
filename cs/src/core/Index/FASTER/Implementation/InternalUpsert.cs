@@ -71,6 +71,8 @@ namespace FASTER.core
             if (srcRecordInfo.IsClosed)
                 return OperationStatus.RETRY_LATER;
 
+            // Note: we do not track pendingContext.Initial*Address because we don't have an InternalContinuePendingUpsert
+
             UpsertInfo upsertInfo = new()
             {
                 SessionType = fasterSession.SessionType,
@@ -180,7 +182,6 @@ namespace FASTER.core
                     heapConvertible.ConvertToHeap();
 
                 pendingContext.userContext = userContext;
-                pendingContext.PrevLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;

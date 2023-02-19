@@ -132,7 +132,7 @@ namespace FASTER.test.EphemeralOnlyLock
 
             HashEntryInfo hei = new(fht.comparer.GetHashCode64(ref key));
 
-            if (fht.UseReadCache && fht.FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress))
+            if (fht.UseReadCache && fht.FindInReadCache(ref key, ref stackCtx, minAddress: Constants.kInvalidAddress))
             {
                 var recordInfo = fht.hlog.GetInfo(fht.hlog.GetPhysicalAddress(stackCtx.hei.AbsoluteAddress));
                 Assert.IsFalse(recordInfo.IsLocked);

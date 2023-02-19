@@ -66,16 +66,16 @@ namespace FASTER.core
             FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
-            // This tracks the address pointed to by the hash bucket; it may or may not be in the readcache, in-memory, on-disk, or < BeginAddress.
-            // InternalContinuePendingRMW can stop comparing keys immediately above this address.
-            long prevHighestKeyHashAddress = stackCtx.hei.Address;
-
             RecordInfo dummyRecordInfo = new() { Valid = true };
             ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress)
                 ? ref stackCtx.recSrc.GetSrcRecordInfo()
                 : ref dummyRecordInfo;
             if (srcRecordInfo.IsClosed)
                 return OperationStatus.RETRY_LATER;
+
+            // These track the latest main-log address in the tag chain; InternalContinuePendingRMW uses them to check for new inserts.
+            pendingContext.InitialEntryAddress = stackCtx.hei.Address;
+            pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
 
             RMWInfo rmwInfo = new()
             {
@@ -203,11 +203,9 @@ namespace FASTER.core
                     heapConvertible.ConvertToHeap();
 
                 pendingContext.userContext = userContext;
-                pendingContext.PrevLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;   // InternalContinuePendingRMW compares to this to see if a new record was spliced in
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                 pendingContext.version = sessionCtx.version;
                 pendingContext.serialNum = lsn;
-                pendingContext.PrevHighestKeyHashAddress = prevHighestKeyHashAddress;
             }
         #endregion
 

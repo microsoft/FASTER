@@ -258,16 +258,16 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
             }
 
-            internal long PrevHighestKeyHashAddress
+            internal long InitialEntryAddress
             {
                 get => recordInfo.PreviousAddress;
                 set => recordInfo.PreviousAddress = value;
             }
 
-            internal long PrevLatestLogicalAddress
+            internal long InitialLatestLogicalAddress
             {
-                get => entry.word;
-                set => entry.word = value;
+                get => entry.Address;
+                set => entry.Address = value;
             }
 
             public void Dispose()

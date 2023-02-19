@@ -12,9 +12,13 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool FindInReadCache(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long untilAddress, bool alwaysFindLatestLA = true)
+        internal bool FindInReadCache(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress = Constants.kInvalidAddress, bool alwaysFindLatestLA = true)
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
+
+            // minAddress, if present, comes from the pre-pendingIO entry.Address; there may have been no readcache entries then.
+            minAddress = IsReadCache(minAddress) ? AbsoluteAddress(minAddress) : Constants.kInvalidAddress;
+
         RestartChain:
             // 'recSrc' has already been initialized to the address in 'hei'.
             if (!stackCtx.hei.IsReadCache)
@@ -26,17 +30,10 @@ namespace FASTER.core
 
             stackCtx.recSrc.LatestLogicalAddress &= ~Constants.kReadCacheBitMask;
 
-            // untilAddress, if present, comes from the pre-pendingIO entry.Address; there may have been no readcache entries then.
-            Debug.Assert((untilAddress & Constants.kReadCacheBitMask) != 0 || untilAddress == Constants.kInvalidAddress, "untilAddress must be readcache or kInvalidAddress");
-            untilAddress &= ~Constants.kReadCacheBitMask;
-
             while (true)
             {
                 if (ReadCacheNeedToWaitForEviction(ref stackCtx))
-                {
-                    untilAddress |= Constants.kReadCacheBitMask;    // Restore this to pass the assert
                     goto RestartChain;
-                }
 
                 // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
                 stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
@@ -48,7 +45,7 @@ namespace FASTER.core
                 // When traversing the readcache, we skip Invalid records. The semantics of Seal are that the operation is retried, so if we leave
                 // Sealed records in the readcache, we'll never get past them. Therefore, we use Invalid to mark a ReadCache record as closed.
                 // Return true if we find a Valid read cache entry matching the key.
-                if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress > untilAddress && !stackCtx.recSrc.HasReadCacheSrc
+                if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress > minAddress && !stackCtx.recSrc.HasReadCacheSrc
                     && comparer.Equals(ref key, ref readcache.GetKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)))
                 {
                     // Keep these at the current readcache location; they'll be the caller's source record.

@@ -3,6 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using System.Threading;
+using static FASTER.core.Utility;
 
 namespace FASTER.core
 {
@@ -65,9 +66,9 @@ namespace FASTER.core
         internal bool IsReadCache => entry.ReadCache;
 
         /// <summary>
-        /// Whether the original address for this hash entry (at the time of FindTag, etc.) is a readcache address.
+        /// Whether the current address for this hash entry (possibly modified after FindTag, etc.) is a readcache address.
         /// </summary>
-        internal bool IsCurrentReadCache => (this.bucket->bucket_entries[this.slot] & Constants.kReadCacheBitMask) != 0;
+        internal bool IsCurrentReadCache => IsReadCache(this.bucket->bucket_entries[this.slot]);
 
         /// <summary>
         /// Set members to the current entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
