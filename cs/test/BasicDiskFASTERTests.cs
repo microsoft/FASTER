@@ -26,7 +26,7 @@ namespace FASTER.test
         public void PageBlobWriteRead()
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
-            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests"));
+            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests", logger: TestUtils.TestLoggerFactory.CreateLogger("asd")));
         }
 
         [Test]
@@ -35,7 +35,7 @@ namespace FASTER.test
         public void PageBlobWriteReadWithLease()
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
-            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests",null,true,true));
+            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests",null,true,true, logger: TestUtils.TestLoggerFactory.CreateLogger("asd")));
         }
 
         [Test]
@@ -48,7 +48,7 @@ namespace FASTER.test
             IDevice localDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
             if (TestUtils.IsRunningAzureTests)
             {
-                IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests");
+                IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests", logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
                 tested = new TieredStorageDevice(1, localDevice, cloudDevice);
             }
             else

@@ -21,8 +21,6 @@ namespace FASTER.core
         [FieldOffset(0)]
         public long LastFlushedUntilAddress;
         [FieldOffset(8)]
-        public long LastClosedUntilAddress;
-        [FieldOffset(16)]
         public long Dirty;
     }
 
@@ -165,6 +163,12 @@ namespace FASTER.core
         /// Begin address
         /// </summary>
         public long BeginAddress;
+
+        /// <summary>
+        /// Address until which we are currently closing. Used to coordinate linear closing of pages.
+        /// Only one thread will be closing pages at a time.
+        /// </summary>
+        long OngoingCloseUntilAddress;
 
         /// <inheritdoc/>
         public override string ToString()
@@ -920,6 +924,7 @@ namespace FASTER.core
                     emptyPageCount = value;
                     headOffsetLagSize -= emptyPageCount;
 
+                    // Lag addresses are the number of pages "behind" TailPageOffset (the tail in the circular buffer).
                     ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
                     HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
                 }
@@ -927,13 +932,12 @@ namespace FASTER.core
                 // Force eviction now if empty page count has increased
                 if (value >= oldEPC)
                 {
-                    bool prot = true;
-                    if (!epoch.ThisInstanceProtected())
-                        prot = false;
+                    bool prot = epoch.ThisInstanceProtected();
 
                     if (!prot) epoch.Resume();
                     try
                     {
+                        // These shifts adjust via application of the lag addresses.
                         var _tailAddress = GetTailAddress();
                         PageAlignedShiftReadOnlyAddress(_tailAddress);
                         PageAlignedShiftHeadAddress(_tailAddress);
@@ -1276,65 +1280,76 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
+        /// <summary>   
         /// Action to be performed for when all threads have 
         /// agreed that a page range is closed.
         /// </summary>
         /// <param name="newSafeHeadAddress"></param>
         private void OnPagesClosed(long newSafeHeadAddress)
         {
+            Debug.Assert(newSafeHeadAddress > 0);
             if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
             {
-                // Also shift begin address if we are using a null storage device
-                if (IsNullDevice)
-                    Utility.MonotonicUpdate(ref BeginAddress, newSafeHeadAddress, out _);
-
-                if (ReadCache)
-                    EvictCallback(oldSafeHeadAddress, newSafeHeadAddress);
-
-                // If we are going to scan, ensure earlier scans are done (we don't want to overwrite a later record with an earlier one)
-                if (OnEvictionObserver is not null)
+                // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
+                for (; ; Thread.Yield())
                 {
-                    while (ClosedUntilAddress < oldSafeHeadAddress)
+                    long _ongoingCloseUntilAddress = OngoingCloseUntilAddress;
+
+                    // If we are closing in the middle of an ongoing OPCWorker loop, exit.
+                    if (_ongoingCloseUntilAddress >= newSafeHeadAddress)
+                        break;
+
+                    // We'll continue the loop if we fail the CAS here; that means another thread extended the Ongoing range.
+                    if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, newSafeHeadAddress, _ongoingCloseUntilAddress) == _ongoingCloseUntilAddress)
                     {
-                        epoch.ProtectAndDrain();
-                        Thread.Yield();
+                        if (_ongoingCloseUntilAddress == 0)
+                        {
+                            // There was no other thread running the OPCWorker loop, so this thread is responsible for closing [ClosedUntilAddress -> newSafeHeadAddress]
+                            OnPagesClosedWorker();
+                        }
+                        else
+                        {
+                            // There was another thread runnning the OPCWorker loop, and its ongoing close operation was successfully extended to include the new safe
+                            // head address; we have no further work here.
+                        }
+                        return;
                     }
                 }
+            }
+        }
 
-                for (long closePageAddress = oldSafeHeadAddress & ~PageSizeMask; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
+        private void OnPagesClosedWorker()
+        {
+            for (; ; Thread.Yield())
+            {
+                long closeStartAddress = ClosedUntilAddress;
+                long closeEndAddress = OngoingCloseUntilAddress;
+
+                if (ReadCache)
+                    EvictCallback(closeStartAddress, closeEndAddress);
+
+                for (long closePageAddress = closeStartAddress & ~PageSizeMask; closePageAddress < closeEndAddress; closePageAddress += PageSize)
                 {
-                    long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
-                    long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
+                    long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
+                    long end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
                     if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
 
-                    int closePage = (int)(closePageAddress >> LogPageSizeBits);
-                    int closePageIndex = closePage % BufferSize;
+                    // If we are using a null storage device, we must also shift BeginAddress 
+                    if (IsNullDevice)
+                        Utility.MonotonicUpdate(ref BeginAddress, end, out _);
 
                     // If the end of the closing range is at the end of the page, free the page
                     if (end == closePageAddress + PageSize)
-                    {
-                        // If the start of the closing range is not at the beginning of this page, spin-wait until the adjacent earlier ranges on this page are closed
-                        if ((start & PageSizeMask) > 0)
-                        {
-                            while (ClosedUntilAddress < start)
-                            {
-                                epoch.ProtectAndDrain();
-                                Thread.Yield();
-                            }
-                        }
-                        FreePage(closePage);
-                    }
+                        FreePage((int)(closePageAddress >> LogPageSizeBits));
 
-                    Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, end, out _);
-                    ShiftClosedUntilAddress();
-                    if (ClosedUntilAddress > FlushedUntilAddress)
-                    {
-                        throw new FasterException($"Closed address {ClosedUntilAddress} exceeds flushed address {FlushedUntilAddress}");
-                    }
+                    Utility.MonotonicUpdate(ref ClosedUntilAddress, end, out _);
                 }
+
+                // End if we have exhausted co-operative work
+                if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, 0, closeEndAddress) == closeEndAddress)
+                    break;
             }
         }
 
@@ -1461,30 +1476,6 @@ namespace FASTER.core
                     FlushCallback?.Invoke(info);
                 }
                 // Otherwise, do nothing and wait for the next invocation.
-            }
-        }
-
-        /// <summary>
-        /// Shift ClosedUntil address
-        /// </summary>
-        protected void ShiftClosedUntilAddress()
-        {
-            long currentClosedUntilAddress = ClosedUntilAddress;
-            long page = GetPage(currentClosedUntilAddress);
-
-            bool update = false;
-            long pageLastClosedAddress = PageStatusIndicator[page % BufferSize].LastClosedUntilAddress;
-            while (pageLastClosedAddress >= currentClosedUntilAddress && currentClosedUntilAddress >= (page << LogPageSizeBits))
-            {
-                currentClosedUntilAddress = pageLastClosedAddress;
-                update = true;
-                page++;
-                pageLastClosedAddress = PageStatusIndicator[(int)(page % BufferSize)].LastClosedUntilAddress;
-            }
-
-            if (update)
-            {
-                Utility.MonotonicUpdate(ref ClosedUntilAddress, currentClosedUntilAddress, out _);
             }
         }
 

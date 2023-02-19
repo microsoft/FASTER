@@ -101,7 +101,7 @@ namespace FASTER.core
                 }
                 #endregion Entry latch operation
 
-                #region Normal processing
+                #region Address and source record checks
 
                 if (latchDestination == LatchDestination.NormalProcessing)
                 {
@@ -111,7 +111,7 @@ namespace FASTER.core
                         goto CreateNewRecord;
                     }
 
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
+                    else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
                     {
                         // Mutable Region: Update the record in-place
                         deleteInfo.RecordInfo = srcRecordInfo;
@@ -122,14 +122,14 @@ namespace FASTER.core
                             if (WriteDefaultOnDelete)
                                 recordValue = default;
 
-                            // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
-                            if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
-                            {
-                                // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
-                                // the hashtable entry has already been updated by someone else.
-                                var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
-                                stackCtx.hei.TryCAS(address, tag: 0);
-                            }
+                        // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
+                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
+                        {
+                            // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
+                            // the hashtable entry has already been updated by someone else.
+                            var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
+                            stackCtx.hei.TryCAS(address, tag: 0);
+                        }
 
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                             goto LatchRelease;
@@ -152,13 +152,8 @@ namespace FASTER.core
                         goto CreateNewRecord;
                     }
                 }
-                else if (latchDestination == LatchDestination.Retry)
-                {
-                    goto LatchRelease;
-                }
 
-                // All other regions: Create a record in the mutable region
-                #endregion Normal processing
+            #endregion Address and source record checks
 
             #region Create new record in the mutable region
             CreateNewRecord:
@@ -207,10 +202,10 @@ namespace FASTER.core
                 switch (latchOperation)
                 {
                     case LatchOperation.Shared:
-                        HashBucket.ReleaseSharedLatch(stackCtx.hei.bucket);
+                        HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
                         break;
                     case LatchOperation.Exclusive:
-                        HashBucket.ReleaseExclusiveLatch(stackCtx.hei.bucket);
+                        HashBucket.ReleaseExclusiveLatch(ref stackCtx.hei);
                         break;
                     default:
                         break;
@@ -228,7 +223,7 @@ namespace FASTER.core
             {
                 case Phase.PREPARE:
                     {
-                        if (HashBucket.TryAcquireSharedLatch(hei.bucket))
+                        if (HashBucket.TryAcquireSharedLatch(ref hei))
                         {
                             // Set to release shared latch (default)
                             latchOperation = LatchOperation.Shared;
@@ -249,7 +244,7 @@ namespace FASTER.core
                     {
                         if (!CheckEntryVersionNew(logicalAddress))
                         {
-                            if (HashBucket.TryAcquireExclusiveLatch(hei.bucket))
+                            if (HashBucket.TryAcquireExclusiveLatch(ref hei))
                             {
                                 // Set to release exclusive latch (default)
                                 latchOperation = LatchOperation.Exclusive;

@@ -64,6 +64,6 @@ namespace FASTER.server
         /// <summary>
         /// Dispose
         /// </summary>
-        public virtual void Dispose() => networkSender.Dispose();
+        public virtual void Dispose() => networkSender?.Dispose();
     }
 }

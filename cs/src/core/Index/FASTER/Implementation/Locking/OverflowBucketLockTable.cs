@@ -115,7 +115,7 @@ namespace FASTER.core
         public unsafe void UnlockShared(ref TKey key, ref HashEntryInfo hei)
         {
             AssertUnlockAllowed();
-            HashBucket.ReleaseSharedLatch(hei.firstBucket);
+            HashBucket.ReleaseSharedLatch(ref hei);
         }
 
         /// <inheritdoc/>
@@ -123,7 +123,7 @@ namespace FASTER.core
         public unsafe void UnlockExclusive(ref TKey key, ref HashEntryInfo hei)
         {
             AssertUnlockAllowed();
-            HashBucket.ReleaseExclusiveLatch(hei.firstBucket);
+            HashBucket.ReleaseExclusiveLatch(ref hei);
         }
 
         /// <inheritdoc/>

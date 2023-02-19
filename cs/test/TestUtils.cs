@@ -9,6 +9,7 @@ using FASTER.devices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.test
 {
@@ -26,6 +27,8 @@ namespace FASTER.test
         internal const string MallocFixedPageSizeCategory = "MallocFixedPageSize";
         internal const string RMWTestCategory = "RMW";
         internal const string ModifiedBitTestCategory = "ModifiedBitTest";
+
+        public static ILoggerFactory TestLoggerFactory = CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Trace);
 
         /// <summary>
         /// Delete a directory recursively
@@ -49,11 +52,9 @@ namespace FASTER.test
                 }
             }
 
-            bool retry = true;
-            while (retry)
+            for (; ; Thread.Yield())
             {
                 // Exceptions may happen due to a handle briefly remaining held after Dispose().
-                retry = false;
                 try
                 {
                     Directory.Delete(path, true);
@@ -61,21 +62,10 @@ namespace FASTER.test
                 catch (Exception ex) when (ex is IOException ||
                                            ex is UnauthorizedAccessException)
                 {
-                    if (!wait)
-                    {
-                        try { Directory.Delete(path, true); }
-                        catch { }
-                        return;
-                    }
-                    retry = true;
                 }
+                if (!wait || !Directory.Exists(path))
+                    break;
             }
-            
-            if (!wait)
-                return;
-
-            while (Directory.Exists(path))
-                Thread.Yield();
         }
 
         /// <summary>
@@ -91,6 +81,23 @@ namespace FASTER.test
             Directory.CreateDirectory(path);
         }
 
+        /// <summary>
+        /// Create logger factory for given TextWriter and loglevel
+        /// E.g. Use with TestContext.Progress to print logs while test is running.
+        /// </summary>
+        /// <param name="textWriter"></param>
+        /// <param name="logLevel"></param>
+        /// <param name="scope"></param>
+        /// <returns></returns>
+        public static ILoggerFactory CreateLoggerFactoryInstance(TextWriter textWriter, LogLevel logLevel, string scope = "")
+        {
+            return LoggerFactory.Create(builder =>
+            {
+                builder.AddProvider(new NUnitLoggerProvider(textWriter, scope));
+                builder.SetMinimumLevel(logLevel);
+            });
+        }
+        
         internal static bool IsRunningAzureTests => "yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")) || "yes".Equals(Environment.GetEnvironmentVariable("RUNAZURETESTS"));
 
         internal static void IgnoreIfNotRunningAzureTests()
@@ -120,7 +127,7 @@ namespace FASTER.test
             bool preallocateFile = false;
             long capacity = Devices.CAPACITY_UNSPECIFIED;
             bool recoverDevice = false;
-            
+
             switch (testDeviceType)
             {
 #if WINDOWS
@@ -135,13 +142,13 @@ namespace FASTER.test
 #endif
                 case DeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
-                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose);
+                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose, logger: TestLoggerFactory.CreateLogger("asd"));
                     break;
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, capacity, recoverDevice);
                     break;
                 // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
-                case DeviceType.LocalMemory:  
+                case DeviceType.LocalMemory:
                     device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, sector_size: 512, latencyMs: latencyMs, fileName: filename);  // 64 MB (1L << 26) is enough for our test cases
                     break;
             }
@@ -165,7 +172,7 @@ namespace FASTER.test
             get
             {
                 var container = ConvertedClassName(forAzure: true).Replace('.', '-').ToLower();
-                Microsoft.Azure.Storage.NameValidator.ValidateContainerName(container);
+                NameValidator.ValidateContainerName(container);
                 return container;
             }
         }

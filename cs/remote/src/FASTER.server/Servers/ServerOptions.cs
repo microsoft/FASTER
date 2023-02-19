@@ -191,7 +191,7 @@ namespace FASTER.server
             }
 
             if (CheckpointDir == null) CheckpointDir = LogDir;
-            
+
             if (CheckpointDir is null or "")
                 CheckpointDir = Directory.GetCurrentDirectory();
 
@@ -202,7 +202,12 @@ namespace FASTER.server
             };
         }
 
-        private static long ParseSize(string value)
+        /// <summary>
+        /// Parse size from string specification
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        protected static long ParseSize(string value)
         {
             char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
             long result = 0;
@@ -261,7 +266,12 @@ namespace FASTER.server
             return v.ToString();
         }
 
-        private long PreviousPowerOf2(long v)
+        /// <summary>
+        /// Previous power of 2
+        /// </summary>
+        /// <param name="v"></param>
+        /// <returns></returns>
+        protected long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
             v |= v >> 2;

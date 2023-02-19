@@ -144,7 +144,14 @@ namespace FASTER.core
             ref var recordInfo = ref hlog.GetInfo(physicalAddress);
             recordInfo.SetInvalid();    // so log scan will skip it
 
-            *(int*)Unsafe.AsPointer(ref hlog.GetValue(physicalAddress)) = allocatedSize;
+            if (logicalAddress < hlog.HeadAddress || allocatedSize < sizeof(RecordInfo) + sizeof(int))
+            {
+                pendingContext.retryNewLogicalAddress = Constants.kInvalidAddress;
+                return;
+            }
+
+            // Use Key in case we have ushort or byte Key/Value; blittable types do not 8-byte align the record size, and it's easier than figure out where Value starts.
+            *(int*)Unsafe.AsPointer(ref hlog.GetKey(physicalAddress)) = allocatedSize;
             pendingContext.retryNewLogicalAddress = logicalAddress;
         }
 
@@ -153,12 +160,16 @@ namespace FASTER.core
         {
             // Use an earlier allocation from a failed operation, if possible.
             newLogicalAddress = pendingContext.retryNewLogicalAddress;
-            newPhysicalAddress = 0;
             pendingContext.retryNewLogicalAddress = 0;
             if (newLogicalAddress < hlog.HeadAddress || newLogicalAddress <= minAddress)
+            {
+                newPhysicalAddress = 0;
                 return false;
+            }
             newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            int recordSize = *(int*)Unsafe.AsPointer(ref hlog.GetValue(newPhysicalAddress));
+            int* len_ptr = (int*)Unsafe.AsPointer(ref hlog.GetKey(newPhysicalAddress));
+            int recordSize = *len_ptr;
+            *len_ptr = 0;
             return recordSize >= minSize;
         }
     }

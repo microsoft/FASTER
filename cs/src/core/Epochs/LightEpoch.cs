@@ -220,6 +220,20 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Increment global current epoch
+        /// </summary>
+        /// <returns></returns>
+        long BumpCurrentEpoch()
+        {
+            long nextEpoch = Interlocked.Increment(ref CurrentEpoch);
+
+            if (drainCount > 0)
+                Drain(nextEpoch);
+
+            return nextEpoch;
+        }
+
+        /// <summary>
         /// Increment current epoch and associate trigger action
         /// with the prior epoch
         /// </summary>
@@ -314,20 +328,6 @@ namespace FASTER.core
                 }
             }
             return true;
-        }
-
-        /// <summary>
-        /// Increment global current epoch
-        /// </summary>
-        /// <returns></returns>
-        long BumpCurrentEpoch()
-        {
-            long nextEpoch = Interlocked.Increment(ref CurrentEpoch);
-
-            if (drainCount > 0)
-                Drain(nextEpoch);
-
-            return nextEpoch;
         }
 
         /// <summary>

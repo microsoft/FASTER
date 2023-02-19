@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static FASTER.core.Utility;
 
@@ -109,7 +110,7 @@ namespace FASTER.core
         {
             if (this.HasInMemorySrc)
             {
-                System.Diagnostics.Debug.Assert(this.LogicalAddress >= this.Log.ClosedUntilAddress, "Should not have evicted the source record while we held the epoch");
+                Debug.Assert(this.LogicalAddress >= this.Log.ClosedUntilAddress, "Should not have evicted the source record while we held the epoch");
 
                 // Note that source records cannot be evicted even if they are now below HeadAddress of the log or readcache, because we hold the epoch.
                 // Therefore we *do not* stop at HeadAddress, because that would potentially allow a locked source record to be skipped.
@@ -143,7 +144,8 @@ namespace FASTER.core
             var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
+            return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, pa {PhysicalAddress:x}"
+                 + $" lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)}, lrcpa {LowestReadCachePhysicalAddress:x}"
                  + $" hasLogSrc {bstr(HasMainLogSrc)}, hasRCsrc {bstr(HasReadCacheSrc)}, hasRIlock {bstr(HasRecordInfoLock)}, hasLTlock {bstr(HasLockTableLock)}";
         }
     }

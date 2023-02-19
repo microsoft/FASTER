@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using FASTER.core;
 using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
@@ -106,6 +107,9 @@ namespace FASTER.core
         public fixed long bucket_entries[Constants.kEntriesPerBucket];
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryAcquireSharedLatch(ref HashEntryInfo hei) => TryAcquireSharedLatch(hei.firstBucket);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryAcquireSharedLatch(HashBucket* bucket)
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
@@ -126,14 +130,20 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void ReleaseSharedLatch(ref HashEntryInfo hei) => ReleaseSharedLatch(hei.firstBucket);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void ReleaseSharedLatch(HashBucket* bucket)
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
             // X and S latches means an X latch is still trying to drain readers, like this one.
-            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched record");    
+            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched record");
             Debug.Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched record");
             Interlocked.Add(ref entry_word, -kSharedLatchIncrement);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryAcquireExclusiveLatch(ref HashEntryInfo hei) => TryAcquireExclusiveLatch(hei.firstBucket);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryAcquireExclusiveLatch(HashBucket* bucket)
@@ -173,6 +183,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void ReleaseExclusiveLatch(ref HashEntryInfo hei) => ReleaseExclusiveLatch(hei.firstBucket);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void ReleaseExclusiveLatch(HashBucket* bucket)
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
@@ -191,7 +204,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ushort NumLatchedShared(HashBucket* bucket) 
+        public static ushort NumLatchedShared(HashBucket* bucket)
             => (ushort)((bucket->bucket_entries[Constants.kOverflowBucketIndex] & kSharedLatchBitMask) >> kSharedLatchBitOffset);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -507,7 +520,6 @@ namespace FASTER.core
         private bool FindTagOrFreeInternal(ref HashEntryInfo hei, long BeginAddress = 0)
         {
             var target_entry_word = default(long);
-            var recordExists = false;
             var entry_slot_bucket = default(HashBucket*);
 
             do
@@ -545,14 +557,13 @@ namespace FASTER.core
                     if (hei.tag == hei.entry.Tag && !hei.entry.Tentative)
                     {
                         hei.slot = index;
-                        recordExists = true;
-                        return recordExists;
+                        return true;
                     }
                 }
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation). Don't mask off the non-address bits here; they're needed for CAS.
                 target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex);
-                if ((target_entry_word & Constants.kAddressMask) == 0)
+                while ((target_entry_word & Constants.kAddressMask) == 0)
                 {
                     // There is no next bucket. If slot is Constants.kInvalidEntrySlot then we did not find an empty slot, so must allocate a new bucket.
                     if (hei.slot == Constants.kInvalidEntrySlot)
@@ -574,30 +585,25 @@ namespace FASTER.core
                             // Install of new bucket failed; free the allocation and and continue the search using the winner's entry
                             overflowBucketsAllocator.Free(logicalBucketAddress);
                             target_entry_word = result_word;
+                            continue;
                         }
-                        else
-                        {
-                            // Install of new bucket succeeded; this means the key is not there, so return the first slot.
-                            hei.bucket = physicalBucketAddress;
-                            hei.slot = 0;
-                            hei.entry = default;
-                            return recordExists;    // TODO when could this ever be true?
-                        }
-                    }
-                    else
-                    {
-                        // We found an empty slot; return it.
-                        if (!recordExists)          // TODO when could this ever be true?
-                            hei.bucket = entry_slot_bucket;
+
+                        // Install of new overflow bucket succeeded; the tag was not found, so return the first slot of the new bucket
+                        hei.bucket = physicalBucketAddress;
+                        hei.slot = 0;
                         hei.entry = default;
-                        break;
+                        return false;   // tag was not found
                     }
+
+                    // Tag was not found and an empty slot was found, so return the empty slot
+                    hei.bucket = entry_slot_bucket;
+                    hei.entry = default;
+                    return false;       // tag was not found
                 }
 
+                // The next bucket was there or was allocated. Move to it.
                 hei.bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word & Constants.kAddressMask);
             } while (true);
-
-            return recordExists;    // TODO when could this ever be true?
         }
 
 

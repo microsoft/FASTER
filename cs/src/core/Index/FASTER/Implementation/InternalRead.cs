@@ -144,18 +144,17 @@ namespace FASTER.core
                 if (sessionCtx.phase == Phase.PREPARE && !useStartAddress)
                 {
                     // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
-                    if (HashBucket.TryAcquireSharedLatch(stackCtx.hei.bucket))
-                        HashBucket.ReleaseSharedLatch(stackCtx.hei.bucket);
+                    if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
+                        HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
                     else
                         return OperationStatus.CPR_SHIFT_DETECTED;
                 }
 
                 goto CreatePendingContext;
             }
-
-            // No record found
             else
             {
+                // No record found
                 Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
                 return OperationStatus.NOTFOUND;
             }
@@ -316,14 +315,10 @@ namespace FASTER.core
                 {
                     if (pendingContext.CopyReadsToTailFromReadOnly || readInfo.Action == ReadAction.Expire) // Expire adds a tombstoned record to tail
                     {
-                        do
-                        {
-                            status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
-                                                            ref srcRecordInfo, untilLogicalAddress: stackCtx.recSrc.LatestLogicalAddress, fasterSession,
-                                                            reason: WriteReason.CopyToTail, expired: readInfo.Action == ReadAction.Expire);
-                        } while (HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext));
-
-                        // No copy to tail was done
+                        status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
+                                                        ref srcRecordInfo, untilLogicalAddress: stackCtx.recSrc.LatestLogicalAddress, fasterSession,
+                                                        reason: WriteReason.CopyToTail, expired: readInfo.Action == ReadAction.Expire);
+                        // status != SUCCESS means no copy to tail was done
                         if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
                             return readInfo.Action == ReadAction.Expire
                                 ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired)
