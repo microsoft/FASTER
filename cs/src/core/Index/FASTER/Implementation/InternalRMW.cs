@@ -3,75 +3,11 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        internal bool ReinitializeExpiredRecord<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
-                                                                                       long logicalAddress, FasterExecutionContext<Input, Output, Context> sessionCtx, FasterSession fasterSession,
-                                                                                       bool isIpu, out OperationStatus status)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            // This is called for InPlaceUpdater or CopyUpdater only; CopyUpdater however does not copy an expired record, so we return CreatedRecord.
-            var advancedStatusCode = isIpu ? StatusCode.InPlaceUpdatedRecord : StatusCode.CreatedRecord;
-            advancedStatusCode |= StatusCode.Expired;
-            if (!fasterSession.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
-            {
-                if (rmwInfo.Action == RMWAction.CancelOperation)
-                {
-                    status = OperationStatus.CANCELED;
-                    return false;
-                }
-                else
-                {
-                    // Expiration with no insertion.
-                    recordInfo.Tombstone = true;
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
-                    return true;
-                }
-            }
-
-            // Try to reinitialize in place
-            (var currentSize, _) = hlog.GetRecordSize(ref key, ref value);
-            (var requiredSize, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
-
-            if (currentSize >= requiredSize)
-            {
-                if (fasterSession.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo))
-                {
-                    // If IPU path, we need to complete PostInitialUpdater as well
-                    if (isIpu)
-                        fasterSession.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
-
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
-                    return true;
-                }
-                else
-                {
-                    if (rmwInfo.Action == RMWAction.CancelOperation)
-                    {
-                        status = OperationStatus.CANCELED;
-                        return false;
-                    }
-                    else
-                    {
-                        // Expiration with no insertion.
-                        recordInfo.Tombstone = true;
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
-                        return true;
-                    }
-                }
-            }
-
-            // Reinitialization in place was not possible. InternalRMW will do the following based on who called this:
-            //  IPU: move to the NIU->allocate->IU path
-            //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
-            status = OperationStatus.SUCCESS;
-            return false;
-        }
-
         /// <summary>
         /// Read-Modify-Write Operation. Updates value of 'key' using 'input' and current value.
         /// Pending operations are processed either using InternalRetryPendingRMW or 
@@ -119,7 +55,6 @@ namespace FASTER.core
                                    long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            OperationStatus status = default;
             var latchOperation = LatchOperation.None;
             var latchDestination = LatchDestination.NormalProcessing;
 
@@ -128,10 +63,6 @@ namespace FASTER.core
             if (sessionCtx.phase != Phase.REST)
                 HeavyEnter(stackCtx.hei.hash, sessionCtx, fasterSession);
 
-            // A 'ref' variable must be initialized. If we find a record for the key, we reassign the reference.
-            RecordInfo dummyRecordInfo = default;
-            ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
-
             FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
@@ -139,7 +70,12 @@ namespace FASTER.core
             // InternalContinuePendingRMW can stop comparing keys immediately above this address.
             long prevHighestKeyHashAddress = stackCtx.hei.Address;
 
-            TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
+            RecordInfo dummyRecordInfo = new() { Valid = true };
+            ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress)
+                ? ref stackCtx.recSrc.GetSrcRecordInfo()
+                : ref dummyRecordInfo;
+            if (srcRecordInfo.IsClosed)
+                return OperationStatus.RETRY_LATER;
 
             RMWInfo rmwInfo = new()
             {
@@ -150,7 +86,7 @@ namespace FASTER.core
                 KeyHash = stackCtx.hei.hash
             };
 
-            if (!TryLockTableEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
+            if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out OperationStatus status))
                 return status;
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
@@ -170,23 +106,13 @@ namespace FASTER.core
                 if (stackCtx.recSrc.HasReadCacheSrc)
                 {
                     // Use the readcache record as the CopyUpdater source.
-                    goto LockSourceRecord;
+                    goto CreateNewRecord;
                 }
                 else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
                 {
                     // Mutable Region: Update the record in-place
-                    srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                    if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                        goto LatchRelease;
-
                     if (srcRecordInfo.Tombstone)
                         goto CreateNewRecord;
-
-                    if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                    {
-                        status = OperationStatus.RETRY_LATER;
-                        goto LatchRelease;
-                    }
 
                     rmwInfo.RecordInfo = srcRecordInfo;
                     if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref output, ref srcRecordInfo, ref rmwInfo, out status)
@@ -205,7 +131,6 @@ namespace FASTER.core
                         goto LatchRelease;
 
                     // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Use this record as the CopyUpdater source.
-                    stackCtx.recSrc.HasMainLogSrc = true;
                     goto CreateNewRecord;
                 }
                 else if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(stackCtx.recSrc.PhysicalAddress).Tombstone && latchDestination == LatchDestination.NormalProcessing)
@@ -217,12 +142,11 @@ namespace FASTER.core
                 else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
                 {
                     // Safe Read-Only Region: CopyUpdate to create a record in the mutable region
-                    stackCtx.recSrc.HasMainLogSrc = true;
-                    goto LockSourceRecord;
+                    goto CreateNewRecord;
                 }
                 else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
                 {
-                    // Disk Region: Need to issue async io requests. Locking will be check on pending completion.
+                    // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
                     status = OperationStatus.RECORD_ON_DISK;
                     latchDestination = LatchDestination.CreatePendingContext;
                     goto CreatePendingContext;
@@ -233,22 +157,7 @@ namespace FASTER.core
                     Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
                     goto CreateNewRecord;
                 }
-
             #endregion Address and source record checks
-
-            #region Lock source record
-            LockSourceRecord:
-                // This would be a local function to reduce "goto", but 'ref' variables and parameters aren't supported on local functions.
-                srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                    goto LatchRelease;
-                if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                {
-                    status = OperationStatus.RETRY_LATER;
-                    goto LatchRelease;
-                }
-                goto CreateNewRecord;
-            #endregion Lock source record
 
             #region Create new record
             CreateNewRecord:
@@ -581,6 +490,67 @@ namespace FASTER.core
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
+        }
+
+        internal bool ReinitializeExpiredRecord<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
+                                                                                       long logicalAddress, FasterExecutionContext<Input, Output, Context> sessionCtx, FasterSession fasterSession,
+                                                                                       bool isIpu, out OperationStatus status)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            // This is called for InPlaceUpdater or CopyUpdater only; CopyUpdater however does not copy an expired record, so we return CreatedRecord.
+            var advancedStatusCode = isIpu ? StatusCode.InPlaceUpdatedRecord : StatusCode.CreatedRecord;
+            advancedStatusCode |= StatusCode.Expired;
+            if (!fasterSession.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
+            {
+                if (rmwInfo.Action == RMWAction.CancelOperation)
+                {
+                    status = OperationStatus.CANCELED;
+                    return false;
+                }
+
+                // Expiration with no insertion.
+                recordInfo.Tombstone = true;
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
+                return true;
+            }
+
+            // Try to reinitialize in place
+            (var currentSize, _) = hlog.GetRecordSize(ref key, ref value);
+            (var requiredSize, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+
+            if (currentSize >= requiredSize)
+            {
+                if (fasterSession.InitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo))
+                {
+                    // If IPU path, we need to complete PostInitialUpdater as well
+                    if (isIpu)
+                        fasterSession.PostInitialUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
+                    return true;
+                }
+                else
+                {
+                    if (rmwInfo.Action == RMWAction.CancelOperation)
+                    {
+                        status = OperationStatus.CANCELED;
+                        return false;
+                    }
+                    else
+                    {
+                        // Expiration with no insertion.
+                        recordInfo.Tombstone = true;
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
+                        return true;
+                    }
+                }
+            }
+
+            // Reinitialization in place was not possible. InternalRMW will do the following based on who called this:
+            //  IPU: move to the NIU->allocate->IU path
+            //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
+            status = OperationStatus.SUCCESS;
+            return false;
         }
     }
 }

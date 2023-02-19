@@ -188,24 +188,22 @@ namespace FASTER.core
                 RecordInfo dummyRecordInfo = default;
                 ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
-                if (!TryLockTableEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
+                // During the pending operation, the record may have been added to any of the possible locations.
+                if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress))
+                {
+                    srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+                    if (srcRecordInfo.IsClosed)
+                    {
+                        status = OperationStatus.RETRY_LATER;
+                        goto CheckRetry;
+                    }
+                }
+
+                if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out status))
                     goto CheckRetry;
 
                 try
                 {
-                    // During the pending operation, the record may have been added to any of the possible locations.
-                    if (TryFindRecordInMemoryAfterPendingIO(ref key, ref stackCtx, LockType.Exclusive, pendingContext.PrevHighestKeyHashAddress))
-                    {
-                        srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                        if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                            goto CheckRetry;
-                        if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                        {
-                            status = OperationStatus.RETRY_LATER;
-                            goto CheckRetry;
-                        }
-                    }
-
                     // pendingContext.entry.Address is the previous latestLogicalAddress; if recSrc.LatestLogicalAddress (set by FindRecordInReadCacheOrLockTable)
                     // is greater than the previous latestLogicalAddress, then another thread inserted or spliced in a new record and we must do InternalRMW.
                     if (stackCtx.recSrc.LatestLogicalAddress > pendingContext.entry.Address)

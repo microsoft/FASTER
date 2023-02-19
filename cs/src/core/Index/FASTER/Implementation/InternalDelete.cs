@@ -48,7 +48,6 @@ namespace FASTER.core
                             long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            OperationStatus status = default;
             var latchOperation = LatchOperation.None;
             var latchDestination = LatchDestination.NormalProcessing;
 
@@ -56,10 +55,6 @@ namespace FASTER.core
 
             if (sessionCtx.phase != Phase.REST)
                 HeavyEnter(stackCtx.hei.hash, sessionCtx, fasterSession);
-
-            // A 'ref' variable must be initialized. If we find a record for the key, we reassign the reference. We don't copy from this source, but we do lock it.
-            RecordInfo dummyRecordInfo = default;
-            ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
             var tagExists = FindTag(ref stackCtx.hei);
             if (!tagExists)
@@ -69,8 +64,18 @@ namespace FASTER.core
             }
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
-            // We must always scan to HeadAddress; a Lockable*Context could be activated and lock the record in the immutable region while we're scanning.
-            TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
+            // Always scan to HeadAddress; this lets us find a tombstoned record in the immutable region, avoiding unnecessarily adding one.
+            // We also need to lock RecordInfos in the immutable region if doing EphemeralOnly locking.
+            RecordInfo dummyRecordInfo = new() { Valid = true };
+            ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress)
+                ? ref stackCtx.recSrc.GetSrcRecordInfo()
+                : ref dummyRecordInfo;
+            if (srcRecordInfo.IsClosed)
+                return OperationStatus.RETRY_LATER;
+
+            // If we already have a deleted record, there's nothing to do.
+            if (srcRecordInfo.Tombstone)
+                return OperationStatus.NOTFOUND;
 
             DeleteInfo deleteInfo = new()
             {
@@ -81,7 +86,7 @@ namespace FASTER.core
                 KeyHash = stackCtx.hei.hash
             };
 
-            if (!TryLockTableEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
+            if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out OperationStatus status))
                 return status;
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
@@ -103,28 +108,12 @@ namespace FASTER.core
                     if (stackCtx.recSrc.HasReadCacheSrc)
                     {
                         // Use the readcache record as the CopyUpdater source.
-                        goto LockSourceRecord;
+                        goto CreateNewRecord;
                     }
 
                     else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                     {
                         // Mutable Region: Update the record in-place
-                        srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                        if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                            goto LatchRelease;
-
-                        if (srcRecordInfo.Tombstone)
-                        {
-                            status = OperationStatus.NOTFOUND;
-                            goto LatchRelease;
-                        }
-
-                        if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                        {
-                            status = OperationStatus.RETRY_LATER;
-                            goto LatchRelease;
-                        }
-
                         deleteInfo.RecordInfo = srcRecordInfo;
                         ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
                         if (fasterSession.ConcurrentDeleter(ref hlog.GetKey(stackCtx.recSrc.PhysicalAddress), ref recordValue, ref srcRecordInfo, ref deleteInfo))
@@ -150,15 +139,11 @@ namespace FASTER.core
                             status = OperationStatus.CANCELED;
                             goto LatchRelease;
                         }
-
-                        stackCtx.recSrc.HasMainLogSrc = true;
                         goto CreateNewRecord;
                     }
                     else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
                     {
-                        // Only need to go below ReadOnly for locking and Sealing.
-                        stackCtx.recSrc.HasMainLogSrc = true;
-                        goto LockSourceRecord;
+                        goto CreateNewRecord;
                     }
                     else
                     {
@@ -174,27 +159,6 @@ namespace FASTER.core
 
                 // All other regions: Create a record in the mutable region
                 #endregion Normal processing
-
-            #region Lock source record
-            LockSourceRecord:
-                // This would be a local function to reduce "goto", but 'ref' variables and parameters aren't supported on local functions.
-                srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                if (!TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                    goto LatchRelease;
-
-                if (srcRecordInfo.Tombstone)
-                {
-                    status = OperationStatus.NOTFOUND;
-                    goto LatchRelease;
-                }
-
-                if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                {
-                    status = OperationStatus.RETRY_LATER;
-                    goto LatchRelease;
-                }
-                goto CreateNewRecord;
-            #endregion Lock source record
 
             #region Create new record in the mutable region
             CreateNewRecord:

@@ -10,15 +10,24 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryRecordInfoEphemeralXLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref RecordSource<Key, Value> recSrc, ref RecordInfo srcRecordInfo, out OperationStatus status)
+        private bool TryEphemeralXLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
+                        ref RecordInfo srcRecordInfo, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-            if (!this.RecordInfoLocker.IsEnabled)
+
+            if (this.LockTable.IsEnabled)
             {
-                // Note: In MixedMode we ignore "Tentative" locks in the RecordInfo; we have an XLock so there is no conflict possible.
-                return true;
+                // Note: In MixedMode we ignore "Tentative" locks in the RecordInfo; we use LockTable locks so no intermediate state is visible.
+                if (fasterSession.TryLockEphemeralExclusive(ref key, ref stackCtx))
+                    return true;
+                status = OperationStatus.RETRY_LATER;
+                return false;
             }
+
+            // If neither locking mode is enabled, return true so the operation continues, but don't set any Has*Lock
+            if (!this.RecordInfoLocker.IsEnabled || !stackCtx.recSrc.HasInMemorySrc)
+                return true;
 
             // A failed lockOp means this is a Sealed record or we exhausted the spin count. Either must RETRY_LATER, as must a record that was Invalidated while we spun.
             if (!this.RecordInfoLocker.TryLockExclusive(ref srcRecordInfo))
@@ -28,18 +37,7 @@ namespace FASTER.core
             }
 
             Debug.Assert(!srcRecordInfo.IsClosed, "RecordInfo XLock should have failed if the record is closed");
-            return recSrc.HasRecordInfoLock = true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryLockTableEphemeralXLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, out OperationStatus status)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            status = OperationStatus.SUCCESS;
-            if (!this.LockTable.IsEnabled || fasterSession.TryLockEphemeralExclusive(ref key, ref stackCtx))
-                return true;
-            status = OperationStatus.RETRY_LATER;
-            return false;
+            return stackCtx.recSrc.HasRecordInfoLock = true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -51,8 +49,7 @@ namespace FASTER.core
 
             if (this.LockTable.IsEnabled)
             {
-                // Note: In MixedMode we ignore "Tentative" locks in the RecordInfo; for Reads we can use the value from the readcache or fall through to IO,
-                // and if there was an update, there would be a Hashbucket XLock.
+                // Note: In MixedMode we ignore "Tentative" locks in the RecordInfo; for Reads we can use the value from the readcache or fall through to IO.
 
                 if (fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
                     return true;
