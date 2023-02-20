@@ -26,10 +26,10 @@ namespace FASTER.core
         /// in the hash table. This is the same effect as calling <see cref="FasterBase.FindTag(ref HashEntryInfo)"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UpdateRecordSourceToCurrentHashEntry()
+        internal void UpdateRecordSourceToCurrentHashEntry(AllocatorBase<Key, Value> hlog)
         {
             this.hei.SetToCurrent();
-            this.SetRecordSourceToHashEntry(this.recSrc.Log);
+            this.SetRecordSourceToHashEntry(hlog);
         }
 
         /// <summary>

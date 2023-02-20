@@ -113,11 +113,11 @@ namespace FASTER.core
             // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
             var hashSign = hash < 0 ? "-" : string.Empty;
             var absHash = this.hash >= 0 ? this.hash : -this.hash;
-            var result = $"addr {this.AbsoluteAddress}{addrRC}, currAddr {this.AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashSign}{absHash}, tag {this.tag}, slot {this.slot}";
+            var result = $"addr {this.AbsoluteAddress}{addrRC}, currAddr {this.AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashSign}{absHash}, tag {this.tag}, slot {this.slot}, Bkt1 [";
 #if DEBUG
-            result += $", lockCode {LockCode}";
+            result += $"lockCode {LockCode}, ";
 #endif // DEBUG
-            result += $", Bkt1 [{HashBucket.ToString(firstBucket)}]";
+            result += $"{HashBucket.ToString(firstBucket)}]";
             return result;
         }
     }

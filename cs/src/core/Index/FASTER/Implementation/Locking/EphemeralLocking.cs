@@ -113,7 +113,7 @@ namespace FASTER.core
                 OperationStackContext<Key, Value> stackCtx = new(hash);
                 FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
                 stackCtx.SetRecordSourceToHashEntry(hlog);
-                var found = TryFindRecordInMemory(ref key, ref stackCtx, minAddress: hlog.ClosedUntilAddress);
+                var found = TryFindRecordInMemory(ref key, ref stackCtx, minAddress: hlog.SafeHeadAddress);
                 Debug.Assert(found, "We should always find the new record if the old one is Closed");
                 if (!found)
                     break;

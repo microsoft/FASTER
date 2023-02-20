@@ -72,9 +72,13 @@ namespace FASTER.core
 
         InMainLog:
             if (stackCtx.recSrc.HasReadCacheSrc)
+            { 
+                Debug.Assert(object.ReferenceEquals(stackCtx.recSrc.Log, readcache), "Expected Log == readcache");
                 return true;
+            }
 
             // We did not find the record in the readcache, so set these to the start of the main log entries, and the caller will call TracebackForKeyMatch
+            Debug.Assert(object.ReferenceEquals(stackCtx.recSrc.Log, hlog), "Expected Log == hlog");
             stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             stackCtx.recSrc.PhysicalAddress = 0; // do *not* call hlog.GetPhysicalAddress(); LogicalAddress may be below hlog.HeadAddress. Let the caller decide when to do this.
             return false;
@@ -91,7 +95,9 @@ namespace FASTER.core
                 // is below SafeHeadAddress (which is incremented before the OnPagesClosed loop executes), pause and then restart the loop. This is conceptually
                 // similar to finding a record below HeadAddress and "issuing IO"; here, the "IO" is "wait for ReadCacheEvict to fix up the chain".
                 Thread.Yield();
-                stackCtx.UpdateRecordSourceToCurrentHashEntry();
+
+                // Restore to hlog; we may have set readcache into Log and continued the loop, had to restart, and the matching readcache record was evicted.
+                stackCtx.UpdateRecordSourceToCurrentHashEntry(hlog);
                 return true;
             }
             return false;

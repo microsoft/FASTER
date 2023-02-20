@@ -20,20 +20,21 @@ namespace FASTER.core
         private bool TryFindRecordInMemory<Input, Output, Context>(ref Key key, ref OperationStackContext<Key, Value> stackCtx,
                                                                    ref PendingContext<Input, Output, Context> pendingContext)
         {
+            // Add 1 to the pendingContext minAddresses because we don't want an inclusive search; we're looking to see if it was added *after*.
             if (UseReadCache)
             { 
-                var minRC = pendingContext.InitialEntryAddress < readcache.HeadAddress ? readcache.HeadAddress : pendingContext.InitialEntryAddress;
+                var minRC = pendingContext.InitialEntryAddress < readcache.HeadAddress ? readcache.HeadAddress : pendingContext.InitialEntryAddress + 1;
                 if (FindInReadCache(ref key, ref stackCtx, minAddress: minRC))
                     return true;
             }
-            var minLog = pendingContext.InitialLatestLogicalAddress < hlog.HeadAddress ? hlog.HeadAddress : pendingContext.InitialLatestLogicalAddress;
+            var minLog = pendingContext.InitialLatestLogicalAddress < hlog.HeadAddress ? hlog.HeadAddress : pendingContext.InitialLatestLogicalAddress + 1;
             return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minLog);
         }
 
         internal bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress)
         {
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
-            if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+            if (stackCtx.recSrc.LogicalAddress >= minAddress)
             {
                 stackCtx.recSrc.SetPhysicalAddress();
                 TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minAddress);
@@ -42,14 +43,14 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(ref Key key, ref RecordSource<Key, Value> recSrc, long minOffset)
+        private bool TraceBackForKeyMatch(ref Key key, ref RecordSource<Key, Value> recSrc, long minAddress)
         {
             ref var recordInfo = ref hlog.GetInfo(recSrc.PhysicalAddress);
             if (comparer.Equals(ref key, ref hlog.GetKey(recSrc.PhysicalAddress)) && !recordInfo.Invalid)
                 return recSrc.HasMainLogSrc = true;
 
             recSrc.LogicalAddress = recordInfo.PreviousAddress;
-            return recSrc.HasMainLogSrc = TraceBackForKeyMatch(ref key, recSrc.LogicalAddress, minOffset, out recSrc.LogicalAddress, out recSrc.PhysicalAddress);
+            return recSrc.HasMainLogSrc = TraceBackForKeyMatch(ref key, recSrc.LogicalAddress, minAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

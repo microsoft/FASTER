@@ -376,11 +376,6 @@ namespace FASTER.core
 
         public bool SkipOnScan => IsClosedWord(word);
 
-        /// <summary>
-        /// Indicates whether this RecordInfo is a valid source for updates or record locks.
-        /// </summary>
-        public bool IsValidUpdateOrLockSource => !IsClosedWord(word);
-
         public long PreviousAddress
         {
             get => word & kPreviousAddressMaskInWord;
