@@ -91,28 +91,35 @@ namespace FASTER.core
         public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
 
         /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys)
-            where TLockableKey : ILockableKey
-            => clientSession.SortLockCodes(keys);
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys);
 
         /// <inheritdoc/>
-        public void Lock<TLockableKey>(TLockableKey[] keys)
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int count) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys, count);
+
+        /// <inheritdoc/>
+        public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, keys.Length);
+
+        /// <inheritdoc/>
+        public void Lock<TLockableKey>(TLockableKey[] keys, int count)
             where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
-            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, LockOperationType.Lock);
+            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, count, LockOperationType.Lock);
         }
 
         /// <inheritdoc/>
-        public void Unlock<TLockableKey>(TLockableKey[] keys)
+        public void Unlock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Unlock(keys, keys.Length);
+
+        /// <inheritdoc/>
+        public void Unlock<TLockableKey>(TLockableKey[] keys, int count)
             where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Unlock()");
 
-            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, LockOperationType.Unlock);
+            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, count, LockOperationType.Unlock);
         }
 
         /// <summary>

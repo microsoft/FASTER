@@ -568,7 +568,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public bool NeedKeyLockCode => this.fht.LockTable.IsEnabled ? this.fht.LockTable.NeedKeyLockCode : false;
+        public bool NeedKeyLockCode => this.fht.LockTable.IsEnabled && this.fht.LockTable.NeedKeyLockCode;
 
         /// <inheritdoc/>
         public long GetLockCode(ref Key key, out long keyHash)
@@ -581,9 +581,10 @@ namespace FASTER.core
         public long GetLockCode(ref Key key, long keyHash) => this.fht.LockTable.IsEnabled ? this.fht.LockTable.GetLockCode(ref key, keyHash) : keyHash;
 
         /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys)
-            where TLockableKey : ILockableKey 
-            => fht.LockTable.SortLockCodes(keys);
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => fht.LockTable.SortLockCodes(keys);
+
+        /// <inheritdoc/>
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int count) where TLockableKey : ILockableKey => fht.LockTable.SortLockCodes(keys, count);
 
         #endregion IFasterContext
 

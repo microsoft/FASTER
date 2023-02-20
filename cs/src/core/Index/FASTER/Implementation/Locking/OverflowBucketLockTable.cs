@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -167,11 +168,22 @@ namespace FASTER.core
             => (code1 != code2) ? code1.CompareTo(code2) : -lt1.CompareTo(lt2);
 
         /// <inheritdoc/>
-        internal void SortLockCodes<TData>(TData[] keyDatas)
+        internal void SortLockCodes<TData>(TData[] keyDatas) 
+            where TData : ILockableKey 
+            => Array.Sort(keyDatas, (data1, data2) => LockSortComparer(data1.LockCode, data1.LockType, data2.LockCode, data2.LockType));
+
+        /// <inheritdoc/>
+        internal void SortLockCodes<TData>(TData[] keyDatas, int count)
+            where TData : ILockableKey 
+            => Array.Sort(keyDatas, 0, count, new KeyComparer<TData>());
+
+        /// <summary>
+        /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.
+        /// </summary>
+        struct KeyComparer<TData> : IComparer<TData>
             where TData : ILockableKey
         {
-            Debug.Assert(LockType.Exclusive > LockType.Shared, "LockType.Exclusive must be > LockType.Shared so LockSortComparer works properly");
-            Array.Sort(keyDatas, (data1, data2) => LockSortComparer(data1.LockCode, data1.LockType, data2.LockCode, data2.LockType));
+            public int Compare(TData data1, TData data2) => LockSortComparer(data1.LockCode, data1.LockType, data2.LockCode, data2.LockType);
         }
 
         /// <inheritdoc/>

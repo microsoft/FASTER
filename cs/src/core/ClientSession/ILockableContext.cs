@@ -80,6 +80,15 @@ namespace FASTER.core
             where TLockableKey : ILockableKey;
 
         /// <summary>
+        /// Sort an array of app data structures (or classes) by lock code and lock type; these will be passed to Lockable*Session.Lock
+        /// </summary>
+        /// <typeparam name="TLockableKey">The type of the app data struct or class containing key info</typeparam>
+        /// <param name="keys">The array of app key data </param>
+        /// <param name="count">The number of keys in the array (may be less than array length)</param>
+        void SortLockCodes<TLockableKey>(TLockableKey[] keys, int count)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
         /// Locks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
@@ -88,11 +97,29 @@ namespace FASTER.core
             where TLockableKey : ILockableKey;
 
         /// <summary>
+        /// Locks the keys identified in the passed array.
+        /// </summary>
+        /// <typeparam name="TLockableKey"></typeparam>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="count">The number of keyCodes in the array (may be less than array length)</param>
+        void Lock<TLockableKey>(TLockableKey[] keys, int count)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
         /// Unlocks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
         /// <param name="keys">keyCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
         void Unlock<TLockableKey>(TLockableKey[] keys)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
+        /// Unlocks the keys identified in the passed array.
+        /// </summary>
+        /// <typeparam name="TLockableKey"></typeparam>
+        /// <param name="keys">keyCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="count">The number of keyCodes in the array (may be less than array length)</param>
+        void Unlock<TLockableKey>(TLockableKey[] keys, int count)
             where TLockableKey : ILockableKey;
     }
 }

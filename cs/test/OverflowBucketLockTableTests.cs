@@ -5,6 +5,7 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
@@ -272,6 +273,79 @@ namespace FASTER.test.LockTable
             AddThreads(tasks, ref lastTid, numThreads: numThreads, maxNumKeys: 5, lowKey: 1, highKey: 10 * (numThreads / 2), lockType);
             Task.WaitAll(tasks.ToArray());
             AssertTotalLockCounts(0, 0);
+        }
+
+        FixedLengthLockableKeyStruct<long>[] CreateKeys(Random rng, int numKeys, int numRecords)
+        {
+            FixedLengthLockableKeyStruct<long> createKey()
+            { 
+                long key = rng.Next(numKeys);
+                var keyHash = comparer.GetHashCode64(ref key);
+                return new()
+                {
+                    Key = key,
+                    // LockType.None means split randomly between Shared and Exclusive
+                    LockType = rng.Next(0, 100) < 25 ? LockType.Exclusive : LockType.Shared,
+                    KeyHash = keyHash,
+                    LockCode = fht.LockTable.GetLockCode(ref key, keyHash)
+                };
+            }
+            return Enumerable.Range(0, numRecords).Select(ii => createKey()).ToArray();
+        }
+
+        void AssertSorted(FixedLengthLockableKeyStruct<long>[] keys, int count)
+        {
+            long prevCode = -1;
+            long lastXcode = -2;
+
+            for (var ii = 0; ii < count; ++ii)
+            {
+                ref var key = ref keys[ii];
+                Assert.GreaterOrEqual(key.LockCode, 0);
+
+                if (key.LockCode != prevCode)
+                { 
+                    // The keys must be nondecreasing, and may be equal but the first in such an equal sequence must be Exclusive.
+                    Assert.Greater(key.LockCode, prevCode);
+                    lastXcode = key.LockType == LockType.Exclusive ? key.LockCode : -2;
+                }
+                else
+                {
+                    // Identical key sequence must start with exactly one exclusive lock, followed by any number of shared locks.
+                    // (Enumeration will take only the first).
+                    Assert.AreEqual(lastXcode, key.LockCode);
+                    Assert.AreEqual(key.LockType, LockType.Shared);
+                }
+            }
+        }
+
+        [Test]
+        [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
+        public void FullArraySortTest()
+        {
+            var keys = CreateKeys(new Random(101), 100, 1000);
+            fht.LockTable.SortLockCodes(keys);
+            AssertSorted(keys, keys.Length);
+        }
+
+        [Test]
+        [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
+        public void PartialArraySortTest()
+        {
+            var numRecords = 1000;
+            var keys = CreateKeys(new Random(101), 100, numRecords);
+            const int count = 800;
+
+            // Make the later elements invalid.
+            for (var ii = count; ii < numRecords; ++ii)
+                keys[ii].LockCode = -ii;
+
+            fht.LockTable.SortLockCodes(keys, count);
+            AssertSorted(keys, count);
+
+            // Verify later elements were untouched.
+            for (var ii = count; ii < numRecords; ++ii)
+                keys[ii].LockCode = -ii;
         }
 
         const int NumTestIterations = 15;
