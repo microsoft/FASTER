@@ -104,8 +104,8 @@ namespace FASTER.core
         {
             Debug.Assert(!stackCtx.recSrc.HasRecordInfoLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
 
-            // If we have an in-memory source that was evicted, return false and the caller will RETRY.
-            if (stackCtx.recSrc.InMemorySourceWasEvicted())
+            // If we have an in-memory source that fell below HeadAddress, return false and the caller will RETRY_LATER.
+            if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.Log.HeadAddress)
                 return false;
 
             // If we're not using readcache or the splice point is still above readcache.HeadAddress, we're good.

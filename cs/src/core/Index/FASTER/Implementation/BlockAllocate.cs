@@ -76,7 +76,7 @@ namespace FASTER.core
                     if (newLogicalAddress > stackCtx.recSrc.LatestLogicalAddress)
                         return true;
 
-                    // This allocation is below the necessary address so abandon it and repeat the loop.
+                    // This allocation is below the necessary address so abandon it and repeat the loop. TODO potential reuse
                     hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
                     continue;
                 }
@@ -132,8 +132,11 @@ namespace FASTER.core
             // we return RETRY_LATER. This eviction doesn't happen if other threads also have S locks on this address, because in that
             // case they will hold the epoch and prevent BlockAllocate from running OnPagesClosed.
             Debug.Assert(!stackCtx.recSrc.HasRecordInfoLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
-            if (stackCtx.recSrc.InMemorySourceWasEvicted())
+
+            // Even if the record is below HeadAddress it can be accessed until it falls below SafeHeadAddress.
+            if (stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.Log.SafeHeadAddress)
                 stackCtx.recSrc.HasRecordInfoLock = false;
+
             newPhysicalAddress = 0;
             return false;
         }

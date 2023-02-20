@@ -135,9 +135,6 @@ namespace FASTER.core
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool InMemorySourceWasEvicted() => this.HasInMemorySrc && this.LogicalAddress < this.Log.HeadAddress;
-
         public override string ToString()
         {
             var isRC = "(rc)";
@@ -145,7 +142,7 @@ namespace FASTER.core
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
-                 + $" hasLogSrc {bstr(HasMainLogSrc)}, hasRCsrc {bstr(HasReadCacheSrc)}, hasRIlock {bstr(HasRecordInfoLock)}, hasLTlock {bstr(HasLockTableLock)}";
+                 + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, riLock {bstr(HasRecordInfoLock)}, ltLock {bstr(HasLockTableLock)}";
         }
     }
 }

@@ -115,7 +115,7 @@ namespace FASTER.core
             var absHash = this.hash >= 0 ? this.hash : -this.hash;
             var result = $"addr {this.AbsoluteAddress}{addrRC}, currAddr {this.AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashSign}{absHash}, tag {this.tag}, slot {this.slot}, Bkt1 [";
 #if DEBUG
-            result += $"lockCode {LockCode}, ";
+            result += $"code {LockCode}, ";
 #endif // DEBUG
             result += $"{HashBucket.ToString(firstBucket)}]";
             return result;

@@ -162,6 +162,7 @@ namespace FASTER.core
             // X and S locks means an X lock is still trying to drain readers, like this one.
             Debug.Assert((word & kLockBitMask) != kExclusiveLockBitMask, "Trying to S unlock an X-only locked record");
             Debug.Assert(IsLockedShared, "Trying to S unlock an unlocked record");
+
             var result_word = Interlocked.Add(ref word, -kSharedLockIncrement);
             return !IsClosedWord(result_word);
         }

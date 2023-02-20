@@ -85,15 +85,12 @@ namespace FASTER.core
             {
                 // We precheck that the address was above HeadAddress before we get this far, so even if HeadAddress changes, the record can't be evicted
                 // while we hold the epoch.
-                Debug.Assert(stackCtx.recSrc.HasRecordInfoLock, "Should have an InMemoryLock when we have an ephemeral lock with RecordInfoLocker enabled");
+                Debug.Assert(stackCtx.recSrc.HasRecordInfoLock, "Should have a RecordInfo Lock when we have an ephemeral lock with RecordInfoLocker enabled");
 
                 // (See comments in CompleteCopyToTail also) Because this is an S lock, then if the source record is in ReadOnly or ReadCache, it is possible
                 // that the source record (specifically its locks) was transferred by another session that did CopyToTail or CopyToReadCache (it would not have
                 // been a copy due to update, because that would've taken an X lock). If this happens then the record is Closed (Sealed or Invalid) after the
                 // unlock and we have to go find it wherever it is now (still in memory) and unlock it there.
-                //
-                // If this happens in a tightly memory-constrained environment, the new location could drop below HeadAddress. Despite this, it cannot be
-                // evicted while we hold the epoch, so use ClosedUntilAddress when searching.
                 if (!this.RecordInfoLocker.TryUnlockShared(ref srcRecordInfo)) 
                     FindAndUnlockTransferredRecord(ref key, stackCtx.hei.hash);
                 stackCtx.recSrc.HasRecordInfoLock = false;
@@ -111,9 +108,13 @@ namespace FASTER.core
             for (; ; Thread.Yield())
             { 
                 OperationStackContext<Key, Value> stackCtx = new(hash);
-                FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
+                var found = FindTag(ref stackCtx.hei);
+                Debug.Assert(found, "We should always find the tag for the new record if the old one is Closed");
                 stackCtx.SetRecordSourceToHashEntry(hlog);
-                var found = TryFindRecordInMemory(ref key, ref stackCtx, minAddress: hlog.SafeHeadAddress);
+
+                // If this happens in a tightly memory-constrained environment, the new location could drop below HeadAddress. Despite this, it cannot be
+                // evicted while we hold the epoch, so use SafeHeadAddress when searching.
+                found = TryFindRecordInMemory(ref key, ref stackCtx, minAddress: hlog.SafeHeadAddress);
                 Debug.Assert(found, "We should always find the new record if the old one is Closed");
                 if (!found)
                     break;
@@ -140,7 +141,7 @@ namespace FASTER.core
             {
                 // We precheck that the address was above HeadAddress before we get this far, so even if HeadAddress changes, the record can't be evicted
                 // while we hold the epoch.
-                Debug.Assert(stackCtx.recSrc.HasRecordInfoLock, "Should have an InMemoryLock when we have an ephemeral lock with RecordInfoLocker enabled");
+                Debug.Assert(stackCtx.recSrc.HasRecordInfoLock, "Should have a RecordInfo Lock when we have an ephemeral lock with RecordInfoLocker enabled");
                 this.RecordInfoLocker.UnlockExclusive(ref srcRecordInfo);
                 stackCtx.recSrc.HasRecordInfoLock = false;
                 return;
@@ -187,8 +188,8 @@ namespace FASTER.core
             // manual and ephemeral locks; no transfer or marking is needed.)
             if (stackCtx.recSrc.HasInMemorySrc)
             {
-                // Unlock the current ephemeral lock here; we mark the source so we *know* we will have an invalid unlock on srcRecordInfo and would have to chase
-                // through InternalLock to unlock it, so we save the time by not transferring our ephemeral lock.
+                // Unlock the current ephemeral lock here; because we mark the source, we *know* we will have an invalid unlock on srcRecordInfo
+                // and would have to chase through FindAndUnlockTransferredRecord to unlock it, so we save the time by not transferring our ephemeral lock.
                 newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref srcRecordInfo, seal: stackCtx.recSrc.HasMainLogSrc, removeEphemeralLock: stackCtx.recSrc.HasRecordInfoLock);
                 stackCtx.recSrc.HasRecordInfoLock = false;
                 return;

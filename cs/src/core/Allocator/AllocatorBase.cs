@@ -140,12 +140,14 @@ namespace FASTER.core
         public long SafeReadOnlyAddress;
 
         /// <summary>
-        /// Head address
+        /// The lowest in-memory address in the log. While we hold the epoch this may be changed by other threads as part of ShiftHeadAddress,
+        /// but as long as an address was >= HeadAddress while we held the epoch, it cannot be actually evicted until we release the epoch.
         /// </summary>
         public long HeadAddress;
 
         /// <summary>
-        ///  Safe head address
+        /// The lowest reliable in-memory address. This is set by OnPagesClosed as the highest address of the range it is starting to close;
+        /// thus it leads <see cref="ClosedUntilAddress"/>. As long as we hold the epoch, records above this address will not be evicted.
         /// </summary>
         public long SafeHeadAddress;
 
@@ -155,12 +157,13 @@ namespace FASTER.core
         public long FlushedUntilAddress;
 
         /// <summary>
-        /// Flushed until address
+        /// The highest address that has been closed by <see cref="OnPagesClosed"/>. It will catch up to <see cref="SafeHeadAddress"/>
+        /// when a region is closed.
         /// </summary>
         public long ClosedUntilAddress;
 
         /// <summary>
-        /// Begin address
+        /// The lowest valid address in the log
         /// </summary>
         public long BeginAddress;
 
