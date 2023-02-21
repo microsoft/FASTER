@@ -9,10 +9,12 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress)
+        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, bool stopAtHeadAddress = true)
         {
             if (UseReadCache && FindInReadCache(ref key, ref stackCtx, minAddress: Constants.kInvalidAddress))
                 return true;
+            if (stopAtHeadAddress && minAddress < hlog.HeadAddress)
+                minAddress = hlog.HeadAddress;
             return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minAddress < hlog.HeadAddress ? hlog.HeadAddress : minAddress);
         }
 

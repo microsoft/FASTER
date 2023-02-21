@@ -85,7 +85,13 @@ namespace FASTER.core
         public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
 
         /// <inheritdoc/>
+        public long GetLockCode(Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
+
+        /// <inheritdoc/>
         public long GetLockCode(ref Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
+
+        /// <inheritdoc/>
+        public long GetLockCode(Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
 
         /// <inheritdoc/>
         public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);

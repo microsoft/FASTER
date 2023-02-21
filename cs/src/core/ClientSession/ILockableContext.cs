@@ -60,7 +60,25 @@ namespace FASTER.core
         /// </summary>
         /// <remarks>If <see cref="NeedKeyLockCode"/> is true, this code is obtained by FASTER on method calls and is used in its locking scheme. 
         ///     In that case the app must ensure that the keys in a group are sorted by this value, to avoid deadlock.</remarks>
+        long GetLockCode(TKey key, out long keyHash);
+
+        /// <summary>
+        /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
+        /// <param name="key">The key to obtain a code for</param>
+        /// <param name="keyHash">The hashcode of the key; created and returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/>.</param>
+        /// </summary>
+        /// <remarks>If <see cref="NeedKeyLockCode"/> is true, this code is obtained by FASTER on method calls and is used in its locking scheme. 
+        ///     In that case the app must ensure that the keys in a group are sorted by this value, to avoid deadlock.</remarks>
         long GetLockCode(ref TKey key, out long keyHash);
+
+        /// <summary>
+        /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
+        /// <param name="key">The key to obtain a code for</param>
+        /// <param name="keyHash">The hashcode of the key; must be the value returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/>.</param>
+        /// </summary>
+        /// <remarks>If <see cref="NeedKeyLockCode"/> is true, this code is obtained by FASTER on method calls and is used in its locking scheme. 
+        ///     In that case the app must ensure that the keys in a group are sorted by this value, to avoid deadlock.</remarks>
+        long GetLockCode(TKey key, long keyHash);
 
         /// <summary>
         /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.

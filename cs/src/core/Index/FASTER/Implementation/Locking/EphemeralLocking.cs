@@ -116,7 +116,7 @@ namespace FASTER.core
 
                 // If this happens in a tightly memory-constrained environment, the new location could drop below HeadAddress. Despite this, it cannot be
                 // evicted while we hold the epoch, so use SafeHeadAddress when searching.
-                found = TryFindRecordInMemory(ref key, ref stackCtx, minAddress: hlog.SafeHeadAddress);
+                found = TryFindRecordInMemory(ref key, ref stackCtx, minAddress: hlog.SafeHeadAddress, stopAtHeadAddress: false);
                 Debug.Assert(found, "We should always find the new record if the old one is Closed");
                 if (!found)
                     break;
