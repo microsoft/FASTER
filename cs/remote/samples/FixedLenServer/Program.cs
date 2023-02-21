@@ -8,6 +8,7 @@ using FasterServerOptions;
 using FASTER.server;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using FASTER.core;
 
 namespace FasterFixedLenServer
 {
@@ -38,7 +39,7 @@ namespace FasterFixedLenServer
                 builder.SetMinimumLevel(LogLevel.Error);
             });
 
-            using var server = new FixedLenServer<Key, Value, Input, Output, Functions>(opts.GetServerOptions(), () => new Functions(), disableEphemeralLocking: true);
+            using var server = new FixedLenServer<Key, Value, Input, Output, Functions>(opts.GetServerOptions(), () => new Functions(), lockingMode: LockingMode.Mixed);
             server.Start();
             Console.WriteLine("Started server");
 
