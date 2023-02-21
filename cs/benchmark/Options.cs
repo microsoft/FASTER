@@ -36,7 +36,7 @@ namespace FASTER.benchmark
              HelpText = "Locking Implementation:" +
                         "\n    0 = None (default)" +
                         "\n    1 = Ephemeral locking using RecordInfo.SpinLock()" +
-                        "\n    2 = Manual locking using LockableUnsafeContext")]
+                        "\n    2 = Mixed-mode locking using main HashTable buckets")]
         public int LockingMode { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,

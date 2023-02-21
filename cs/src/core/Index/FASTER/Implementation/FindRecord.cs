@@ -15,7 +15,7 @@ namespace FASTER.core
                 return true;
             if (stopAtHeadAddress && minAddress < hlog.HeadAddress)
                 minAddress = hlog.HeadAddress;
-            return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minAddress < hlog.HeadAddress ? hlog.HeadAddress : minAddress);
+            return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
