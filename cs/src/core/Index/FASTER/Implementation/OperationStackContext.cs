@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -64,7 +63,7 @@ namespace FASTER.core
         /// Called during InternalXxx 'finally' handler, to set the new record invalid if an exception or other error occurred.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void HandleNewRecordOnError(FasterKV<Key, Value> fkv)
+        internal void HandleNewRecordOnException(FasterKV<Key, Value> fkv)
         {
             if (this.newLogicalAddress != Constants.kInvalidAddress)
             {

@@ -179,7 +179,7 @@ namespace FASTER.core
             }
             finally
             {
-                stackCtx.HandleNewRecordOnError(this);
+                stackCtx.HandleNewRecordOnException(this);
                 EphemeralXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
 

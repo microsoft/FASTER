@@ -243,6 +243,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void ReadCacheAbandonRecord(long physicalAddress)
         {
+            // TODO: We currently don't save readcache allocations for retry, but we could
             ref var ri = ref readcache.GetInfo(physicalAddress);
             ri.SetInvalid();
             ri.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull

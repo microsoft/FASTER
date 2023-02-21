@@ -115,7 +115,7 @@ namespace FASTER.core
                 }
 
                 // In-memory source dropped below HeadAddress during BlockAllocate.
-                ReadCacheAbandonRecord(newPhysicalAddress);                // We don't save readcache addresses (they'll eventually be evicted)
+                ReadCacheAbandonRecord(newPhysicalAddress);
                 status = OperationStatus.RETRY_LATER;
                 break;
             }

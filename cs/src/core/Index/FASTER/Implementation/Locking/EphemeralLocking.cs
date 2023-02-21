@@ -41,7 +41,8 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryEphemeralSLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, out OperationStatus status)
+        private bool TryEphemeralSLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
+                                                                              ref RecordInfo srcRecordInfo, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // This routine applies to all locking modes, because for reads we have already gotten the logicalAddress.
@@ -68,7 +69,8 @@ namespace FASTER.core
                 return false;
             }
 
-            Debug.Assert(!srcRecordInfo.IsClosed, "RecordInfo SLock should have failed if the record is closed");
+            // The record may have been closed by another share locker immediately after we obtained our share lock, or at
+            // any time thereafter. That's OK; we're just reading. That's why we take a shared lock instead of exclusive.
             return stackCtx.recSrc.HasRecordInfoLock = true;
         }
 

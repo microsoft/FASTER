@@ -110,7 +110,7 @@ namespace FASTER.core
                     }
                     finally
                     {
-                        stackCtx.HandleNewRecordOnError(this);
+                        stackCtx.HandleNewRecordOnException(this);
                         EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
 
@@ -211,7 +211,7 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    stackCtx.HandleNewRecordOnError(this);
+                    stackCtx.HandleNewRecordOnException(this);
                     EphemeralXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                 }
 
@@ -317,7 +317,7 @@ namespace FASTER.core
                     }
                     finally
                     {
-                        stackCtx.HandleNewRecordOnError(this);
+                        stackCtx.HandleNewRecordOnException(this);
                         EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
@@ -432,7 +432,6 @@ namespace FASTER.core
                     return status;
 
                 newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
-                stackCtx.SetNewRecord(newLogicalAddress);
 
                 upsertInfo.Address = Constants.kInvalidAddress;     // We do not expose readcache addresses
                 advancedStatusCode |= StatusCode.CopiedRecordToReadCache;
@@ -444,7 +443,6 @@ namespace FASTER.core
                     return status;
 
                 newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: currentCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
-                stackCtx.SetNewRecord(newLogicalAddress);
 
                 newRecordInfo.Tombstone = expired;
                 upsertInfo.Address = newLogicalAddress;
@@ -453,6 +451,7 @@ namespace FASTER.core
                     reason = WriteReason.CopyToTail;
             }
 
+            stackCtx.SetNewRecord(newLogicalAddress | readcacheNewAddressBit);
             upsertInfo.RecordInfo = newRecordInfo;
 
             if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref localLog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
