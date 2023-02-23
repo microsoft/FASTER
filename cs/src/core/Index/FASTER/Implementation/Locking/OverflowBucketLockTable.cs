@@ -164,26 +164,36 @@ namespace FASTER.core
             };
         }
 
-        private static int LockSortComparer(long code1, LockType lt1, long code2, LockType lt2)
-            => (code1 != code2) ? code1.CompareTo(code2) : -lt1.CompareTo(lt2);
+        private static int LockSortComparer(long code1, LockType type1, long code2, LockType type2)
+            => (code1 != code2) ? code1.CompareTo(code2) : -type1.CompareTo(type2);
 
         /// <inheritdoc/>
-        internal void SortLockCodes<TData>(TData[] keyDatas) 
-            where TData : ILockableKey 
-            => Array.Sort(keyDatas, (data1, data2) => LockSortComparer(data1.LockCode, data1.LockType, data2.LockCode, data2.LockType));
+        internal int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2) 
+            where TLockableKey : ILockableKey 
+            => LockSortComparer(key1.LockCode, key1.LockType, key2.LockCode, key2.LockType);
 
         /// <inheritdoc/>
-        internal void SortLockCodes<TData>(TData[] keyDatas, int count)
-            where TData : ILockableKey 
-            => Array.Sort(keyDatas, 0, count, new KeyComparer<TData>());
+        internal int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) 
+            where TLockableKey : ILockableKey
+            => LockSortComparer(key1.LockCode, key1.LockType, key2.LockCode, key2.LockType);
+
+        /// <inheritdoc/>
+        internal void SortLockCodes<TLockableKey>(TLockableKey[] keys) 
+            where TLockableKey : ILockableKey 
+            => Array.Sort(keys, (key1, key2) => LockSortComparer(key1.LockCode, key1.LockType, key2.LockCode, key2.LockType));
+
+        /// <inheritdoc/>
+        internal void SortLockCodes<TLockableKey>(TLockableKey[] keys, int count)
+            where TLockableKey : ILockableKey 
+            => Array.Sort(keys, 0, count, new KeyComparer<TLockableKey>());
 
         /// <summary>
         /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.
         /// </summary>
-        struct KeyComparer<TData> : IComparer<TData>
-            where TData : ILockableKey
+        struct KeyComparer<TLockableKey> : IComparer<TLockableKey>
+            where TLockableKey : ILockableKey
         {
-            public int Compare(TData data1, TData data2) => LockSortComparer(data1.LockCode, data1.LockType, data2.LockCode, data2.LockType);
+            public int Compare(TLockableKey key1, TLockableKey key2) => LockSortComparer(key1.LockCode, key1.LockType, key2.LockCode, key2.LockType);
         }
 
         /// <inheritdoc/>

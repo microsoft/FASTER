@@ -110,7 +110,7 @@ namespace FASTER.core
                 }
                 else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
                 {
-                    // Mutable Region: Update the record in-place
+                    // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     if (srcRecordInfo.Tombstone)
                         goto CreateNewRecord;
 

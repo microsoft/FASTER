@@ -302,6 +302,8 @@ namespace FASTER.test.LockTable
             {
                 ref var key = ref keys[ii];
                 Assert.GreaterOrEqual(key.LockCode, 0);
+                if (ii > 0)
+                    Assert.GreaterOrEqual(fht.LockTable.CompareLockCodes(key, keys[ii - 1]), 0);
 
                 if (key.LockCode != prevCode)
                 { 

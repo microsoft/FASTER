@@ -97,6 +97,12 @@ namespace FASTER.core
         public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
 
         /// <inheritdoc/>
+        public int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareLockCodes(key1, key2);
+
+        /// <inheritdoc/>
+        public int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareLockCodes(ref key1, ref key2);
+
+        /// <inheritdoc/>
         public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys);
 
         /// <inheritdoc/>

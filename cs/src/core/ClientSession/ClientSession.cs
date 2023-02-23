@@ -581,6 +581,12 @@ namespace FASTER.core
         public long GetLockCode(ref Key key, long keyHash) => this.fht.LockTable.IsEnabled ? this.fht.LockTable.GetLockCode(ref key, keyHash) : keyHash;
 
         /// <inheritdoc/>
+        public int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => fht.LockTable.CompareLockCodes(key1, key2);
+
+        /// <inheritdoc/>
+        public int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => fht.LockTable.CompareLockCodes(ref key1, ref key2);
+
+        /// <inheritdoc/>
         public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => fht.LockTable.SortLockCodes(keys);
 
         /// <inheritdoc/>

@@ -90,6 +90,26 @@ namespace FASTER.core
         long GetLockCode(ref TKey key, long keyHash);
 
         /// <summary>
+        /// Compare two structures that implement ILockableKey.
+        /// </summary>
+        /// <typeparam name="TLockableKey">The type of the app data struct or class containing key info</typeparam>
+        /// <param name="key1">The first key to compare</param>
+        /// <param name="key2">The first key to compare</param>
+        /// <returns>The result of key1.CompareTo(key2)</returns>
+        int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
+        /// Compare two structures that implement ILockableKey.
+        /// </summary>
+        /// <typeparam name="TLockableKey">The type of the app data struct or class containing key info</typeparam>
+        /// <param name="key1">The first key to compare</param>
+        /// <param name="key2">The first key to compare</param>
+        /// <returns>The result of key1.CompareTo(key2)</returns>
+        int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
         /// Sort an array of app data structures (or classes) by lock code and lock type; these will be passed to Lockable*Session.Lock
         /// </summary>
         /// <typeparam name="TLockableKey">The type of the app data struct or class containing key info</typeparam>
