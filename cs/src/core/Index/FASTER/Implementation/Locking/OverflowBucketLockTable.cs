@@ -8,15 +8,15 @@ using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
-    internal struct OverflowBucketLockTable<TKey> : ILockTable<TKey>
+    internal struct OverflowBucketLockTable<TKey, TValue> : ILockTable<TKey>
     {
-        private long size_mask;     // As in the main hash table
+        FasterKV<TKey, TValue> fht;
 
-        internal long NumBuckets => size_mask + 1;
+        internal long NumBuckets => IsEnabled ? fht.state[fht.resizeInfo.version].size_mask + 1 : 0;
 
-        internal bool IsEnabled => size_mask > 0;
+        internal bool IsEnabled => this.fht is not null;
 
-        internal OverflowBucketLockTable(long size_mask) => this.size_mask = size_mask;
+        internal OverflowBucketLockTable(FasterKV<TKey, TValue> f) => this.fht = f;
 
         [Conditional("DEBUG")]
         void AssertLockAllowed() => Debug.Assert(IsEnabled, "Attempt to do Manual-locking lock when locking mode is LockingMode.EphemeralOnly");
@@ -27,16 +27,29 @@ namespace FASTER.core
         [Conditional("DEBUG")]
         void AssertQueryAllowed() => Debug.Assert(IsEnabled, "Attempt to do Manual-locking query when locking mode is LockingMode.EphemeralOnly");
 
-        internal long GetSize<TValue>(FasterKV<TKey, TValue> fht) => fht.state[fht.resizeInfo.version].size_mask;
+        internal long GetSize() => fht.state[fht.resizeInfo.version].size_mask;
 
         public bool NeedKeyLockCode => IsEnabled;
 
+        static OverflowBucketLockTable()
+        {
+            Debug.Assert(LockType.Exclusive < LockType.Shared, "LockType.Exclusive must be < LockType.Shared, or LockCodeComparer must be changed accordingly");
+        }
+
         /// <inheritdoc/>
-        public long GetLockCode(ref TKey key, long hash) => IsEnabled ? hash & size_mask : 0;
+        public long GetLockCode(ref TKey key, long hash) => IsEnabled ? hash : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe HashBucket* GetBucket<TValue>(FasterKV<TKey, TValue> fht, long keyCode)
-            => fht.state[fht.resizeInfo.version].tableAligned + keyCode;
+        internal static long GetBucketIndex(long keyCode, long size_mask)
+            => keyCode & size_mask;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long GetBucketIndex(long keyCode)
+            => GetBucketIndex(keyCode, fht.state[fht.resizeInfo.version].size_mask);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe HashBucket* GetBucket(long keyCode)
+            => fht.state[fht.resizeInfo.version].tableAligned + GetBucketIndex(keyCode);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -46,8 +59,8 @@ namespace FASTER.core
         // The KeyCode approach is only for manual locking, to prevent a session from deadlocking itself; ephemeral always uses keys.
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockManual<TValue>(FasterKV<TKey, TValue> fht, long keyCode, LockType lockType) 
-            => TryLockManual(GetBucket(fht, keyCode), lockType);
+        public unsafe bool TryLockManual(long keyCode, LockType lockType) 
+            => TryLockManual(GetBucket(keyCode), lockType);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool TryLockManual(HashBucket* bucket, LockType lockType)
@@ -98,10 +111,10 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void Unlock<TValue>(FasterKV<TKey, TValue> fht, long keyCode, LockType lockType)
+        public unsafe void Unlock(long keyCode, LockType lockType)
         {
             AssertUnlockAllowed();
-            HashBucket* bucket = GetBucket(fht, keyCode);
+            HashBucket* bucket = GetBucket(keyCode);
             if (lockType == LockType.Shared)
                 HashBucket.ReleaseSharedLatch(bucket);
             else
@@ -164,28 +177,33 @@ namespace FASTER.core
             };
         }
 
-        private static int LockSortComparer(long code1, LockType type1, long code2, LockType type2)
-            => (code1 != code2) ? code1.CompareTo(code2) : -type1.CompareTo(type2);
+        private static int LockCodeComparer<TLockableKey>(TLockableKey key1, TLockableKey key2, long size_mask)
+            where TLockableKey : ILockableKey
+        {
+            var idx1 = GetBucketIndex(key1.LockCode, size_mask);
+            var idx2 = GetBucketIndex(key2.LockCode, size_mask);
+            return (idx1 != idx2) ? idx1.CompareTo(idx2) : key1.LockType.CompareTo(key2.LockType);
+        }
 
         /// <inheritdoc/>
         internal int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2) 
             where TLockableKey : ILockableKey 
-            => LockSortComparer(key1.LockCode, key1.LockType, key2.LockCode, key2.LockType);
+            => LockCodeComparer(key1, key2, fht.state[fht.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
         internal int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) 
             where TLockableKey : ILockableKey
-            => LockSortComparer(key1.LockCode, key1.LockType, key2.LockCode, key2.LockType);
+            => LockCodeComparer(key1, key2, fht.state[fht.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
         internal void SortLockCodes<TLockableKey>(TLockableKey[] keys) 
             where TLockableKey : ILockableKey 
-            => Array.Sort(keys, (key1, key2) => LockSortComparer(key1.LockCode, key1.LockType, key2.LockCode, key2.LockType));
+            => Array.Sort(keys, new KeyComparer<TLockableKey>(fht.state[fht.resizeInfo.version].size_mask));
 
         /// <inheritdoc/>
-        internal void SortLockCodes<TLockableKey>(TLockableKey[] keys, int count)
+        internal void SortLockCodes<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey 
-            => Array.Sort(keys, 0, count, new KeyComparer<TLockableKey>());
+            => Array.Sort(keys, start, count, new KeyComparer<TLockableKey>(fht.state[fht.resizeInfo.version].size_mask));
 
         /// <summary>
         /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.
@@ -193,7 +211,11 @@ namespace FASTER.core
         struct KeyComparer<TLockableKey> : IComparer<TLockableKey>
             where TLockableKey : ILockableKey
         {
-            public int Compare(TLockableKey key1, TLockableKey key2) => LockSortComparer(key1.LockCode, key1.LockType, key2.LockCode, key2.LockType);
+            readonly long size_mask;
+
+            internal KeyComparer(long s) => size_mask = s;
+
+            public int Compare(TLockableKey key1, TLockableKey key2) => LockCodeComparer(key1, key2, size_mask);
         }
 
         /// <inheritdoc/>

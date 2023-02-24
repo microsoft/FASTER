@@ -125,64 +125,67 @@ namespace FASTER.core
         public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys);
 
         /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int count) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys, count);
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys, start, count);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe void DoInternalLockOp<FasterSession, TLockableKey>(FasterSession fasterSession,
                                                                    ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                                                                   TLockableKey[] keys, int count, LockOperationType lockOpType)
+                                                                   TLockableKey[] keys, int start, int count, LockOperationType lockOpType)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
             where TLockableKey : ILockableKey
         {
             // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
             // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
             // Unlock has to be done in the reverse order of locking, so we take the *last* occurrence of each key there.
-            OperationStatus status;
+            var end = start + count - 1;
             if (lockOpType == LockOperationType.Lock)
             {
-                for (int ii = 0; ii < count; ++ii)
+                for (int ii = start; ii <= end; ++ii)
                 {
-                    ref var key = ref keys[ii];
-                    if (ii == 0 || key.LockCode != keys[ii - 1].LockCode)
-                    { 
-                        do
-                            status = clientSession.fht.InternalLock(key.LockCode, new(lockOpType, key.LockType));
-                        while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, fasterSession));
-                        Debug.Assert(status == OperationStatus.SUCCESS);
-
-                        if (key.LockType == LockType.Exclusive)
-                            ++clientSession.exclusiveLockCount;
-                        else
-                            ++clientSession.sharedLockCount;
-                    }
+                    var lockType = DoLockOp(fasterSession, clientSession, keys, start, lockOpType, ii);
+                    if (lockType == LockType.Exclusive)
+                        ++clientSession.exclusiveLockCount;
+                    else if (lockType == LockType.Shared)
+                        ++clientSession.sharedLockCount;
                 }
                 return;
             }
 
             // LockOperationType.Unlock; go through the keys in reverse.
-            for (int ii = count - 1; ii >= 0; --ii)
+            for (int ii = end; ii >= start; --ii)
             {
-                ref var key = ref keys[ii];
-                if (ii == 0 || key.LockCode != keys[ii - 1].LockCode)
-                {
-                    do
-                        status = clientSession.fht.InternalLock(key.LockCode, new(lockOpType, key.LockType));
-                    while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, fasterSession));
-                    Debug.Assert(status == OperationStatus.SUCCESS);
-
-                    if (key.LockType == LockType.Exclusive)
-                        --clientSession.exclusiveLockCount;
-                    else
-                        --clientSession.sharedLockCount;
-                }
+                var lockType = DoLockOp(fasterSession, clientSession, keys, start, lockOpType, ii);
+                if (lockType == LockType.Exclusive)
+                    --clientSession.exclusiveLockCount;
+                else if (lockType == LockType.Shared)
+                    --clientSession.sharedLockCount;
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe LockType DoLockOp<FasterSession, TLockableKey>(FasterSession fasterSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+                                                                             TLockableKey[] keys, int start, LockOperationType lockOpType, int idx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+            where TLockableKey : ILockableKey
+        {
+            ref var key = ref keys[idx];
+            if (idx == start || key.LockCode != keys[idx - 1].LockCode)
+            {
+                OperationStatus status;
+                do
+                    status = clientSession.fht.InternalLock(key.LockCode, new(lockOpType, key.LockType));
+                while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, fasterSession));
+                Debug.Assert(status == OperationStatus.SUCCESS);
+                return key.LockType;
+            }
+            return LockType.None;
+        }
+
         /// <inheritdoc/>
-        public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, keys.Length);
+        public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, 0, keys.Length);
         
         /// <inheritdoc/>
-        public void Lock<TLockableKey>(TLockableKey[] keys, int count)
+        public void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable();
@@ -191,7 +194,7 @@ namespace FASTER.core
             clientSession.UnsafeResumeThread();
             try
             {
-                DoInternalLockOp(FasterSession, clientSession, keys, count, LockOperationType.Lock);
+                DoInternalLockOp(FasterSession, clientSession, keys, start, count, LockOperationType.Lock);
             }
             finally
             {
@@ -200,10 +203,10 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public void Unlock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Unlock(keys, keys.Length);
+        public void Unlock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Unlock(keys, 0, keys.Length);
 
         /// <inheritdoc/>
-        public void Unlock<TLockableKey>(TLockableKey[] keys, int count)
+        public void Unlock<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable();
@@ -212,7 +215,7 @@ namespace FASTER.core
             clientSession.UnsafeResumeThread();
             try
             {
-                DoInternalLockOp(FasterSession, clientSession, keys, count, LockOperationType.Unlock);
+                DoInternalLockOp(FasterSession, clientSession, keys, start, count, LockOperationType.Unlock);
             }
             finally
             {

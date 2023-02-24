@@ -590,7 +590,7 @@ namespace FASTER.core
         public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => fht.LockTable.SortLockCodes(keys);
 
         /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int count) where TLockableKey : ILockableKey => fht.LockTable.SortLockCodes(keys, count);
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => fht.LockTable.SortLockCodes(keys, start, count);
 
         #endregion IFasterContext
 

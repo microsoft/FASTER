@@ -250,7 +250,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             foreach (var kvp in blt.buckets)
             {
-                var hashBucket = fht.LockTable.GetBucket(fht, kvp.Key);
+                var hashBucket = fht.LockTable.GetBucket(kvp.Key);
                 Assert.AreEqual(kvp.Value.s, HashBucket.NumLatchedShared(hashBucket));
                 Assert.AreEqual(kvp.Value.x == 1, HashBucket.IsLatchedExclusive(hashBucket));
             }
@@ -602,7 +602,10 @@ namespace FASTER.test.LockableUnsafeContext
                 new FixedLengthLockableKeyStruct<long>(readKey51, LockType.Shared, luContext),      // Source, shared
                 new FixedLengthLockableKeyStruct<long>(resultKey, LockType.Exclusive, luContext),   // Destination, exclusive
             };
+
             luContext.SortLockCodes(keys);
+
+            var buckets = keys.Select(key => fht.LockTable.GetBucketIndex(key.LockCode)).ToArray();
 
             try
             {

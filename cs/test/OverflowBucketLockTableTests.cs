@@ -153,7 +153,7 @@ namespace FASTER.test.LockTable
 
         internal unsafe static void AssertBucketLockCount(FasterKV<long, long> fht, ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS)
         {
-            var bucketIndex = key.LockCode;
+            var bucketIndex = fht.LockTable.GetBucketIndex(key.LockCode);
             var bucket = fht.state[fht.resizeInfo.version].tableAligned + bucketIndex;
             Assert.AreEqual(expectedX == 1, HashBucket.IsLatchedExclusive(bucket));
             Assert.AreEqual(expectedS, HashBucket.NumLatchedShared(bucket));
@@ -295,28 +295,36 @@ namespace FASTER.test.LockTable
 
         void AssertSorted(FixedLengthLockableKeyStruct<long>[] keys, int count)
         {
-            long prevCode = -1;
-            long lastXcode = -2;
+            long prevCode = default;
+            long lastXcode = default;
+            LockType lastLockType = default;
 
             for (var ii = 0; ii < count; ++ii)
             {
                 ref var key = ref keys[ii];
-                Assert.GreaterOrEqual(key.LockCode, 0);
-                if (ii > 0)
-                    Assert.GreaterOrEqual(fht.LockTable.CompareLockCodes(key, keys[ii - 1]), 0);
+                if (ii == 0)
+                {
+                    prevCode = key.LockCode;
+                    lastXcode = key.LockType == LockType.Exclusive ? key.LockCode : -2;
+                    lastLockType = key.LockType;
+                    continue;
+                }
 
+                Assert.GreaterOrEqual(fht.LockTable.CompareLockCodes(key, keys[ii - 1]), 0);
                 if (key.LockCode != prevCode)
                 { 
-                    // The keys must be nondecreasing, and may be equal but the first in such an equal sequence must be Exclusive.
-                    Assert.Greater(key.LockCode, prevCode);
+                    // The BucketIndex of the keys must be nondecreasing, and may be equal but the first in such an equal sequence must be Exclusive.
+                    Assert.Greater(fht.LockTable.GetBucketIndex(key.LockCode), fht.LockTable.GetBucketIndex(prevCode));
                     lastXcode = key.LockType == LockType.Exclusive ? key.LockCode : -2;
                 }
                 else
                 {
-                    // Identical key sequence must start with exactly one exclusive lock, followed by any number of shared locks.
+                    // Identical BucketIndex sequence must start with an exclusive lock, followed by any number of exclusive locks, followed by any number of shared locks.
                     // (Enumeration will take only the first).
                     Assert.AreEqual(lastXcode, key.LockCode);
-                    Assert.AreEqual(key.LockType, LockType.Shared);
+                    if (key.LockType == LockType.Exclusive)
+                        Assert.AreNotEqual(LockType.Shared, lastLockType);
+                    lastLockType = key.LockType;
                 }
             }
         }
@@ -342,7 +350,7 @@ namespace FASTER.test.LockTable
             for (var ii = count; ii < numRecords; ++ii)
                 keys[ii].LockCode = -ii;
 
-            fht.LockTable.SortLockCodes(keys, count);
+            fht.LockTable.SortLockCodes(keys, 0, count);
             AssertSorted(keys, count);
 
             // Verify later elements were untouched.

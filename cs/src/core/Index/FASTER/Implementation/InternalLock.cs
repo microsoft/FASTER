@@ -53,11 +53,11 @@ namespace FASTER.core
             switch (lockOp.LockOperationType)
             {
                 case LockOperationType.Lock:
-                    if (!this.LockTable.TryLockManual(this, keyLockCode, lockOp.LockType))
+                    if (!this.LockTable.TryLockManual(keyLockCode, lockOp.LockType))
                         return OperationStatus.RETRY_LATER;
                     return OperationStatus.SUCCESS;
                 case LockOperationType.Unlock:
-                    this.LockTable.Unlock(this, keyLockCode, lockOp.LockType);
+                    this.LockTable.Unlock(keyLockCode, lockOp.LockType);
                     return OperationStatus.SUCCESS;
                 default:
                     Debug.Fail($"Unexpected {nameof(LockOperationType)}: {lockOp.LockOperationType}");

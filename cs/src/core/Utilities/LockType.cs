@@ -14,14 +14,14 @@ namespace FASTER.core
         None,
 
         /// <summary>
-        /// Shared lock, taken on Read
-        /// </summary>
-        Shared,
-
-        /// <summary>
         /// Exclusive lock, taken on Upsert, RMW, or Delete
         /// </summary>
-        Exclusive
+        Exclusive,
+
+        /// <summary>
+        /// Shared lock, taken on Read
+        /// </summary>
+        Shared
     }
 
     /// <summary>

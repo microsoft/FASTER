@@ -122,8 +122,9 @@ namespace FASTER.core
         /// </summary>
         /// <typeparam name="TLockableKey">The type of the app data struct or class containing key info</typeparam>
         /// <param name="keys">The array of app key data </param>
-        /// <param name="count">The number of keys in the array (may be less than array length)</param>
-        void SortLockCodes<TLockableKey>(TLockableKey[] keys, int count)
+        /// <param name="start">The starting index to sort</param>
+        /// <param name="count">The number of keys to sort</param>
+        void SortLockCodes<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey;
 
         /// <summary>
@@ -139,8 +140,9 @@ namespace FASTER.core
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
         /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
-        /// <param name="count">The number of keyCodes in the array (may be less than array length)</param>
-        void Lock<TLockableKey>(TLockableKey[] keys, int count)
+        /// <param name="start">The starting index to Lock</param>
+        /// <param name="count">The number of keys to Lock</param>
+        void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey;
 
         /// <summary>
@@ -156,8 +158,9 @@ namespace FASTER.core
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
         /// <param name="keys">keyCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
-        /// <param name="count">The number of keyCodes in the array (may be less than array length)</param>
-        void Unlock<TLockableKey>(TLockableKey[] keys, int count)
+        /// <param name="start">The starting index to Unlock</param>
+        /// <param name="count">The number of keys to Unlock</param>
+        void Unlock<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey;
     }
 }

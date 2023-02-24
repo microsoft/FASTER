@@ -66,7 +66,7 @@ namespace FASTER.core
 
         internal readonly bool DisableEphemeralLocking;
         internal readonly RecordInfoLocker RecordInfoLocker;
-        internal readonly OverflowBucketLockTable<Key> LockTable;
+        internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
         internal void IncrementNumLockingSessions()
         {
@@ -225,7 +225,7 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             this.RecordInfoLocker = new RecordInfoLocker(lockingMode == LockingMode.EphemeralOnly);
-            this.LockTable = new OverflowBucketLockTable<Key>(lockingMode == LockingMode.Mixed ? state[resizeInfo.version].size_mask : 0);
+            this.LockTable = new OverflowBucketLockTable<Key, Value>(lockingMode == LockingMode.Mixed ? this : null);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
@@ -726,9 +726,6 @@ namespace FASTER.core
         /// <returns>Whether the grow completed</returns>
         public bool GrowIndex()
         {
-            if (this.LockTable.IsEnabled && this.LockTable.GetType() == typeof(OverflowBucketLockTable<Key>))
-                throw new FasterException($"Cannot use GrowIndex when using {nameof(OverflowBucketLockTable<Key>)}");
-
             if (epoch.ThisInstanceProtected())
                 throw new FasterException("Cannot use GrowIndex when using non-async sessions");
 
