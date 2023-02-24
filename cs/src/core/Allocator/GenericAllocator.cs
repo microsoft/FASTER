@@ -309,6 +309,8 @@ namespace FASTER.core
             {
                 if (epochTaken)
                     epoch.Suspend();
+                else
+                    epoch.ProtectAndDrain();
             }
         }
 

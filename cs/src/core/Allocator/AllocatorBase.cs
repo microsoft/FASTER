@@ -1830,29 +1830,45 @@ namespace FASTER.core
         /// <param name="completedSemaphore"></param>
         public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore)
         {
-            int totalNumPages = (int)(endPage - startPage);
-            completedSemaphore = new SemaphoreSlim(0);
-            var flushCompletionTracker = new FlushCompletionTracker(completedSemaphore, totalNumPages);
-            var localSegmentOffsets = new long[SegmentBufferSize];
-
-            for (long flushPage = startPage; flushPage < endPage; flushPage++)
+            // We drop epoch protection to perform large scale writes to disk
+            bool epochDropped = false;
+            if (epoch.ThisInstanceProtected())
             {
-                long flushPageAddress = flushPage << LogPageSizeBits;
-                var pageSize = PageSize;
-                if (flushPage == endPage - 1)
-                    pageSize = (int)(endLogicalAddress - flushPageAddress);
+                epochDropped = true;
+                epoch.Suspend();
+            }
 
-                var asyncResult = new PageAsyncFlushResult<Empty>
+            try
+            {
+                int totalNumPages = (int)(endPage - startPage);
+                completedSemaphore = new SemaphoreSlim(0);
+                var flushCompletionTracker = new FlushCompletionTracker(completedSemaphore, totalNumPages);
+                var localSegmentOffsets = new long[SegmentBufferSize];
+
+                for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
-                    flushCompletionTracker = flushCompletionTracker,
-                    page = flushPage,
-                    fromAddress = flushPageAddress,
-                    untilAddress = flushPageAddress + pageSize,
-                    count = 1
-                };
+                    long flushPageAddress = flushPage << LogPageSizeBits;
+                    var pageSize = PageSize;
+                    if (flushPage == endPage - 1)
+                        pageSize = (int)(endLogicalAddress - flushPageAddress);
 
-                // Intended destination is flushPage
-                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
+                    var asyncResult = new PageAsyncFlushResult<Empty>
+                    {
+                        flushCompletionTracker = flushCompletionTracker,
+                        page = flushPage,
+                        fromAddress = flushPageAddress,
+                        untilAddress = flushPageAddress + pageSize,
+                        count = 1
+                    };
+
+                    // Intended destination is flushPage
+                    WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
+                }
+            }
+            finally
+            {
+                if (epochDropped)
+                    epoch.Resume();
             }
         }
 
