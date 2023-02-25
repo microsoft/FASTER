@@ -899,7 +899,7 @@ namespace FASTER.core
                     HashEntryInfo hei = new(comparer.GetHashCode64(ref hlog.GetKey(recordStart)));
                     FindOrCreateTag(ref hei, hlog.BeginAddress);
 
-                    bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.InNewVersion;
+                    bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.IsInNewVersion;
                     if (!options.undoNextVersion) ignoreRecord = false;
 
                     if (!ignoreRecord)

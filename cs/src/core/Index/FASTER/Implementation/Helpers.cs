@@ -21,7 +21,7 @@ namespace FASTER.core
         static ref RecordInfo WriteNewRecordInfo(ref Key key, AllocatorBase<Key, Value> log, long newPhysicalAddress, bool inNewVersion, bool tombstone, long previousAddress)
         {
             ref RecordInfo recordInfo = ref log.GetInfo(newPhysicalAddress);
-            RecordInfo.WriteInfo(ref recordInfo, inNewVersion, tombstone, previousAddress);
+            recordInfo.WriteInfo(inNewVersion, tombstone, previousAddress);
             log.Serialize(ref key, newPhysicalAddress);
             return ref recordInfo;
         }
@@ -43,10 +43,10 @@ namespace FASTER.core
         /// <param name="logicalAddress">The logical address of the traced record for the key</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CheckEntryVersionNew(long logicalAddress)
+        private bool IsRecordVersionNew(long logicalAddress)
         {
             HashBucketEntry entry = new() { word = logicalAddress };
-            return CheckBucketVersionNew(ref entry);
+            return IsEntryVersionNew(ref entry);
         }
 
         /// <summary>
@@ -56,9 +56,9 @@ namespace FASTER.core
         /// <param name="entry">the last entry of a bucket</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CheckBucketVersionNew(ref HashBucketEntry entry)
+        private bool IsEntryVersionNew(ref HashBucketEntry entry)
         {
-            // A version shift can only in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
+            // A version shift can only happen in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
             if (entry.Address < _hybridLogCheckpoint.info.startLogicalAddress) 
                 return false;
 
@@ -66,12 +66,10 @@ namespace FASTER.core
             if (UseReadCache && entry.ReadCache) 
                 return false;
 
-            // Check if record has the new version bit set
-            var _addr = hlog.GetPhysicalAddress(entry.Address);
-            if (entry.Address >= hlog.HeadAddress)
-                return hlog.GetInfo(_addr).InNewVersion;
-            else
+            // If the record is in memory, check if it has the new version bit set
+            if (entry.Address < hlog.HeadAddress)
                 return false;
+            return hlog.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
         }
 
         internal enum LatchOperation : byte

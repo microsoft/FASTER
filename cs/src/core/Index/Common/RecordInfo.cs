@@ -65,15 +65,13 @@ namespace FASTER.core
         [FieldOffset(0)]
         private long word;
 
-        public static void WriteInfo(ref RecordInfo info, bool inNewVersion, bool tombstone, long previousAddress)
+        public void WriteInfo(bool inNewVersion, bool tombstone, long previousAddress)
         {
-            info.word = default;
-            info.Tombstone = tombstone;
-            info.SetValid();
-            info.Dirty = false;
-            info.PreviousAddress = previousAddress;
-            info.InNewVersion = inNewVersion;
-            info.Modified = false;
+            this.word = default;
+            this.Tombstone = tombstone;
+            this.SetValid();
+            this.PreviousAddress = previousAddress;
+            this.IsInNewVersion = inNewVersion;
         }
 
         public bool Equals(RecordInfo other) => this.word == other.word;
@@ -346,7 +344,7 @@ namespace FASTER.core
             }
         }
 
-        public bool InNewVersion
+        public bool IsInNewVersion
         {
             get => (word & kInNewVersionBitMask) > 0;
             set

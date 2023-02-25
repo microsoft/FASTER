@@ -91,7 +91,7 @@ namespace FASTER.core
                 #region Entry latch operation
                 if (sessionCtx.phase != Phase.REST)
                 {
-                    latchDestination = AcquireLatchUpsert(sessionCtx, ref stackCtx.hei, ref status, ref latchOperation, stackCtx.recSrc.LogicalAddress);
+                    latchDestination = CheckCPRConsistencyUpsert(sessionCtx.phase, ref stackCtx, ref status, ref latchOperation);
                     if (latchDestination == LatchDestination.Retry)
                         goto LatchRelease;
                 }
@@ -211,61 +211,80 @@ namespace FASTER.core
             return status;
         }
 
-        private LatchDestination AcquireLatchUpsert<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> sessionCtx, ref HashEntryInfo hei, ref OperationStatus status,
-                                                                            ref LatchOperation latchOperation, long logicalAddress)
+        private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            switch (sessionCtx.phase)
+            if (this.DisableEphemeralLocking)
+                return AcquireCPRLatchUpsert(phase, ref stackCtx, ref status, ref latchOperation);
+
+            // This is AcquireCPRLatchUpsert without the bucket latching, since we already have a latch on either the bucket or the recordInfo.
+            // See additional comments in AcquireCPRLatchRMW.
+
+            switch (phase)
             {
-                case Phase.PREPARE:
-                    {
-                        if (HashBucket.TryAcquireSharedLatch(ref hei))
-                        {
-                            // Set to release shared latch (default)
-                            latchOperation = LatchOperation.Shared;
-                            // Here (and in InternalRead, AcquireLatchRMW, and AcquireLatchDelete) we still check the tail record of the bucket (entry.Address)
-                            // rather than the traced record (logicalAddress), because I'm worried that the implementation
-                            // may not allow in-place updates for version v when the bucket arrives v+1. 
-                            // This is safer but potentially unnecessary.
-                            if (CheckBucketVersionNew(ref hei.entry))
-                            {
-                                status = OperationStatus.CPR_SHIFT_DETECTED;
-                                return LatchDestination.Retry; // Pivot Thread on retry
-                            }
-                            break; // Normal Processing
-                        }
-                        else
-                        {
-                            status = OperationStatus.CPR_SHIFT_DETECTED;
-                            return LatchDestination.Retry; // Pivot Thread on retry
-                        }
-                    }
-                case Phase.IN_PROGRESS:
-                    {
-                        if (!CheckEntryVersionNew(logicalAddress))
-                        {
-                            if (HashBucket.TryAcquireExclusiveLatch(ref hei))
-                            {
-                                // Set to release exclusive latch (default)
-                                latchOperation = LatchOperation.Exclusive;
-                                return LatchDestination.CreateNewRecord; // Create a (v+1) record
-                            }
-                            else
-                            {
-                                status = OperationStatus.RETRY_LATER;
-                                return LatchDestination.Retry; // Refresh and retry operation
-                            }
-                        }
-                        break; // Normal Processing
-                    }
+                case Phase.PREPARE: // Thread is in V
+                    if (!IsEntryVersionNew(ref stackCtx.hei.entry))
+                        break; // Normal Processing; thread is in V, record is in V
+
+                    status = OperationStatus.CPR_SHIFT_DETECTED;
+                    return LatchDestination.Retry;  // Pivot Thread for retry (do not operate on V+1 record when thread is in V)
+
+                case Phase.IN_PROGRESS: // Thread is in V+1
                 case Phase.WAIT_INDEX_CHECKPOINT:
                 case Phase.WAIT_FLUSH:
+                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
+                        break;      // Normal Processing; V+1 thread encountered a record in V+1
+                    return LatchDestination.CreateNewRecord;    // Upsert never goes pending; always force creation of a (V+1) record
+
+                default:
+                    break;
+            }
+            return LatchDestination.NormalProcessing;
+        }
+
+        private LatchDestination AcquireCPRLatchUpsert(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        {
+            // See additional comments in AcquireCPRLatchRMW.
+
+            switch (phase)
+            {
+                case Phase.PREPARE: // Thread is in V
+                    if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
                     {
-                        if (!CheckEntryVersionNew(logicalAddress))
+                        // Set to release shared latch (default)
+                        latchOperation = LatchOperation.Shared;
+                        if (IsEntryVersionNew(ref stackCtx.hei.entry))
                         {
-                            return LatchDestination.CreateNewRecord; // Create a (v+1) record
+                            status = OperationStatus.CPR_SHIFT_DETECTED;
+                            return LatchDestination.Retry;  // Pivot Thread for retry (do not operate on V+1 record when thread is in V)
                         }
-                        break; // Normal Processing
+                        break; // Normal Processing; thread is in V, record is in V
                     }
+
+                    // Could not acquire Shared latch; system must be in V+1 (or we have too many shared latches).
+                    status = OperationStatus.CPR_SHIFT_DETECTED;
+                    return LatchDestination.Retry;  // Pivot Thread for retry
+
+                case Phase.IN_PROGRESS: // Thread is in V+1
+                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
+                        break;      // Normal Processing; V+1 thread encountered a record in V+1
+
+                    if (HashBucket.TryAcquireExclusiveLatch(ref stackCtx.hei))
+                    {
+                        // Set to release exclusive latch (default)
+                        latchOperation = LatchOperation.Exclusive;
+                        return LatchDestination.CreateNewRecord; // Upsert never goes pending; always force creation of a (v+1) record
+                    }
+
+                    // Could not acquire exclusive latch; likely a conflict on the bucket.
+                    status = OperationStatus.RETRY_LATER;
+                    return LatchDestination.Retry;  // Retry after refresh
+
+                case Phase.WAIT_INDEX_CHECKPOINT:   // Thread is in v+1
+                case Phase.WAIT_FLUSH:
+                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
+                        break;      // Normal Processing; V+1 thread encountered a record in V+1
+                    return LatchDestination.CreateNewRecord;    // Upsert never goes pending; always force creation of a (V+1) record
+
                 default:
                     break;
             }

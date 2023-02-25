@@ -55,8 +55,16 @@ namespace FASTER.core
                     stackCtx.SetRecordSourceToHashEntry(hlog);
 
                     // During the pending operation, a record for the key may have been added to the log or readcache.
+                    ref var value = ref hlog.GetContextRecordValue(ref request);
                     if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
+                    {
                         srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+
+                        // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
+                        if (ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
+                            return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
+                        value = ref stackCtx.recSrc.GetSrcValue();
+                    }
 
                     if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out var status))
                     {
@@ -80,8 +88,18 @@ namespace FASTER.core
                             RecordInfo = srcRecordInfo
                         };
 
-                        ref var value = ref hlog.GetContextRecordValue(ref request);
-                        if (!fasterSession.SingleReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref srcRecordInfo, ref readInfo))
+                        bool success = false;
+                        if (stackCtx.recSrc.HasMainLogSrc)
+                        {
+                            // If this succeeds, we obviously don't need to copy to tail or readcache, so return success.
+                            if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress),
+                                    ref pendingContext.output, ref srcRecordInfo, ref readInfo))
+                                return OperationStatus.SUCCESS;
+                        }
+                        else 
+                            success = fasterSession.SingleReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref srcRecordInfo, ref readInfo);
+
+                        if (!success)
                         {
                             if (readInfo.Action == ReadAction.CancelOperation)
                             {

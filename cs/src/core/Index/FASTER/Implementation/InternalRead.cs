@@ -113,7 +113,8 @@ namespace FASTER.core
             pendingContext.InitialEntryAddress = stackCtx.hei.Address;
             pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
 
-            if (sessionCtx.phase == Phase.PREPARE && CheckBucketVersionNew(ref stackCtx.hei.entry))
+            // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
+            if (sessionCtx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                 return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
 
             #region Normal processing
@@ -141,15 +142,6 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
 
                 status = OperationStatus.RECORD_ON_DISK;
-                if (sessionCtx.phase == Phase.PREPARE && !useStartAddress)
-                {
-                    // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
-                    if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
-                        HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
-                    else
-                        return OperationStatus.CPR_SHIFT_DETECTED;
-                }
-
                 goto CreatePendingContext;
             }
             else
@@ -337,5 +329,6 @@ namespace FASTER.core
                 EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
         }
+
     }
 }

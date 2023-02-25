@@ -95,7 +95,7 @@ namespace FASTER.core
                 #region Entry latch operation
                 if (sessionCtx.phase != Phase.REST)
                 {
-                    latchDestination = AcquireLatchDelete(sessionCtx, ref stackCtx.hei, ref status, ref latchOperation, stackCtx.recSrc.LogicalAddress);
+                    latchDestination = CheckCPRConsistencyDelete(sessionCtx.phase, ref stackCtx, ref status, ref latchOperation);
                     if (latchDestination == LatchDestination.Retry)
                         goto LatchRelease;
                 }
@@ -216,61 +216,10 @@ namespace FASTER.core
             return status;
         }
 
-        private LatchDestination AcquireLatchDelete<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> sessionCtx, ref HashEntryInfo hei, ref OperationStatus status,
-                                                                            ref LatchOperation latchOperation, long logicalAddress)
+        private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            switch (sessionCtx.phase)
-            {
-                case Phase.PREPARE:
-                    {
-                        if (HashBucket.TryAcquireSharedLatch(ref hei))
-                        {
-                            // Set to release shared latch (default)
-                            latchOperation = LatchOperation.Shared;
-                            if (CheckBucketVersionNew(ref hei.entry))
-                            {
-                                status = OperationStatus.CPR_SHIFT_DETECTED;
-                                return LatchDestination.Retry; // Pivot Thread, retry
-                            }
-                            break; // Normal Processing
-                        }
-                        else
-                        {
-                            status = OperationStatus.CPR_SHIFT_DETECTED;
-                            return LatchDestination.Retry; // Pivot Thread, retry
-                        }
-                    }
-                case Phase.IN_PROGRESS:
-                    {
-                        if (!CheckEntryVersionNew(logicalAddress))
-                        {
-                            if (HashBucket.TryAcquireExclusiveLatch(ref hei))
-                            {
-                                // Set to release exclusive latch (default)
-                                latchOperation = LatchOperation.Exclusive;
-                                return LatchDestination.CreateNewRecord; // Create a (v+1) record
-                            }
-                            else
-                            {
-                                status = OperationStatus.RETRY_LATER;
-                                return LatchDestination.Retry; // Retry after refresh
-                            }
-                        }
-                        break; // Normal Processing
-                    }
-                case Phase.WAIT_INDEX_CHECKPOINT:
-                case Phase.WAIT_FLUSH:
-                    {
-                        if (!CheckEntryVersionNew(logicalAddress))
-                        {
-                            return LatchDestination.CreateNewRecord; // Create a (v+1) record
-                        }
-                        break; // Normal Processing
-                    }
-                default:
-                    break;
-            }
-            return LatchDestination.NormalProcessing;
+            // This is the same logic as Upsert; neither goes pending.
+            return CheckCPRConsistencyUpsert(phase, ref stackCtx, ref status, ref latchOperation);
         }
 
         /// <summary>
