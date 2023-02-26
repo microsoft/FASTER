@@ -167,7 +167,7 @@ namespace FASTER.core
             where TLockableKey : ILockableKey
         {
             ref var key = ref keys[idx];
-            if (idx == start || key.LockCode != keys[idx - 1].LockCode)
+            if (idx == start || clientSession.fht.LockTable.GetBucketIndex(key.LockCode) != clientSession.fht.LockTable.GetBucketIndex(keys[idx - 1].LockCode))
             {
                 OperationStatus status;
                 do

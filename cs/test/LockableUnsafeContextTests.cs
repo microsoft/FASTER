@@ -288,6 +288,33 @@ namespace FASTER.test.LockableUnsafeContext
         }
 
         [Test]
+        [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
+        public void ManualLockCollidingHashCodes([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
+        {
+            // GetBucketIndex does a mask of lower bits.
+            uint bucketIndex = 42;
+            long genHashCode(uint uniquifier) => ((long)uniquifier << 30) | bucketIndex;
+
+            var lContext = session.LockableContext;
+            lContext.BeginLockable();
+
+            var keys = new[]
+            {
+                new FixedLengthLockableKeyStruct<long>(101L, genHashCode(1), LockType.Exclusive, lContext),
+                new FixedLengthLockableKeyStruct<long>(102L, genHashCode(2), LockType.Exclusive, lContext),
+                new FixedLengthLockableKeyStruct<long>(103L, genHashCode(3), LockType.Exclusive, lContext),
+            };
+
+            for (var ii = 0; ii < keys.Length; ++ii)
+                Assert.AreEqual(bucketIndex, fht.LockTable.GetBucketIndex(keys[ii].LockCode), $"BucketIndex mismatch on key {ii}");
+
+            lContext.Lock(keys);
+            lContext.Unlock(keys);
+
+            lContext.EndLockable();
+        }
+
+        [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
         public async Task TestShiftHeadAddressLUC([Values] SyncMode syncMode)

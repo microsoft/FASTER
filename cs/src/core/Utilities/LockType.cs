@@ -99,6 +99,21 @@ namespace FASTER.core
             LockType = lockType;
             LockCode = context.GetLockCode(ref key, out KeyHash);
         }
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        public FixedLengthLockableKeyStruct(TKey key, long keyHash, LockType lockType, ILockableContext<TKey> context) : this(ref key, keyHash, lockType, context) { }
+
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        public FixedLengthLockableKeyStruct(ref TKey key, long keyHash, LockType lockType, ILockableContext<TKey> context)
+        {
+            Key = key;
+            KeyHash = keyHash;
+            LockType = lockType;
+            LockCode = context.GetLockCode(ref key, keyHash);
+        }
 
         /// <summary>
         /// Sort the passed key array for use in <see cref="ILockableContext{TKey}.Lock{TLockableKey}(TLockableKey[])"/>
