@@ -315,6 +315,11 @@ namespace FASTER.core
         internal override void ClearPage(long page, int offset)
         {
             Array.Clear(values[page % BufferSize], offset / recordSize, values[page % BufferSize].Length - offset / recordSize);
+        }
+
+        internal override void FreePage(long page)
+        {
+            ClearPage(page, 0);
 
             // Close segments
             var thisCloseSegment = page >> (LogSegmentSizeBits - LogPageSizeBits);
@@ -325,11 +330,7 @@ namespace FASTER.core
                 // We are clearing the last page in current segment
                 segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
             }
-        }
 
-        internal override void FreePage(long page)
-        {
-            ClearPage(page, 0);
             if (EmptyPageCount > 0)
             {
                 overflowPagePool.TryAdd(values[page % BufferSize]);
