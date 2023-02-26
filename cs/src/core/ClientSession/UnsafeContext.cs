@@ -329,7 +329,7 @@ namespace FASTER.core
         public void Refresh()
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
+            clientSession.fht.InternalRefresh<Input, Output, Context, InternalFasterSession>(FasterSession);
         }
 
         #endregion IFasterContext

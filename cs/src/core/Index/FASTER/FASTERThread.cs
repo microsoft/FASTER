@@ -61,19 +61,17 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh<Input, Output, Context, FasterSession>(FasterExecutionContext<Input, Output, Context> ctx, FasterSession fasterSession)
-            where FasterSession : IFasterSession
+        internal void InternalRefresh<Input, Output, Context, FasterSession>(FasterSession fasterSession)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             epoch.ProtectAndDrain();
 
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref systemState);
-            if (ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && ctx.version == newPhaseInfo.Version)
-            {
+            if (fasterSession.Ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && fasterSession.Ctx.version == newPhaseInfo.Version)
                 return;
-            }
 
-            ThreadStateMachineStep(ctx, fasterSession, default);
+            ThreadStateMachineStep(fasterSession.Ctx, fasterSession, default);
         }
 
         internal static void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)
@@ -123,7 +121,7 @@ namespace FASTER.core
 
                 if (fasterSession.Ctx.HasNoPendingRequests) return true;
 
-                InternalRefresh(fasterSession.Ctx, fasterSession);
+                InternalRefresh<Input, Output, Context, FasterSession>(fasterSession);
 
                 if (!wait) return false;
                 Thread.Yield();

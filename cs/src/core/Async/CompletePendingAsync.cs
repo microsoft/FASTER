@@ -47,7 +47,7 @@ namespace FASTER.core
 
                 if (fasterSession.Ctx.HasNoPendingRequests) return;
 
-                InternalRefresh(fasterSession.Ctx, fasterSession);
+                InternalRefresh<Input, Output, Context, FasterSession>(fasterSession);
 
                 Thread.Yield();
             }

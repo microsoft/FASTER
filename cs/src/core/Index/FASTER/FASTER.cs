@@ -581,7 +581,7 @@ namespace FASTER.core
             OperationStatus internalStatus;
             do 
                 internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 
@@ -600,7 +600,7 @@ namespace FASTER.core
             OperationStatus internalStatus;
             do
                 internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
@@ -620,7 +620,7 @@ namespace FASTER.core
             OperationStatus internalStatus;
             do
                 internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 
@@ -638,7 +638,7 @@ namespace FASTER.core
 
             do
                 internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 
@@ -657,7 +657,7 @@ namespace FASTER.core
 
             do
                 internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
@@ -682,7 +682,7 @@ namespace FASTER.core
 
             do
                 internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
@@ -701,7 +701,7 @@ namespace FASTER.core
 
             do
                 internalStatus = InternalDelete(ref key, ref context, ref pcontext, fasterSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 

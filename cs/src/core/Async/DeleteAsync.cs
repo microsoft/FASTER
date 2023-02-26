@@ -24,7 +24,7 @@ namespace FASTER.core
                 do
                 {
                     internalStatus = fasterKV.InternalDelete(ref pendingContext.key.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
-                } while (fasterKV.HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pendingContext));
+                } while (fasterKV.HandleImmediateRetryStatus(internalStatus, fasterSession, ref pendingContext));
                 output = default;
                 return TranslateStatus(internalStatus);
             }
@@ -88,7 +88,7 @@ namespace FASTER.core
                 do
                 {
                     internalStatus = InternalDelete(ref key, ref userContext, ref pcontext, fasterSession, serialNo);
-                } while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+                } while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
                 if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
                     return new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(status));

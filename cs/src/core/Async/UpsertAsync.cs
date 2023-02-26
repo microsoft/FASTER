@@ -26,7 +26,7 @@ namespace FASTER.core
                 {
                     internalStatus = fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref output, ref pendingContext.userContext, ref pendingContext, 
                                                              fasterSession, pendingContext.serialNum);
-                } while (fasterKV.HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pendingContext));
+                } while (fasterKV.HandleImmediateRetryStatus(internalStatus, fasterSession, ref pendingContext));
                 return TranslateStatus(internalStatus);
             }
 
@@ -114,7 +114,7 @@ namespace FASTER.core
                 do
                 {
                     internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref userContext, ref pcontext, fasterSession, serialNo);
-                } while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+                } while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
                 if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
                     return new ValueTask<UpsertAsyncResult<Input, Output, Context>>(new UpsertAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));

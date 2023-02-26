@@ -13,19 +13,18 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleImmediateRetryStatus<Input, Output, Context, FasterSession>(
             OperationStatus internalStatus,
-            FasterExecutionContext<Input, Output, Context> sessionCtx,
             FasterSession fasterSession,
             ref PendingContext<Input, Output, Context> pendingContext)
-            where FasterSession : IFasterSession
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
-                && HandleRetryStatus(internalStatus, sessionCtx, fasterSession, ref pendingContext);
+                && HandleRetryStatus(internalStatus, fasterSession, ref pendingContext);
 
         /// <summary>
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(OperationStatus internalStatus, FasterExecutionContext<Input, Output, Context> sessionCtx, FasterSession fasterSession)
-            where FasterSession : IFasterSession
+        internal bool HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(OperationStatus internalStatus, FasterSession fasterSession)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -34,7 +33,7 @@ namespace FASTER.core
                     Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh(sessionCtx, fasterSession);
+                    InternalRefresh<Input, Output, Context, FasterSession>(fasterSession);
                     Thread.Yield();
                     return true;
                 default:
@@ -44,10 +43,9 @@ namespace FASTER.core
 
         private bool HandleRetryStatus<Input, Output, Context, FasterSession>(
             OperationStatus internalStatus,
-            FasterExecutionContext<Input, Output, Context> sessionCtx,
             FasterSession fasterSession,
             ref PendingContext<Input, Output, Context> pendingContext)
-            where FasterSession : IFasterSession
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -56,13 +54,13 @@ namespace FASTER.core
                     Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh(sessionCtx, fasterSession);
-                    pendingContext.version = sessionCtx.version;
+                    InternalRefresh<Input, Output, Context, FasterSession>(fasterSession);
+                    pendingContext.version = fasterSession.Ctx.version;
                     Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:
                     // Retry as (v+1) Operation
-                    SynchronizeEpoch(sessionCtx, ref pendingContext, fasterSession);
+                    SynchronizeEpoch(fasterSession.Ctx, ref pendingContext, fasterSession);
                     return true;
                 case OperationStatus.ALLOCATE_FAILED:
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.

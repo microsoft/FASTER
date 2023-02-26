@@ -6,7 +6,8 @@ namespace FASTER.core
     /// <summary>
     /// Provides thread management and callback to checkpoint completion (called state machine).
     /// </summary>
-    // This is split to two interfaces just to limit infection of <Key, Value, Input, Output, Context> type parameters
+    /// <remarks>This is broken out into a non-generic base interfaces to allow the use of <see cref="NullFasterSession"/> 
+    /// in <see cref="FasterKV{Key, Value}.ThreadStateMachineStep"/>.</remarks>
     internal interface IFasterSession
     {
         void UnsafeResumeThread();

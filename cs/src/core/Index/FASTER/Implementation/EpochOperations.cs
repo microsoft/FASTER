@@ -14,12 +14,12 @@ namespace FASTER.core
             FasterExecutionContext<Input, Output, Context> sessionCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
             FasterSession fasterSession)
-            where FasterSession : IFasterSession
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var version = sessionCtx.version;
             Debug.Assert(sessionCtx.version == version);
             Debug.Assert(sessionCtx.phase == Phase.PREPARE);
-            InternalRefresh(sessionCtx, fasterSession);
+            InternalRefresh<Input, Output, Context, FasterSession>(fasterSession);
             Debug.Assert(sessionCtx.version > version);
 
             pendingContext.version = sessionCtx.version;
@@ -27,7 +27,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void HeavyEnter<Input, Output, Context, FasterSession>(long hash, FasterExecutionContext<Input, Output, Context> ctx, FasterSession session)
-            where FasterSession : IFasterSession
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (ctx.phase == Phase.PREPARE_GROW)
             {
@@ -35,7 +35,7 @@ namespace FASTER.core
                 // Could instead do a "heavy operation" here
                 while (systemState.Phase != Phase.IN_PROGRESS_GROW)
                     Thread.SpinWait(100);
-                InternalRefresh(ctx, session);
+                InternalRefresh<Input, Output, Context, FasterSession>(session);
             }
             if (ctx.phase == Phase.IN_PROGRESS_GROW)
             {

@@ -62,7 +62,7 @@ namespace FASTER.core
 
                     if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out var status))
                     {
-                        if (HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext))
+                        if (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext))
                             continue;
                         return status;
                     }
@@ -127,7 +127,7 @@ namespace FASTER.core
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
-                    if (!HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext))
+                    if (!HandleImmediateRetryStatus(status, fasterSession, ref pendingContext))
                     {
                         // If no copy to tail was done.
                         if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
@@ -223,13 +223,13 @@ namespace FASTER.core
 
                 // Must do this *after* Unlocking. Retries should drop down to InternalRMW
             CheckRetry:
-                if (!HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext))
+                if (!HandleImmediateRetryStatus(status, fasterSession, ref pendingContext))
                     return status;
             } // end while (true)
 
             do
                 status = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
-            while (HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext));
+            while (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext));
             return status;
         }
 
@@ -273,7 +273,7 @@ namespace FASTER.core
 
                 if (this.LockTable.IsEnabled && !fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
                 {
-                    HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, fasterSession.Ctx, fasterSession, ref pendingContext);
+                    HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, fasterSession, ref pendingContext);
                     continue;
                 }
 
@@ -325,7 +325,7 @@ namespace FASTER.core
                         EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
-            } while (HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext));
+            } while (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext));
             return status;
         }
 

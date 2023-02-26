@@ -549,7 +549,7 @@ namespace FASTER.core
         public void Refresh()
         {
             UnsafeResumeThread();
-            fht.InternalRefresh(ctx, FasterSession);
+            fht.InternalRefresh<Input, Output, Context, InternalFasterSession>(FasterSession);
             UnsafeSuspendThread();
         }
 
@@ -732,7 +732,7 @@ namespace FASTER.core
             OperationStatus status;
             do
                 status = fht.InternalModifiedBitOperation(ref key, out _);
-            while (fht.HandleImmediateNonPendingRetryStatus(status, ctx, FasterSession));
+            while (fht.HandleImmediateNonPendingRetryStatus<Input, Output, Context, InternalFasterSession>(status, FasterSession));
         }
 
         /// <inheritdoc/>
@@ -758,7 +758,7 @@ namespace FASTER.core
             OperationStatus status;
             do
                 status = fht.InternalModifiedBitOperation(ref key, out modifiedInfo, false);
-            while (fht.HandleImmediateNonPendingRetryStatus(status, ctx, FasterSession));
+            while (fht.HandleImmediateNonPendingRetryStatus<Input, Output, Context, InternalFasterSession>(status, FasterSession));
             return modifiedInfo.Modified;
         }
 
@@ -922,7 +922,7 @@ namespace FASTER.core
             // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
             // get the "trying to acquire already-acquired epoch" error.
             fht.epoch.Resume();
-            fht.InternalRefresh(ctx, FasterSession);
+            fht.InternalRefresh<Input, Output, Context, InternalFasterSession>(FasterSession);
         }
 
         /// <summary>

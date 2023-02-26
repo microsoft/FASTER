@@ -47,7 +47,7 @@ namespace FASTER.core
             OperationStatus status;
             do
                 status = clientSession.fht.InternalLock(ref key, lockOp);
-            while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, fasterSession));
+            while (clientSession.fht.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession));
             Debug.Assert(status == OperationStatus.SUCCESS);
         }
 
@@ -172,7 +172,7 @@ namespace FASTER.core
                 OperationStatus status;
                 do
                     status = clientSession.fht.InternalLock(key.LockCode, new(lockOpType, key.LockType));
-                while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, fasterSession));
+                while (clientSession.fht.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession));
                 Debug.Assert(status == OperationStatus.SUCCESS);
                 return key.LockType;
             }
@@ -594,7 +594,7 @@ namespace FASTER.core
             clientSession.UnsafeResumeThread();
             try
             {
-                clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
+                clientSession.fht.InternalRefresh<Input, Output, Context, InternalFasterSession>(FasterSession);
             }
             finally
             {

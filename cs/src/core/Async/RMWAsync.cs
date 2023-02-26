@@ -136,7 +136,7 @@ namespace FASTER.core
             OperationStatus internalStatus;
             do
                 internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             return HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus, out diskRequest);
         }
