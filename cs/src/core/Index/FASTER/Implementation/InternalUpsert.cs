@@ -19,7 +19,6 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="fasterSession">Callback functions.</param>
-        /// <param name="sessionCtx">Session context</param>
         /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
@@ -42,13 +41,8 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<Input, Output, Context, FasterSession>(
-                            ref Key key, ref Input input, ref Value value, ref Output output,
-                            ref Context userContext,
-                            ref PendingContext<Input, Output, Context> pendingContext,
-                            FasterSession fasterSession,
-                            FasterExecutionContext<Input, Output, Context> sessionCtx,
-                            long lsn)
+        internal OperationStatus InternalUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output,
+                            ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession, long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
@@ -56,8 +50,8 @@ namespace FASTER.core
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
-            if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(stackCtx.hei.hash, sessionCtx, fasterSession);
+            if (fasterSession.Ctx.phase != Phase.REST)
+                HeavyEnter(stackCtx.hei.hash, fasterSession.Ctx, fasterSession);
 
             FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
             stackCtx.SetRecordSourceToHashEntry(hlog);
@@ -76,8 +70,8 @@ namespace FASTER.core
             UpsertInfo upsertInfo = new()
             {
                 SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
-                SessionID = sessionCtx.sessionID,
+                Version = fasterSession.Ctx.version,
+                SessionID = fasterSession.Ctx.sessionID,
                 Address = stackCtx.recSrc.LogicalAddress,
                 KeyHash = stackCtx.hei.hash
             };
@@ -89,9 +83,9 @@ namespace FASTER.core
             try
             {
                 #region Entry latch operation
-                if (sessionCtx.phase != Phase.REST)
+                if (fasterSession.Ctx.phase != Phase.REST)
                 {
-                    latchDestination = CheckCPRConsistencyUpsert(sessionCtx.phase, ref stackCtx, ref status, ref latchOperation);
+                    latchDestination = CheckCPRConsistencyUpsert(fasterSession.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     if (latchDestination == LatchDestination.Retry)
                         goto LatchRelease;
                 }
@@ -114,7 +108,7 @@ namespace FASTER.core
                     ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
                     if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo))
                     {
-                        this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
+                        this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
@@ -146,8 +140,7 @@ namespace FASTER.core
                 if (latchDestination != LatchDestination.CreatePendingContext)
                 {
                     // Immutable region or new record
-                    status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession,
-                                                   sessionCtx, ref stackCtx, ref srcRecordInfo);
+                    status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, ref stackCtx, ref srcRecordInfo);
                     if (!OperationStatusUtils.IsAppend(status))
                     {
                         // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
@@ -183,7 +176,7 @@ namespace FASTER.core
 
                 pendingContext.userContext = userContext;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                pendingContext.version = sessionCtx.version;
+                pendingContext.version = fasterSession.Ctx.version;
                 pendingContext.serialNum = lsn;
             }
         #endregion
@@ -300,14 +293,12 @@ namespace FASTER.core
         /// <param name="output">The result of IFunctions.SingleWriter</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="fasterSession">The current session</param>
-        /// <param name="sessionCtx">The current session context</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="srcRecordInfo">If <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value}.HasInMemorySrc"/>,
         ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value}.LogicalAddress"/></param>
         private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output,
                                                                                              ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
-                                                                                             FasterExecutionContext<Input, Output, Context> sessionCtx,
                                                                                              ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -316,14 +307,14 @@ namespace FASTER.core
             if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);
 
             UpsertInfo upsertInfo = new()
             {
                 SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
-                SessionID = sessionCtx.sessionID,
+                Version = fasterSession.Ctx.version,
+                SessionID = fasterSession.Ctx.sessionID,
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
                 RecordInfo = newRecordInfo

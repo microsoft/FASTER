@@ -13,19 +13,18 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleImmediateRetryStatus<Input, Output, Context, FasterSession>(
             OperationStatus internalStatus,
-            FasterExecutionContext<Input, Output, Context> opCtx,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
+            FasterExecutionContext<Input, Output, Context> sessionCtx,
             FasterSession fasterSession,
             ref PendingContext<Input, Output, Context> pendingContext)
             where FasterSession : IFasterSession
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
-                && HandleRetryStatus(internalStatus, opCtx, currentCtx, fasterSession, ref pendingContext);
+                && HandleRetryStatus(internalStatus, sessionCtx, fasterSession, ref pendingContext);
 
         /// <summary>
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(OperationStatus internalStatus, FasterExecutionContext<Input, Output, Context> currentCtx, FasterSession fasterSession)
+        internal bool HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(OperationStatus internalStatus, FasterExecutionContext<Input, Output, Context> sessionCtx, FasterSession fasterSession)
             where FasterSession : IFasterSession
         {
             Debug.Assert(epoch.ThisInstanceProtected());
@@ -35,7 +34,7 @@ namespace FASTER.core
                     Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh(currentCtx, fasterSession);
+                    InternalRefresh(sessionCtx, fasterSession);
                     Thread.Yield();
                     return true;
                 default:
@@ -45,8 +44,7 @@ namespace FASTER.core
 
         private bool HandleRetryStatus<Input, Output, Context, FasterSession>(
             OperationStatus internalStatus,
-            FasterExecutionContext<Input, Output, Context> opCtx,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
+            FasterExecutionContext<Input, Output, Context> sessionCtx,
             FasterSession fasterSession,
             ref PendingContext<Input, Output, Context> pendingContext)
             where FasterSession : IFasterSession
@@ -58,13 +56,13 @@ namespace FASTER.core
                     Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh(currentCtx, fasterSession);
-                    pendingContext.version = currentCtx.version;
+                    InternalRefresh(sessionCtx, fasterSession);
+                    pendingContext.version = sessionCtx.version;
                     Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:
                     // Retry as (v+1) Operation
-                    SynchronizeEpoch(opCtx, currentCtx, ref pendingContext, fasterSession);
+                    SynchronizeEpoch(sessionCtx, ref pendingContext, fasterSession);
                     return true;
                 case OperationStatus.ALLOCATE_FAILED:
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.
@@ -90,32 +88,32 @@ namespace FASTER.core
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
         /// </summary>
-        /// <param name="opCtx">Thread (or session) context under which operation was tried to execute.</param>
+        /// <param name="sessionCtx">Thread (or session) context under which operation was tried to execute.</param>
         /// <param name="pendingContext">Internal context of the operation.</param>
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus<Input, Output, Context>(
-            FasterExecutionContext<Input, Output, Context> opCtx,
+            FasterExecutionContext<Input, Output, Context> sessionCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
             OperationStatus operationStatus)
         {
             if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out Status status))
                 return status;
-            return HandleOperationStatus(opCtx, ref pendingContext, operationStatus, out _);
+            return HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _);
         }
 
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
         /// </summary>
-        /// <param name="opCtx">Thread (or session) context under which operation was tried to execute.</param>
+        /// <param name="sessionCtx">Thread (or session) context under which operation was tried to execute.</param>
         /// <param name="pendingContext">Internal context of the operation.</param>
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <param name="request">IO request, if operation went pending</param>
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus<Input, Output, Context>(
-            FasterExecutionContext<Input, Output, Context> opCtx,
+            FasterExecutionContext<Input, Output, Context> sessionCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
             OperationStatus operationStatus,
             out AsyncIOContext<Key, Value> request)
@@ -139,8 +137,8 @@ namespace FASTER.core
             {
                 Debug.Assert(pendingContext.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
                 // Add context to dictionary
-                pendingContext.id = opCtx.totalPending++;
-                opCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
+                pendingContext.id = sessionCtx.totalPending++;
+                sessionCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
                 // Issue asynchronous I/O request
                 request.id = pendingContext.id;
@@ -151,7 +149,7 @@ namespace FASTER.core
                 if (pendingContext.IsAsync)
                     request.asyncOperation = new TaskCompletionSource<AsyncIOContext<Key, Value>>(TaskCreationOptions.RunContinuationsAsynchronously);
                 else
-                    request.callbackQueue = opCtx.readyResponses;
+                    request.callbackQueue = sessionCtx.readyResponses;
 
                 hlog.AsyncGetFromDisk(pendingContext.logicalAddress, hlog.GetAverageRecordSize(), request);
                 return new(StatusCode.Pending);

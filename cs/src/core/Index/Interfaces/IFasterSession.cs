@@ -88,6 +88,8 @@ namespace FASTER.core
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 
+        public FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> Ctx { get; }
+
         IHeapContainer<Input> GetHeapContainer(ref Input input);
     }
 }

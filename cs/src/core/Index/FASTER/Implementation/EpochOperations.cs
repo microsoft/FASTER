@@ -11,19 +11,18 @@ namespace FASTER.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SynchronizeEpoch<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
+            FasterExecutionContext<Input, Output, Context> sessionCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
             FasterSession fasterSession)
             where FasterSession : IFasterSession
         {
-            var version = opCtx.version;
-            Debug.Assert(currentCtx.version == version);
-            Debug.Assert(currentCtx.phase == Phase.PREPARE);
-            InternalRefresh(currentCtx, fasterSession);
-            Debug.Assert(currentCtx.version > version);
+            var version = sessionCtx.version;
+            Debug.Assert(sessionCtx.version == version);
+            Debug.Assert(sessionCtx.phase == Phase.PREPARE);
+            InternalRefresh(sessionCtx, fasterSession);
+            Debug.Assert(sessionCtx.version > version);
 
-            pendingContext.version = currentCtx.version;
+            pendingContext.version = sessionCtx.version;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

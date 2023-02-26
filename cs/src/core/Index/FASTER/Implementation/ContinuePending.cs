@@ -12,11 +12,9 @@ namespace FASTER.core
         /// Continue a pending read operation. Computes 'output' from 'input' and value corresponding to 'key'
         /// obtained from disk. Optionally, it copies the value to tail to serve future read/write requests quickly.
         /// </summary>
-        /// <param name="ctx">The thread (or session) context to execute operation in.</param>
         /// <param name="request">Async response from disk.</param>
         /// <param name="pendingContext">Pending context corresponding to operation.</param>
         /// <param name="fasterSession">Callback functions.</param>
-        /// <param name="currentCtx"></param>
         /// <returns>
         /// <list type = "table" >
         ///     <listheader>
@@ -29,12 +27,8 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRead<Input, Output, Context, FasterSession>(
-                            FasterExecutionContext<Input, Output, Context> ctx,
-                            AsyncIOContext<Key, Value> request,
-                            ref PendingContext<Input, Output, Context> pendingContext,
-                            FasterSession fasterSession,
-                            FasterExecutionContext<Input, Output, Context> currentCtx)
+        internal OperationStatus InternalContinuePendingRead<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
+                                                        ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
@@ -61,14 +55,14 @@ namespace FASTER.core
                         srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
 
                         // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
-                        if (ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
+                        if (fasterSession.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                             return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
                         value = ref stackCtx.recSrc.GetSrcValue();
                     }
 
                     if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out var status))
                     {
-                        if (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext))
+                        if (HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext))
                             continue;
                         return status;
                     }
@@ -83,7 +77,7 @@ namespace FASTER.core
                         ReadInfo readInfo = new()
                         {
                             SessionType = fasterSession.SessionType,
-                            Version = ctx.version,
+                            Version = fasterSession.Ctx.version,
                             Address = request.logicalAddress,
                             RecordInfo = srcRecordInfo
                         };
@@ -116,7 +110,7 @@ namespace FASTER.core
                         var copyToRC = !stackCtx.recSrc.HasInMemorySrc && UseReadCache && !pendingContext.DisableReadCacheUpdates;
                         if (copyToRC || copyToTail)
                         {
-                            status = InternalTryCopyToTail(ctx, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
+                            status = InternalTryCopyToTail(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
                                                 ref stackCtx, ref srcRecordInfo, untilLogicalAddress: pendingContext.InitialLatestLogicalAddress,
                                                 fasterSession, copyToTail ? WriteReason.CopyToTail : WriteReason.CopyToReadCache);
                         }
@@ -133,7 +127,7 @@ namespace FASTER.core
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
-                    if (!HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext))
+                    if (!HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext))
                     {
                         // If no copy to tail was done.
                         if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
@@ -152,11 +146,9 @@ namespace FASTER.core
         /// <summary>
         /// Continue a pending RMW operation with the record retrieved from disk.
         /// </summary>
-        /// <param name="opCtx">thread (or session) context under which operation must be executed.</param>
         /// <param name="request">record read from the disk.</param>
         /// <param name="pendingContext">internal context for the pending RMW operation</param>
         /// <param name="fasterSession">Callback functions.</param>
-        /// <param name="sessionCtx">Session context</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -177,12 +169,8 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRMW<Input, Output, Context, FasterSession>(
-                                    FasterExecutionContext<Input, Output, Context> opCtx,
-                                    AsyncIOContext<Key, Value> request,
-                                    ref PendingContext<Input, Output, Context> pendingContext,
-                                    FasterSession fasterSession,
-                                    FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal OperationStatus InternalContinuePendingRMW<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
+                                                ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             ref Key key = ref pendingContext.key.Get();
@@ -224,7 +212,7 @@ namespace FASTER.core
                     stackCtx.recSrc.PhysicalAddress = (long)recordPointer;
 
                     status = CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
-                                                ref pendingContext, fasterSession, sessionCtx, ref stackCtx, ref srcRecordInfo,
+                                                ref pendingContext, fasterSession, ref stackCtx, ref srcRecordInfo,
                                                 doingCU: request.logicalAddress >= hlog.BeginAddress && !srcRecordInfo.Tombstone);
                 }
                 finally
@@ -235,13 +223,13 @@ namespace FASTER.core
 
                 // Must do this *after* Unlocking. Retries should drop down to InternalRMW
             CheckRetry:
-                if (!HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext))
+                if (!HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext))
                     return status;
             } // end while (true)
 
             do
-                status = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, opCtx, pendingContext.serialNum);
-            while (HandleImmediateRetryStatus(status, sessionCtx, sessionCtx, fasterSession, ref pendingContext));
+                status = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
+            while (HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext));
             return status;
         }
 
@@ -259,13 +247,11 @@ namespace FASTER.core
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         /// <param name="actualAddress">Actual address of existing key record</param>
         /// <param name="fasterSession"></param>
-        /// <param name="currentCtx"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalCopyToTailForCompaction<Input, Output, Context, FasterSession>(
                                             ref Key key, ref Input input, ref Value value, ref Output output,
-                                            long untilAddress, long actualAddress, FasterSession fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx)
+                                            long untilAddress, long actualAddress, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is currently only called from Compaction so the epoch should be protected");
@@ -287,7 +273,7 @@ namespace FASTER.core
 
                 if (this.LockTable.IsEnabled && !fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
                 {
-                    HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, currentCtx, currentCtx, fasterSession, ref pendingContext);
+                    HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, fasterSession.Ctx, fasterSession, ref pendingContext);
                     continue;
                 }
 
@@ -330,7 +316,7 @@ namespace FASTER.core
                 {
                     try
                     {
-                        status = InternalTryCopyToTail(currentCtx, ref pendingContext, ref key, ref input, ref value, ref output,
+                        status = InternalTryCopyToTail(ref pendingContext, ref key, ref input, ref value, ref output,
                                                        ref stackCtx, ref srcRecordInfo, untilAddress, fasterSession, WriteReason.Compaction);
                     }
                     finally
@@ -339,7 +325,7 @@ namespace FASTER.core
                         EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
-            } while (HandleImmediateRetryStatus(status, currentCtx, currentCtx, fasterSession, ref pendingContext));
+            } while (HandleImmediateRetryStatus(status, fasterSession.Ctx, fasterSession, ref pendingContext));
             return status;
         }
 
@@ -348,17 +334,15 @@ namespace FASTER.core
         ///     <list type="bullet">
         ///     <item><see cref="InternalRead{Input, Output, Context, Functions}
         ///                             (ref Key, ref Input, ref Output, long, ref Context, ref PendingContext{Input, Output, Context}, 
-        ///                             Functions, FasterExecutionContext{Input, Output, Context}, long)"/></item>
-        ///     <item><see cref="InternalContinuePendingRead{Input, Output, Context, FasterSession}
-        ///                             (FasterExecutionContext{Input, Output, Context},
+        ///                             Functions, long)"/></item>
+        ///     <item><see cref="InternalContinuePendingRead{Input, Output, Context, FasterSession}(
         ///                             AsyncIOContext{Key, Value}, ref PendingContext{Input, Output, Context}, 
-        ///                             FasterSession, FasterExecutionContext{Input, Output, Context})"/>,</item>
+        ///                             FasterSession)"/>,</item>
         ///     <item><see cref="ClientSession{Key, Value, Input, Output, Context, Functions}
         ///                             .CompactionCopyToTail(ref Key, ref Input, ref Value, ref Output, long, long)"/></item>
         ///     </list>
         /// Succeeds only if the record for the same key hasn't changed.
         /// </summary>
-        /// <param name="currentCtx">The thread(or session) context to execute operation in</param>
         /// <param name="pendingContext"></param>
         /// <param name="key"></param>
         /// <param name="input"></param>
@@ -385,8 +369,7 @@ namespace FASTER.core
         ///     <item>SUCCESS: no record found beyond expectedLogicalAddress, so copy was done</item>
         ///     </list>
         /// </returns>
-        internal OperationStatus InternalTryCopyToTail<Input, Output, Context, FasterSession>(
-                                        FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext,
+        internal OperationStatus InternalTryCopyToTail<Input, Output, Context, FasterSession>(ref PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value recordValue, ref Output output, ref OperationStackContext<Key, Value> stackCtx,
                                         ref RecordInfo srcRecordInfo, long untilLogicalAddress, FasterSession fasterSession, WriteReason reason, bool expired = false)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
@@ -424,8 +407,8 @@ namespace FASTER.core
             UpsertInfo upsertInfo = new()
             {
                 SessionType = fasterSession.SessionType,
-                Version = currentCtx.version,
-                SessionID = currentCtx.sessionID,
+                Version = fasterSession.Ctx.version,
+                SessionID = fasterSession.Ctx.sessionID,
                 Address = stackCtx.recSrc.HasInMemorySrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
                 KeyHash = stackCtx.hei.hash
             };
@@ -460,7 +443,7 @@ namespace FASTER.core
                 if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: true, out newLogicalAddress, out newPhysicalAddress, out OperationStatus status))
                     return status;
 
-                newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: currentCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+                newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
 
                 newRecordInfo.Tombstone = expired;
                 upsertInfo.Address = newLogicalAddress;

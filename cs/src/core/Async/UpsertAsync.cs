@@ -18,22 +18,22 @@ namespace FASTER.core
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, out Output output)
+                                            out Output output)
             {
                 output = default;
                 OperationStatus internalStatus;
                 do
                 {
                     internalStatus = fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref output, ref pendingContext.userContext, ref pendingContext, 
-                                                             fasterSession, currentCtx, pendingContext.serialNum);
-                } while (fasterKV.HandleImmediateRetryStatus(internalStatus, currentCtx, currentCtx, fasterSession, ref pendingContext));
+                                                             fasterSession, pendingContext.serialNum);
+                } while (fasterKV.HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pendingContext));
                 return TranslateStatus(internalStatus);
             }
 
             /// <inheritdoc/>
             public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
-                => SlowUpsertAsync(fasterKV, fasterSession, currentCtx, pendingContext, token);
+                                            PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
+                => SlowUpsertAsync(fasterKV, fasterSession, pendingContext, token);
 
             /// <inheritdoc/>
             public bool HasPendingIO => false;
@@ -64,13 +64,13 @@ namespace FASTER.core
             }
 
             internal UpsertAsyncResult(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, TOutput, Context> fasterSession,
-                FasterExecutionContext<Input, TOutput, Context> currentCtx, PendingContext<Input, TOutput, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo)
+                PendingContext<Input, TOutput, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 this.Status = new(StatusCode.Pending);
                 this.Output = default;
                 this.RecordMetadata = default;
                 updateAsyncInternal = new AsyncOperationInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new ());
+                                        fasterKV, fasterSession, pendingContext, exceptionDispatchInfo, new ());
             }
 
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -100,17 +100,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<UpsertAsyncResult<Input, Output, Context>> UpsertAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-            FasterExecutionContext<Input, Output, Context> currentCtx, ref Key key, ref Input input, ref Value value, Context userContext, long serialNo, CancellationToken token = default)
+        internal ValueTask<UpsertAsyncResult<Input, Output, Context>> UpsertAsync<Input, Output, Context, FasterSession>(FasterSession fasterSession,
+                ref Key key, ref Input input, ref Value value, Context userContext, long serialNo, CancellationToken token = default)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
-            return UpsertAsync(fasterSession, currentCtx, ref pcontext, ref key, ref input, ref value, userContext, serialNo, token);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private ValueTask<UpsertAsyncResult<Input, Output, Context>> UpsertAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-            FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pcontext, ref Key key, ref Input input, ref Value value, Context userContext, long serialNo, CancellationToken token)
-        {
             Output output = default;
 
             fasterSession.UnsafeResumeThread();
@@ -119,8 +113,8 @@ namespace FASTER.core
                 OperationStatus internalStatus;
                 do
                 {
-                    internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref userContext, ref pcontext, fasterSession, currentCtx, serialNo);
-                } while (HandleImmediateRetryStatus(internalStatus, currentCtx, currentCtx, fasterSession, ref pcontext));
+                    internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref userContext, ref pcontext, fasterSession, serialNo);
+                } while (HandleImmediateRetryStatus(internalStatus, fasterSession.Ctx, fasterSession, ref pcontext));
 
                 if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
                     return new ValueTask<UpsertAsyncResult<Input, Output, Context>>(new UpsertAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
@@ -128,23 +122,21 @@ namespace FASTER.core
             }
             finally
             {
-                Debug.Assert(serialNo >= currentCtx.serialNum, "Operation serial numbers must be non-decreasing");
-                currentCtx.serialNum = serialNo;
+                Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+                fasterSession.Ctx.serialNum = serialNo;
                 fasterSession.UnsafeSuspendThread();
             }
 
-            return SlowUpsertAsync(this, fasterSession, currentCtx, pcontext, token);
+            return SlowUpsertAsync(this, fasterSession, pcontext, token);
         }
 
         private static async ValueTask<UpsertAsyncResult<Input, Output, Context>> SlowUpsertAsync<Input, Output, Context>(
-            FasterKV<Key, Value> @this,
-            IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
+            FasterKV<Key, Value> @this, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             PendingContext<Input, Output, Context> pcontext, CancellationToken token = default)
         {
             ExceptionDispatchInfo exceptionDispatchInfo = await WaitForFlushCompletionAsync(@this, pcontext.flushEvent, token).ConfigureAwait(false);
             pcontext.flushEvent = default;
-            return new UpsertAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pcontext, exceptionDispatchInfo);
+            return new UpsertAsyncResult<Input, Output, Context>(@this, fasterSession, pcontext, exceptionDispatchInfo);
         }
     }
 }

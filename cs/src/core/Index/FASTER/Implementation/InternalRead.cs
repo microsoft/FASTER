@@ -20,7 +20,6 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="fasterSession">Callback functions.</param>
-        /// <param name="sessionCtx">Session context</param>
         /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
@@ -43,22 +42,15 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRead<Input, Output, Context, FasterSession>(
-                                    ref Key key,
-                                    ref Input input,
-                                    ref Output output,
-                                    long startAddress,
-                                    ref Context userContext,
-                                    ref PendingContext<Input, Output, Context> pendingContext,
-                                    FasterSession fasterSession,
-                                    FasterExecutionContext<Input, Output, Context> sessionCtx,
-                                    long lsn)
+        internal OperationStatus InternalRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
+                                    long startAddress, ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext,
+                                    FasterSession fasterSession, long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
-            if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(stackCtx.hei.hash, sessionCtx, fasterSession);
+            if (fasterSession.Ctx.phase != Phase.REST)
+                HeavyEnter(stackCtx.hei.hash, fasterSession.Ctx, fasterSession);
 
             #region Trace back for record in readcache and in-memory HybridLog
 
@@ -88,7 +80,7 @@ namespace FASTER.core
                     SkipReadCache(ref stackCtx);
                     stackCtx.SetRecordSourceToHashEntry(hlog);
                 }
-                else if (ReadFromCache(ref key, ref input, ref output, ref stackCtx, ref pendingContext, fasterSession, sessionCtx, out status)
+                else if (ReadFromCache(ref key, ref input, ref output, ref stackCtx, ref pendingContext, fasterSession, out status)
                     || status != OperationStatus.SUCCESS)
                 {
                     return status;
@@ -114,7 +106,7 @@ namespace FASTER.core
             pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
 
             // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
-            if (sessionCtx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
+            if (fasterSession.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                 return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
 
             #region Normal processing
@@ -122,12 +114,12 @@ namespace FASTER.core
             if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress)
             {
                 // Mutable region (even fuzzy region is included here)
-                return ReadFromMutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession, sessionCtx);
+                return ReadFromMutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession);
             }
             else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
                 // Immutable region
-                status = ReadFromImmutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession, sessionCtx);
+                status = ReadFromImmutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession);
                 if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly
                     goto CreatePendingContext;
                 return status;
@@ -168,7 +160,7 @@ namespace FASTER.core
 
                 pendingContext.userContext = userContext;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                pendingContext.version = sessionCtx.version;
+                pendingContext.version = fasterSession.Ctx.version;
                 pendingContext.serialNum = lsn;
             }
             #endregion
@@ -176,10 +168,8 @@ namespace FASTER.core
             return status;
         }
 
-        private bool ReadFromCache<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
-                                    ref OperationStackContext<Key, Value> stackCtx,
-                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
-                                    FasterExecutionContext<Input, Output, Context> sessionCtx, out OperationStatus status)
+        private bool ReadFromCache<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref OperationStackContext<Key, Value> stackCtx,
+                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
@@ -196,7 +186,7 @@ namespace FASTER.core
                 ReadInfo readInfo = new()
                 {
                     SessionType = fasterSession.SessionType,
-                    Version = sessionCtx.version,
+                    Version = fasterSession.Ctx.version,
                     Address = Constants.kInvalidAddress,    // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
                     RecordInfo = srcRecordInfo
                 };
@@ -221,8 +211,7 @@ namespace FASTER.core
 
         private OperationStatus ReadFromMutableRegion<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
                                     bool useStartAddress, ref OperationStackContext<Key, Value> stackCtx,
-                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
-                                    FasterExecutionContext<Input, Output, Context> sessionCtx)
+                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // We don't copy from this source, but we do lock it.
@@ -233,7 +222,7 @@ namespace FASTER.core
             ReadInfo readInfo = new()
             {
                 SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
+                Version = fasterSession.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
                 RecordInfo = srcRecordInfo
             };
@@ -258,7 +247,7 @@ namespace FASTER.core
                 if (readInfo.Action == ReadAction.Expire)
                 {
                     // Our IFasterSession.ConcurrentReader implementation has already set Tombstone if appropriate.
-                    this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
+                    this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                     return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
                 }
                 return OperationStatus.NOTFOUND;
@@ -271,8 +260,7 @@ namespace FASTER.core
 
         private OperationStatus ReadFromImmutableRegion<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
                                     bool useStartAddress, ref OperationStackContext<Key, Value> stackCtx,
-                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
-                                    FasterExecutionContext<Input, Output, Context> sessionCtx)
+                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // We don't copy from this source, but we do lock it.
@@ -283,7 +271,7 @@ namespace FASTER.core
             ReadInfo readInfo = new()
             {
                 SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
+                Version = fasterSession.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
                 RecordInfo = srcRecordInfo
             };
@@ -307,7 +295,7 @@ namespace FASTER.core
                 {
                     if (pendingContext.CopyReadsToTailFromReadOnly || readInfo.Action == ReadAction.Expire) // Expire adds a tombstoned record to tail
                     {
-                        status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
+                        status = InternalTryCopyToTail(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
                                                         ref srcRecordInfo, untilLogicalAddress: stackCtx.recSrc.LatestLogicalAddress, fasterSession,
                                                         reason: WriteReason.CopyToTail, expired: readInfo.Action == ReadAction.Expire);
                         // status != SUCCESS means no copy to tail was done

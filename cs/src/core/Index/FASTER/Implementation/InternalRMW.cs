@@ -19,7 +19,6 @@ namespace FASTER.core
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="fasterSession">Callback functions.</param>
-        /// <param name="sessionCtx">Session context</param>
         /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
@@ -46,13 +45,8 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRMW<Input, Output, Context, FasterSession>(
-                                   ref Key key, ref Input input, ref Output output,
-                                   ref Context userContext,
-                                   ref PendingContext<Input, Output, Context> pendingContext,
-                                   FasterSession fasterSession,
-                                   FasterExecutionContext<Input, Output, Context> sessionCtx,
-                                   long lsn)
+        internal OperationStatus InternalRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref Context userContext, 
+                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession, long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
@@ -60,8 +54,8 @@ namespace FASTER.core
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
-            if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(stackCtx.hei.hash, sessionCtx, fasterSession);
+            if (fasterSession.Ctx.phase != Phase.REST)
+                HeavyEnter(stackCtx.hei.hash, fasterSession.Ctx, fasterSession);
 
             FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
             stackCtx.SetRecordSourceToHashEntry(hlog);
@@ -80,8 +74,8 @@ namespace FASTER.core
             RMWInfo rmwInfo = new()
             {
                 SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
-                SessionID = sessionCtx.sessionID,
+                Version = fasterSession.Ctx.version,
+                SessionID = fasterSession.Ctx.sessionID,
                 Address = stackCtx.recSrc.LogicalAddress,
                 KeyHash = stackCtx.hei.hash
             };
@@ -93,9 +87,9 @@ namespace FASTER.core
             try
             {
                 #region Entry latch operation
-                if (sessionCtx.phase != Phase.REST)
+                if (fasterSession.Ctx.phase != Phase.REST)
                 {
-                    latchDestination = CheckCPRConsistencyRMW(sessionCtx.phase, ref stackCtx, ref status, ref latchOperation);
+                    latchDestination = CheckCPRConsistencyRMW(fasterSession.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     if (latchDestination == LatchDestination.Retry)
                         goto LatchRelease;
                 }
@@ -118,7 +112,7 @@ namespace FASTER.core
                     if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref output, ref srcRecordInfo, ref rmwInfo, out status)
                         || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
-                        this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
+                        this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
 
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
                         // Our IFasterSession.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate (inside the ephemeral lock)
@@ -167,7 +161,7 @@ namespace FASTER.core
                     ref var value = ref (stackCtx.recSrc.HasInMemorySrc ? ref stackCtx.recSrc.GetSrcValue() : ref tempValue);
 
                     // Here, the input* data for 'doingCU' is the same as recSrc.
-                    status = CreateNewRecordRMW(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, sessionCtx, ref stackCtx, ref srcRecordInfo,
+                    status = CreateNewRecordRMW(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, ref stackCtx, ref srcRecordInfo,
                                                 doingCU: stackCtx.recSrc.HasInMemorySrc && !srcRecordInfo.Tombstone);
                     if (!OperationStatusUtils.IsAppend(status))
                     {
@@ -204,7 +198,7 @@ namespace FASTER.core
 
                 pendingContext.userContext = userContext;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                pendingContext.version = sessionCtx.version;
+                pendingContext.version = fasterSession.Ctx.version;
                 pendingContext.serialNum = lsn;
             }
         #endregion
@@ -341,7 +335,6 @@ namespace FASTER.core
         /// <param name="output">The result of IFunctions.SingleWriter</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="fasterSession">The current session</param>
-        /// <param name="sessionCtx">The current session context</param> // TODO can this be replaced with fasterSession.clientSession.ctx?
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions. If called from pending IO,
         ///     this is populated from the data read from disk.</param>
@@ -352,7 +345,6 @@ namespace FASTER.core
         /// <returns></returns>
         private OperationStatus CreateNewRecordRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output,
                                                                                           ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
-                                                                                          FasterExecutionContext<Input, Output, Context> sessionCtx, 
                                                                                           ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, bool doingCU)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -363,8 +355,8 @@ namespace FASTER.core
             RMWInfo rmwInfo = new()
             {
                 SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
-                SessionID = sessionCtx.sessionID,
+                Version = fasterSession.Ctx.version,
+                SessionID = fasterSession.Ctx.sessionID,
                 Address = doingCU ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
                 KeyHash = stackCtx.hei.hash
             };
@@ -402,7 +394,7 @@ namespace FASTER.core
             if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);
 
             rmwInfo.Address = newLogicalAddress;
@@ -450,8 +442,8 @@ namespace FASTER.core
                     doingCU = false;
                     forExpiration = true;
                         
-                    if (!ReinitializeExpiredRecord(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo, ref rmwInfo,
-                                            newLogicalAddress, sessionCtx, fasterSession, isIpu: false, out status))
+                    if (!ReinitializeExpiredRecord<Input, Output, Context, FasterSession>(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo,
+                                            ref rmwInfo, newLogicalAddress, fasterSession, isIpu: false, out status))
                     {
                         // An IPU was not (or could not) be done. Cancel if requested, else invalidate the allocated record and retry.
                         if (status == OperationStatus.CANCELED)
@@ -511,8 +503,7 @@ namespace FASTER.core
         }
 
         internal bool ReinitializeExpiredRecord<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
-                                                                                       long logicalAddress, FasterExecutionContext<Input, Output, Context> sessionCtx, FasterSession fasterSession,
-                                                                                       bool isIpu, out OperationStatus status)
+                                                                                       long logicalAddress, FasterSession fasterSession, bool isIpu, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // This is called for InPlaceUpdater or CopyUpdater only; CopyUpdater however does not copy an expired record, so we return CreatedRecord.

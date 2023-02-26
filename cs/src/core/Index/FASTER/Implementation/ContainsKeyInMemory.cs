@@ -9,18 +9,16 @@ namespace FASTER.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status InternalContainsKeyInMemory<Input, Output, Context, FasterSession>(
-            ref Key key,
-            FasterExecutionContext<Input, Output, Context> sessionCtx,
-            FasterSession fasterSession, out long logicalAddress, long fromAddress = -1)
-            where FasterSession : IFasterSession
+            ref Key key, FasterSession fasterSession, out long logicalAddress, long fromAddress = -1)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (fromAddress < hlog.HeadAddress)
                 fromAddress = hlog.HeadAddress;
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
-            if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(stackCtx.hei.hash, sessionCtx, fasterSession);
+            if (fasterSession.Ctx.phase != Phase.REST)
+                HeavyEnter(stackCtx.hei.hash, fasterSession.Ctx, fasterSession);
 
             if (FindTag(ref stackCtx.hei))
             {

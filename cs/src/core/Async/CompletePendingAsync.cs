@@ -16,38 +16,38 @@ namespace FASTER.core
         /// <summary>
         /// Check if at least one (sync) request is ready for CompletePending to operate on
         /// </summary>
-        /// <param name="currentCtx"></param>
+        /// <param name="sessionCtx"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        internal static ValueTask ReadyToCompletePendingAsync<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token = default) 
-            => currentCtx.WaitPendingAsync(token);
+        internal static ValueTask ReadyToCompletePendingAsync<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> sessionCtx, CancellationToken token = default) 
+            => sessionCtx.WaitPendingAsync(token);
 
         /// <summary>
         /// Complete outstanding pending operations that were issued synchronously
         /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                      FasterExecutionContext<Input, Output, Context> currentCtx, CancellationToken token,
-                                      CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
+        internal async ValueTask CompletePendingAsync<Input, Output, Context, FasterSession>(FasterSession fasterSession,
+                                      CancellationToken token, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             while (true)
             {
                 fasterSession.UnsafeResumeThread();
                 try
                 {
-                    InternalCompletePendingRequests(currentCtx, currentCtx, fasterSession, completedOutputs);
+                    InternalCompletePendingRequests(fasterSession, completedOutputs);
                 }
                 finally
                 {
                     fasterSession.UnsafeSuspendThread();
                 }
 
-                await currentCtx.WaitPendingAsync(token).ConfigureAwait(false);
+                await fasterSession.Ctx.WaitPendingAsync(token).ConfigureAwait(false);
 
-                if (currentCtx.HasNoPendingRequests) return;
+                if (fasterSession.Ctx.HasNoPendingRequests) return;
 
-                InternalRefresh(currentCtx, fasterSession);
+                InternalRefresh(fasterSession.Ctx, fasterSession);
 
                 Thread.Yield();
             }
