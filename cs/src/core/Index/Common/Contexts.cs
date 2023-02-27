@@ -362,7 +362,7 @@ namespace FASTER.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        const int CheckpointVersion = 4;
+        const int CheckpointVersion = 5;
 
         /// <summary>
         /// Guid

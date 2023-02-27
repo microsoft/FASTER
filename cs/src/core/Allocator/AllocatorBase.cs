@@ -456,7 +456,7 @@ namespace FASTER.core
                 for (long p = startPage; p < endPage; p++)
                 {
                     // Check if we have the page safely available to process in memory
-                    if (HeadAddress > (p << LogPageSizeBits))
+                    if (HeadAddress >= (p << LogPageSizeBits) + PageSize)
                         continue;
 
                     // All RCU pages need to be added to delta

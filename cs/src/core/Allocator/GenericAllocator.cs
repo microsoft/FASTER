@@ -291,7 +291,7 @@ namespace FASTER.core
             }
             try
             {
-                if (HeadAddress > (flushPage << LogPageSizeBits))
+                if (HeadAddress >= (flushPage << LogPageSizeBits) + pageSize)
                 {
                     // Requested page is unavailable in memory, ignore
                     callback(0, 0, asyncResult);
