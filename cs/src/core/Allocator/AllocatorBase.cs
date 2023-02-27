@@ -443,58 +443,79 @@ namespace FASTER.core
             deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
             int destOffset = 0;
 
-            for (long p = startPage; p < endPage; p++)
+            // We perform delta capture under epoch protection with page-wise refresh for latency reasons
+            bool epochTaken = false;
+            if (!epoch.ThisInstanceProtected())
             {
-                // All RCU pages need to be added to delta
-                // For IPU-only pages, prune based on dirty bit
-                if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
-                    continue;
+                epochTaken = true;
+                epoch.Resume();
+            }
 
-                var logicalAddress = p << LogPageSizeBits;
-                var physicalAddress = GetPhysicalAddress(logicalAddress);
-
-                var endLogicalAddress = logicalAddress + PageSize;
-                if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
-                Debug.Assert(endLogicalAddress > logicalAddress);
-                var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
-
-                if (p == startPage)
+            try
+            {
+                for (long p = startPage; p < endPage; p++)
                 {
-                    physicalAddress += (int)(startAddress & PageSizeMask);
-                    logicalAddress += (int)(startAddress & PageSizeMask);
-                }
+                    // Check if we have the page safely available to process in memory
+                    if (HeadAddress > (p << LogPageSizeBits))
+                        continue;
 
-                while (physicalAddress < endPhysicalAddress)
-                {
-                    ref var info = ref GetInfo(physicalAddress);
-                    var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
-                    if (info.Dirty)
+                    // All RCU pages need to be added to delta
+                    // For IPU-only pages, prune based on dirty bit
+                    if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
+                        continue;
+
+                    var logicalAddress = p << LogPageSizeBits;
+                    var physicalAddress = GetPhysicalAddress(logicalAddress);
+
+                    var endLogicalAddress = logicalAddress + PageSize;
+                    if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
+                    Debug.Assert(endLogicalAddress > logicalAddress);
+                    var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
+
+                    if (p == startPage)
                     {
-                        info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
-                        int size = sizeof(long) + sizeof(int) + alignedRecordSize;
-                        if (destOffset + size > entryLength)
+                        physicalAddress += (int)(startAddress & PageSizeMask);
+                        logicalAddress += (int)(startAddress & PageSizeMask);
+                    }
+
+                    while (physicalAddress < endPhysicalAddress)
+                    {
+                        ref var info = ref GetInfo(physicalAddress);
+                        var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                        if (info.Dirty)
                         {
-                            deltaLog.Seal(destOffset);
-                            deltaLog.Allocate(out entryLength, out destPhysicalAddress);
-                            destOffset = 0;
+                            info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
+                            int size = sizeof(long) + sizeof(int) + alignedRecordSize;
                             if (destOffset + size > entryLength)
                             {
-                                deltaLog.Seal(0);
+                                deltaLog.Seal(destOffset);
                                 deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                                destOffset = 0;
+                                if (destOffset + size > entryLength)
+                                {
+                                    deltaLog.Seal(0);
+                                    deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                                }
+                                if (destOffset + size > entryLength)
+                                    throw new FasterException("Insufficient page size to write delta");
                             }
-                            if (destOffset + size > entryLength)
-                                throw new FasterException("Insufficient page size to write delta");
+                            *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
+                            destOffset += sizeof(long);
+                            *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
+                            destOffset += sizeof(int);
+                            Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
+                            destOffset += alignedRecordSize;
                         }
-                        *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
-                        destOffset += sizeof(long);
-                        *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
-                        destOffset += sizeof(int);
-                        Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
-                        destOffset += alignedRecordSize;
+                        physicalAddress += alignedRecordSize;
+                        logicalAddress += alignedRecordSize;
                     }
-                    physicalAddress += alignedRecordSize;
-                    logicalAddress += alignedRecordSize;
+                    epoch.ProtectAndDrain();
                 }
+            }
+            finally
+            {
+                if (epochTaken)
+                    epoch.Suspend();
             }
 
             if (destOffset > 0)

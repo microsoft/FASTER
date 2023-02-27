@@ -291,18 +291,18 @@ namespace FASTER.core
             }
             try
             {
-                if (FlushedUntilAddress < (flushPage << LogPageSizeBits) + pageSize)
+                if (HeadAddress > (flushPage << LogPageSizeBits))
+                {
+                    // Requested page is unavailable in memory, ignore
+                    callback(0, 0, asyncResult);
+                }
+                else
                 {
                     // We are writing to separate device, so use fresh segment offsets
                     WriteAsync(flushPage,
                             (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                             (uint)pageSize, callback, asyncResult,
                             device, objectLogDevice, flushPage, localSegmentOffsets, fuzzyStartLogicalAddress);
-                }
-                else
-                {
-                    // Requested page is already flushed to main log, ignore
-                    callback(0, 0, asyncResult);
                 }
             }
             finally
