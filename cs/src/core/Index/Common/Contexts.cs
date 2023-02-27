@@ -481,6 +481,9 @@ namespace FASTER.core
             string value = reader.ReadLine();
             var cversion = int.Parse(value);
 
+            if (cversion != CheckpointVersion)
+                throw new FasterException($"Invalid checkpoint version {cversion} encountered, current version is {CheckpointVersion}, cannot recover with this checkpoint");
+
             value = reader.ReadLine();
             var checksum = long.Parse(value);
 
@@ -563,9 +566,6 @@ namespace FASTER.core
                     objectLogSegmentOffsets[i] = long.Parse(value);
                 }
             }
-
-            if (cversion != CheckpointVersion)
-                throw new FasterException("Invalid version");
 
             if (checksum != Checksum(continueTokens.Count))
                 throw new FasterException("Invalid checksum for checkpoint");
