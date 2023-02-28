@@ -172,10 +172,10 @@ namespace FASTER.core
                 // Don't clear HasInMemorySrc; the XLock wasn't removed from the record or copied to the new record, and XUnlock does not return failure.
                 return;
             }
-            
+
             // We did not have a source lock, so it is possible that a readcache record was inserted and possibly locked.
             if (UseReadCache)
-                ReadCacheCompleteInsertAtTail(ref key, ref stackCtx.hei, ref newRecordInfo);
+                ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei, ref newRecordInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -199,7 +199,7 @@ namespace FASTER.core
 
             // We did not have a source lock, so it is possible that a readcache record was inserted and possibly locked.
             if (UseReadCache)
-                ReadCacheCompleteInsertAtTail(ref key, ref stackCtx.hei, ref newRecordInfo);
+                ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei, ref newRecordInfo);
         }
     }
 }

@@ -62,7 +62,7 @@ namespace FASTER.core
             ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, this.RecordInfoLocker.IsEnabled ? hlog.HeadAddress : hlog.ReadOnlyAddress)
                 ? ref stackCtx.recSrc.GetSrcRecordInfo()
                 : ref dummyRecordInfo;
-            if (srcRecordInfo.IsClosed)
+            if (srcRecordInfo.IsClosed || IsRecordInReadCacheAndMainLog(ref key, ref stackCtx.recSrc))
                 return OperationStatus.RETRY_LATER;
 
             // Note: we do not track pendingContext.Initial*Address because we don't have an InternalContinuePendingUpsert

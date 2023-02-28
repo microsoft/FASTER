@@ -189,7 +189,8 @@ namespace FASTER.core
                 FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
                 stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                // During the pending operation, a record for the key may have been added to the log.
+                // During the pending operation, a record for the key may have been added to the log. If so, go through the full InternalRMW
+                // sequence; the record in 'request' is stale.
                 if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
                     break;
 
@@ -378,25 +379,18 @@ namespace FASTER.core
             if (stackCtx.recSrc.LatestLogicalAddress > untilLogicalAddress)
             {
                 // Entries exist in the log above our last-checked address; another session inserted them after our FindTag. See if there is a newer entry for this key.
-                long logicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-                long physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                ref RecordInfo ri = ref hlog.GetInfo(physicalAddress);
-                if (ri.Invalid || !comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
-                {
-                    logicalAddress = ri.PreviousAddress;
-                    TraceBackForKeyMatch(ref key, logicalAddress, hlog.HeadAddress, out logicalAddress, out physicalAddress);
-                }
-
-                if (logicalAddress > untilLogicalAddress)
+                var minAddress = untilLogicalAddress < hlog.HeadAddress ? hlog.HeadAddress : untilLogicalAddress;
+                TraceBackForKeyMatch(ref key, stackCtx.recSrc.LatestLogicalAddress, untilLogicalAddress, out long foundLogicalAddress, out _);
+                if (foundLogicalAddress > untilLogicalAddress)
                 {
                     // Note: ReadAtAddress bails here by design; we assume anything in the readcache is the latest version.
                     //       Any loop to retrieve prior versions should set ReadFlags.DisableReadCache*; see ReadAddressTests.
-                    return logicalAddress < hlog.HeadAddress ? OperationStatus.RECORD_ON_DISK : OperationStatus.NOTFOUND;
+                    return foundLogicalAddress < hlog.HeadAddress ? OperationStatus.RECORD_ON_DISK : OperationStatus.NOTFOUND;
                 }
-            }
 
-            // Update untilLogicalAddress to the latest address we've checked; recSrc.LatestLogicalAddress can be updated by VerifyReadCacheSplicePoint.
-            untilLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+                // Update untilLogicalAddress to the latest address we've checked; recSrc.LatestLogicalAddress can be updated by VerifyReadCacheSplicePoint.
+                untilLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+            }
             #endregion
 
             #region Create new copy in mutable region
@@ -479,11 +473,14 @@ namespace FASTER.core
 
                 if (success && copyToReadCache && stackCtx.recSrc.LowestReadCacheLogicalAddress != Constants.kInvalidAddress)
                 {
-                    // If someone added a main-log entry for this key from an update or CTT while we were inserting the new readcache record,
-                    // then the new readcache record is obsolete and must be Invalidated. If LowestReadCacheLogicalAddress == kInvalidAddress,
-                    // then the CAS would have failed in this case. There are no locks on the new readcache record yet.
-                    success = EnsureNoMainLogRecordWasAddedDuringReadCacheInsert(ref key, stackCtx.recSrc, untilLogicalAddress, ref failStatus);
+                    // If someone added a main-log entry for this key from an update or CTT while we were inserting the new readcache record, then the new
+                    // readcache record is obsolete and must be Invalidated. (If LowestReadCacheLogicalAddress == kInvalidAddress, then the CAS would have
+                    // failed in this case.) If this was the first readcache record in the chain, then once we CAS'd it in someone could have spliced into
+                    // it, but then that splice will call ReadCacheCheckTailAfterSplice and invalidate it if it's the same key.
+                    success = EnsureNoNewMainLogRecordWasSpliced(ref key, stackCtx.recSrc, untilLogicalAddress, ref failStatus);
                 }
+                if (success)
+                    CompleteCopyToTail<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
             }
             else
             {
@@ -494,9 +491,7 @@ namespace FASTER.core
                 success = casSuccess = SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx.recSrc, newLogicalAddress);
             }
 
-            if (success)
-                CompleteCopyToTail<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
-            else
+            if (!success)
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
 

@@ -64,7 +64,7 @@ namespace FASTER.core
             ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress)
                 ? ref stackCtx.recSrc.GetSrcRecordInfo()
                 : ref dummyRecordInfo;
-            if (srcRecordInfo.IsClosed)
+            if (srcRecordInfo.IsClosed || IsRecordInReadCacheAndMainLog(ref key, ref stackCtx.recSrc))
                 return OperationStatus.RETRY_LATER;
 
             // If we already have a deleted record, there's nothing to do.

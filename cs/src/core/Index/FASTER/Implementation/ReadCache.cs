@@ -17,7 +17,7 @@ namespace FASTER.core
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
 
             // minAddress, if present, comes from the pre-pendingIO entry.Address; there may have been no readcache entries then.
-            minAddress = IsReadCache(minAddress) ? AbsoluteAddress(minAddress) : Constants.kInvalidAddress;
+            minAddress = IsReadCache(minAddress) ? AbsoluteAddress(minAddress) : readcache.HeadAddress;
 
         RestartChain:
             // 'recSrc' has already been initialized to the address in 'hei'.
@@ -45,7 +45,7 @@ namespace FASTER.core
                 // When traversing the readcache, we skip Invalid records. The semantics of Seal are that the operation is retried, so if we leave
                 // Sealed records in the readcache, we'll never get past them. Therefore, we use Invalid to mark a ReadCache record as closed.
                 // Return true if we find a Valid read cache entry matching the key.
-                if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress > minAddress && !stackCtx.recSrc.HasReadCacheSrc
+                if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc
                     && comparer.Equals(ref key, ref readcache.GetKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)))
                 {
                     // Keep these at the current readcache location; they'll be the caller's source record.
@@ -177,7 +177,7 @@ namespace FASTER.core
 
         // Called after a readcache insert, to make sure there was no race with another session that added a main-log record at the same time.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool EnsureNoMainLogRecordWasAddedDuringReadCacheInsert(ref Key key, RecordSource<Key, Value> recSrc, long untilLogicalAddress, ref OperationStatus failStatus)
+        private bool EnsureNoNewMainLogRecordWasSpliced(ref Key key, RecordSource<Key, Value> recSrc, long untilLogicalAddress, ref OperationStatus failStatus)
         {
             bool success = true;
             ref RecordInfo lowest_rcri = ref readcache.GetInfo(recSrc.LowestReadCachePhysicalAddress);
@@ -214,13 +214,13 @@ namespace FASTER.core
         // Note: The caller will do no epoch-refreshing operations after re-verifying the readcache chain following record allocation, so it is not
         // possible for the chain to be disrupted and the new insertion lost, even if readcache.HeadAddress is raised above hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCompleteInsertAtTail(ref Key key, ref HashEntryInfo hei, ref RecordInfo newRecordInfo)
+        private void ReadCacheCheckTailAfterSplice(ref Key key, ref HashEntryInfo hei, ref RecordInfo newRecordInfo)
         {
             Debug.Assert(UseReadCache, "Should not call ReadCacheCompleteInsertAtTail if !UseReadCache");
 
             // We already searched from hei.Address down; so now we search from hei.CurrentAddress down to just above hei.Address.
-            HashBucketEntry entry = new() { word = hei.CurrentAddress };
-            HashBucketEntry untilEntry = new() { word = hei.Address };
+            HashBucketEntry entry = new() { word = hei.CurrentAddress | (hei.IsCurrentReadCache ? Constants.kReadCacheBitMask : 0)};
+            HashBucketEntry untilEntry = new() { word = hei.Address | (hei.IsReadCache ? Constants.kReadCacheBitMask : 0) };
 
             // Traverse for the key above untilAddress (which may not be in the readcache if there were no readcache records when it was retrieved).
             while (entry.ReadCache && (entry.Address > untilEntry.Address || !untilEntry.ReadCache))

@@ -106,8 +106,8 @@ namespace FASTER.core
             if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.Log.HeadAddress)
                 return false;
 
-            // If we're not using readcache or the splice point is still above readcache.HeadAddress, we're good.
-            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress)
+            // If we're not using readcache or we don't have a splice point or it is still above readcache.HeadAddress, we're good.
+            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress)
                 return true;
 
             // The splice-point readcache record may have been evicted, so re-get it.
