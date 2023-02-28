@@ -7,6 +7,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
@@ -432,94 +433,102 @@ namespace FASTER.core
         /// <param name="prevEndAddress"></param>
         /// <param name="version"></param>
         /// <param name="deltaLog"></param>
-        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog)
+        /// <param name="completedSemaphore"></param>
+        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore)
         {
-            long startPage = GetPage(startAddress);
-            long endPage = GetPage(endAddress);
-            if (endAddress > GetStartLogicalAddress(endPage))
-                endPage++;
+            var _completedSemaphore = new SemaphoreSlim(0);
+            completedSemaphore = _completedSemaphore;
 
-            long prevEndPage = GetPage(prevEndAddress);
-            deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
-            int destOffset = 0;
-
-            // We perform delta capture under epoch protection with page-wise refresh for latency reasons
-            bool epochTaken = false;
-            if (!epoch.ThisInstanceProtected())
+            Task.Run(() =>
             {
-                epochTaken = true;
-                epoch.Resume();
-            }
+                long startPage = GetPage(startAddress);
+                long endPage = GetPage(endAddress);
+                if (endAddress > GetStartLogicalAddress(endPage))
+                    endPage++;
 
-            try
-            {
-                for (long p = startPage; p < endPage; p++)
+                long prevEndPage = GetPage(prevEndAddress);
+                deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
+                int destOffset = 0;
+
+                // We perform delta capture under epoch protection with page-wise refresh for latency reasons
+                bool epochTaken = false;
+                if (!epoch.ThisInstanceProtected())
                 {
-                    // Check if we have the page safely available to process in memory
-                    if (HeadAddress >= (p << LogPageSizeBits) + PageSize)
-                        continue;
+                    epochTaken = true;
+                    epoch.Resume();
+                }
 
-                    // All RCU pages need to be added to delta
-                    // For IPU-only pages, prune based on dirty bit
-                    if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
-                        continue;
-
-                    var logicalAddress = p << LogPageSizeBits;
-                    var physicalAddress = GetPhysicalAddress(logicalAddress);
-
-                    var endLogicalAddress = logicalAddress + PageSize;
-                    if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
-                    Debug.Assert(endLogicalAddress > logicalAddress);
-                    var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
-
-                    if (p == startPage)
+                try
+                {
+                    for (long p = startPage; p < endPage; p++)
                     {
-                        physicalAddress += (int)(startAddress & PageSizeMask);
-                        logicalAddress += (int)(startAddress & PageSizeMask);
-                    }
+                        // Check if we have the page safely available to process in memory
+                        if (HeadAddress >= (p << LogPageSizeBits) + PageSize)
+                            continue;
 
-                    while (physicalAddress < endPhysicalAddress)
-                    {
-                        ref var info = ref GetInfo(physicalAddress);
-                        var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
-                        if (info.Dirty)
+                        // All RCU pages need to be added to delta
+                        // For IPU-only pages, prune based on dirty bit
+                        if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
+                            continue;
+
+                        var logicalAddress = p << LogPageSizeBits;
+                        var physicalAddress = GetPhysicalAddress(logicalAddress);
+
+                        var endLogicalAddress = logicalAddress + PageSize;
+                        if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
+                        Debug.Assert(endLogicalAddress > logicalAddress);
+                        var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
+
+                        if (p == startPage)
                         {
-                            info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
-                            int size = sizeof(long) + sizeof(int) + alignedRecordSize;
-                            if (destOffset + size > entryLength)
+                            physicalAddress += (int)(startAddress & PageSizeMask);
+                            logicalAddress += (int)(startAddress & PageSizeMask);
+                        }
+
+                        while (physicalAddress < endPhysicalAddress)
+                        {
+                            ref var info = ref GetInfo(physicalAddress);
+                            var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                            if (info.Dirty)
                             {
-                                deltaLog.Seal(destOffset);
-                                deltaLog.Allocate(out entryLength, out destPhysicalAddress);
-                                destOffset = 0;
+                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
+                                int size = sizeof(long) + sizeof(int) + alignedRecordSize;
                                 if (destOffset + size > entryLength)
                                 {
-                                    deltaLog.Seal(0);
+                                    deltaLog.Seal(destOffset);
                                     deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                                    destOffset = 0;
+                                    if (destOffset + size > entryLength)
+                                    {
+                                        deltaLog.Seal(0);
+                                        deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                                    }
+                                    if (destOffset + size > entryLength)
+                                        throw new FasterException("Insufficient page size to write delta");
                                 }
-                                if (destOffset + size > entryLength)
-                                    throw new FasterException("Insufficient page size to write delta");
+                                *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
+                                destOffset += sizeof(long);
+                                *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
+                                destOffset += sizeof(int);
+                                Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
+                                destOffset += alignedRecordSize;
                             }
-                            *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
-                            destOffset += sizeof(long);
-                            *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
-                            destOffset += sizeof(int);
-                            Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
-                            destOffset += alignedRecordSize;
+                            physicalAddress += alignedRecordSize;
+                            logicalAddress += alignedRecordSize;
                         }
-                        physicalAddress += alignedRecordSize;
-                        logicalAddress += alignedRecordSize;
+                        epoch.ProtectAndDrain();
                     }
-                    epoch.ProtectAndDrain();
                 }
-            }
-            finally
-            {
-                if (epochTaken)
-                    epoch.Suspend();
-            }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
 
-            if (destOffset > 0)
-                deltaLog.Seal(destOffset);
+                if (destOffset > 0)
+                    deltaLog.Seal(destOffset);
+                _completedSemaphore.Release();
+            });
         }
 
         internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
@@ -1851,19 +1860,16 @@ namespace FASTER.core
         /// <param name="completedSemaphore"></param>
         public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore)
         {
-            // We drop epoch protection to perform large scale writes to disk
-            bool epochDropped = false;
-            if (epoch.ThisInstanceProtected())
-            {
-                epochDropped = true;
-                epoch.Suspend();
-            }
+            var _completedSemaphore = new SemaphoreSlim(0);
+            completedSemaphore = _completedSemaphore;
 
-            try
+            // Convert rest of the method into a truly async task run
+            // because issuing IO can take up synchronous time
+            Task.Run(() =>
             {
                 int totalNumPages = (int)(endPage - startPage);
-                completedSemaphore = new SemaphoreSlim(0);
-                var flushCompletionTracker = new FlushCompletionTracker(completedSemaphore, totalNumPages);
+
+                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, totalNumPages);
                 var localSegmentOffsets = new long[SegmentBufferSize];
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
@@ -1885,12 +1891,7 @@ namespace FASTER.core
                     // Intended destination is flushPage
                     WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
                 }
-            }
-            finally
-            {
-                if (epochDropped)
-                    epoch.Resume();
-            }
+            });
         }
 
         /// <summary>

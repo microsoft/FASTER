@@ -330,7 +330,8 @@ namespace FASTER.core
                         faster._hybridLogCheckpoint.info.finalLogicalAddress,
                         faster._lastSnapshotCheckpoint.info.finalLogicalAddress,
                         faster._hybridLogCheckpoint.prevVersion,
-                        faster._hybridLogCheckpoint.deltaLog);
+                        faster._hybridLogCheckpoint.deltaLog,
+                        out faster._hybridLogCheckpoint.flushedSemaphore);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     // Set actual FlushedUntil to the latest possible data in main log that is on disk
