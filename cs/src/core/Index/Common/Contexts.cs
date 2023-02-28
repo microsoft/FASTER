@@ -362,7 +362,7 @@ namespace FASTER.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        const int CheckpointVersion = 4;
+        const int CheckpointVersion = 5;
 
         /// <summary>
         /// Guid
@@ -381,9 +381,13 @@ namespace FASTER.core
         /// </summary>
         public long nextVersion;
         /// <summary>
-        /// Flushed logical address; indicates the latest immutable address on the main FASTER log at recovery time.
+        /// Flushed logical address; indicates the latest immutable address on the main FASTER log at checkpoint commit time.
         /// </summary>
         public long flushedLogicalAddress;
+        /// <summary>
+        /// Flushed logical address at snapshot start; indicates device offset for snapshot file
+        /// </summary>
+        public long snapshotStartFlushedLogicalAddress;
         /// <summary>
         /// Start logical address
         /// </summary>
@@ -454,6 +458,7 @@ namespace FASTER.core
             useSnapshotFile = 0;
             version = _version;
             flushedLogicalAddress = 0;
+            snapshotStartFlushedLogicalAddress = 0;
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
             snapshotFinalLogicalAddress = 0;
@@ -476,6 +481,9 @@ namespace FASTER.core
             string value = reader.ReadLine();
             var cversion = int.Parse(value);
 
+            if (cversion != CheckpointVersion)
+                throw new FasterException($"Invalid checkpoint version {cversion} encountered, current version is {CheckpointVersion}, cannot recover with this checkpoint");
+
             value = reader.ReadLine();
             var checksum = long.Parse(value);
 
@@ -493,6 +501,9 @@ namespace FASTER.core
 
             value = reader.ReadLine();
             flushedLogicalAddress = long.Parse(value);
+
+            value = reader.ReadLine();
+            snapshotStartFlushedLogicalAddress = long.Parse(value);
 
             value = reader.ReadLine();
             startLogicalAddress = long.Parse(value);
@@ -555,9 +566,6 @@ namespace FASTER.core
                     objectLogSegmentOffsets[i] = long.Parse(value);
                 }
             }
-
-            if (cversion != CheckpointVersion)
-                throw new FasterException("Invalid version");
 
             if (checksum != Checksum(continueTokens.Count))
                 throw new FasterException("Invalid checksum for checkpoint");
@@ -624,6 +632,7 @@ namespace FASTER.core
                     writer.WriteLine(version);
                     writer.WriteLine(nextVersion);
                     writer.WriteLine(flushedLogicalAddress);
+                    writer.WriteLine(snapshotStartFlushedLogicalAddress);
                     writer.WriteLine(startLogicalAddress);
                     writer.WriteLine(finalLogicalAddress);
                     writer.WriteLine(snapshotFinalLogicalAddress);
@@ -662,7 +671,7 @@ namespace FASTER.core
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
+            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
                 ^ checkpointTokensCount ^ (objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
         }
 
@@ -676,6 +685,7 @@ namespace FASTER.core
             logger?.LogInformation("Next Version: {nextVersion}", nextVersion);
             logger?.LogInformation("Is Snapshot?: {useSnapshotFile}", useSnapshotFile == 1);
             logger?.LogInformation("Flushed LogicalAddress: {flushedLogicalAddress}", flushedLogicalAddress);
+            logger?.LogInformation("SnapshotStart Flushed LogicalAddress: {snapshotStartFlushedLogicalAddress}", snapshotStartFlushedLogicalAddress);
             logger?.LogInformation("Start Logical Address: {startLogicalAddress}", startLogicalAddress);
             logger?.LogInformation("Final Logical Address: {finalLogicalAddress}", finalLogicalAddress);
             logger?.LogInformation("Snapshot Final Logical Address: {snapshotFinalLogicalAddress}", snapshotFinalLogicalAddress);
