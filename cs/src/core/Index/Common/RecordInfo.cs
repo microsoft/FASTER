@@ -192,21 +192,6 @@ namespace FASTER.core
             return true;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkTentative()
-        {
-            // While we are inserting a record in EphemeralOnly locking and don't want others to access it until we are done, we XLock it.
-            // This is called before the record is CAS'd into the chain, so this does not have to do CAS. MixedMode ignores it.
-            this.word |= kExclusiveLockBitMask;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearTentative()
-        {
-            // We had an XLock so nobody else should be modifying the record, so this does not have to do CAS.
-            this.word &= ~kExclusiveLockBitMask;
-        }
-
         /// <summary>
         /// Try to reset the modified bit of the RecordInfo
         /// </summary>
@@ -231,40 +216,22 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyReadLocksFromAndMarkSourceAtomic(ref RecordInfo source, bool seal, bool removeEphemeralLock)
+        public void CloseAtomic(bool seal)
         {
-            // This is called when tranferring read locks from the read cache or read-only region to a new log record. This does not remove
-            // locks from the source record because if they exist it means other threads have the record locked and must be allowed to
-            // unlock it (and observe the 'false' return of that unlock due to the Seal/Invalid, and then go chase the record where it is now).
-            Debug.Assert(!removeEphemeralLock || source.NumLockedShared > 0, "There is no ephemeral lock to remove");
-            Debug.Assert(!this.IsLockedShared, "This should only be called when transferring to a new record, with only the insertion 'tentative' XLock");
+            // Following a successful copy from readcache or immutable log, mark the source record as closed.
+            // We need to do this atomically; otherwise this could race with ReadCacheEvict unlinking records,
+            // or lose an update if another thread is trying to do update in place.
             for (; ; Thread.Yield())
             {
-                long expected_word = source.word;
+                long expected_word = this.word;
 
                 // If this is invalid or sealed, someone else won the race.
                 if (IsClosedWord(expected_word))
                     return;
-                var new_word = expected_word;
 
-                // Mark the source record atomically with the transfer.
-                if (seal)
-                    new_word |= kSealedBitMask;
-                else
-                    new_word &= ~kValidBitMask;
-
-                // If the source record has an ephemeral lock, remove it now.
-                if (removeEphemeralLock)
-                    new_word -= kSharedLockIncrement;
-
-                // Update the source record; this ensures we atomically copy the lock count while setting the mark bit.
-                // If that succeeds, then we update our own word.
-                if (expected_word == Interlocked.CompareExchange(ref source.word, new_word, expected_word))
-                {
-                    // We add to existing locks rather than replace; so there will be our "tentative" insertion XLock and these readlocks we transfer in (if any).
-                    this.word += new_word & kSharedLockMaskInWord;
+                var new_word = seal ? expected_word | kSealedBitMask : expected_word & ~kValidBitMask;
+                if (expected_word == Interlocked.CompareExchange(ref this.word, new_word, expected_word))
                     return;
-                }
             }
         }
 

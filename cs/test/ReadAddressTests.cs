@@ -256,14 +256,14 @@ namespace FASTER.test.readaddress
                 this.fkv = null;
                 this.logDevice?.Dispose();
                 this.logDevice = null;
-                TestUtils.DeleteDirectory(this.testDir);
+                DeleteDirectory(this.testDir);
             }
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Mixed)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.Standard)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Standard)]
         [Category("FasterKV"), Category("Read")]
         public void VersionedReadSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
@@ -289,7 +289,7 @@ namespace FASTER.test.readaddress
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
+                        (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
@@ -299,9 +299,9 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Mixed)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.Standard)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Standard)]
         [Category("FasterKV"), Category("Read")]
         public async Task VersionedReadAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
@@ -331,9 +331,9 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Mixed)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.Standard)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Standard)]
         [Category("FasterKV"), Category("Read")]
         public void ReadAtAddressSyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
@@ -358,7 +358,7 @@ namespace FASTER.test.readaddress
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
+                        (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
@@ -374,7 +374,7 @@ namespace FASTER.test.readaddress
                         {
                             // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
+                            (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                         }
 
                         Assert.AreEqual(saveOutput, output);
@@ -386,9 +386,9 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Mixed)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.Standard)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Standard)]
         [Category("FasterKV"), Category("Read")]
         public async Task ReadAtAddressAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
@@ -431,9 +431,9 @@ namespace FASTER.test.readaddress
         }
 
         // Test is similar to others but tests the Overload where RadFlag.none is set -- probably don't need all combinations of test but doesn't hurt 
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Mixed)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.Standard)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Standard)]
         [Category("FasterKV"), Category("Read")]
         public async Task ReadAtAddressAsyncReadFlagsNoneTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
@@ -476,9 +476,9 @@ namespace FASTER.test.readaddress
         }
 
         // Test is similar to others but tests the Overload where ReadFlag.SkipReadCache is set
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Mixed)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.Standard)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Standard)]
         [Category("FasterKV"), Category("Read")]
         public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
@@ -522,9 +522,9 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Mixed)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.Standard)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Standard)]
         [Category("FasterKV"), Category("Read")]
         public void ReadNoKeySyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, [Values] LockingMode lockingMode)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
         {
@@ -554,7 +554,7 @@ namespace FASTER.test.readaddress
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
                         session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
                     }
 
                     TestStore.ProcessNoKeyRecord(status, ref output, keyOrdinal);
@@ -565,9 +565,9 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.Disabled)]
-        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.EphemeralOnly)]
-        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Mixed)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.None, false, false, LockingMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly, true, true, LockingMode.Standard)]
+        [TestCase(UseReadCache.ReadCache, ReadFlags.None, false, true, LockingMode.Standard)]
         [Category("FasterKV"), Category("Read")]
         public async Task ReadNoKeyAsyncTests(UseReadCache urc, ReadFlags readFlags, bool useRMW, bool flush, LockingMode lockingMode)
         {
@@ -686,11 +686,11 @@ namespace FASTER.test.readaddress
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
 
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest1.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/SimpleRecoveryTest1.log", deleteOnClose: true);
 
-            var lockingMode = LockingMode.EphemeralOnly;
+            var lockingMode = LockingMode.Standard;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is LockingMode locking_mode)
@@ -718,7 +718,7 @@ namespace FASTER.test.readaddress
             log?.Dispose();
             log = null;
 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         [Test]

@@ -28,7 +28,7 @@ namespace StoreVarLenTypes
             // For this test we require record-level locking
             using var store = new FasterKV<SpanByte, SpanByte>(
                 size: 1L << 20,
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 }, lockingMode: LockingMode.EphemeralOnly);
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 }, lockingMode: LockingMode.Standard);
 
             // Create session for ASCII sums. We require two callback function types to be provided:
             //    AsciiSumSpanByteFunctions implements RMW callback functions

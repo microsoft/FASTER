@@ -56,13 +56,12 @@ namespace FASTER.core
             FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
-            // We blindly insert if we don't find the record in the mutable region, but EphemeralOnly locking must always scan to HeadAddress because
-            // we have to lock RecordInfos in the immutable region. MixedMode only requires scanning to ReadOnlyAddress because it does not use RecordInfo.
+            // We blindly insert if we don't find the record in the mutable region.
             RecordInfo dummyRecordInfo = new() { Valid = true };
-            ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, this.RecordInfoLocker.IsEnabled ? hlog.HeadAddress : hlog.ReadOnlyAddress)
+            ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.ReadOnlyAddress)
                 ? ref stackCtx.recSrc.GetSrcRecordInfo()
                 : ref dummyRecordInfo;
-            if (srcRecordInfo.IsClosed || IsRecordInReadCacheAndMainLog(ref key, ref stackCtx.recSrc))
+            if (srcRecordInfo.IsClosed)
                 return OperationStatus.RETRY_LATER;
 
             // Note: we do not track pendingContext.Initial*Address because we don't have an InternalContinuePendingUpsert
@@ -76,7 +75,7 @@ namespace FASTER.core
                 KeyHash = stackCtx.hei.hash
             };
 
-            if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out OperationStatus status))
+            if (!TryTransientXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
                 return status;
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
@@ -158,7 +157,7 @@ namespace FASTER.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                EphemeralXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                TransientXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
             }
 
         #region Create pending context
@@ -206,7 +205,7 @@ namespace FASTER.core
 
         private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            if (this.DisableEphemeralLocking)
+            if (this.DisableTransientLocking)
                 return AcquireCPRLatchUpsert(phase, ref stackCtx, ref status, ref latchOperation);
 
             // This is AcquireCPRLatchUpsert without the bucket latching, since we already have a latch on either the bucket or the recordInfo.
@@ -331,14 +330,12 @@ namespace FASTER.core
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             upsertInfo.RecordInfo = newRecordInfo;
-            newRecordInfo.MarkTentative();
             bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
             if (success)
             {
-                CompleteUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
+                CompleteUpdate(ref key, ref stackCtx, ref srcRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
-                newRecordInfo.ClearTentative();
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;

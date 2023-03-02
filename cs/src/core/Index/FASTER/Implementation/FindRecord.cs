@@ -58,33 +58,6 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsRecordInReadCacheAndMainLog(ref Key key, ref RecordSource<Key, Value> recSrc)
-        {
-            // For updates, after we have found a record in the readcache we must make sure it is not also in the main log, because when the readcache is enabled we
-            // maintain two insertion points: the HashBucketEntry (readcache records) and the splice location (main log records). If we do not verify the key does not
-            // have a valid record in the main log, we may have a timing gap that allows a variation of the lost-update anomaly. Assume we have the following 3 threads:
-            //  - T1: is doing Upsert (could be RMW also; using Upsert for simplicity)
-            //  - T2: is doing CTT
-            //  - T3: is doing RMW
-            // Then the following series of actions on key1 could insert a value based on a stale source:
-            //  - T1 scans in-memory for key1 and does not find it
-            //  - T2 Inserts rcRec1 for key1 to RC (T2 is now done for this scenario)
-            //  - T1 splices logRec1 for key1 into the readcache/log gap (the lowest readcache record now points to logRec1)
-            //  - Now T3 calls FindInReadCache and finds Valid rcRec1 as source
-            //      - FindInReadCache has populated T3's recSrc's latestLogicalAddress with the address of logRec1
-            //      - (Here is the problem) A record should not be in readcache and main log, so having found rcRec1, T3 does not search the main log below latestLogicalAddress;
-            //        T3 therefore does not know logRec1 is for key1.
-            //      - T3 XLocks rcRec1
-            //  - T1 does its post-insert check of the readcache tail, finds rcRec1, and invalidates it (T1 is now done for this scenario)
-            //  - T3 continues with it update, but now its RMW is based on an obsolete source record, so its insertion loses T1's update.
-            // Therefore, despite the inefficiency, updates must scan the main log for a key even after finding it in the readcache.
-            long minAddress = hlog.ReadOnlyAddress;
-            if (!recSrc.HasReadCacheSrc || recSrc.LatestLogicalAddress < minAddress)
-                return false;
-            return TraceBackForKeyMatch(ref key, recSrc.LatestLogicalAddress, minAddress, out _, out _);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TraceBackForKeyMatch(ref Key key, long fromLogicalAddress, long minAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
         {
             // This overload is called when the record at the "current" logical address does not match 'key'; fromLogicalAddress is its .PreviousAddress.

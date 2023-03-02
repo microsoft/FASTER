@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-
+#if false
 using System;
 using System.IO;
 using FASTER.core;
@@ -513,3 +513,4 @@ namespace FASTER.test.EphemeralOnlyLock
         }
     }
 }
+#endif

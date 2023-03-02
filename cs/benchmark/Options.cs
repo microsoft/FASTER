@@ -35,8 +35,7 @@ namespace FASTER.benchmark
         [Option('z', "locking", Required = false, Default = 0,
              HelpText = "Locking Implementation:" +
                         "\n    0 = None (default)" +
-                        "\n    1 = Ephemeral locking using RecordInfo.SpinLock()" +
-                        "\n    2 = Mixed-mode locking using main HashTable buckets")]
+                        "\n    1 = Mixed-mode locking using main HashTable buckets")]
         public int LockingMode { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
@@ -71,6 +70,10 @@ namespace FASTER.benchmark
             HelpText = "Use Small Memory log in experiment")]
         public bool UseSmallMemoryLog { get; set; }
 
+        [Option("hashpack", Required = false, Default = 2,
+            HelpText = "The hash table packing; divide the number of keys by this to cause hash collisions")]
+        public int HashPacking { get; set; }
+
         [Option("safectx", Required = false, Default = false,
             HelpText = "Use 'safe' context (slower, per-operation epoch control) in experiment")]
         public bool UseSafeContext { get; set; }
@@ -96,7 +99,7 @@ namespace FASTER.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount};"
+            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount}; hp: {HashPacking}"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
                         + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";

@@ -61,12 +61,7 @@ namespace FASTER.core
         internal bool HasReadCacheSrc;
 
         /// <summary>
-        /// Set by caller to indicate whether it has an ephemeral lock on the InMemorySrc record's <see cref="RecordInfo"/> (this may be mainlog or readcache).
-        /// </summary>
-        internal bool HasRecordInfoLock;
-
-        /// <summary>
-        /// Set by caller to indicate whether it has an ephemeral lock in the LockTable for the operation Key.
+        /// Set by caller to indicate whether it has an transient lock in the LockTable for the operation Key.
         /// </summary>
         internal bool HasLockTableLock;
 
@@ -78,7 +73,6 @@ namespace FASTER.core
         internal long SetPhysicalAddress() => this.PhysicalAddress = Log.GetPhysicalAddress(LogicalAddress);
 
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
-        internal bool HasLock => HasRecordInfoLock || HasLockTableLock;
 
         /// <summary>
         /// Initialize to the latest logical address from the caller.
@@ -91,7 +85,6 @@ namespace FASTER.core
             LowestReadCachePhysicalAddress = default;
             HasMainLogSrc = false;
             HasReadCacheSrc = default;
-            this.HasRecordInfoLock = false;
             
             // Do not clear the locktable lock; this is not affected by record transfers, eviction, etc.
             //HasLockTableLock = false;
@@ -104,33 +97,12 @@ namespace FASTER.core
         /// After a successful CopyUpdate or other replacement of a source record, this marks the source record as Sealed or Invalid.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkSourceRecordAfterSuccessfulCopy<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref RecordInfo srcRecordInfo)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        internal void CloseSourceRecordAfterCopy(ref RecordInfo srcRecordInfo)
         {
             if (this.HasInMemorySrc)
             {
                 Debug.Assert(this.LogicalAddress >= this.Log.ClosedUntilAddress, "Should not have evicted the source record while we held the epoch");
-
-                // Note that source records cannot be evicted even if they are now below HeadAddress of the log or readcache, because we hold the epoch.
-                // Therefore we *do not* stop at HeadAddress, because that would potentially allow a locked source record to be skipped.
-                if (this.HasReadCacheSrc)
-                {
-                    // Even though we should be called with an XLock (unless ephemeral locking is disabled) we need to do this atomically;
-                    // otherwise this could race with ReadCacheEvict unlinking records.
-                    srcRecordInfo.SetInvalidAtomic();
-                }
-                else
-                {
-                    // Another thread may come along to do this update in-place, or use this record as a copy source, once we've released our lock;
-                    // Seal it to prevent that. This will cause the other thread to RETRY_NOW (unlike Invalid which ignores the record).
-                    // Because we have an XLock (unless ephemeral locking is disabled), we don't need an atomic operation here.
-                    srcRecordInfo.Seal();
-                }
-
-                // if fasterSession.DisableEphemeralLocking, the "finally" handler won't unlock it, so we do that here.
-                // For ephemeral locks, we don't clear the locks here (defer that to the "finally").
-                if (fasterSession.DisableEphemeralLocking)
-                    srcRecordInfo.ClearLocks();
+                srcRecordInfo.CloseAtomic(seal: this.HasMainLogSrc);
             }
         }
 
@@ -141,7 +113,7 @@ namespace FASTER.core
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
-                 + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, riLock {bstr(HasRecordInfoLock)}, ltLock {bstr(HasLockTableLock)}";
+                 + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, ltLock {bstr(HasLockTableLock)}";
         }
     }
 }

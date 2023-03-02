@@ -27,7 +27,7 @@ namespace FASTER.core
     internal interface IFasterSession<Key, Value, Input, Output, Context> : IFasterSession, IVariableLengthStruct<Value, Input>
     {
         #region Optional features supported by this implementation
-        bool DisableEphemeralLocking { get; }
+        bool DisableTransientLocking { get; }
 
         bool IsManualLocking { get; }
 
@@ -80,11 +80,11 @@ namespace FASTER.core
         void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo);
         #endregion Disposal
 
-        #region Ephemeral locking
-        bool TryLockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
-        bool TryLockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
-        void UnlockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
-        void UnlockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
+        #region Transient locking
+        bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
+        bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
+        void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
+        void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
         #endregion 
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);

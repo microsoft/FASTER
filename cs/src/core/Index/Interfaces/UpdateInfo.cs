@@ -9,24 +9,23 @@ namespace FASTER.core
     public enum SessionType : byte
     {
         /// <summary>
-        /// Direct calls through to the standard client session, which does ephemeral locking and epoch protection on a per-operation basis.
+        /// Direct calls through to the standard client session, which does key locking and epoch protection on a per-operation basis.
         /// </summary>
         BasicContext,
 
         /// <summary>
-        /// An unsafe context which does ephemeral locking but allows the user to do coarse-grained epoch protection,
+        /// An unsafe context which does per-operation key locking but allows the user to do coarse-grained epoch protection,
         /// which can improve speed.
         /// </summary>
         UnsafeContext,
 
         /// <summary>
-        /// An unsafe context that does no ephemeral locking; the application must lock and unlock records manually and 
-        /// make its own epoch protection calls.
+        /// An unsafe context that requires the application to lock and unlock keys manually and make its own epoch protection calls.
         /// </summary>
         LockableUnsafeContext,
 
         /// <summary>
-        /// A context that does no ephemeral locking; the application must lock and unlock records manually.
+        /// A context that requires the application to lock and unlock keys manually.
         /// </summary>
         LockableContext
     }

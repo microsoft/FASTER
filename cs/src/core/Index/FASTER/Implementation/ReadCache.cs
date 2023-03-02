@@ -214,7 +214,7 @@ namespace FASTER.core
         // Note: The caller will do no epoch-refreshing operations after re-verifying the readcache chain following record allocation, so it is not
         // possible for the chain to be disrupted and the new insertion lost, even if readcache.HeadAddress is raised above hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCheckTailAfterSplice(ref Key key, ref HashEntryInfo hei, ref RecordInfo newRecordInfo)
+        private void ReadCacheCheckTailAfterSplice(ref Key key, ref HashEntryInfo hei)
         {
             Debug.Assert(UseReadCache, "Should not call ReadCacheCompleteInsertAtTail if !UseReadCache");
 
@@ -229,8 +229,7 @@ namespace FASTER.core
                 ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
                 if (!recordInfo.Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
-                    // We don't release the ephemeral lock because we don't have a lock on this readcache record; it sneaked in behind us.
-                    newRecordInfo.CopyReadLocksFromAndMarkSourceAtomic(ref recordInfo, seal: false, removeEphemeralLock: false);
+                    recordInfo.SetInvalidAtomic();
                     return;
                 }
                 entry.word = recordInfo.PreviousAddress;

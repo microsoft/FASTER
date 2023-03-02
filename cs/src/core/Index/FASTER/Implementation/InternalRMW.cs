@@ -64,7 +64,7 @@ namespace FASTER.core
             ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress)
                 ? ref stackCtx.recSrc.GetSrcRecordInfo()
                 : ref dummyRecordInfo;
-            if (srcRecordInfo.IsClosed || IsRecordInReadCacheAndMainLog(ref key, ref stackCtx.recSrc))
+            if (srcRecordInfo.IsClosed)
                 return OperationStatus.RETRY_LATER;
 
             // These track the latest main-log address in the tag chain; InternalContinuePendingRMW uses them to check for new inserts.
@@ -80,7 +80,7 @@ namespace FASTER.core
                 KeyHash = stackCtx.hei.hash
             };
 
-            if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out OperationStatus status))
+            if (!TryTransientXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
                 return status;
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
@@ -115,8 +115,7 @@ namespace FASTER.core
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
 
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
-                        // Our IFasterSession.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate (inside the ephemeral lock)
-                        // and marked the record.
+                        // Our IFasterSession.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         goto LatchRelease;
@@ -179,7 +178,7 @@ namespace FASTER.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                EphemeralXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                TransientXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
             }
 
         #region Create pending context
@@ -226,7 +225,7 @@ namespace FASTER.core
 
         private LatchDestination CheckCPRConsistencyRMW(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            if (this.DisableEphemeralLocking)
+            if (this.DisableTransientLocking)
                 return AcquireCPRLatchRMW(phase, ref stackCtx, ref status, ref latchOperation);
 
             // This is AcquireCPRLatchRMW without the bucket latching, since we already have a latch on either the bucket or the recordInfo.
@@ -462,11 +461,10 @@ namespace FASTER.core
         DoCAS:
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             rmwInfo.RecordInfo = newRecordInfo;
-            newRecordInfo.MarkTentative();
             bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
             if (success)
             {
-                CompleteUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
+                CompleteUpdate(ref key, ref stackCtx, ref srcRecordInfo);
 
                 // If IU, status will be NOTFOUND; return that.
                 if (!doingCU)
@@ -480,7 +478,6 @@ namespace FASTER.core
                     // Else it was a CopyUpdater so call PCU
                     fasterSession.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref newRecordInfo, ref rmwInfo);
                 }
-                newRecordInfo.ClearTentative();
                 stackCtx.ClearNewRecord();
 
                 pendingContext.recordInfo = newRecordInfo;

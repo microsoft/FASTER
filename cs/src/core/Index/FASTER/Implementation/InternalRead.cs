@@ -191,7 +191,7 @@ namespace FASTER.core
                     RecordInfo = srcRecordInfo
                 };
 
-                if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out status))
+                if (!TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
                     return false;
 
                 try
@@ -203,7 +203,7 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                    TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                 }
             }
             return false;
@@ -228,9 +228,9 @@ namespace FASTER.core
             };
 
             // If we are starting from a specified address in the immutable region, we may have a Sealed record from a previous RCW.
-            // For this case, do not try to lock, EphemeralSUnlock will see that we do not have a lock so will not try to update it.
+            // For this case, do not try to lock, TransientSUnlock will see that we do not have a lock so will not try to update it.
             OperationStatus status = OperationStatus.SUCCESS;
-            if (!useStartAddress && !TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out status))
+            if (!useStartAddress && !TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
                 return status;
 
             try
@@ -254,7 +254,7 @@ namespace FASTER.core
             }
             finally
             {
-                EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
         }
 
@@ -277,9 +277,9 @@ namespace FASTER.core
             };
 
             // If we are starting from a specified address in the immutable region, we may have a Sealed record from a previous RCW.
-            // For this case, do not try to lock, EphemeralSUnlock will see that we do not have a lock so will not try to update it.
+            // For this case, do not try to lock, TransientSUnlock will see that we do not have a lock so will not try to update it.
             OperationStatus status = OperationStatus.SUCCESS;
-            if (!useStartAddress && !TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out status))
+            if (!useStartAddress && !TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
                 return status;
 
             try
@@ -314,7 +314,7 @@ namespace FASTER.core
                 // Unlock the record. If doing CopyReadsToTailFromReadOnly, then we have already copied the locks to the new record;
                 // this unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
                 stackCtx.HandleNewRecordOnException(this);
-                EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
         }
 

@@ -64,8 +64,7 @@ namespace FASTER.core
         ConcurrentDictionary<string, int> _recoveredSessionNameMap;
         int maxSessionID;
 
-        internal readonly bool DisableEphemeralLocking;
-        internal readonly RecordInfoLocker RecordInfoLocker;
+        internal readonly bool DisableTransientLocking;
         internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
         internal void IncrementNumLockingSessions()
@@ -104,7 +103,7 @@ namespace FASTER.core
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, LockingMode lockingMode = LockingMode.Mixed,
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, LockingMode lockingMode = LockingMode.Standard,
             ILoggerFactory loggerFactory = null, ILogger logger = null, int lockTableSize = Constants.kDefaultLockTableSize)
         {
             this.loggerFactory = loggerFactory;
@@ -131,7 +130,7 @@ namespace FASTER.core
                 }
             }
 
-            this.DisableEphemeralLocking = lockingMode == LockingMode.Disabled;
+            this.DisableTransientLocking = lockingMode == LockingMode.None;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
@@ -224,8 +223,7 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.RecordInfoLocker = new RecordInfoLocker(lockingMode == LockingMode.EphemeralOnly);
-            this.LockTable = new OverflowBucketLockTable<Key, Value>(lockingMode == LockingMode.Mixed ? this : null);
+            this.LockTable = new OverflowBucketLockTable<Key, Value>(lockingMode == LockingMode.Standard ? this : null);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

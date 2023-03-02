@@ -237,7 +237,7 @@ namespace FASTER.core
             get
             {
                 if (!this.fht.LockTable.IsEnabled)
-                    throw new FasterException($"LockableUnsafeContext requires {nameof(LockingMode.Mixed)}");
+                    throw new FasterException($"LockableUnsafeContext requires {nameof(LockingMode.Standard)}");
                 return luContext;
             }
         }
@@ -250,7 +250,7 @@ namespace FASTER.core
             get
             {
                 if (!this.fht.LockTable.IsEnabled)
-                    throw new FasterException($"LockableContext requires {nameof(LockingMode.Mixed)}");
+                    throw new FasterException($"LockableContext requires {nameof(LockingMode.Standard)}");
                 return lContext;
             }
         }
@@ -1002,7 +1002,7 @@ namespace FASTER.core
             }
 
             #region IFunctions - Optional features supported
-            public bool DisableEphemeralLocking => _clientSession.fht.DisableEphemeralLocking;
+            public bool DisableTransientLocking => _clientSession.fht.DisableTransientLocking;
 
             public bool IsManualLocking => false;
 
@@ -1141,41 +1141,41 @@ namespace FASTER.core
             }
             #endregion IFunctions - Checkpointing
 
-            #region Ephemeral locking
-            public bool TryLockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            #region Transient locking
+            public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableEphemeralLocking)
+                if (_clientSession.fht.DisableTransientLocking)
                     return true;
-                if (!_clientSession.fht.LockTable.TryLockEphemeralExclusive(ref key, ref stackCtx.hei))
+                if (!_clientSession.fht.LockTable.TryLockTransientExclusive(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasLockTableLock = true;
             }
 
-            public bool TryLockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableEphemeralLocking)
+                if (_clientSession.fht.DisableTransientLocking)
                     return true;
-                if (!_clientSession.fht.LockTable.TryLockEphemeralShared(ref key, ref stackCtx.hei))
+                if (!_clientSession.fht.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasLockTableLock = true;
             }
 
-            public void UnlockEphemeralExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableEphemeralLocking)
+                if (_clientSession.fht.DisableTransientLocking)
                     return;
                 _clientSession.fht.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.HasLockTableLock = false;
             }
 
-            public void UnlockEphemeralShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableEphemeralLocking)
+                if (_clientSession.fht.DisableTransientLocking)
                     return;
                 _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.HasLockTableLock = false;
             }
-            #endregion Ephemeral locking
+            #endregion Transient locking
 
             #region Internal utilities
             public int GetInitialLength(ref Input input)

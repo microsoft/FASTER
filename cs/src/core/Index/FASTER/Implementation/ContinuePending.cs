@@ -60,7 +60,7 @@ namespace FASTER.core
                         value = ref stackCtx.recSrc.GetSrcValue();
                     }
 
-                    if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out var status))
+                    if (!TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out var status))
                     {
                         if (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext))
                             continue;
@@ -123,7 +123,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                        TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
@@ -203,7 +203,7 @@ namespace FASTER.core
                     break;
                 }
 
-                if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, out status))
+                if (!TryTransientXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
                     goto CheckRetry;
 
                 try
@@ -219,7 +219,7 @@ namespace FASTER.core
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
-                    EphemeralXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                    TransientXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
                 }
 
                 // Must do this *after* Unlocking. Retries should drop down to InternalRMW
@@ -272,7 +272,7 @@ namespace FASTER.core
                     Debug.Fail("Expected to FindTag in InternalCopyToTailForCompaction");
                 stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                if (this.LockTable.IsEnabled && !fasterSession.TryLockEphemeralShared(ref key, ref stackCtx))
+                if (this.LockTable.IsEnabled && !fasterSession.TryLockTransientShared(ref key, ref stackCtx))
                 {
                     HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, fasterSession, ref pendingContext);
                     continue;
@@ -323,7 +323,7 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        EphemeralSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                        TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                     }
                 }
             } while (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext));
@@ -380,7 +380,7 @@ namespace FASTER.core
             {
                 // Entries exist in the log above our last-checked address; another session inserted them after our FindTag. See if there is a newer entry for this key.
                 var minAddress = untilLogicalAddress < hlog.HeadAddress ? hlog.HeadAddress : untilLogicalAddress;
-                TraceBackForKeyMatch(ref key, stackCtx.recSrc.LatestLogicalAddress, untilLogicalAddress, out long foundLogicalAddress, out _);
+                TraceBackForKeyMatch(ref key, stackCtx.recSrc.LatestLogicalAddress, minAddress, out long foundLogicalAddress, out _);
                 if (foundLogicalAddress > untilLogicalAddress)
                 {
                     // Note: ReadAtAddress bails here by design; we assume anything in the readcache is the latest version.
@@ -461,7 +461,6 @@ namespace FASTER.core
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             // It is possible that we will successfully CAS but subsequently fail validation.
-            newRecordInfo.MarkTentative();
             bool success = true, casSuccess = false;
             OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
             if (copyToReadCache || (stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress))
@@ -480,7 +479,7 @@ namespace FASTER.core
                     success = EnsureNoNewMainLogRecordWasSpliced(ref key, stackCtx.recSrc, untilLogicalAddress, ref failStatus);
                 }
                 if (success)
-                    CompleteCopyToTail<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo);
+                    CompleteCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
             }
             else
             {
@@ -517,7 +516,6 @@ namespace FASTER.core
                 newRecordInfo.Modified = false;
                 pendingContext.recordInfo = newRecordInfo;
             }
-            newRecordInfo.ClearTentative();
             stackCtx.ClearNewRecord();
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
 #endregion

@@ -182,7 +182,7 @@ namespace FASTER.test.LockableUnsafeContext
 
             fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
                                             checkpointSettings: checkpointSettings, comparer: comparer,
-                                            lockingMode: LockingMode.Mixed);
+                                            lockingMode: LockingMode.Standard);
             session = fht.For(functions).NewSession<LockableUnsafeFunctions>();
         }
 
@@ -845,7 +845,7 @@ namespace FASTER.test.LockableUnsafeContext
                 luContext.EndUnsafe();
             }
 
-            void runLEphemeralLockOpThread(int tid)
+            void runLTransientLockOpThread(int tid)
             {
                 Random rng = new(tid + 101);
 
@@ -876,7 +876,7 @@ namespace FASTER.test.LockableUnsafeContext
                 if (t <= numLockThreads)
                     tasks[t] = Task.Factory.StartNew(() => runManualLockThread(tid));
                 else
-                    tasks[t] = Task.Factory.StartNew(() => runLEphemeralLockOpThread(tid));
+                    tasks[t] = Task.Factory.StartNew(() => runLTransientLockOpThread(tid));
             }
             Task.WaitAll(tasks);
 
@@ -1384,7 +1384,7 @@ namespace FASTER.test.LockableUnsafeContext
                     for (var iter = 0; iter < 2; ++iter)
                     {
                         // Use Task instead of Thread because this propagates exceptions (such as Assert.* failures) back to this thread.
-                        // BasicContext's ephemeral lock will wait for the lock/unlock combo to complete, or the lock/unlock will wait for basicContext to finish if it wins.
+                        // BasicContext's transient lock will wait for the lock/unlock combo to complete, or the lock/unlock will wait for basicContext to finish if it wins.
                         Task.WaitAll(Task.Run(() => locker(key)), Task.Run(() => updater(key, iter)));
                     }
 

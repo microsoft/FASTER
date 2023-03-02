@@ -6,7 +6,7 @@ using System;
 namespace FASTER.core
 {
     /// <summary>
-    /// Manual-enabled (both manual and ephemeral) LockTable interface definition
+    /// Manual-enabled (both manual and transient) LockTable interface definition
     /// </summary>
     /// <typeparam name="TKey"></typeparam>
     internal interface ILockTable<TKey> : IDisposable
@@ -23,26 +23,26 @@ namespace FASTER.core
         public bool TryLockManual(ref TKey key, ref HashEntryInfo hei, LockType lockType);
 
         /// <summary>
-        /// Try to acquire a <paramref name="lockType"/> ephemeral lock for the key. 
+        /// Try to acquire a <paramref name="lockType"/> transient lock for the key. 
         /// </summary>
         /// <param name="key">The key to lock</param>
         /// <param name="hei">The hash table entry info of the key to lock</param>
         /// <param name="lockType">The lock type to acquire--shared or exclusive</param>
-        public bool TryLockEphemeral(ref TKey key, ref HashEntryInfo hei, LockType lockType);
+        public bool TryLockTransient(ref TKey key, ref HashEntryInfo hei, LockType lockType);
 
         /// <summary>
-        /// Try to acquire a shared ephemeral lock for the key. 
+        /// Try to acquire a shared transient lock for the key. 
         /// </summary>
         /// <param name="key">The key to lock</param>
         /// <param name="hei">The hash table entry info of the key to lock</param>
-        public bool TryLockEphemeralShared(ref TKey key, ref HashEntryInfo hei);
+        public bool TryLockTransientShared(ref TKey key, ref HashEntryInfo hei);
 
         /// <summary>
-        /// Try to acquire an exclusive ephemeral lock for the key.
+        /// Try to acquire an exclusive transient lock for the key.
         /// </summary>
         /// <param name="key">The key to lock</param>
         /// <param name="hei">The hash table entry info of the key to lock</param>
-        public bool TryLockEphemeralExclusive(ref TKey key, ref HashEntryInfo hei);
+        public bool TryLockTransientExclusive(ref TKey key, ref HashEntryInfo hei);
 
         /// <summary>
         /// Release the <paramref name="lockType"/> lock on the key.

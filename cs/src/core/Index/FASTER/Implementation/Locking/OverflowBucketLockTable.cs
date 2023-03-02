@@ -19,13 +19,13 @@ namespace FASTER.core
         internal OverflowBucketLockTable(FasterKV<TKey, TValue> f) => this.fht = f;
 
         [Conditional("DEBUG")]
-        void AssertLockAllowed() => Debug.Assert(IsEnabled, "Attempt to do Manual-locking lock when locking mode is LockingMode.EphemeralOnly");
+        void AssertLockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking lock when locking mode is not {LockingMode.Standard}");
 
         [Conditional("DEBUG")]
-        void AssertUnlockAllowed() => Debug.Assert(IsEnabled, "Attempt to do Manual-locking unlock when locking mode is LockingMode.EphemeralOnly");
+        void AssertUnlockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking unlock when locking mode is not {LockingMode.Standard}");
 
         [Conditional("DEBUG")]
-        void AssertQueryAllowed() => Debug.Assert(IsEnabled, "Attempt to do Manual-locking query when locking mode is LockingMode.EphemeralOnly");
+        void AssertQueryAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking query when locking mode is not {LockingMode.Standard}");
 
         internal long GetSize() => fht.state[fht.resizeInfo.version].size_mask;
 
@@ -56,7 +56,6 @@ namespace FASTER.core
         public unsafe bool TryLockManual(ref TKey key, ref HashEntryInfo hei, LockType lockType) 
             => TryLockManual(hei.firstBucket, lockType);
 
-        // The KeyCode approach is only for manual locking, to prevent a session from deadlocking itself; ephemeral always uses keys.
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool TryLockManual(long keyCode, LockType lockType) 
@@ -76,12 +75,12 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockEphemeral(ref TKey key, ref HashEntryInfo hei, LockType lockType) 
-            => lockType == LockType.Shared ? TryLockEphemeralShared(ref key, ref hei) : TryLockEphemeralExclusive(ref key, ref hei);
+        public unsafe bool TryLockTransient(ref TKey key, ref HashEntryInfo hei, LockType lockType) 
+            => lockType == LockType.Shared ? TryLockTransientShared(ref key, ref hei) : TryLockTransientExclusive(ref key, ref hei);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockEphemeralShared(ref TKey key, ref HashEntryInfo hei)
+        public unsafe bool TryLockTransientShared(ref TKey key, ref HashEntryInfo hei)
         {
             AssertLockAllowed();
             return HashBucket.TryAcquireSharedLatch(hei.firstBucket);
@@ -89,7 +88,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockEphemeralExclusive(ref TKey key, ref HashEntryInfo hei)
+        public unsafe bool TryLockTransientExclusive(ref TKey key, ref HashEntryInfo hei)
         {
             AssertLockAllowed();
             return HashBucket.TryAcquireExclusiveLatch(hei.firstBucket);

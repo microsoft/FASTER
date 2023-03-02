@@ -35,7 +35,7 @@ namespace FASTER.test.ModifiedTests
         {
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
             comparer = new ModifiedBitTestComparer();
-            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 }, comparer: comparer, lockingMode: LockingMode.Mixed);
+            fht = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 }, comparer: comparer, lockingMode: LockingMode.Standard);
             session = fht.For(new SimpleFunctions<int, int>()).NewSession<SimpleFunctions<int, int>>();
         }
 

@@ -30,19 +30,14 @@ namespace FASTER.core
     public enum LockingMode : byte
     {
         /// <summary>
-        /// Locking may be manual or ephemeral; a separate lock table is used rather than the <see cref="RecordInfo"/>.
+        /// Keys are locked based upon the session type, using hash buckets.
         /// </summary>
-        Mixed,
+        Standard,
 
         /// <summary>
-        /// Only ephemeral locking is done; all locks are in-memory via the <see cref="RecordInfo"/>.
+        /// Locking is not done in FASTER.
         /// </summary>
-        EphemeralOnly,
-
-        /// <summary>
-        /// Ephemeral locking is disabled in FASTER; only manual locking via a separate lock table is done.
-        /// </summary>
-        Disabled
+        None
     }
 
     /// <summary>

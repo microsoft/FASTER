@@ -62,15 +62,17 @@ namespace FASTER.benchmark
 
             this.LockingMode = Options.LockingMode switch
             {
-                0 => LockingMode.Disabled,
-                1 => LockingMode.EphemeralOnly,
-                2 => LockingMode.Mixed,
+                0 => LockingMode.None,
+                1 => LockingMode.Standard,
                 _ => throw new InvalidOperationException($"Unknown Locking mode int: {Options.LockingMode}")
             };
             if (!verifyOption(Enum.IsDefined(typeof(LockingMode), this.LockingMode), "LockingMode"))
                 return;
 
             if (!verifyOption(Options.IterationCount > 0, "Iteration Count"))
+                return;
+
+            if (!verifyOption(Options.HashPacking > 0, "Iteration Count"))
                 return;
 
             if (!verifyOption(Options.ReadPercent >= -1 && Options.ReadPercent <= 100, "Read Percent"))

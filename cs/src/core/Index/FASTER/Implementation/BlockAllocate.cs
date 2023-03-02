@@ -90,7 +90,8 @@ namespace FASTER.core
                 break;
             }
 
-            return AllocationFailed(ref stackCtx, out newPhysicalAddress);
+            newPhysicalAddress = 0;
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -119,23 +120,6 @@ namespace FASTER.core
                 status = OperationStatus.RETRY_LATER;
                 break;
             }
-
-            return AllocationFailed(ref stackCtx, out newPhysicalAddress);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool AllocationFailed(ref OperationStackContext<Key, Value> stackCtx, out long newPhysicalAddress)
-        {
-            // Either BlockAllocate returned false or an in-memory source dropped below HeadAddress. If we have an in-memory lock it
-            // means we are doing EphemeralOnly locking and if the recordInfo has gone below where we can reliably access it due to
-            // BlockAllocate causing an epoch refresh, the page may have been evicted. Therefore, clear any in-memory lock flag before
-            // we return RETRY_LATER. This eviction doesn't happen if other threads also have S locks on this address, because in that
-            // case they will hold the epoch and prevent BlockAllocate from running OnPagesClosed.
-            Debug.Assert(!stackCtx.recSrc.HasRecordInfoLock || this.RecordInfoLocker.IsEnabled, "In-memory locks should be acquired only in EphemeralOnly locking mode");
-
-            // Even if the record is below HeadAddress it can be accessed until it falls below SafeHeadAddress.
-            if (stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.Log.SafeHeadAddress)
-                stackCtx.recSrc.HasRecordInfoLock = false;
 
             newPhysicalAddress = 0;
             return false;

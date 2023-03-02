@@ -50,7 +50,7 @@ namespace FASTER.test.LockTable
             comparer ??= new LongFasterEqualityComparer();
 
             fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
-                                            comparer: comparer, lockingMode: LockingMode.Mixed);
+                                            comparer: comparer, lockingMode: LockingMode.Standard);
         }
 
         [TearDown]
@@ -64,7 +64,7 @@ namespace FASTER.test.LockTable
             DeleteDirectory(MethodTestDir);
         }
 
-        void TryLock(long key, LockType lockType, bool ephemeral, int expectedCurrentReadLocks, bool expectedLockResult)
+        void TryLock(long key, LockType lockType, bool transient, int expectedCurrentReadLocks, bool expectedLockResult)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
             PopulateHei(ref hei);
@@ -73,8 +73,8 @@ namespace FASTER.test.LockTable
             var lockState = fht.LockTable.GetLockState(ref key, ref hei);
             Assert.AreEqual(expectedCurrentReadLocks, lockState.NumLockedShared);
 
-            if (ephemeral)
-                Assert.AreEqual(expectedLockResult, fht.LockTable.TryLockEphemeral(ref key, ref hei, lockType));
+            if (transient)
+                Assert.AreEqual(expectedLockResult, fht.LockTable.TryLockTransient(ref key, ref hei, lockType));
             else
                 Assert.AreEqual(expectedLockResult, fht.LockTable.TryLockManual(ref key, ref hei, lockType));
         }
@@ -169,17 +169,17 @@ namespace FASTER.test.LockTable
 
             // No entries
             long key = 1;
-            TryLock(key, LockType.Shared, ephemeral: true, expectedCurrentReadLocks: 0, expectedLockResult: true);
+            TryLock(key, LockType.Shared, transient: true, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 1);
 
-            // Add a non-ephemeral lock
-            TryLock(key, LockType.Shared, ephemeral: false, expectedCurrentReadLocks: 1, expectedLockResult: true);
+            // Add a non-transient lock
+            TryLock(key, LockType.Shared, transient: false, expectedCurrentReadLocks: 1, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 2);
 
-            // Now both ephemeral and manual x locks with the same key should fail
-            TryLock(key, LockType.Exclusive, ephemeral: true, expectedCurrentReadLocks: 2, expectedLockResult: false);
+            // Now both transient and manual x locks with the same key should fail
+            TryLock(key, LockType.Exclusive, transient: true, expectedCurrentReadLocks: 2, expectedLockResult: false);
             AssertLockCounts(ref hei, false, 2);
-            TryLock(key, LockType.Exclusive, ephemeral: false, expectedCurrentReadLocks: 2, expectedLockResult: false);
+            TryLock(key, LockType.Exclusive, transient: false, expectedCurrentReadLocks: 2, expectedLockResult: false);
             AssertLockCounts(ref hei, false, 2);
 
             // Now unlock
@@ -189,7 +189,7 @@ namespace FASTER.test.LockTable
             AssertLockCounts(ref hei, false, 0);
 
             // Now exclusive should succeed
-            TryLock(key, LockType.Exclusive, ephemeral: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
+            TryLock(key, LockType.Exclusive, transient: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, true, 0);
             Unlock(key, LockType.Exclusive);
             AssertLockCounts(ref hei, false, 0);
@@ -203,17 +203,17 @@ namespace FASTER.test.LockTable
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
-            TryLock(1, LockType.Shared, ephemeral: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
+            TryLock(1, LockType.Shared, transient: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 1);
 
-            TryLock(2, LockType.Shared, ephemeral: false, expectedCurrentReadLocks: 1, expectedLockResult: true);
+            TryLock(2, LockType.Shared, transient: false, expectedCurrentReadLocks: 1, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 2);
 
-            TryLock(3, LockType.Shared, ephemeral: false, expectedCurrentReadLocks: 2, expectedLockResult: true);
+            TryLock(3, LockType.Shared, transient: false, expectedCurrentReadLocks: 2, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 3);
 
             // Exclusive lock should fail
-            TryLock(4, LockType.Exclusive, ephemeral: false, expectedCurrentReadLocks: 3, expectedLockResult: false);
+            TryLock(4, LockType.Exclusive, transient: false, expectedCurrentReadLocks: 3, expectedLockResult: false);
             AssertLockCounts(ref hei, false, 3);
 
             // Now unlock
@@ -225,7 +225,7 @@ namespace FASTER.test.LockTable
             AssertLockCounts(ref hei, false, 0);
 
             // Now exclusive should succeed
-            TryLock(4, LockType.Exclusive, ephemeral: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
+            TryLock(4, LockType.Exclusive, transient: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, true, 0);
             Unlock(4, LockType.Exclusive);
             AssertLockCounts(ref hei, false, 0);
