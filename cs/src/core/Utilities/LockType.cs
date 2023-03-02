@@ -30,7 +30,7 @@ namespace FASTER.core
     public enum LockingMode : byte
     {
         /// <summary>
-        /// Keys are locked based upon the session type, using hash buckets.
+        /// Keys are locked based upon the session type, using hash buckets, and support manual locking.
         /// </summary>
         Standard,
 

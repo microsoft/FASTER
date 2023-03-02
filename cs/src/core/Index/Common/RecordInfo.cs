@@ -78,14 +78,10 @@ namespace FASTER.core
 
         public long GetHashCode64() => Utility.GetHashCode(this.word);
 
-        public bool IsLocked => (word & (kExclusiveLockBitMask | kSharedLockMaskInWord)) != 0;
-
         public bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
         public bool IsLockedShared => NumLockedShared != 0;
 
         public byte NumLockedShared => (byte)((word & kSharedLockMaskInWord) >> kLockShiftInWord);
-
-        public void ClearLocks() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord);
 
         // We ignore locks and temp bits for disk images
         public void ClearBitsForDiskImages() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kDirtyBitMask);

@@ -64,7 +64,7 @@ namespace FASTER.core
         ConcurrentDictionary<string, int> _recoveredSessionNameMap;
         int maxSessionID;
 
-        internal readonly bool DisableTransientLocking;
+        internal readonly bool DoTransientLocking;
         internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
         internal void IncrementNumLockingSessions()
@@ -130,7 +130,7 @@ namespace FASTER.core
                 }
             }
 
-            this.DisableTransientLocking = lockingMode == LockingMode.None;
+            this.DoTransientLocking = lockingMode == LockingMode.Standard;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();

@@ -347,8 +347,6 @@ namespace FASTER.core
             }
 
             #region IFunctions - Optional features supported
-            public bool DisableTransientLocking => _clientSession.fht.DisableTransientLocking;
-
             public bool IsManualLocking => false;
 
             public SessionType SessionType => SessionType.UnsafeContext;
@@ -488,36 +486,36 @@ namespace FASTER.core
             #region Transient locking
             public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableTransientLocking)
+                if (!_clientSession.fht.DoTransientLocking)
                     return true;
                 if (!_clientSession.fht.LockTable.TryLockTransientExclusive(ref key, ref stackCtx.hei))
                     return false;
-                return stackCtx.recSrc.HasLockTableLock = true;
+                return stackCtx.recSrc.HasTransientLock = true;
             }
 
             public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableTransientLocking)
+                if (!_clientSession.fht.DoTransientLocking)
                     return true;
                 if (!_clientSession.fht.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
                     return false;
-                return stackCtx.recSrc.HasLockTableLock = true;
+                return stackCtx.recSrc.HasTransientLock = true;
             }
 
             public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableTransientLocking)
+                if (!_clientSession.fht.DoTransientLocking)
                     return;
                 _clientSession.fht.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
-                stackCtx.recSrc.HasLockTableLock = false;
+                stackCtx.recSrc.HasTransientLock = false;
             }
 
             public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (_clientSession.fht.DisableTransientLocking)
+                if (!_clientSession.fht.DoTransientLocking)
                     return;
                 _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);
-                stackCtx.recSrc.HasLockTableLock = false;
+                stackCtx.recSrc.HasTransientLock = false;
             }
             #endregion Transient locking
 

@@ -27,8 +27,6 @@ namespace FASTER.core
     internal interface IFasterSession<Key, Value, Input, Output, Context> : IFasterSession, IVariableLengthStruct<Value, Input>
     {
         #region Optional features supported by this implementation
-        bool DisableTransientLocking { get; }
-
         bool IsManualLocking { get; }
 
         SessionType SessionType { get; }

@@ -46,7 +46,7 @@ namespace FASTER.core
                 ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (stackCtx.recSrc.HasLockTableLock)
+            if (stackCtx.recSrc.HasTransientLock)
                 fasterSession.UnlockTransientShared(ref key, ref stackCtx);
         }
 
@@ -54,7 +54,7 @@ namespace FASTER.core
         private void TransientXUnlock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (stackCtx.recSrc.HasLockTableLock)
+            if (stackCtx.recSrc.HasTransientLock)
                 fasterSession.UnlockTransientExclusive(ref key, ref stackCtx);
         }
 
@@ -64,7 +64,7 @@ namespace FASTER.core
             stackCtx.recSrc.CloseSourceRecordAfterCopy(ref srcRecordInfo);
 
             // If we did not have a source lock, it is possible that a readcache record was inserted.
-            if (UseReadCache && !stackCtx.recSrc.HasLockTableLock)
+            if (UseReadCache && !stackCtx.recSrc.HasTransientLock)
                 ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
         }
 
@@ -74,7 +74,7 @@ namespace FASTER.core
             stackCtx.recSrc.CloseSourceRecordAfterCopy(ref srcRecordInfo);
 
             // If we did not have a source lock, it is possible that a readcache record was inserted.
-            if (UseReadCache && !stackCtx.recSrc.HasLockTableLock)
+            if (UseReadCache && !stackCtx.recSrc.HasTransientLock)
                 ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
         }
     }

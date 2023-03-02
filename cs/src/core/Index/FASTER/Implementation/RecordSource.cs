@@ -63,7 +63,7 @@ namespace FASTER.core
         /// <summary>
         /// Set by caller to indicate whether it has an transient lock in the LockTable for the operation Key.
         /// </summary>
-        internal bool HasLockTableLock;
+        internal bool HasTransientLock;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ref RecordInfo GetSrcRecordInfo() => ref Log.GetInfo(PhysicalAddress);
@@ -113,7 +113,7 @@ namespace FASTER.core
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
-                 + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, ltLock {bstr(HasLockTableLock)}";
+                 + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, tLock {bstr(HasTransientLock)}";
         }
     }
 }
