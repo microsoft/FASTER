@@ -77,7 +77,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long SetPhysicalAddress() => this.PhysicalAddress = Log.GetPhysicalAddress(LogicalAddress);
 
-        internal bool HasSrc => HasInMemorySrc || HasLockTableLock;
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
         internal bool HasLock => HasRecordInfoLock || HasLockTableLock;
 

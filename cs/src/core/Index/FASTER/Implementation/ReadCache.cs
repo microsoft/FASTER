@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using static FASTER.core.Utility;
 
 namespace FASTER.core
@@ -20,6 +19,7 @@ namespace FASTER.core
             minAddress = IsReadCache(minAddress) ? AbsoluteAddress(minAddress) : readcache.HeadAddress;
 
         RestartChain:
+
             // 'recSrc' has already been initialized to the address in 'hei'.
             if (!stackCtx.hei.IsReadCache)
                 return false;
@@ -87,14 +87,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<Key, Value> stackCtx)
         {
-            if (stackCtx.recSrc.LatestLogicalAddress < readcache.SafeHeadAddress)
+            if (stackCtx.recSrc.LatestLogicalAddress < readcache.HeadAddress)
             {
-                // We hold the epoch so if a record was above HeadAddress when we started, then even if HeadAddress is incremented so it is above the record, we can
-                // still access the record in memory because it won't be evicted until we release the epoch. *However*, there is a race where we may encounter a 
-                // record that was below HeadAddress when we started; ReadCacheEvict was already imminent, but hadn't gotten to it yet. In that case, if the record
-                // is below SafeHeadAddress (which is incremented before the OnPagesClosed loop executes), pause and then restart the loop. This is conceptually
-                // similar to finding a record below HeadAddress and "issuing IO"; here, the "IO" is "wait for ReadCacheEvict to fix up the chain".
-                Thread.Yield();
+                SpinWaitUntilRecordIsClosed(stackCtx.recSrc.LatestLogicalAddress, readcache);
 
                 // Restore to hlog; we may have set readcache into Log and continued the loop, had to restart, and the matching readcache record was evicted.
                 stackCtx.UpdateRecordSourceToCurrentHashEntry(hlog);
@@ -114,9 +109,11 @@ namespace FASTER.core
 
         // Skip over all readcache records in this key's chain, advancing stackCtx.recSrc to the first non-readcache record we encounter.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SkipReadCache(ref OperationStackContext<Key, Value> stackCtx)
+        internal void SkipReadCache(ref OperationStackContext<Key, Value> stackCtx, out bool didRefresh)
         {
             Debug.Assert(UseReadCache, "Should not call SkipReadCache if !UseReadCache");
+            didRefresh = false;
+
         RestartChain:
             // 'recSrc' has already been initialized to the address in 'hei'.
             if (!stackCtx.hei.IsReadCache)
@@ -131,7 +128,10 @@ namespace FASTER.core
             while (true)
             {
                 if (ReadCacheNeedToWaitForEviction(ref stackCtx))
+                {
+                    didRefresh = true;
                     goto RestartChain;
+                }
 
                 // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
                 stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;

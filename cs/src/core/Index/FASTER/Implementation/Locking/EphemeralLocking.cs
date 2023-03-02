@@ -94,7 +94,7 @@ namespace FASTER.core
                 // been a copy due to update, because that would've taken an X lock). If this happens then the record is Closed (Sealed or Invalid) after the
                 // unlock and we have to go find it wherever it is now (still in memory) and unlock it there.
                 if (!this.RecordInfoLocker.TryUnlockShared(ref srcRecordInfo)) 
-                    FindAndUnlockTransferredRecord(ref key, stackCtx.hei.hash);
+                    FindAndUnlockTransferredRecord(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress);
                 stackCtx.recSrc.HasRecordInfoLock = false;
                 return;
             }
@@ -104,7 +104,7 @@ namespace FASTER.core
             fasterSession.UnlockEphemeralShared(ref key, ref stackCtx);
         }
 
-        private void FindAndUnlockTransferredRecord(ref Key key, long hash)
+        private void FindAndUnlockTransferredRecord(ref Key key, long hash, long originalSourceAddress)
         {
             // Loop because it may have transferred again in a highly threaded and memory-constrained scenario.
             for (; ; Thread.Yield())
@@ -115,8 +115,8 @@ namespace FASTER.core
                 stackCtx.SetRecordSourceToHashEntry(hlog);
 
                 // If this happens in a tightly memory-constrained environment, the new location could drop below HeadAddress. Despite this, it cannot be
-                // evicted while we hold the epoch, so use SafeHeadAddress when searching.
-                found = TryFindRecordInMemory(ref key, ref stackCtx, minAddress: hlog.SafeHeadAddress, stopAtHeadAddress: false);
+                // evicted while we hold the epoch, so use searching all the way to the original source addresss.
+                found = TryFindRecordInMemory(ref key, ref stackCtx, minAddress: originalSourceAddress, stopAtHeadAddress: false);
                 Debug.Assert(found, "We should always find the new record if the old one is Closed");
                 if (!found)
                     break;

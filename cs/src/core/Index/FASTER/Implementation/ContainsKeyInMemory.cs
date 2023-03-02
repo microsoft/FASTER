@@ -12,9 +12,6 @@ namespace FASTER.core
             ref Key key, FasterSession fasterSession, out long logicalAddress, long fromAddress = -1)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (fromAddress < hlog.HeadAddress)
-                fromAddress = hlog.HeadAddress;
-
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
             if (fasterSession.Ctx.phase != Phase.REST)
@@ -25,7 +22,10 @@ namespace FASTER.core
                 stackCtx.SetRecordSourceToHashEntry(hlog);
 
                 if (UseReadCache)
-                    SkipReadCache(ref stackCtx);
+                    SkipReadCache(ref stackCtx, out _);
+
+                if (fromAddress < hlog.HeadAddress)
+                    fromAddress = hlog.HeadAddress;
 
                 if (stackCtx.recSrc.LogicalAddress >= fromAddress)
                 {

@@ -77,7 +77,7 @@ namespace FASTER.core
                 // DisableReadCacheReads is used by readAtAddress, e.g. to backtrack to previous versions.
                 if (pendingContext.DisableReadCacheReads || pendingContext.NoKey)
                 {
-                    SkipReadCache(ref stackCtx);
+                    SkipReadCache(ref stackCtx, out _);     // This may refresh, but we haven't examined HeadAddress yet
                     stackCtx.SetRecordSourceToHashEntry(hlog);
                 }
                 else if (ReadFromCache(ref key, ref input, ref output, ref stackCtx, ref pendingContext, fasterSession, out status)
