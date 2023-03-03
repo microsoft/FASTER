@@ -66,9 +66,10 @@ namespace FASTER.core
         internal bool HasTransientLock;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ref RecordInfo GetSrcRecordInfo() => ref Log.GetInfo(PhysicalAddress);
+        internal ref RecordInfo GetInfo() => ref Log.GetInfo(PhysicalAddress);
+        internal ref Key GetKey() => ref Log.GetKey(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ref Value GetSrcValue() => ref Log.GetValue(PhysicalAddress);
+        internal ref Value GetValue() => ref Log.GetValue(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long SetPhysicalAddress() => this.PhysicalAddress = Log.GetPhysicalAddress(LogicalAddress);
 

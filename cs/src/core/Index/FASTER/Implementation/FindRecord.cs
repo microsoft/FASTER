@@ -49,8 +49,8 @@ namespace FASTER.core
         private bool TraceBackForKeyMatch(ref Key key, ref RecordSource<Key, Value> recSrc, long minAddress)
         {
             // PhysicalAddress must already be populated by callers.
-            ref var recordInfo = ref hlog.GetInfo(recSrc.PhysicalAddress);
-            if (!recordInfo.Invalid && comparer.Equals(ref key, ref hlog.GetKey(recSrc.PhysicalAddress)))
+            ref var recordInfo = ref recSrc.GetInfo();
+            if (!recordInfo.Invalid && comparer.Equals(ref key, ref recSrc.GetKey()))
                 return recSrc.HasMainLogSrc = true;
 
             recSrc.LogicalAddress = recordInfo.PreviousAddress;

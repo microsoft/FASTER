@@ -90,14 +90,14 @@ namespace FASTER.core
             // Traceback for key match
             if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
-                stackCtx.recSrc.PhysicalAddress = hlog.GetPhysicalAddress(stackCtx.recSrc.LogicalAddress);
+                stackCtx.recSrc.SetPhysicalAddress();
                 if (!pendingContext.NoKey)
                 {
                     var minAddress = pendingContext.minAddress > hlog.HeadAddress ? pendingContext.minAddress : hlog.HeadAddress;
                     TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minAddress);
                 }
                 else
-                    key = ref hlog.GetKey(stackCtx.recSrc.PhysicalAddress);  // We do not have the key in the call and must use the key from the record.
+                    key = ref stackCtx.recSrc.GetKey();     // We do not have the key in the call and must use the key from the record.
             }
             #endregion
 
@@ -180,7 +180,7 @@ namespace FASTER.core
                 // to enter the read-cache, the PREPARE phase for that session will be over due to an epoch refresh.
 
                 // This is not called when looking up by address, so we can set pendingContext.recordInfo.
-                ref RecordInfo srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+                ref RecordInfo srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                 pendingContext.recordInfo = srcRecordInfo;
 
                 ReadInfo readInfo = new()
@@ -196,7 +196,7 @@ namespace FASTER.core
 
                 try
                 {
-                    if (fasterSession.SingleReader(ref key, ref input, ref stackCtx.recSrc.GetSrcValue(), ref output, ref srcRecordInfo, ref readInfo))
+                    if (fasterSession.SingleReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo))
                         return true;
                     status = readInfo.Action == ReadAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
                     return false;
@@ -215,7 +215,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // We don't copy from this source, but we do lock it.
-            ref var srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+            ref var srcRecordInfo = ref stackCtx.recSrc.GetInfo();
             pendingContext.recordInfo = srcRecordInfo;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
@@ -240,7 +240,7 @@ namespace FASTER.core
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                if (fasterSession.ConcurrentReader(ref key, ref input, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref output, ref srcRecordInfo, ref readInfo))
+                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo))
                     return OperationStatus.SUCCESS;
                 if (readInfo.Action == ReadAction.CancelOperation)
                     return OperationStatus.CANCELED;
@@ -264,7 +264,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // We don't copy from this source, but we do lock it.
-            ref var srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+            ref var srcRecordInfo = ref stackCtx.recSrc.GetInfo();
             pendingContext.recordInfo = srcRecordInfo;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
@@ -288,7 +288,7 @@ namespace FASTER.core
                     return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
-                ref Value recordValue = ref stackCtx.recSrc.GetSrcValue();
+                ref Value recordValue = ref stackCtx.recSrc.GetValue();
 
                 if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo)
                     || readInfo.Action == ReadAction.Expire)

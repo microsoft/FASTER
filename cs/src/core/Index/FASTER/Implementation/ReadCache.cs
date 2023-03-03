@@ -62,7 +62,6 @@ namespace FASTER.core
                 // Is the previous record a main log record? If so, break out.
                 if (!recordInfo.PreviousAddressIsReadCache)
                 {
-                    Debug.Assert(recordInfo.PreviousAddress >= hlog.BeginAddress, "Read cache chain should always end with a main-log entry");
                     stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
                     goto InMainLog;
                 }
@@ -102,7 +101,7 @@ namespace FASTER.core
         private bool SpliceIntoHashChainAtReadCacheBoundary(ref RecordSource<Key, Value> recSrc, long newLogicalAddress)
         {
             // Splice into the gap of the last readcache/first main log entries.
-            Debug.Assert(recSrc.LowestReadCachePhysicalAddress >= readcache.HeadAddress, "LowestReadCachePhysicalAddress must be >= readcache.HeadAddress; caller should have called VerifyReadCacheSplicePoint");
+            Debug.Assert(recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress, "LowestReadCacheLogicalAddress must be >= readcache.HeadAddress; caller should have called VerifyReadCacheSplicePoint");
             ref RecordInfo rcri = ref readcache.GetInfo(recSrc.LowestReadCachePhysicalAddress);
             return rcri.TryUpdateAddress(recSrc.LatestLogicalAddress, newLogicalAddress);
         }
@@ -123,7 +122,7 @@ namespace FASTER.core
             stackCtx.recSrc.LogicalAddress = Constants.kInvalidAddress;
             stackCtx.recSrc.PhysicalAddress = 0;
 
-            stackCtx.recSrc.LatestLogicalAddress &= ~Constants.kReadCacheBitMask;
+            stackCtx.recSrc.LatestLogicalAddress = AbsoluteAddress(stackCtx.recSrc.LatestLogicalAddress);
 
             while (true)
             {
@@ -140,13 +139,12 @@ namespace FASTER.core
                 RecordInfo recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
                 if (!recordInfo.PreviousAddressIsReadCache)
                 {
-                    Debug.Assert(recordInfo.PreviousAddress >= hlog.BeginAddress, "Read cache chain should always end with a main-log entry");
                     stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
                     stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                     stackCtx.recSrc.PhysicalAddress = 0;
                     return;
                 }
-                stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress & ~Constants.kReadCacheBitMask;
+                stackCtx.recSrc.LatestLogicalAddress = AbsoluteAddress(recordInfo.PreviousAddress);
             }
         }
 

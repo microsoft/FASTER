@@ -61,7 +61,7 @@ namespace FASTER.core
             // Always scan to HeadAddress; this lets us find a tombstoned record in the immutable region, avoiding unnecessarily adding one.
             RecordInfo dummyRecordInfo = new() { Valid = true };
             ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress)
-                ? ref stackCtx.recSrc.GetSrcRecordInfo()
+                ? ref stackCtx.recSrc.GetInfo()
                 : ref dummyRecordInfo;
             if (srcRecordInfo.IsClosed)
                 return OperationStatus.RETRY_LATER;
@@ -85,67 +85,64 @@ namespace FASTER.core
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
-                #region Entry latch operation
+                #region Address and source record checks
+
+                if (stackCtx.recSrc.HasReadCacheSrc)
+                {
+                    // Use the readcache record as the CopyUpdater source.
+                    goto CreateNewRecord;
+                }
+
+                // Check for CPR consistency after checking if source is readcache.
                 if (fasterSession.Ctx.phase != Phase.REST)
                 {
                     latchDestination = CheckCPRConsistencyDelete(fasterSession.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     if (latchDestination == LatchDestination.Retry)
                         goto LatchRelease;
                 }
-                #endregion Entry latch operation
 
-                #region Address and source record checks
-
-                if (latchDestination == LatchDestination.NormalProcessing)
+                if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
                 {
-                    if (stackCtx.recSrc.HasReadCacheSrc)
+                    // Mutable Region: Update the record in-place
+                    deleteInfo.RecordInfo = srcRecordInfo;
+                    ref Value recordValue = ref stackCtx.recSrc.GetValue();
+                    if (fasterSession.ConcurrentDeleter(ref stackCtx.recSrc.GetKey(), ref recordValue, ref srcRecordInfo, ref deleteInfo))
                     {
-                        // Use the readcache record as the CopyUpdater source.
-                        goto CreateNewRecord;
-                    }
+                        this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
+                        if (WriteDefaultOnDelete)
+                            recordValue = default;
 
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
-                    {
-                        // Mutable Region: Update the record in-place
-                        deleteInfo.RecordInfo = srcRecordInfo;
-                        ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
-                        if (fasterSession.ConcurrentDeleter(ref hlog.GetKey(stackCtx.recSrc.PhysicalAddress), ref recordValue, ref srcRecordInfo, ref deleteInfo))
+                        // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
+                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
                         {
-                            this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
-                            if (WriteDefaultOnDelete)
-                                recordValue = default;
-
-                            // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
-                            if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
-                            {
-                                // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
-                                // the hashtable entry has already been updated by someone else.
-                                var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
-                                stackCtx.hei.TryCAS(address, tag: 0);
-                            }
-
-                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                            goto LatchRelease;
+                            // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
+                            // the hashtable entry has already been updated by someone else.
+                            var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
+                            stackCtx.hei.TryCAS(address, tag: 0);
                         }
-                        if (deleteInfo.Action == DeleteAction.CancelOperation)
-                        {
-                            status = OperationStatus.CANCELED;
-                            goto LatchRelease;
-                        }
-                        goto CreateNewRecord;
+
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        goto LatchRelease;
                     }
-                    else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+                    if (deleteInfo.Action == DeleteAction.CancelOperation)
                     {
-                        goto CreateNewRecord;
+                        status = OperationStatus.CANCELED;
+                        goto LatchRelease;
                     }
-                    else
-                    {
-                        // Either on-disk or no record exists - check for lock before creating new record. First ensure any record lock has transitioned to the LockTable.
-                        Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Delete() of an on-disk or non-existent key requires a LockTable lock");
-                        goto CreateNewRecord;
-                    }
+
+                    // Could not delete in place for some reason - create new record.
+                    goto CreateNewRecord;
                 }
-
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+                {
+                    goto CreateNewRecord;
+                }
+                else
+                {
+                    // Either on-disk or no record exists - create new record.
+                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Delete() of an on-disk or non-existent key requires a LockTable lock");
+                    goto CreateNewRecord;
+                }
             #endregion Address and source record checks
 
             #region Create new record in the mutable region

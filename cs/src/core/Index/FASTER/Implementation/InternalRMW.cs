@@ -62,7 +62,7 @@ namespace FASTER.core
 
             RecordInfo dummyRecordInfo = new() { Valid = true };
             ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress)
-                ? ref stackCtx.recSrc.GetSrcRecordInfo()
+                ? ref stackCtx.recSrc.GetInfo()
                 : ref dummyRecordInfo;
             if (srcRecordInfo.IsClosed)
                 return OperationStatus.RETRY_LATER;
@@ -86,30 +86,30 @@ namespace FASTER.core
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
-                #region Entry latch operation
+                #region Address and source record checks
+ 
+                if (stackCtx.recSrc.HasReadCacheSrc)
+                {
+                    // Use the readcache record as the CopyUpdater source.
+                    goto CreateNewRecord;
+                }
+
+                // Check for CPR consistency after checking if source is readcache.
                 if (fasterSession.Ctx.phase != Phase.REST)
                 {
                     latchDestination = CheckCPRConsistencyRMW(fasterSession.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     if (latchDestination == LatchDestination.Retry)
                         goto LatchRelease;
                 }
-                #endregion Entry latch operation
 
-                #region Address and source record checks
-
-                if (stackCtx.recSrc.HasReadCacheSrc)
-                {
-                    // Use the readcache record as the CopyUpdater source.
-                    goto CreateNewRecord;
-                }
-                else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
+                if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
                 {
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     if (srcRecordInfo.Tombstone)
                         goto CreateNewRecord;
 
                     rmwInfo.RecordInfo = srcRecordInfo;
-                    if (fasterSession.InPlaceUpdater(ref key, ref input, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref output, ref srcRecordInfo, ref rmwInfo, out status)
+                    if (fasterSession.InPlaceUpdater(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref rmwInfo, out status)
                         || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
@@ -126,7 +126,7 @@ namespace FASTER.core
                     // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Use this record as the CopyUpdater source.
                     goto CreateNewRecord;
                 }
-                else if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress && !hlog.GetInfo(stackCtx.recSrc.PhysicalAddress).Tombstone && latchDestination == LatchDestination.NormalProcessing)
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress && !stackCtx.recSrc.GetInfo().Tombstone && latchDestination == LatchDestination.NormalProcessing)
                 {
                     // Fuzzy Region: Must retry after epoch refresh, due to lost-update anomaly
                     status = OperationStatus.RETRY_LATER;
@@ -157,7 +157,7 @@ namespace FASTER.core
                 if (latchDestination != LatchDestination.CreatePendingContext)
                 {
                     Value tempValue = default;
-                    ref var value = ref (stackCtx.recSrc.HasInMemorySrc ? ref stackCtx.recSrc.GetSrcValue() : ref tempValue);
+                    ref var value = ref (stackCtx.recSrc.HasInMemorySrc ? ref stackCtx.recSrc.GetValue() : ref tempValue);
 
                     // Here, the input* data for 'doingCU' is the same as recSrc.
                     status = CreateNewRecordRMW(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, ref stackCtx, ref srcRecordInfo,
@@ -356,7 +356,7 @@ namespace FASTER.core
                 SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 SessionID = fasterSession.Ctx.sessionID,
-                Address = doingCU ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
+                Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
                 KeyHash = stackCtx.hei.hash
             };
 

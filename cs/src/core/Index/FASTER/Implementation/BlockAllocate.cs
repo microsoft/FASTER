@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -9,22 +8,6 @@ namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool BlockAllocate<Input, Output, Context>(
-                int recordSize,
-                out long logicalAddress,
-                ref PendingContext<Input, Output, Context> pendingContext,
-                out OperationStatus internalStatus)
-            => TryBlockAllocate(hlog, recordSize, out logicalAddress, ref pendingContext, out internalStatus);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool BlockAllocateReadCache<Input, Output, Context>(
-                int recordSize,
-                out long logicalAddress,
-                ref PendingContext<Input, Output, Context> pendingContext,
-                out OperationStatus internalStatus)
-            => TryBlockAllocate(readcache, recordSize, out logicalAddress, ref pendingContext, out internalStatus);
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool TryBlockAllocate<Input, Output, Context>(
                 AllocatorBase<Key, Value> allocator,
@@ -67,7 +50,7 @@ namespace FASTER.core
             // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
             for (; ; Thread.Yield() )
             {
-                if (!BlockAllocate(allocatedSize, out newLogicalAddress, ref pendingContext, out status))
+                if (!TryBlockAllocate(hlog, allocatedSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
 
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
@@ -101,7 +84,7 @@ namespace FASTER.core
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
             for (; ; Thread.Yield())
             {
-                if (!BlockAllocateReadCache(allocatedSize, out newLogicalAddress, ref pendingContext, out status))
+                if (!TryBlockAllocate(readcache, allocatedSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
 
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);

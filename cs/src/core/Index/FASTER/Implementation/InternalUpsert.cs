@@ -59,7 +59,7 @@ namespace FASTER.core
             // We blindly insert if we don't find the record in the mutable region.
             RecordInfo dummyRecordInfo = new() { Valid = true };
             ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.ReadOnlyAddress)
-                ? ref stackCtx.recSrc.GetSrcRecordInfo()
+                ? ref stackCtx.recSrc.GetInfo()
                 : ref dummyRecordInfo;
             if (srcRecordInfo.IsClosed)
                 return OperationStatus.RETRY_LATER;
@@ -81,15 +81,6 @@ namespace FASTER.core
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
-                #region Entry latch operation
-                if (fasterSession.Ctx.phase != Phase.REST)
-                {
-                    latchDestination = CheckCPRConsistencyUpsert(fasterSession.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
-                    if (latchDestination == LatchDestination.Retry)
-                        goto LatchRelease;
-                }
-                #endregion Entry latch operation
-
                 #region Address and source record checks
 
                 if (stackCtx.recSrc.HasReadCacheSrc)
@@ -97,14 +88,23 @@ namespace FASTER.core
                     // Use the readcache record as the CopyUpdater source.
                     goto CreateNewRecord;
                 }
-                else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
+
+                // Check for CPR consistency after checking if source is readcache.
+                if (fasterSession.Ctx.phase != Phase.REST)
+                {
+                    latchDestination = CheckCPRConsistencyUpsert(fasterSession.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    if (latchDestination == LatchDestination.Retry)
+                        goto LatchRelease;
+                }
+
+                if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
                 {
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     if (srcRecordInfo.Tombstone)
                         goto CreateNewRecord;
 
                     upsertInfo.RecordInfo = srcRecordInfo;
-                    ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
+                    ref Value recordValue = ref stackCtx.recSrc.GetValue();
                     if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);

@@ -52,12 +52,12 @@ namespace FASTER.core
                     ref var value = ref hlog.GetContextRecordValue(ref request);
                     if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
                     {
-                        srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+                        srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
                         // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
                         if (fasterSession.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                             return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
-                        value = ref stackCtx.recSrc.GetSrcValue();
+                        value = ref stackCtx.recSrc.GetValue();
                     }
 
                     if (!TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out var status))
@@ -86,7 +86,7 @@ namespace FASTER.core
                         if (stackCtx.recSrc.HasMainLogSrc)
                         {
                             // If this succeeds, we obviously don't need to copy to tail or readcache, so return success.
-                            if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress),
+                            if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref stackCtx.recSrc.GetValue(),
                                     ref pendingContext.output, ref srcRecordInfo, ref readInfo))
                                 return OperationStatus.SUCCESS;
                         }
@@ -158,14 +158,6 @@ namespace FASTER.core
         ///     <item>
         ///     <term>SUCCESS</term>
         ///     <term>The value has been successfully updated(or inserted).</term>
-        ///     </item>
-        ///     <item>
-        ///     <term>RECORD_ON_DISK</term>
-        ///     <term>The record corresponding to 'key' is on disk. Issue async IO to retrieve record and retry later.</term>
-        ///     </item>
-        ///     <item>
-        ///     <term>RETRY_LATER</term>
-        ///     <term>Cannot  be processed immediately due to system state. Add to pending list and retry later.</term>
         ///     </item>
         /// </list>
         /// </returns>
@@ -288,12 +280,12 @@ namespace FASTER.core
                         stackCtx.recSrc.LogicalAddress = actualAddress;
                         stackCtx.recSrc.SetPhysicalAddress();
                         stackCtx.recSrc.HasMainLogSrc = true;
-                        srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+                        srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                     }
                     else
                     {
                         if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
-                            srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+                            srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                     }
                 }
                 else
@@ -308,7 +300,7 @@ namespace FASTER.core
                         else
                         {
                             untilAddress = stackCtx.recSrc.LatestLogicalAddress;
-                            srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+                            srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                         }
                     }
                 }
@@ -331,18 +323,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Helper function for trying to copy existing immutable records (at foundLogicalAddress) to the tail, used in:
-        ///     <list type="bullet">
-        ///     <item><see cref="InternalRead{Input, Output, Context, Functions}
-        ///                             (ref Key, ref Input, ref Output, long, ref Context, ref PendingContext{Input, Output, Context}, 
-        ///                             Functions, long)"/></item>
-        ///     <item><see cref="InternalContinuePendingRead{Input, Output, Context, FasterSession}(
-        ///                             AsyncIOContext{Key, Value}, ref PendingContext{Input, Output, Context}, 
-        ///                             FasterSession)"/>,</item>
-        ///     <item><see cref="ClientSession{Key, Value, Input, Output, Context, Functions}
-        ///                             .CompactionCopyToTail(ref Key, ref Input, ref Value, ref Output, long, long)"/></item>
-        ///     </list>
-        /// Succeeds only if the record for the same key hasn't changed.
+        /// Helper function for trying to copy existing immutable records (at foundLogicalAddress) to the tail.
         /// </summary>
         /// <param name="pendingContext"></param>
         /// <param name="key"></param>
