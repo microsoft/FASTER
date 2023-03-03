@@ -39,7 +39,7 @@ namespace FASTER.test.Dispose
                 {
                     if (dest == ReadCopyDestination.ReadCache)
                         logSettings.ReadCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
-                    break;
+                    continue;
                 }
             }
 
@@ -106,6 +106,7 @@ namespace FASTER.test.Dispose
 
             void WaitForEvent()
             {
+                Assert.IsTrue(tester.fht.epoch.ThisInstanceProtected(), "This should only be called from IFunctions methods, which are under epoch protection");
                 if (isSUT)
                 {
                     MyKey key = new() { key = TestKey };
@@ -113,9 +114,9 @@ namespace FASTER.test.Dispose
                     var address = entry.Address;
                     if (isSplice)
                     {
-                        // There should be one readcache entry for this test.
-                        Assert.IsTrue(new HashBucketEntry() { word = entry.Address }.ReadCache);
-                        Assert.GreaterOrEqual(entry.AbsoluteAddress, tester.fht.ReadCache.BeginAddress);
+                        // Get the tail entry for this key's hash chain; there should be exactly one readcache entry for this test.
+                        Assert.IsTrue(entry.ReadCache, "Expected readcache entry in WaitForEvent pt 1");
+                        Assert.GreaterOrEqual(entry.AbsoluteAddress, tester.fht.ReadCache.HeadAddress);
                         var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                         ref RecordInfo recordInfo = ref tester.fht.readcache.GetInfo(physicalAddress);
                         address = recordInfo.PreviousAddress;
@@ -131,6 +132,7 @@ namespace FASTER.test.Dispose
                     {
                         if (!isSplice)
                         {
+                            // We're not the splice thread, so wait until the address in the hash entry changes.
                             while (entry.Address == address)
                             {
                                 Thread.Yield();
@@ -139,7 +141,9 @@ namespace FASTER.test.Dispose
                         }
                         else
                         {
-                            Assert.GreaterOrEqual(entry.AbsoluteAddress, tester.fht.ReadCache.BeginAddress);
+                            // We're the splice thread, so wait until the address in the last readcache record changes.
+                            Assert.IsTrue(entry.ReadCache, "Expected readcache entry in WaitForEvent pt 2");
+                            Assert.GreaterOrEqual(entry.AbsoluteAddress, tester.fht.ReadCache.HeadAddress);
                             var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                             ref RecordInfo recordInfo = ref tester.fht.readcache.GetInfo(physicalAddress);
                             while (recordInfo.PreviousAddress == address)
