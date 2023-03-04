@@ -225,6 +225,11 @@ namespace MemOnlyCache
                         MaxKeySize = int.Parse(val);
                         continue;
                     }
+                    if (arg == MaxValueSizeArg)
+                    {
+                        MaxValueSize = int.Parse(val);
+                        continue;
+                    }
                     if (arg == MemorySizeBitsArg)
                     {
                         MemorySizeBits = int.Parse(val);

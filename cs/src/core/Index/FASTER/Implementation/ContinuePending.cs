@@ -459,8 +459,6 @@ namespace FASTER.core
                     // it, but then that splice will call ReadCacheCheckTailAfterSplice and invalidate it if it's the same key.
                     success = EnsureNoNewMainLogRecordWasSpliced(ref key, stackCtx.recSrc, untilLogicalAddress, ref failStatus);
                 }
-                if (success)
-                    CompleteCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
             }
             else
             {
@@ -471,7 +469,12 @@ namespace FASTER.core
                 success = casSuccess = SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx.recSrc, newLogicalAddress);
             }
 
-            if (!success)
+            if (success)
+            {
+                if (!copyToReadCache)
+                    CompleteCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
+            }
+            else 
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
 

@@ -8,6 +8,7 @@ using System.Threading;
 using FASTER.test.LockTable;
 using static FASTER.test.TestUtils;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace FASTER.test.LockTests
 {
@@ -133,6 +134,8 @@ namespace FASTER.test.LockTests
         //[Repeat(100)]
         public async ValueTask SameKeyInsertAndCTTTest()
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
             Populate(evict: true);
             Functions functions = new();
             using var readSession = fkv.NewSession(functions);
