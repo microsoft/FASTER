@@ -19,7 +19,10 @@ namespace FASTER.core
         READ,
         RMW,
         UPSERT,
-        DELETE
+        DELETE,
+        CONDITIONAL_CTT,        // CopyToTail
+        CONDITIONAL_INSERT,     // Insert at tail
+        CONDITIONAL_DELETE      // Add Tombstone at tail
     }
 
     [Flags]

@@ -1012,14 +1012,8 @@ namespace FASTER.core
                 => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
-            {
-                if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
-                    return true;
-                if (readInfo.Action == ReadAction.Expire)
-                    recordInfo.Tombstone = true;
-                return false;
-            }
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo) 
+                => _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
                 => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);

@@ -59,22 +59,24 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CompleteUpdate(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
+        private void CompleteUpdate<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             stackCtx.recSrc.CloseSourceRecordAfterCopy(ref srcRecordInfo);
 
-            // If we did not have a source lock, it is possible that a readcache record was inserted.
-            if (UseReadCache && !stackCtx.recSrc.HasTransientLock)
+            // If we did not have a source lock and were splicing, it is possible that a readcache record was inserted.
+            if (UseReadCache && stackCtx.hei.IsReadCache && !stackCtx.recSrc.HasTransientLock && !fasterSession.IsManualLocking)
                 ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CompleteCopyToTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
+        private void CompleteCopyToTail<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             stackCtx.recSrc.CloseSourceRecordAfterCopy(ref srcRecordInfo);
 
-            // If we did not have a source lock, it is possible that a readcache record was inserted.
-            if (UseReadCache && !stackCtx.recSrc.HasTransientLock)
+            // If we did not have a source lock and were splicing, it is possible that a readcache record was inserted.
+            if (UseReadCache && stackCtx.hei.IsReadCache && !stackCtx.recSrc.HasTransientLock && !fasterSession.IsManualLocking)
                 ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
         }
     }
