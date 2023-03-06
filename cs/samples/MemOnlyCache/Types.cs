@@ -7,7 +7,7 @@ using System.Threading;
 
 namespace MemOnlyCache
 {
-    public class CacheKey : IFasterEqualityComparer<CacheKey>
+    public class CacheKey : IFasterEqualityComparer<CacheKey>, ISizeTracker
     {
         public long key;
         public byte[] extra;
@@ -47,7 +47,7 @@ namespace MemOnlyCache
         }
     }
 
-    public sealed class CacheValue
+    public sealed class CacheValue : ISizeTracker
     {
         public byte[] value;
 
@@ -104,7 +104,7 @@ namespace MemOnlyCache
         public override void PostSingleWriter(ref CacheKey key, ref CacheValue input, ref CacheValue src, ref CacheValue dst, ref CacheValue output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             dst = src;
-            sizeTracker.AddTrackedSize(key.GetSize + src.GetSize);
+            sizeTracker.AddTrackedSize(key.GetSize + src.GetSize, reason == WriteReason.CopyToReadCache);
         }
 
         public override bool ConcurrentDeleter(ref CacheKey key, ref CacheValue value, ref DeleteInfo deleteInfo)

@@ -87,7 +87,7 @@ namespace MemOnlyCache
         /// <summary>
         /// If true, create a log file in the {tempdir}\MemOnlyCacheSample
         /// </summary>
-        static bool UseLogFile = false;
+        static bool UseLogFile = true;
         const string UseLogFileArg = "-l";
 
         /// <summary>
@@ -97,15 +97,15 @@ namespace MemOnlyCache
         const string QuietArg = "-q";
 
         /// <summary>
-        /// Uniform random distribution (true) or Zipf distribution (false) of requests
+        /// Copy to tail on read
         /// </summary>
-        static bool UseReadCTT = true;
+        static bool UseReadCTT = false;
         const string NoReadCTTArg = "--noreadctt";
 
         /// <summary>
-        /// Uniform random distribution (true) or Zipf distribution (false) of requests
+        /// Copy to read cache on read
         /// </summary>
-        static bool UseReadCache = false;
+        static bool UseReadCache = true;
         const string UseReadCacheArg = "--readcache";
 
         /// <summary>
@@ -420,9 +420,11 @@ namespace MemOnlyCache
                 var ts = TimeSpan.FromSeconds(currentTimeMs / 1000);
                 var totalElapsed = ts.ToString();
 
-                Console.WriteLine("Throughput: {0,8:0.00}K ops/sec; Hit rate: {1:N2}; Memory footprint: {2,12:N2}KB, elapsed: {3:c}", 
-                                (currentReads - _lastReads) / (double)(currentElapsed), statusFound / (double)(statusFound + statusNotFound),
-                                sizeTracker.TotalSizeBytes / 1024.0, totalElapsed);
+                Console.WriteLine("Throughput: {0,8:0.00}K ops/sec; Hit rate: {1:N2}; elapsed: {2:c}", 
+                                (currentReads - _lastReads) / (double)(currentElapsed),
+                                statusFound / (double)(statusFound + statusNotFound),
+                                totalElapsed);
+                sizeTracker.PrintStats();
 
                 Interlocked.Exchange(ref statusFound, 0);
                 Interlocked.Exchange(ref statusNotFound, 0);

@@ -3,27 +3,42 @@
 
 using FASTER.core;
 using System;
-using System.Threading;
 
 namespace MemOnlyCache
 {
     /// <summary>
     /// Cache size tracker
     /// </summary>
-    public class CacheSizeTracker : IObserver<IFasterScanIterator<CacheKey, CacheValue>>
+    public class CacheSizeTracker
     {
         readonly FasterKV<CacheKey, CacheValue> store;
-        long storeHeapSize;
-
-        /// <summary>
-        /// Target size request for FASTER
-        /// </summary>
-        public long TargetSizeBytes { get; private set; }
 
         /// <summary>
         /// Total size (bytes) used by FASTER including index and log
         /// </summary>
-        public long TotalSizeBytes => storeHeapSize + store.IndexSize * 64 + store.Log.MemorySizeBytes + (store.ReadCache != null ? store.ReadCache.MemorySizeBytes : 0) + store.OverflowBucketCount * 64;
+        public long TotalSizeBytes => 
+            IndexSizeBytes +
+            mainLog.TotalSizeBytes + 
+            (readCache != null ? readCache.TotalSizeBytes : 0);
+
+        public long IndexSizeBytes =>
+            store.IndexSize * 64 +
+            store.OverflowBucketCount * 64;
+
+        public long LogSizeBytes => mainLog.TotalSizeBytes;
+        public long ReadCacheSizeBytes => readCache != null ? readCache.TotalSizeBytes : 0;
+
+        readonly LogSizeTracker<CacheKey, CacheValue> mainLog;
+        readonly LogSizeTracker<CacheKey, CacheValue> readCache;
+
+        public void PrintStats()
+        {
+            Console.WriteLine("Sizes: [store]: {0,8:N2}KB  [index]: {1,8:N2}KB  [hylog]: {2,8:N2}KB  [rcach]: {3,8:N2}KB",
+                TotalSizeBytes / 1024.0,
+                IndexSizeBytes / 1024.0,
+                LogSizeBytes / 1024.0,
+                ReadCacheSizeBytes / 1024.0);
+        }
 
         /// <summary>
         /// Class to track and update cache size
@@ -33,19 +48,17 @@ namespace MemOnlyCache
         public CacheSizeTracker(FasterKV<CacheKey, CacheValue> store, long targetMemoryBytes = long.MaxValue)
         {
             this.store = store;
-            if (targetMemoryBytes < long.MaxValue)
-                Console.WriteLine("**** Setting initial target memory: {0,11:N2}KB", targetMemoryBytes / 1024.0);
-            this.TargetSizeBytes = targetMemoryBytes;
-
-            Console.WriteLine("Index size: {0}", store.IndexSize * 64);
-            Console.WriteLine("Total store size: {0}", TotalSizeBytes);
-
-            // Register subscriber to receive notifications of log evictions from memory
-            store.Log.SubscribeEvictions(this);
-
-            // Include the separate read cache, if enabled
+            this.mainLog = new LogSizeTracker<CacheKey, CacheValue>(store.Log, "mnlog");
             if (store.ReadCache != null)
-                store.ReadCache.SubscribeEvictions(this);
+                this.readCache = new LogSizeTracker<CacheKey, CacheValue>(store.ReadCache, "readc");
+
+            if (targetMemoryBytes < long.MaxValue)
+            {
+                Console.WriteLine("**** Setting initial target memory: {0,11:N2}KB", targetMemoryBytes / 1024.0);
+                SetTargetSizeBytes(targetMemoryBytes);
+            }
+
+            PrintStats();
         }
 
         /// <summary>
@@ -54,55 +67,32 @@ namespace MemOnlyCache
         /// <param name="newTargetSize">Target size</param>
         public void SetTargetSizeBytes(long newTargetSize)
         {
-            if (newTargetSize < TargetSizeBytes)
+            // In this sample, we split the residual space equally between the log and the read cache
+            long residual = newTargetSize - IndexSizeBytes;
+            
+            if (residual > 0)
             {
-                TargetSizeBytes = newTargetSize;
-                store.Log.EmptyPageCount++; // trigger eviction to start the memory reduction process
+                if (readCache == null)
+                    mainLog.SetTargetSizeBytes(residual);
+                else
+                {
+                    mainLog.SetTargetSizeBytes(residual / 2);
+                    readCache.SetTargetSizeBytes(residual / 2);
+                }
             }
-            else
-                TargetSizeBytes = newTargetSize;
         }
+            
 
         /// <summary>
         /// Add to the tracked size of FASTER. This is called by IFunctions as well as the subscriber to evictions (OnNext)
         /// </summary>
         /// <param name="size"></param>
-        public void AddTrackedSize(int size) => Interlocked.Add(ref storeHeapSize, size);
-
-        /// <summary>
-        /// Subscriber to pages as they are getting evicted from main memory
-        /// </summary>
-        /// <param name="iter"></param>
-        public void OnNext(IFasterScanIterator<CacheKey, CacheValue> iter)
+        public void AddTrackedSize(int size, bool isReadCache = false)
         {
-            int size = 0;
-            while (iter.GetNext(out RecordInfo info, out CacheKey key, out CacheValue value))
-            {
-                size += key.GetSize;
-                if (!info.Tombstone) // ignore deleted values being evicted (they are accounted for by ConcurrentDeleter)
-                    size += value.GetSize;
-            }
-            AddTrackedSize(-size);
-
-            // Adjust empty page count to drive towards desired memory utilization
-            if (store.Log.PageAllocationStabilized())
-            {
-                if (TotalSizeBytes > TargetSizeBytes)
-                    store.Log.EmptyPageCount++;
-                else
-                    store.Log.EmptyPageCount--;
-            }
+            if (isReadCache)
+                readCache.AddTrackedSize(size);
+            else
+                mainLog.AddTrackedSize(size);
         }
-
-        /// <summary>
-        /// OnCompleted
-        /// </summary>
-        public void OnCompleted() { }
-
-        /// <summary>
-        /// OnError
-        /// </summary>
-        /// <param name="error"></param>
-        public void OnError(Exception error) { }
     }
 }
