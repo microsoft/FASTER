@@ -83,10 +83,10 @@ namespace ResizableCacheStore
 
         void AdjustAllocation()
         {
-            const long Delta = 1L << 20;
+            const long Delta = 1L << 15;
             if (TotalSizeBytes > TargetSizeBytes + Delta)
             {
-                while (true)
+                while (TotalSizeBytes > TargetSizeBytes + Delta)
                 {
                     if (Log.AllocatedPageCount > Log.BufferSize - Log.EmptyPageCount + 1)
                     {
@@ -94,12 +94,12 @@ namespace ResizableCacheStore
                         return; // wait for allocation to stabilize
                     }
                     Log.EmptyPageCount++;
-                    //Console.WriteLine($"{name}: {Log.EmptyPageCount} (++)");
+                    // Console.WriteLine($"{name}: {Log.EmptyPageCount} (++)");
                 }
             }
             else if (TotalSizeBytes < TargetSizeBytes - Delta)
             {
-                while (true)
+                while (TotalSizeBytes < TargetSizeBytes - Delta)
                 {
                     if (Log.AllocatedPageCount < Log.BufferSize - Log.EmptyPageCount - 1)
                     {
@@ -107,7 +107,7 @@ namespace ResizableCacheStore
                         return; // wait for allocation to stabilize
                     }
                     Log.EmptyPageCount--;
-                    //Console.WriteLine($"{name}: {Log.EmptyPageCount} (--)");
+                    // Console.WriteLine($"{name}: {Log.EmptyPageCount} (--)");
                 }
             }
         }

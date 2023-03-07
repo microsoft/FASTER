@@ -99,7 +99,7 @@ namespace ResizableCacheStore
         /// <summary>
         /// Copy to tail on read
         /// </summary>
-        static bool UseReadCTT = false;
+        static bool UseReadCTT = true;
         const string NoReadCTTArg = "--noreadctt";
 
         /// <summary>
