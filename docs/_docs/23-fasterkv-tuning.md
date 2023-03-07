@@ -116,8 +116,8 @@ correspond exactly to the total log memory utilization.
 
 One can accurately track the total memory used by FASTER, including heap objects, using a cache size 
 tracker that lets `IFunctions` notify it of record additions and deletions, and by subscribing to 
-evictions from the head of the in-memory log. Details are shown in the [MemOnlySample](https://github.com/microsoft/FASTER/tree/master/cs/samples/MemOnlyCache) 
-sample, where we show how to implement such a cache size [tracker](https://github.com/microsoft/FASTER/blob/master/cs/samples/MemOnlyCache/CacheSizeTracker.cs) 
+evictions from the head of the in-memory log. Details are shown in the [ResizableCacheStore](https://github.com/microsoft/FASTER/tree/master/cs/samples/ResizableCacheStore) 
+sample, where we show how to implement such a cache size [tracker](https://github.com/microsoft/FASTER/blob/master/cs/samples/ResizableCacheStore/CacheSizeTracker.cs) 
 to:
 1. Track FASTER's total memory usage (including the heap objects, log, hash table, and overflow buckets)  accurately.
 2. Set a target memory usage and tune `EmptyPageCount` to achieve this target memory utilization.
