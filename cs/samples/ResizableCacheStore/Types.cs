@@ -5,7 +5,7 @@ using FASTER.core;
 using System;
 using System.Threading;
 
-namespace MemOnlyCache
+namespace ResizableCacheStore
 {
     public class CacheKey : IFasterEqualityComparer<CacheKey>, ISizeTracker
     {

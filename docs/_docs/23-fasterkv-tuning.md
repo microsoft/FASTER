@@ -58,7 +58,7 @@ is useful when reads are infrequent, but will be followed by an update, or subse
 causes any reads from disk to be copied to the tail of log. `CopyReadsToTail.FromReadOnly` causes any reads from either
 disk or the read-only region of memory to be copied to the tail of log. Latter is helpful when you do not want particularly
 hot items to "escape" to disk only to be immediately brought back to the tail of main memory. It is also useful when you
-use FASTER as a memory-only cache (with `NullDevice`) as in [this](https://github.com/microsoft/FASTER/tree/master/cs/samples/MemOnlyCache) sample.
+use FASTER as a memory-only cache (with `NullDevice`) as in [this](https://github.com/microsoft/FASTER/tree/master/cs/samples/ResizableCacheStore) sample.
 
 
 * `ReadCacheSettings`: This setting is used to enable a read cache, separately from the main FASTER log. If you need to frequently read 

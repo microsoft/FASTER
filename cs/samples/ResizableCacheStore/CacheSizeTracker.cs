@@ -4,7 +4,7 @@
 using FASTER.core;
 using System;
 
-namespace MemOnlyCache
+namespace ResizableCacheStore
 {
     /// <summary>
     /// Cache size tracker

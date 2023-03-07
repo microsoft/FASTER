@@ -10,7 +10,7 @@ using System.Threading;
 #pragma warning disable IDE0079 // Remove unnecessary suppression
 #pragma warning disable CS0162 // Unreachable code detected
 
-namespace MemOnlyCache
+namespace ResizableCacheStore
 {
     class Program
     {
@@ -85,7 +85,7 @@ namespace MemOnlyCache
         const string UseUniformArg = "-u";
 
         /// <summary>
-        /// If true, create a log file in the {tempdir}\MemOnlyCacheSample
+        /// If true, create a log file in the {tempdir}\ResizableCacheStoreSample
         /// </summary>
         static bool UseLogFile = true;
         const string UseLogFileArg = "-l";
@@ -308,7 +308,7 @@ namespace MemOnlyCache
             return true;
         }
 
-        static string GetLogPath() => Path.GetTempPath() + "MemOnlyCacheSample\\";
+        static string GetLogPath() => Path.GetTempPath() + "ResizableCacheStoreSample\\";
 
         static void Main(string[] args)
         {
