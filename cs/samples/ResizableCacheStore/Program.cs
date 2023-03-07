@@ -87,7 +87,7 @@ namespace ResizableCacheStore
         /// <summary>
         /// If true, create a log file in the {tempdir}\ResizableCacheStoreSample
         /// </summary>
-        static bool UseLogFile = true;
+        static bool UseLogFile = false;
         const string UseLogFileArg = "-l";
 
         /// <summary>
@@ -105,7 +105,7 @@ namespace ResizableCacheStore
         /// <summary>
         /// Copy to read cache on read
         /// </summary>
-        static bool UseReadCache = true;
+        static bool UseReadCache = false;
         const string UseReadCacheArg = "--readcache";
 
         /// <summary>

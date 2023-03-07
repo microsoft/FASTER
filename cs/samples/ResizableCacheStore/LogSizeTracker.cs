@@ -45,7 +45,12 @@ namespace ResizableCacheStore
         /// Add to the tracked size of FASTER. This is called by IFunctions as well as the subscriber to evictions (OnNext)
         /// </summary>
         /// <param name="size"></param>
-        public void AddTrackedSize(int size) => Interlocked.Add(ref heapSize, size);
+        public void AddTrackedSize(int size)
+        {
+            Interlocked.Add(ref heapSize, size);
+            if (size > 0) Interlocked.Increment(ref NumRecords);
+            else Interlocked.Decrement(ref NumRecords);
+        }
 
         /// <summary>
         /// Set target total memory size (in bytes) for the FASTER store
@@ -59,14 +64,16 @@ namespace ResizableCacheStore
         public void OnNext(IFasterScanIterator<TCacheKey, TCacheValue> iter)
         {
             int size = 0;
+            int count = 0;
             while (iter.GetNext(out RecordInfo info, out TCacheKey key, out TCacheValue value))
             {
                 size += key.GetSize;
+                count++;
                 if (!info.Tombstone) // ignore deleted values being evicted (they are accounted for by ConcurrentDeleter)
                     size += value.GetSize;
             }
-            AddTrackedSize(-size);
-
+            Interlocked.Add(ref heapSize, -size);
+            Interlocked.Add(ref NumRecords, -count);
             AdjustAllocation();
         }
 

@@ -33,11 +33,14 @@ namespace ResizableCacheStore
 
         public void PrintStats()
         {
-            Console.WriteLine("Sizes: [store]: {0,8:N2}KB  [index]: {1,8:N2}KB  [hylog]: {2,8:N2}KB  [rcach]: {3,8:N2}KB",
+            Console.WriteLine("Sizes: [store]: {0,8:N2}KB  [index]: {1,9:N2}KB  [hylog]: {2,8:N2}KB ({3,7} objs) [rcach]: {4,9:N2}KB ({5,7} objs)",
                 TotalSizeBytes / 1024.0,
                 IndexSizeBytes / 1024.0,
                 LogSizeBytes / 1024.0,
-                ReadCacheSizeBytes / 1024.0);
+                mainLog.NumRecords,
+                ReadCacheSizeBytes / 1024.0,
+                readCache != null ? readCache.NumRecords : 0
+                );
         }
 
         /// <summary>
