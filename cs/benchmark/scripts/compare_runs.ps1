@@ -28,10 +28,14 @@
     Do not include results with locking
 
 .EXAMPLE
-    ./compare_runs.ps1 './baseline' './refactor_FASTERImpl'
+    pwsh -c "./compare_runs.ps1 './baseline' './locktable-revision'""
+
+    Single (or double) quotes are optional and may be omitted if the directory paths do not contain spaces. Normally 'baseline' is 'main'.
 
 .EXAMPLE
-    ./compare_runs.ps1 './baseline' './refactor_FASTERImpl' -NoLock
+    ./compare_runs.ps1 ./main ./locktable-revision -NoLock
+
+    Does not compare results that have locking specified.
 #>
 param (
   [Parameter(Mandatory)] [String]$OldDir,

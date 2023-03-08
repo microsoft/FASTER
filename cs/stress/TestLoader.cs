@@ -226,7 +226,7 @@ namespace FASTER.stress
 
             var uContext = luContext as IUnsafeContext;
             if (isAsyncTest)
-                uContext.ResumeThread();
+                uContext.BeginUnsafe();
             try
             {
                 for (var ii = 0; ii < keyCount; ++ii)
@@ -240,7 +240,7 @@ namespace FASTER.stress
             finally
             {
                 if (isAsyncTest)
-                    uContext.SuspendThread();
+                    uContext.EndUnsafe();
             }
         }
 
@@ -251,7 +251,7 @@ namespace FASTER.stress
 
             var uContext = luContext as IUnsafeContext;
             if (isAsyncTest)
-                uContext.ResumeThread();
+                uContext.BeginUnsafe();
             try
             {
                 for (var ii = 0; ii < keyCount; ++ii)
@@ -265,7 +265,7 @@ namespace FASTER.stress
             finally
             {
                 if (isAsyncTest)
-                    uContext.SuspendThread();
+                    uContext.EndUnsafe();
             }
         }
 

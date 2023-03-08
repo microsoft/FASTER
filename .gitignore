@@ -199,3 +199,6 @@ nativebin/
 cs/.idea/
 cs/remote/.idea
 cs/research/libdpr/.idea
+cs/libdpr/.idea
+
+cs/**/BenchmarkDotNet.Artifacts/

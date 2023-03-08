@@ -122,32 +122,82 @@ namespace FASTER.core
     internal struct RecoveryOptions
     {
         internal long headAddress;
-        internal long tailAddress;
+        internal long fuzzyRegionStartAddress;
         internal bool undoNextVersion;
 
-        internal bool clearLocks => this.headAddress != Constants.kInvalidAddress;
-
-        internal RecoveryOptions(bool clearLocks, long headAddress, long tailAddress, bool undoNextVer)
+        internal RecoveryOptions(long headAddress, long fuzzyRegionStartAddress, bool undoNextVersion)
         {
-            this.headAddress = clearLocks ? headAddress : Constants.kInvalidAddress;
-            this.tailAddress = clearLocks ? tailAddress : Constants.kInvalidAddress;
-            this.undoNextVersion = undoNextVer;
+            this.headAddress = headAddress;
+            this.fuzzyRegionStartAddress = fuzzyRegionStartAddress;
+            this.undoNextVersion = undoNextVersion;
         }
     }
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        private void FindRecoveryInfo(long requestedVersion, out HybridLogCheckpointInfo recoveredHlcInfo,
-            out IndexCheckpointInfo recoveredICInfo)
+        /// <summary>
+        /// GetLatestCheckpointTokens
+        /// </summary>
+        /// <param name="hlogToken"></param>
+        /// <param name="indexToken"></param>
+        public void GetLatestCheckpointTokens(out Guid hlogToken, out Guid indexToken)
         {
+            GetClosestHybridLogCheckpointInfo(-1, out hlogToken, out var recoveredHlcInfo, out var _);
+            GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out indexToken, out var _);
+        }
 
-            logger?.LogInformation("********* Primary Recovery Information ********");
+        /// <summary>
+        /// Get HLog latest version
+        /// </summary>
+        /// <returns></returns>
+        public long GetLatestCheckpointVersion()
+        {
+            GetClosestHybridLogCheckpointInfo(-1, out var hlogToken, out var _, out var _);
+            if (hlogToken == default)
+                return -1;
+            HybridLogCheckpointInfo current = new();
+            current.Recover(hlogToken, checkpointManager, hlog.LogPageSizeBits,
+                out var _, false);
+            return current.info.nextVersion;
+        }
 
-            HybridLogCheckpointInfo current, closest = default;
-            Guid closestToken = default;
+        /// <summary>
+        /// Get size of snapshot files for token
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public long GetSnapshotFileSizes(Guid token)
+        {
+            HybridLogCheckpointInfo current = new();
+            current.Recover(token, checkpointManager, hlog.LogPageSizeBits,
+                out var _, false);
+            return current.info.finalLogicalAddress;
+        }
+
+        /// <summary>
+        /// Get size of index file for token
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public long GetIndexFileSize(Guid token)
+        {
+            IndexCheckpointInfo recoveredICInfo = new IndexCheckpointInfo();
+            recoveredICInfo.Recover(token, checkpointManager);
+            return (long)recoveredICInfo.info.num_ht_bytes;
+        }
+
+        private void GetClosestHybridLogCheckpointInfo(
+            long requestedVersion,
+            out Guid closestToken,
+            out HybridLogCheckpointInfo closest,
+            out byte[] cookie)
+        {
+            HybridLogCheckpointInfo current;
             long closestVersion = long.MaxValue;
-            byte[] cookie = default;
-            
+            closest = default;
+            closestToken = default;
+            cookie = default;
+
             // Traverse through all current tokens to find either the largest version or the version that's closest to
             // but smaller than the requested version. Need to iterate through all unpruned versions because file system
             // is not guaranteed to return tokens in order of freshness.
@@ -156,7 +206,7 @@ namespace FASTER.core
                 try
                 {
                     current = new HybridLogCheckpointInfo();
-                    current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits, 
+                    current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits,
                         out var currCookie, false);
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
                     // This is larger than intended version, cannot recover to this.
@@ -171,7 +221,7 @@ namespace FASTER.core
                         cookie = currCookie;
                         break;
                     }
-                    
+
                     // Otherwise, write it down and wait to see if there's a closer one;
                     if (distanceToTarget < closestVersion)
                     {
@@ -193,20 +243,11 @@ namespace FASTER.core
 
                 logger?.LogInformation("HybridLog Checkpoint: {hybridLogToken}", hybridLogToken);
             }
+        }
 
-            recoveredHlcInfo = closest;
-            recoveredCommitCookie = cookie;
-            if (recoveredHlcInfo.IsDefault())
-                throw new FasterException("Unable to find valid HybridLog token");
-
-            if (recoveredHlcInfo.deltaLog != null)
-            {
-                recoveredHlcInfo.Dispose();
-                // need to actually scan delta log now
-                recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, out _, true);
-            }
-            recoveredHlcInfo.info.DebugPrint(logger);
-
+        private void GetClosestIndexCheckpointInfo(ref HybridLogCheckpointInfo recoveredHlcInfo, out Guid closestToken, out IndexCheckpointInfo recoveredICInfo)
+        {
+            closestToken = default;
             recoveredICInfo = default;
             foreach (var indexToken in checkpointManager.GetIndexCheckpointTokens())
             {
@@ -229,8 +270,30 @@ namespace FASTER.core
 
                 logger?.LogInformation("Index Checkpoint: {indexToken}", indexToken);
                 recoveredICInfo.info.DebugPrint(logger);
+                closestToken = indexToken;
                 break;
             }
+        }
+
+        private void FindRecoveryInfo(long requestedVersion, out HybridLogCheckpointInfo recoveredHlcInfo,
+            out IndexCheckpointInfo recoveredICInfo)
+        {
+            logger?.LogInformation("********* Primary Recovery Information ********");
+
+            GetClosestHybridLogCheckpointInfo(requestedVersion, out var closestToken, out recoveredHlcInfo, out recoveredCommitCookie);
+
+            if (recoveredHlcInfo.IsDefault())
+                throw new FasterException("Unable to find valid HybridLog token");
+
+            if (recoveredHlcInfo.deltaLog != null)
+            {
+                recoveredHlcInfo.Dispose();
+                // need to actually scan delta log now
+                recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, out _, true);
+            }
+            recoveredHlcInfo.info.DebugPrint(logger);
+
+            GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out _, out recoveredICInfo);
 
             if (recoveredICInfo.IsDefault())
             {
@@ -307,7 +370,7 @@ namespace FASTER.core
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(recoveredHLCInfo.info.manualLockingActive, headAddress, tailAddress, undoNextVersion);
+            RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
 
             long readOnlyAddress;
             // Make index consistent for version v
@@ -324,7 +387,7 @@ namespace FASTER.core
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
                 RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, options);
                 // Then recover snapshot into mutable region
-                RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.flushedLogicalAddress,
+                RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
                                 recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo);
 
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
@@ -341,7 +404,7 @@ namespace FASTER.core
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(recoveredHLCInfo.info.manualLockingActive, headAddress, tailAddress, undoNextVersion);
+            RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
 
             long readOnlyAddress;
             // Make index consistent for version v
@@ -358,9 +421,9 @@ namespace FASTER.core
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
                 await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot,
-                                           new RecoveryOptions(recoveredHLCInfo.info.manualLockingActive, headAddress, tailAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
+                                           new RecoveryOptions(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
                 // Then recover snapshot into mutable region
-                await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.flushedLogicalAddress,
+                await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
                                         recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo, cancellationToken).ConfigureAwait(false);
 
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
@@ -383,7 +446,7 @@ namespace FASTER.core
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             _recoveredSessions = recoveredHLCInfo.info.continueTokens;
             _recoveredSessionNameMap = recoveredHLCInfo.info.sessionNameMap;
-            maxSessionID = recoveredHLCInfo.info.maxSessionID;
+            maxSessionID = Math.Max(recoveredHLCInfo.info.maxSessionID, maxSessionID);
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
             recoveredHLCInfo.Dispose();
         }
@@ -494,6 +557,9 @@ namespace FASTER.core
                 int pageIndex = hlog.GetPageIndexForPage(page);
                 recoveryStatus.WaitRead(pageIndex);
 
+                // We make an extra pass to clear locks when reading every page back into memory
+                ClearLocksOnPage(page, options);
+
                 ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, page, pageIndex);
             }
 
@@ -514,6 +580,9 @@ namespace FASTER.core
                 // Ensure page has been read into memory
                 int pageIndex = hlog.GetPageIndexForPage(page);
                 await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+
+                // We make an extra pass to clear locks when reading every page back into memory
+                ClearLocksOnPage(page, options);
 
                 ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, page, pageIndex);
             }
@@ -560,36 +629,21 @@ namespace FASTER.core
         {
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
+            var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
 
-            if (options.clearLocks)
-            {
-                if (options.headAddress >= endLogicalAddress)
-                    return false;
-            }
-            else if (recoverFromAddress >= endLogicalAddress)
+            if (recoverFromAddress >= endLogicalAddress)
                 return false;
 
             var pageFromAddress = 0L;
             var pageUntilAddress = hlog.GetPageSize();
-            if (options.clearLocks)
-            {
-                if (options.headAddress > startLogicalAddress)
-                    pageFromAddress = hlog.GetOffsetInPage(options.headAddress);
 
-                if (options.tailAddress < endLogicalAddress)
-                    pageUntilAddress = hlog.GetOffsetInPage(options.tailAddress);
-            }
-            else 
-            {
-                if (recoverFromAddress > startLogicalAddress)
-                    pageFromAddress = hlog.GetOffsetInPage(recoverFromAddress);
+            if (recoverFromAddress > startLogicalAddress)
+                pageFromAddress = hlog.GetOffsetInPage(recoverFromAddress);
 
-                if (untilAddress < endLogicalAddress)
-                    pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
-            }
+            if (untilAddress < endLogicalAddress)
+                pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
 
-            var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
-            if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options.undoNextVersion, options.clearLocks))
+            if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -631,6 +685,9 @@ namespace FASTER.core
                     {
                         // Ensure the page is read from file
                         recoveryStatus.WaitRead(pageIndex);
+
+                        // We make an extra pass to clear locks when reading pages back into memory
+                        ClearLocksOnPage(p, options);
                     }
                     else
                     {
@@ -668,6 +725,9 @@ namespace FASTER.core
                     {
                         // Ensure the page is read from file
                         await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+
+                        // We make an extra pass to clear locks when reading pages back into memory
+                        ClearLocksOnPage(p, options);
                     }
                     else
                     {
@@ -695,8 +755,7 @@ namespace FASTER.core
                 int pageIndex = hlog.GetPageIndexForPage(p);
 
                 var endLogicalAddress = hlog.GetStartLogicalAddress(p + 1);
-                if ((recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
-                        || (options.clearLocks && options.headAddress < endLogicalAddress))
+                if (recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
                     ProcessReadSnapshotPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
 
                 // Issue next read
@@ -751,8 +810,8 @@ namespace FASTER.core
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
 
-            // Perform recovery if page in fuzzy portion of the log or clearing locks
-            if ((fromAddress < endLogicalAddress && fromAddress < untilAddress) || (options.clearLocks && options.headAddress < endLogicalAddress))
+            // Perform recovery if page is part of the re-do portion of log
+            if (fromAddress < endLogicalAddress && fromAddress < untilAddress)
             {
                 /*
                  * Handling corner-cases:
@@ -760,41 +819,64 @@ namespace FASTER.core
                  * When fromAddress is in the middle of the page, then start recovery only from corresponding offset 
                  * in page. Similarly, if untilAddress falls in the middle of the page, perform recovery only until that
                  * offset. Otherwise, scan the entire page [0, PageSize)
-                 * 
-                 * If options.clearLocks, the read of this page overwrote the prior lock clearing, so we must redo it here.
                  */
 
                 var pageFromAddress = 0L;
                 var pageUntilAddress = hlog.GetPageSize();
-                if (options.clearLocks)
-                {
-                    if (options.headAddress > startLogicalAddress && options.headAddress < endLogicalAddress)
-                        pageFromAddress = hlog.GetOffsetInPage(options.headAddress);
-                    if (endLogicalAddress > options.tailAddress)
-                        pageUntilAddress = hlog.GetOffsetInPage(options.tailAddress);
-                }
-                else
-                {
-                    if (fromAddress > startLogicalAddress && fromAddress < endLogicalAddress)
-                        pageFromAddress = hlog.GetOffsetInPage(fromAddress);
-                    if (endLogicalAddress > untilAddress)
-                        pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
-                }
-
                 var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
+
+
+                if (fromAddress > startLogicalAddress && fromAddress < endLogicalAddress)
+                    pageFromAddress = hlog.GetOffsetInPage(fromAddress);
+                if (endLogicalAddress > untilAddress)
+                    pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
+
                 RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                startLogicalAddress, physicalAddress, nextVersion, options.undoNextVersion, options.clearLocks);
+                                startLogicalAddress, physicalAddress, nextVersion, options);
             }
 
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
         }
 
+        private unsafe void ClearLocksOnPage(long page, RecoveryOptions options)
+        {
+            var startLogicalAddress = hlog.GetStartLogicalAddress(page);
+            var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
+            var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
+
+            // no need to clear locks for records that will not end up in main memory
+            if (options.headAddress >= endLogicalAddress) return;
+
+            long untilLogicalAddressInPage = hlog.GetPageSize();
+            long pointer = 0;
+
+            while (pointer < untilLogicalAddressInPage)
+            {
+                long recordStart = physicalAddress + pointer;
+                ref RecordInfo info = ref hlog.GetInfo(recordStart);
+                info.ClearLocks();
+                info.Unseal();
+
+                if (info.IsNull())
+                    pointer += RecordInfo.GetLength();
+                else
+                {
+                    int size = hlog.GetRecordSize(recordStart).Item2;
+                    Debug.Assert(size <= hlog.GetPageSize());
+                    pointer += size;
+                }
+            }
+        }
+
+        // Re-do the necessary log entries. We ensure that the InNewVersion test (to skip v+1 records)
+        // runs ONLY for the fuzzy region (which has v and v+1 records) because the earlier parts may
+        // have an incorrect InNewVersion status.
         private unsafe bool RecoverFromPage(long startRecoveryAddress,
                                      long fromLogicalAddressInPage,
                                      long untilLogicalAddressInPage,
                                      long pageLogicalAddress,
                                      long pagePhysicalAddress,
-                                     long nextVersion, bool undoNextVersion, bool clearLocks)
+                                     long nextVersion, RecoveryOptions options)
         {
             bool touched = false;
 
@@ -802,6 +884,7 @@ namespace FASTER.core
             var tag = default(ushort);
             var pointer = default(long);
             var recordStart = default(long);
+            var firstBucket = default(HashBucket*);
             var bucket = default(HashBucket*);
             var entry = default(HashBucketEntry);
             var slot = default(int);
@@ -824,20 +907,18 @@ namespace FASTER.core
                     tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
                     entry = default;
-                    FindOrCreateTag(hash, tag, ref bucket, ref slot, ref entry, hlog.BeginAddress);
+                    FindOrCreateTag(hash, tag, ref firstBucket, ref bucket, ref slot, ref entry, hlog.BeginAddress);
 
-                    if (!info.InNewVersion || !undoNextVersion)
+                    bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.InNewVersion;
+                    if (!options.undoNextVersion) ignoreRecord = false;
+
+                    if (!ignoreRecord)
                     {
                         entry.Address = pageLogicalAddress + pointer;
                         entry.Tag = tag;
                         entry.Pending = false;
                         entry.Tentative = false;
                         bucket->bucket_entries[slot] = entry.word;
-                        if (clearLocks && info.IsLocked)
-                        {
-                            // We do not set 'touched' here as there is no need to write these pages back
-                            info.ClearLocks();
-                        }
                     }
                     else
                     {

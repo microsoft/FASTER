@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
@@ -83,7 +84,7 @@ namespace FASTER.core
             GlobalStateMachineStep(systemState);
             return true;
         }
-        
+
         // Atomic transition from expectedState -> nextState
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool MakeTransition(SystemState expectedState, SystemState nextState)
@@ -91,6 +92,9 @@ namespace FASTER.core
             if (Interlocked.CompareExchange(ref systemState.Word, nextState.Word, expectedState.Word) !=
                 expectedState.Word) return false;
             Debug.WriteLine("Moved to {0}, {1}", nextState.Phase, nextState.Version);
+            logger?.LogTrace("Moved to {0}, {1}",
+                (nextState.Phase & Phase.INTERMEDIATE) == 0 ? nextState.Phase : "Intermediate (" + (nextState.Phase & ~Phase.INTERMEDIATE) + ")",
+                nextState.Version);
             return true;
         }
 

@@ -38,7 +38,7 @@ namespace FasterFixedLenServer
                 builder.SetMinimumLevel(LogLevel.Error);
             });
 
-            using var server = new FixedLenServer<Key, Value, Input, Output, Functions>(opts.GetServerOptions(), () => new Functions(), disableLocking: true);
+            using var server = new FixedLenServer<Key, Value, Input, Output, Functions>(opts.GetServerOptions(), () => new Functions(), disableEphemeralLocking: true);
             server.Start();
             Console.WriteLine("Started server");
 

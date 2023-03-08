@@ -39,14 +39,13 @@ namespace FASTER.test.UnsafeContext
             logSettings.LogDevice = log;
             fht = new FasterKV<KeyStruct, ValueStruct>(size, logSettings);
             fullSession = fht.For(new Functions()).NewSession<Functions>();
-            uContext = fullSession.GetUnsafeContext();
+            uContext = fullSession.UnsafeContext;
         }
 
         [TearDown]
         public void TearDown()
         {
-            uContext?.Dispose();
-            uContext = null;
+            uContext = default;
             fullSession?.Dispose();
             fullSession = null;
             fht?.Dispose();
@@ -75,7 +74,7 @@ namespace FASTER.test.UnsafeContext
         public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -94,7 +93,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -104,7 +103,7 @@ namespace FASTER.test.UnsafeContext
         public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -135,7 +134,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -152,7 +151,7 @@ namespace FASTER.test.UnsafeContext
 
             // Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -193,7 +192,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -209,7 +208,7 @@ namespace FASTER.test.UnsafeContext
 
             // Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -256,14 +255,14 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public async Task TestShiftHeadAddress([Values] DeviceType deviceType, [Values] SyncMode syncMode)
+        public async Task TestShiftHeadAddressUC([Values] DeviceType deviceType, [Values] SyncMode syncMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;
@@ -274,7 +273,7 @@ namespace FASTER.test.UnsafeContext
             var sw = Stopwatch.StartNew();
 
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -289,9 +288,9 @@ namespace FASTER.test.UnsafeContext
                     }
                     else
                     {
-                        uContext.SuspendThread();
+                        uContext.EndUnsafe();
                         var status = (await uContext.UpsertAsync(ref key1, ref value)).Complete();
-                        uContext.ResumeThread();
+                        uContext.BeginUnsafe();
                         Assert.IsFalse(status.IsPending);
                     }
                 }
@@ -313,9 +312,9 @@ namespace FASTER.test.UnsafeContext
                     }
                     else
                     {
-                        uContext.SuspendThread();
+                        uContext.EndUnsafe();
                         (status, output) = (await uContext.ReadAsync(ref key1, ref input)).Complete();
-                        uContext.ResumeThread();
+                        uContext.BeginUnsafe();
                     }
                     if (!status.IsPending)
                     {
@@ -329,9 +328,9 @@ namespace FASTER.test.UnsafeContext
                 }
                 else
                 {
-                    uContext.SuspendThread();
+                    uContext.EndUnsafe();
                     await uContext.CompletePendingAsync();
-                    uContext.ResumeThread();
+                    uContext.BeginUnsafe();
                 }
 
                 // Shift head and retry - should not find in main memory now
@@ -356,9 +355,9 @@ namespace FASTER.test.UnsafeContext
                 }
                 else
                 {
-                    uContext.SuspendThread();
+                    uContext.EndUnsafe();
                     outputs = await uContext.CompletePendingWithOutputsAsync();
-                    uContext.ResumeThread();
+                    uContext.BeginUnsafe();
                 }
 
                 int count = 0;
@@ -373,7 +372,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -386,7 +385,7 @@ namespace FASTER.test.UnsafeContext
             OutputStruct output = default;
 
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -446,7 +445,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -458,7 +457,7 @@ namespace FASTER.test.UnsafeContext
             InputStruct input = default;
 
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -511,7 +510,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -524,7 +523,7 @@ namespace FASTER.test.UnsafeContext
             InputStruct input = default;
 
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -543,7 +542,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -553,7 +552,7 @@ namespace FASTER.test.UnsafeContext
         public void ReadNoRefKey([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -572,7 +571,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -584,7 +583,7 @@ namespace FASTER.test.UnsafeContext
         public void ReadWithoutInput([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -605,7 +604,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -619,7 +618,7 @@ namespace FASTER.test.UnsafeContext
             deviceType = DeviceType.MLSD;
 
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -640,7 +639,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -651,7 +650,7 @@ namespace FASTER.test.UnsafeContext
         public void ReadBareMinParams([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -670,7 +669,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
 
@@ -684,7 +683,7 @@ namespace FASTER.test.UnsafeContext
             deviceType = DeviceType.MLSD;
 
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
-            uContext.ResumeThread();
+            uContext.BeginUnsafe();
 
             try
             {
@@ -706,7 +705,7 @@ namespace FASTER.test.UnsafeContext
             }
             finally
             {
-                uContext.SuspendThread();
+                uContext.EndUnsafe();
             }
         }
     }

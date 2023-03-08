@@ -278,7 +278,7 @@ namespace FASTER.core
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress)
         {
             base.VerifyCompatibleSectorSize(device);
             base.VerifyCompatibleSectorSize(objectLogDevice);
@@ -291,18 +291,18 @@ namespace FASTER.core
             }
             try
             {
-                if (FlushedUntilAddress < (flushPage << LogPageSizeBits) + pageSize)
+                if (HeadAddress >= (flushPage << LogPageSizeBits) + pageSize)
+                {
+                    // Requested page is unavailable in memory, ignore
+                    callback(0, 0, asyncResult);
+                }
+                else
                 {
                     // We are writing to separate device, so use fresh segment offsets
                     WriteAsync(flushPage,
                             (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                             (uint)pageSize, callback, asyncResult,
-                            device, objectLogDevice, flushPage, localSegmentOffsets);
-                }
-                else
-                {
-                    // Requested page is already flushed to main log, ignore
-                    callback(0, 0, asyncResult);
+                            device, objectLogDevice, flushPage, localSegmentOffsets, fuzzyStartLogicalAddress);
                 }
             }
             finally
@@ -315,6 +315,11 @@ namespace FASTER.core
         internal override void ClearPage(long page, int offset)
         {
             Array.Clear(values[page % BufferSize], offset / recordSize, values[page % BufferSize].Length - offset / recordSize);
+        }
+
+        internal override void FreePage(long page)
+        {
+            ClearPage(page, 0);
 
             // Close segments
             var thisCloseSegment = page >> (LogSegmentSizeBits - LogPageSizeBits);
@@ -325,11 +330,7 @@ namespace FASTER.core
                 // We are clearing the last page in current segment
                 segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
             }
-        }
 
-        internal override void FreePage(long page)
-        {
-            ClearPage(page, 0);
             if (EmptyPageCount > 0)
             {
                 overflowPagePool.TryAdd(values[page % BufferSize]);
@@ -340,7 +341,7 @@ namespace FASTER.core
 
         private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
-                        IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null)
+                        IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null, long fuzzyStartLogicalAddress = long.MaxValue)
         {
             // Short circuit if we are using a null device
             if (device as NullDevice != null)
@@ -417,24 +418,13 @@ namespace FASTER.core
                 valueSerializer.BeginSerialize(ms);
             }
 
-
             long endPosition = 0;
             for (int i=start/recordSize; i<end/recordSize; i++)
             {
                 if (!src[i].info.Invalid)
                 {
-                    bool lockTaken = true;
-                    while (!src[i].info.LockShared())
-                    {
-                        if (src[i].info.Sealed)
-                        {
-                            lockTaken = false;
-                            break;
-                        }
-                        Thread.Yield();
-                    }
-
-                    try
+                    var address = (flushPage << LogPageSizeBits) + i * recordSize;
+                    if (address < fuzzyStartLogicalAddress || !src[i].info.InNewVersion)
                     {
                         if (KeyHasObjects())
                         {
@@ -458,9 +448,11 @@ namespace FASTER.core
                             endPosition = pos + value_address->Size;
                         }
                     }
-                    finally
+                    else
                     {
-                        if (lockTaken) src[i].info.UnlockShared();
+                        // Mark v+1 records as invalid to avoid deserializing them on recovery
+                        ref var record = ref Unsafe.AsRef<Record<Key, Value>>(buffer.aligned_pointer + i * recordSize);
+                        record.info.SetInvalid();
                     }
                 }
 

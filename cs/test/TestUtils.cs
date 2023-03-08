@@ -9,6 +9,7 @@ using FASTER.devices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.test
 {
@@ -16,12 +17,18 @@ namespace FASTER.test
     {
         // Various categories used to group tests
         internal const string SmokeTestCategory = "Smoke";
+        internal const string StressTestCategory = "Stress";
         internal const string FasterKVTestCategory = "FasterKV";
         internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";
+        internal const string LockTableTestCategory = "LockTable";
         internal const string CheckpointRestoreCategory = "CheckpointRestore";
-        internal const string RMW = "RMW";
+        internal const string MallocFixedPageSizeCategory = "MallocFixedPageSize";
+        internal const string RMWTestCategory = "RMW";
+        internal const string ModifiedBitTestCategory = "ModifiedBitTest";
+
+        public static ILoggerFactory TestLoggerFactory = CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Trace);
 
         /// <summary>
         /// Delete a directory recursively
@@ -45,11 +52,9 @@ namespace FASTER.test
                 }
             }
 
-            bool retry = true;
-            while (retry)
+            for (; ; Thread.Yield())
             {
                 // Exceptions may happen due to a handle briefly remaining held after Dispose().
-                retry = false;
                 try
                 {
                     Directory.Delete(path, true);
@@ -57,21 +62,10 @@ namespace FASTER.test
                 catch (Exception ex) when (ex is IOException ||
                                            ex is UnauthorizedAccessException)
                 {
-                    if (!wait)
-                    {
-                        try { Directory.Delete(path, true); }
-                        catch { }
-                        return;
-                    }
-                    retry = true;
                 }
+                if (!wait || !Directory.Exists(path))
+                    break;
             }
-            
-            if (!wait)
-                return;
-
-            while (Directory.Exists(path))
-                Thread.Yield();
         }
 
         /// <summary>
@@ -87,6 +81,23 @@ namespace FASTER.test
             Directory.CreateDirectory(path);
         }
 
+        /// <summary>
+        /// Create logger factory for given TextWriter and loglevel
+        /// E.g. Use with TestContext.Progress to print logs while test is running.
+        /// </summary>
+        /// <param name="textWriter"></param>
+        /// <param name="logLevel"></param>
+        /// <param name="scope"></param>
+        /// <returns></returns>
+        public static ILoggerFactory CreateLoggerFactoryInstance(TextWriter textWriter, LogLevel logLevel, string scope = "")
+        {
+            return LoggerFactory.Create(builder =>
+            {
+                builder.AddProvider(new NUnitLoggerProvider(textWriter, scope));
+                builder.SetMinimumLevel(logLevel);
+            });
+        }
+        
         internal static bool IsRunningAzureTests => "yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")) || "yes".Equals(Environment.GetEnvironmentVariable("RUNAZURETESTS"));
 
         internal static void IgnoreIfNotRunningAzureTests()
@@ -108,13 +119,15 @@ namespace FASTER.test
             LocalMemory
         }
 
-        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = 20, bool deleteOnClose = false)  // latencyMs works only for DeviceType = LocalMemory
+        internal const int DefaultLocalMemoryDeviceLatencyMs = 20;   // latencyMs only applies to DeviceType = LocalMemory
+
+        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = DefaultLocalMemoryDeviceLatencyMs, bool deleteOnClose = false)
         {
             IDevice device = null;
             bool preallocateFile = false;
-            long capacity = -1; // Capacity unspecified
+            long capacity = Devices.CAPACITY_UNSPECIFIED;
             bool recoverDevice = false;
-            
+
             switch (testDeviceType)
             {
 #if WINDOWS
@@ -129,14 +142,14 @@ namespace FASTER.test
 #endif
                 case DeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
-                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose);
+                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose, logger: TestLoggerFactory.CreateLogger("asd"));
                     break;
                 case DeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, capacity, recoverDevice);
                     break;
                 // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
-                case DeviceType.LocalMemory:  
-                    device = new LocalMemoryDevice(1L << 30, 1L << 30, 2, sector_size: 512, latencyMs: latencyMs, fileName: filename);  // 64 MB (1L << 26) is enough for our test cases
+                case DeviceType.LocalMemory:
+                    device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, sector_size: 512, latencyMs: latencyMs, fileName: filename);  // 64 MB (1L << 26) is enough for our test cases
                     break;
             }
 
@@ -159,7 +172,7 @@ namespace FASTER.test
             get
             {
                 var container = ConvertedClassName(forAzure: true).Replace('.', '-').ToLower();
-                Microsoft.Azure.Storage.NameValidator.ValidateContainerName(container);
+                NameValidator.ValidateContainerName(container);
                 return container;
             }
         }
@@ -182,6 +195,16 @@ namespace FASTER.test
         public enum FlushMode { NoFlush, ReadOnly, OnDisk }
 
         public enum KeyEquality { Equal, NotEqual }
+
+        public enum ReadCacheMode { UseReadCache, NoReadCache }
+
+        public enum EphemeralLockingMode { UseEphemeralLocking, NoEphemeralLocking };
+
+        public enum KeyContentionMode { Contention, NoContention };
+
+        public enum BatchMode { Batch, NoBatch };
+
+        public enum UpdateOp { Upsert, RMW, Delete }
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
@@ -213,18 +236,17 @@ namespace FASTER.test
             }
         }
 
-        internal unsafe static bool FindKey<Key, Value>(this FasterKV<Key, Value> fht, ref Key key, out HashBucketEntry entry, out HashBucket* bucket, out int slot)
+        internal unsafe static bool FindKey<Key, Value>(this FasterKV<Key, Value> fht, ref Key key, out HashBucketEntry entry)
         {
-            bucket = default;
-            slot = default;
+            var bucket = default(HashBucket*);
+            var firstBucket = default(HashBucket*);
+            int slot = default;
             entry = default;
 
             var hash = fht.Comparer.GetHashCode64(ref key);
             var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
 
-            return fht.FindTag(hash, tag, ref bucket, ref slot, ref entry);
+            return fht.FindTag(hash, tag, ref firstBucket, ref bucket, ref slot, ref entry);
         }
-
-        internal static unsafe bool FindKey<Key, Value>(this FasterKV<Key, Value> fht, ref Key key, out HashBucketEntry entry) => FindKey(fht, ref key, out entry, out _, out _);
     }
 }

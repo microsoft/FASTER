@@ -10,24 +10,13 @@ namespace FASTER.core
     public interface IUnsafeContext
     {
         /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
+        /// Resume session on current thread. IMPORTANT: Call <see cref="EndUnsafe"/> before any async op.
         /// </summary>
-        void ResumeThread();
-
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
-        /// <param name="resumeEpoch">Epoch that the session resumed on; can be saved to see if epoch has changed</param>
-        void ResumeThread(out int resumeEpoch);
+        void BeginUnsafe();
 
         /// <summary>
         /// Suspend session on current thread
         /// </summary>
-        void SuspendThread();
-
-        /// <summary>
-        /// Current epoch of the session
-        /// </summary>
-        int LocalCurrentEpoch { get; }
+        void EndUnsafe();
     }
 }

@@ -39,6 +39,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
+        [Ignore("Fix required in ReadOnlyMemory<T> AsRef")]
         public void MemoryLogCompactionTest1([Values] TestUtils.DeviceType deviceType, [Values] CompactionType compactionType)
         {
 

@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -50,6 +49,11 @@ namespace FASTER.core
         /// Beginning address of log
         /// </summary>
         public long BeginAddress => beginAddress;
+
+        /// <summary>
+        /// BeginAddress as per allocator, used in tests
+        /// </summary>
+        internal long AllocatorBeginAddress => allocator.BeginAddress;
 
         // Here's a soft begin address that is observed by all access at the FasterLog level but not actually on the
         // allocator. This is to make sure that any potential physical deletes only happen after commit.
@@ -444,6 +448,7 @@ namespace FASTER.core
             SetHeader(length, (byte*)physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -488,8 +493,8 @@ namespace FASTER.core
                 physicalAddress += Align(length) + headerSize;
             }
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
-            if (AutoCommit) Commit();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
         
@@ -526,6 +531,7 @@ namespace FASTER.core
             SetHeader(length, (byte*)physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -561,7 +567,177 @@ namespace FASTER.core
             SetHeader(length, (byte*)physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
+        }
+
+        /// <summary>
+        /// Append a user-defined blittable struct header atomically to the log.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue<THeader>(THeader userHeader, out long logicalAddress)
+            where THeader : unmanaged
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader);
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        /// <summary>
+        /// Append a user-defined blittable struct header and one SpanByte entry atomically to the log.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item, out long logicalAddress)
+            where THeader : unmanaged
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        /// <summary>
+        /// Append a user-defined blittable struct header and two SpanByte entries entries atomically to the log.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+            where THeader : unmanaged
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        /// <summary>
+        /// Append a user-defined blittable struct header and three SpanByte entries entries atomically to the log.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="item3"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+            where THeader : unmanaged
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        /// <summary>
+        /// Append a user-defined header byte and a SpanByte entry atomically to the log.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue(byte userHeader, ref SpanByte item, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = sizeof(byte) + item.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *physicalAddress = userHeader;
+            item.CopyTo(physicalAddress + sizeof(byte));
+            SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private long AllocateBlock(int recordSize)
+        {
+            while (true)
+            {
+                var flushEvent = allocator.FlushEvent;
+                var logicalAddress = allocator.TryAllocate(recordSize);
+                if (logicalAddress > 0)
+                    return logicalAddress;
+
+                if (logicalAddress == 0)
+                {
+                    epoch.Suspend();
+                    if (cannedException != null) throw cannedException;
+                    try
+                    {
+                        flushEvent.Wait();
+                    }
+                    finally
+                    {
+                        epoch.Resume();
+                    }
+                }
+
+                // logicalAddress is < 0 so we do not expect flushEvent to be signaled; refresh the epoch and retry now
+                allocator.TryComplete();
+                epoch.ProtectAndDrain();
+                Thread.Yield();
+            }
         }
 
         /// <summary>
@@ -598,6 +774,7 @@ namespace FASTER.core
             SetHeader(length, physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -637,6 +814,7 @@ namespace FASTER.core
             SetHeader(length, physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -671,6 +849,7 @@ namespace FASTER.core
             SetHeader(length, physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
@@ -933,7 +1112,7 @@ namespace FASTER.core
             if (!spinWait) return;
             if (success)
                 WaitForCommit(actualTail, actualCommitNum);
-            else 
+            else
                 // Still need to imitate semantics to spin until all previous enqueues are committed when commit has been filtered  
                 WaitForCommit(tail, lastCommit);
         }
@@ -976,14 +1155,29 @@ namespace FASTER.core
         public async ValueTask CommitAsync(CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
-            var task = CommitTask;
-            if (!CommitInternal(out var tailAddress, out var actualCommitNum, true, null, -1, null))
-                return;
 
-            while (CommittedUntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
+            // Take a lower-bound of the content of this commit in case our request is filtered but we need to wait
+            var tail = TailAddress;
+            var lastCommit = commitNum;
+
+            var task = CommitTask;
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
+
+            if (success)
             {
-                var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
-                task = linkedCommitInfo.NextTask;
+                while (CommittedUntilAddress < actualTail || persistedCommitNum < actualCommitNum)
+                {
+                    var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
+                    task = linkedCommitInfo.NextTask;
+                }
+            }
+            else
+            {
+                while (CommittedUntilAddress < tail || persistedCommitNum < lastCommit)
+                {
+                    var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
+                    task = linkedCommitInfo.NextTask;
+                }
             }
         }
 
@@ -996,18 +1190,37 @@ namespace FASTER.core
         public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
+
+            // Take a lower-bound of the content of this commit in case our request is filtered but we need to spin
+            var tail = TailAddress;
+            var lastCommit = commitNum;
+
             if (prevCommitTask == null) prevCommitTask = CommitTask;
 
-            if (!CommitInternal(out var tailAddress, out var actualCommitNum, true, null, -1, null))
-                return prevCommitTask;
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
 
-            while (CommittedUntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
+
+            if (success)
             {
-                var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token).ConfigureAwait(false);
-                if (linkedCommitInfo.CommitInfo.UntilAddress < tailAddress || persistedCommitNum < actualCommitNum)
-                    prevCommitTask = linkedCommitInfo.NextTask;
-                else
-                    return linkedCommitInfo.NextTask;
+                while (CommittedUntilAddress < actualTail || persistedCommitNum < actualCommitNum)
+                {
+                    var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token).ConfigureAwait(false);
+                    if (linkedCommitInfo.CommitInfo.UntilAddress < actualTail || persistedCommitNum < actualCommitNum)
+                        prevCommitTask = linkedCommitInfo.NextTask;
+                    else
+                        return linkedCommitInfo.NextTask;
+                }
+            }
+            else
+            {
+                while (CommittedUntilAddress < tail || persistedCommitNum < lastCommit)
+                {
+                    var linkedCommitInfo = await prevCommitTask.WithCancellationAsync(token).ConfigureAwait(false);
+                    if (linkedCommitInfo.CommitInfo.UntilAddress < actualTail || persistedCommitNum < actualCommitNum)
+                        prevCommitTask = linkedCommitInfo.NextTask;
+                    else
+                        return linkedCommitInfo.NextTask;
+                }
             }
 
             return prevCommitTask;
@@ -1572,18 +1785,20 @@ namespace FASTER.core
 
         private void AutoRefreshSafeTailAddressRunner(bool recurse)
         {
+            long tail = 0;
             do
             {
-                if (TailAddress > SafeTailAddress)
+                tail = TailAddress;
+                if (tail > SafeTailAddress)
                 {
                     if (recurse)
                         Task.Run(EpochProtectAutoRefreshSafeTailAddressRunner);
                     else
-                        epoch.BumpCurrentEpoch(() => AutoRefreshSafeTailAddressBumpCallback(TailAddress));
+                        epoch.BumpCurrentEpoch(() => AutoRefreshSafeTailAddressBumpCallback(tail));
                     return;
                 }
                 _ongoingAutoRefreshSafeTailAddress = 0;
-            } while (TailAddress > SafeTailAddress && _ongoingAutoRefreshSafeTailAddress == 0 && Interlocked.CompareExchange(ref _ongoingAutoRefreshSafeTailAddress, 1, 0) == 0);
+            } while (tail > SafeTailAddress && _ongoingAutoRefreshSafeTailAddress == 0 && Interlocked.CompareExchange(ref _ongoingAutoRefreshSafeTailAddress, 1, 0) == 0);
         }
 
         private void AutoRefreshSafeTailAddressBumpCallback(long tailAddress)
@@ -1775,7 +1990,7 @@ namespace FASTER.core
             {
                 return info.Iterators != null &&  info.Iterators.Count != 0;
             }
-            if (_lastPersistedIterators.Count != info.Iterators.Count)
+            if (info.Iterators == null || _lastPersistedIterators.Count != info.Iterators.Count)
                 return true;
             foreach (var item in _lastPersistedIterators)
             {
@@ -1881,8 +2096,12 @@ namespace FASTER.core
                 CommittedUntilAddress = long.MaxValue;
                 beginAddress = info.BeginAddress;
                 allocator.HeadAddress = long.MaxValue;
-                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                scanIterator.ScanForwardForCommit(ref info);
+                try
+                {
+                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                    scanIterator.ScanForwardForCommit(ref info);
+                }
+                catch { }
             }
 
             // If until address is 0, that means info is still its default value and we haven't been able to recover
@@ -1922,6 +2141,8 @@ namespace FASTER.core
             iterators = CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
             commitNum = info.CommitNum;
+            // After recovery  persisted commitnum remians 0 so we need to set it to latest commit number
+            persistedCommitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
@@ -1964,9 +2185,13 @@ namespace FASTER.core
                 CommittedUntilAddress = long.MaxValue;
                 beginAddress = info.BeginAddress;
                 allocator.HeadAddress = long.MaxValue;
-                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                if (!scanIterator.ScanForwardForCommit(ref info, requestedCommitNum))
-                    throw new FasterException("requested commit num is not available");
+                try
+                {
+                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                    if (!scanIterator.ScanForwardForCommit(ref info, requestedCommitNum))
+                        throw new FasterException("requested commit num is not available");
+                }
+                catch { }
             }
 
             // At this point, we should have found the exact commit num requested
@@ -2027,8 +2252,11 @@ namespace FASTER.core
                 CommittedUntilAddress = long.MaxValue;
                 beginAddress = info.BeginAddress;
                 allocator.HeadAddress = long.MaxValue;
-                using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
-                scanIterator.ScanForwardForCommit(ref info);
+                try
+                {
+                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                    scanIterator.ScanForwardForCommit(ref info);
+                } catch { }
             }
 
             // if until address is 0, that means info is still its default value and we haven't been able to recover
@@ -2131,6 +2359,7 @@ namespace FASTER.core
             }
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
+            if (AutoCommit) Commit();
             return true;
         }
 
