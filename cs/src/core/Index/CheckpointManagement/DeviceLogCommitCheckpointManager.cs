@@ -42,6 +42,7 @@ namespace FASTER.core
         private byte indexTokenHistoryOffset, logTokenHistoryOffset, flogCommitHistoryOffset;
 
         readonly ILogger logger;
+        readonly WorkQueueFIFO<long> deleteQueue;
 
         /// <summary>
         /// Create new instance of log commit manager
@@ -61,6 +62,8 @@ namespace FASTER.core
             this.removeOutdated = removeOutdated;
             if (removeOutdated)
             {
+                deleteQueue = new WorkQueueFIFO<long>(prior => deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(prior)));
+
                 // We keep two index checkpoints as the latest index might not have a
                 // later log checkpoint to work with
                 indexTokenHistory = new Guid[indexTokenCount];
@@ -120,7 +123,10 @@ namespace FASTER.core
                 flogCommitHistory[flogCommitHistoryOffset] = commitNum;
                 flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
                 if (prior != default)
-                    deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(prior));
+                {
+                    // System.Threading.Tasks.Task.Run(() => deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(prior)));
+                    deleteQueue.EnqueueAndTryWork(prior, true);
+                }
             }
         }
 
