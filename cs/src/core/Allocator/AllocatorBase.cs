@@ -437,6 +437,8 @@ namespace FASTER.core
         /// <param name="throttleCheckpointFlush"></param>
         internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, bool throttleCheckpointFlush)
         {
+            logger?.LogTrace("Starting async delta log flush with throtting {throttlingEnabled}", throttleCheckpointFlush ? "enabled" : "disabled");
+
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
 
@@ -1867,6 +1869,8 @@ namespace FASTER.core
         /// <param name="throttleCheckpointFlush"></param>
         public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, bool throttleCheckpointFlush)
         {
+            logger?.LogTrace("Starting async main log flush with throtting {throttlingEnabled}", throttleCheckpointFlush ? "enabled" : "disabled");
+                
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
 
