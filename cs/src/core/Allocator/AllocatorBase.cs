@@ -434,12 +434,18 @@ namespace FASTER.core
         /// <param name="version"></param>
         /// <param name="deltaLog"></param>
         /// <param name="completedSemaphore"></param>
-        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore)
+        /// <param name="throttleCheckpointFlush"></param>
+        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, bool throttleCheckpointFlush)
         {
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
 
-            Task.Run(() =>
+            if (throttleCheckpointFlush)
+                Task.Run(FlushRunner);
+            else
+                FlushRunner();
+
+            void FlushRunner()
             {
                 long startPage = GetPage(startAddress);
                 long endPage = GetPage(endAddress);
@@ -528,7 +534,7 @@ namespace FASTER.core
                 if (destOffset > 0)
                     deltaLog.Seal(destOffset);
                 _completedSemaphore.Release();
-            });
+            }
         }
 
         internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
@@ -1858,18 +1864,24 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="completedSemaphore"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore)
+        /// <param name="throttleCheckpointFlush"></param>
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, bool throttleCheckpointFlush)
         {
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
 
-            // Convert rest of the method into a truly async task run
+            // If throttled, convert rest of the method into a truly async task run
             // because issuing IO can take up synchronous time
-            Task.Run(() =>
+            if (throttleCheckpointFlush)
+                Task.Run(FlushRunner);
+            else
+                FlushRunner();
+
+            void FlushRunner()
             {
                 int totalNumPages = (int)(endPage - startPage);
 
-                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, totalNumPages);
+                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlush ? new SemaphoreSlim(0) : null, totalNumPages);
                 var localSegmentOffsets = new long[SegmentBufferSize];
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
@@ -1890,8 +1902,11 @@ namespace FASTER.core
 
                     // Intended destination is flushPage
                     WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
+
+                    if (throttleCheckpointFlush)
+                        flushCompletionTracker.WaitOneFlush();
                 }
-            });
+            }
         }
 
         /// <summary>

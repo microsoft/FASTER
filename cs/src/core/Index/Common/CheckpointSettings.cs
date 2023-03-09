@@ -40,5 +40,10 @@ namespace FASTER.core
         /// Whether FASTER should remove outdated checkpoints automatically
         /// </summary>
         public bool RemoveOutdated = false;
+
+        /// <summary>
+        /// Whether we should throttle the disk IO for checkpoints and issue IO from separate task
+        /// </summary>
+        public bool ThrottleCheckpointFlush;
     }
 }

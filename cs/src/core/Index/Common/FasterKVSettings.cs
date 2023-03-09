@@ -136,6 +136,11 @@ namespace FASTER.core
         public bool TryRecoverLatest = false;
 
         /// <summary>
+        /// Whether we should throttle the disk IO for checkpoints and issue IO from separate task
+        /// </summary>
+        public bool ThrottleCheckpointFlush = false;
+        
+        /// <summary>
         /// Number of buckets in the lock table.
         /// </summary>
         public int LockTableSize = Constants.kDefaultLockTableSize;
@@ -258,7 +263,8 @@ namespace FASTER.core
             {
                 CheckpointDir = CheckpointDir,
                 CheckpointManager = CheckpointManager,
-                RemoveOutdated = RemoveOutdatedCheckpoints
+                RemoveOutdated = RemoveOutdatedCheckpoints,
+                ThrottleCheckpointFlush = ThrottleCheckpointFlush
             };
         }
 

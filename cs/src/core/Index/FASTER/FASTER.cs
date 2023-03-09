@@ -74,6 +74,8 @@ namespace FASTER.core
         }
         internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref this.hlog.NumActiveLockingSessions);
 
+        internal readonly bool ThrottleCheckpointFlush;
+        
         /// <summary>
         /// Create FasterKV instance
         /// </summary>
@@ -133,6 +135,8 @@ namespace FASTER.core
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
+
+            this.ThrottleCheckpointFlush = checkpointSettings.ThrottleCheckpointFlush;
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
                 logger?.LogInformation("CheckpointManager and CheckpointDir specified, ignoring CheckpointDir");

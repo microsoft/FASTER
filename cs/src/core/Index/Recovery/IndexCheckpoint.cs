@@ -20,7 +20,7 @@ namespace FASTER.core
         {
             var ht_version = resizeInfo.version;
 
-            BeginMainIndexCheckpoint(ht_version, _indexCheckpoint.main_ht_device, out ulong ht_num_bytes_written, UseReadCache, SkipReadCacheBucket);
+            BeginMainIndexCheckpoint(ht_version, _indexCheckpoint.main_ht_device, out ulong ht_num_bytes_written, UseReadCache, SkipReadCacheBucket, ThrottleCheckpointFlush);
 
             var sectorSize = _indexCheckpoint.main_ht_device.SectorSize;
             var alignedIndexSize = (ht_num_bytes_written + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
@@ -64,58 +64,75 @@ namespace FASTER.core
         // for main hash index of FASTER
         private int mainIndexCheckpointCallbackCount;
         private SemaphoreSlim mainIndexCheckpointSemaphore;
+        private SemaphoreSlim throttleIndexCheckpointFlushSemaphore;
 
-        internal unsafe void BeginMainIndexCheckpoint(int version, IDevice device, out ulong numBytesWritten, bool useReadCache = false, SkipReadCache skipReadCache = default)
+        internal unsafe void BeginMainIndexCheckpoint(int version, IDevice device, out ulong numBytesWritten, bool useReadCache = false, SkipReadCache skipReadCache = default, bool throttleCheckpointFlush = false)
         {
             long totalSize = state[version].size * sizeof(HashBucket);
+            numBytesWritten = (ulong)totalSize;
 
-            int numChunks = 1;
-            if (useReadCache && (totalSize > (1L << 25)))
-            {
-                numChunks = (int)Math.Ceiling((double)totalSize / (1L << 25));
-                numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
-            }
-            else if (totalSize > uint.MaxValue)
-            {
-                numChunks = (int)Math.Ceiling((double)totalSize / (long)uint.MaxValue);
-                numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
-            }
-
-            uint chunkSize = (uint)(totalSize / numChunks);
-            mainIndexCheckpointCallbackCount = numChunks;
-            mainIndexCheckpointSemaphore = new SemaphoreSlim(0);
-            HashBucket* start = state[version].tableAligned;
+            if (throttleCheckpointFlush)
+                Task.Run(FlushRunner);
+            else
+                FlushRunner();
             
-            numBytesWritten = 0;
-            for (int index = 0; index < numChunks; index++)
+            void FlushRunner()
             {
-                IntPtr chunkStartBucket = (IntPtr)((byte*)start + (index * chunkSize));
-                HashIndexPageAsyncFlushResult result = default;
-                result.chunkIndex = index;
-                if (!useReadCache)
+                int numChunks = 1;
+                if (useReadCache && (totalSize > (1L << 25)))
                 {
-                    device.WriteAsync(chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                    numChunks = (int)Math.Ceiling((double)totalSize / (1L << 25));
+                    numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
                 }
-                else
+                else if (totalSize > uint.MaxValue)
                 {
-                    result.mem = new SectorAlignedMemory((int)chunkSize, (int)device.SectorSize);
-                    bool prot = false;
-                    if (!epoch.ThisInstanceProtected())
-                    {
-                        prot = true;
-                        epoch.Resume();
-                    }
-                    Buffer.MemoryCopy((void*)chunkStartBucket, result.mem.aligned_pointer, chunkSize, chunkSize);
-                    for (int j = 0; j < chunkSize; j += sizeof(HashBucket))
-                    {
-                        skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
-                    }
-                    if (prot)
-                        epoch.Suspend();
+                    numChunks = (int)Math.Ceiling((double)totalSize / (long)uint.MaxValue);
+                    numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
+                }
 
-                    device.WriteAsync((IntPtr)result.mem.aligned_pointer, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                uint chunkSize = (uint)(totalSize / numChunks);
+                mainIndexCheckpointCallbackCount = numChunks;
+                mainIndexCheckpointSemaphore = new SemaphoreSlim(0);
+                if (throttleCheckpointFlush)
+                    throttleIndexCheckpointFlushSemaphore = new SemaphoreSlim(0);
+                HashBucket* start = state[version].tableAligned;
+
+                ulong numBytesWritten = 0;
+                for (int index = 0; index < numChunks; index++)
+                {
+                    IntPtr chunkStartBucket = (IntPtr)((byte*)start + (index * chunkSize));
+                    HashIndexPageAsyncFlushResult result = default;
+                    result.chunkIndex = index;
+                    if (!useReadCache)
+                    {
+                        device.WriteAsync(chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                    }
+                    else
+                    {
+                        result.mem = new SectorAlignedMemory((int)chunkSize, (int)device.SectorSize);
+                        bool prot = false;
+                        if (!epoch.ThisInstanceProtected())
+                        {
+                            prot = true;
+                            epoch.Resume();
+                        }
+                        Buffer.MemoryCopy((void*)chunkStartBucket, result.mem.aligned_pointer, chunkSize, chunkSize);
+                        for (int j = 0; j < chunkSize; j += sizeof(HashBucket))
+                        {
+                            skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
+                        }
+                        if (prot)
+                            epoch.Suspend();
+
+                        device.WriteAsync((IntPtr)result.mem.aligned_pointer, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                    }
+                    if (throttleCheckpointFlush)
+                        throttleIndexCheckpointFlushSemaphore.Wait();
+                    numBytesWritten += chunkSize;
                 }
-                numBytesWritten += chunkSize;
+
+                Debug.Assert(numBytesWritten == (ulong)totalSize);
+                throttleIndexCheckpointFlushSemaphore = null;
             }
         }
 
@@ -145,6 +162,7 @@ namespace FASTER.core
             {
                 mainIndexCheckpointSemaphore.Release();
             }
+            throttleIndexCheckpointFlushSemaphore?.Release();
         }
     }
 }
