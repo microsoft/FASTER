@@ -20,7 +20,7 @@ namespace FASTER.core
         {
             var ht_version = resizeInfo.version;
 
-            BeginMainIndexCheckpoint(ht_version, _indexCheckpoint.main_ht_device, out ulong ht_num_bytes_written, UseReadCache, SkipReadCacheBucket, ThrottleCheckpointFlush);
+            BeginMainIndexCheckpoint(ht_version, _indexCheckpoint.main_ht_device, out ulong ht_num_bytes_written, UseReadCache, SkipReadCacheBucket, ThrottleCheckpointFlushDelayMs);
 
             var sectorSize = _indexCheckpoint.main_ht_device.SectorSize;
             var alignedIndexSize = (ht_num_bytes_written + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
@@ -66,12 +66,12 @@ namespace FASTER.core
         private SemaphoreSlim mainIndexCheckpointSemaphore;
         private SemaphoreSlim throttleIndexCheckpointFlushSemaphore;
 
-        internal unsafe void BeginMainIndexCheckpoint(int version, IDevice device, out ulong numBytesWritten, bool useReadCache = false, SkipReadCache skipReadCache = default, bool throttleCheckpointFlush = false)
+        internal unsafe void BeginMainIndexCheckpoint(int version, IDevice device, out ulong numBytesWritten, bool useReadCache = false, SkipReadCache skipReadCache = default, int throttleCheckpointFlushDelayMs = -1)
         {
             long totalSize = state[version].size * sizeof(HashBucket);
             numBytesWritten = (ulong)totalSize;
 
-            if (throttleCheckpointFlush)
+            if (throttleCheckpointFlushDelayMs >= 0)
                 Task.Run(FlushRunner);
             else
                 FlushRunner();
@@ -93,7 +93,7 @@ namespace FASTER.core
                 uint chunkSize = (uint)(totalSize / numChunks);
                 mainIndexCheckpointCallbackCount = numChunks;
                 mainIndexCheckpointSemaphore = new SemaphoreSlim(0);
-                if (throttleCheckpointFlush)
+                if (throttleCheckpointFlushDelayMs >= 0)
                     throttleIndexCheckpointFlushSemaphore = new SemaphoreSlim(0);
                 HashBucket* start = state[version].tableAligned;
 
@@ -126,8 +126,11 @@ namespace FASTER.core
 
                         device.WriteAsync((IntPtr)result.mem.aligned_pointer, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
                     }
-                    if (throttleCheckpointFlush)
+                    if (throttleCheckpointFlushDelayMs >= 0)
+                    {
                         throttleIndexCheckpointFlushSemaphore.Wait();
+                        Thread.Sleep(throttleCheckpointFlushDelayMs);
+                    }
                     numBytesWritten += chunkSize;
                 }
 

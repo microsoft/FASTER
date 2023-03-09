@@ -42,8 +42,8 @@ namespace FASTER.core
         public bool RemoveOutdated = false;
 
         /// <summary>
-        /// Whether we should throttle the disk IO for checkpoints and issue IO from separate task
+        /// Whether we should throttle the disk IO for checkpoints (one write at a time, wait between each write) and issue IO from separate task (-1 = throttling disabled)
         /// </summary>
-        public bool ThrottleCheckpointFlush;
+        public int ThrottleCheckpointFlushDelayMs = -1;
     }
 }

@@ -240,7 +240,7 @@ namespace FASTER.core
                         faster._hybridLogCheckpoint.snapshotFileDevice,
                         faster._hybridLogCheckpoint.snapshotFileObjectLogDevice,
                         out faster._hybridLogCheckpoint.flushedSemaphore,
-                        faster.ThrottleCheckpointFlush);
+                        faster.ThrottleCheckpointFlushDelayMs);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     // Set actual FlushedUntil to the latest possible data in main log that is on disk
@@ -333,7 +333,7 @@ namespace FASTER.core
                         faster._hybridLogCheckpoint.prevVersion,
                         faster._hybridLogCheckpoint.deltaLog,
                         out faster._hybridLogCheckpoint.flushedSemaphore,
-                        faster.ThrottleCheckpointFlush);
+                        faster.ThrottleCheckpointFlushDelayMs);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     // Set actual FlushedUntil to the latest possible data in main log that is on disk

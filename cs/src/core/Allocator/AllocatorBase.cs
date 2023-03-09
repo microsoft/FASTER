@@ -435,14 +435,14 @@ namespace FASTER.core
         /// <param name="deltaLog"></param>
         /// <param name="completedSemaphore"></param>
         /// <param name="throttleCheckpointFlush"></param>
-        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, bool throttleCheckpointFlush)
+        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
-            logger?.LogTrace("Starting async delta log flush with throtting {throttlingEnabled}", throttleCheckpointFlush ? "enabled" : "disabled");
+            logger?.LogTrace("Starting async delta log flush with throtting {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
 
-            if (throttleCheckpointFlush)
+            if (throttleCheckpointFlushDelayMs >= 0)
                 Task.Run(FlushRunner);
             else
                 FlushRunner();
@@ -1867,16 +1867,16 @@ namespace FASTER.core
         /// <param name="objectLogDevice"></param>
         /// <param name="completedSemaphore"></param>
         /// <param name="throttleCheckpointFlush"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, bool throttleCheckpointFlush)
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
-            logger?.LogTrace("Starting async main log flush with throtting {throttlingEnabled}", throttleCheckpointFlush ? "enabled" : "disabled");
-                
+            logger?.LogTrace("Starting async delta log flush with throtting {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
+
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
 
             // If throttled, convert rest of the method into a truly async task run
             // because issuing IO can take up synchronous time
-            if (throttleCheckpointFlush)
+            if (throttleCheckpointFlushDelayMs >= 0)
                 Task.Run(FlushRunner);
             else
                 FlushRunner();
@@ -1885,7 +1885,7 @@ namespace FASTER.core
             {
                 int totalNumPages = (int)(endPage - startPage);
 
-                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlush ? new SemaphoreSlim(0) : null, totalNumPages);
+                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
                 var localSegmentOffsets = new long[SegmentBufferSize];
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
@@ -1907,8 +1907,11 @@ namespace FASTER.core
                     // Intended destination is flushPage
                     WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
 
-                    if (throttleCheckpointFlush)
+                    if (throttleCheckpointFlushDelayMs >= 0)
+                    {
                         flushCompletionTracker.WaitOneFlush();
+                        Thread.Sleep(throttleCheckpointFlushDelayMs);
+                    }
                 }
             }
         }
