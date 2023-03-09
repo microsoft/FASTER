@@ -1297,7 +1297,7 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         protected virtual void TruncateUntilAddress(long toAddress)
         {
-            device.TruncateUntilAddress(toAddress);
+            Task.Run(() => device.TruncateUntilAddress(toAddress));
         }
 
         internal virtual bool TryComplete()
