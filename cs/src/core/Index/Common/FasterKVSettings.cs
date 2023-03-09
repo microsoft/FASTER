@@ -135,6 +135,10 @@ namespace FASTER.core
         public bool TryRecoverLatest = false;
 
         /// <summary>
+        /// Whether we should throttle the disk IO for checkpoints (one write at a time, wait between each write) and issue IO from separate task (-1 = throttling disabled)
+        /// </summary>
+        public int ThrottleCheckpointFlushDelayMs = -1;
+
         /// Create default configuration settings for FasterKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
@@ -252,7 +256,8 @@ namespace FASTER.core
             {
                 CheckpointDir = CheckpointDir,
                 CheckpointManager = CheckpointManager,
-                RemoveOutdated = RemoveOutdatedCheckpoints
+                RemoveOutdated = RemoveOutdatedCheckpoints,
+                ThrottleCheckpointFlushDelayMs = ThrottleCheckpointFlushDelayMs
             };
         }
 

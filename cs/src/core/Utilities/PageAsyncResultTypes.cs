@@ -3,7 +3,6 @@
 
 #define CALLOC
 
-using System;
 using System.Threading;
 
 namespace FASTER.core
@@ -60,6 +59,11 @@ namespace FASTER.core
         readonly SemaphoreSlim completedSemaphore;
 
         /// <summary>
+        /// Semaphore to wait on for flush completion
+        /// </summary>
+        readonly SemaphoreSlim flushSemaphore;
+        
+        /// <summary>
         /// Number of pages being flushed
         /// </summary>
         int count;
@@ -67,11 +71,13 @@ namespace FASTER.core
         /// <summary>
         /// Create a flush completion tracker
         /// </summary>
-        /// <param name="completedSemaphore">Semaphpore to release when flush completed</param>
+        /// <param name="completedSemaphore">Semaphpore to release when all flushes completed</param>
+        /// <param name="flushSemaphore">Semaphpore to release when each flush completes</param>
         /// <param name="count">Number of pages to flush</param>
-        public FlushCompletionTracker(SemaphoreSlim completedSemaphore, int count)
+        public FlushCompletionTracker(SemaphoreSlim completedSemaphore, SemaphoreSlim flushSemaphore, int count)
         {
             this.completedSemaphore = completedSemaphore;
+            this.flushSemaphore = flushSemaphore;
             this.count = count;
         }
 
@@ -80,9 +86,13 @@ namespace FASTER.core
         /// </summary>
         public void CompleteFlush()
         {
+            flushSemaphore?.Release();
             if (Interlocked.Decrement(ref count) == 0)
                 completedSemaphore.Release();
         }
+        
+        public void WaitOneFlush()
+            => flushSemaphore?.Wait();
     }
 
     /// <summary>
