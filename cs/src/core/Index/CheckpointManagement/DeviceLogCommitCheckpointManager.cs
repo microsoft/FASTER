@@ -43,6 +43,7 @@ namespace FASTER.core
 
         readonly ILogger logger;
         readonly WorkQueueFIFO<long> deleteQueue;
+        readonly int fastCommitThrottleFreq;
 
         /// <summary>
         /// Create new instance of log commit manager
@@ -50,12 +51,14 @@ namespace FASTER.core
         /// <param name="deviceFactory">Factory for getting devices</param>
         /// <param name="checkpointNamingScheme">Checkpoint naming helper</param>
         /// <param name="removeOutdated">Remote older FASTER log commits</param>
+        /// <param name="fastCommitThrottleFreq">FastCommit throttle frequency - use only in FastCommit mode</param>
         /// <param name="logger">Remote older FASTER log commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, ILogger logger = null)
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 1, ILogger logger = null)
         {
             this.logger = logger;
             this.deviceFactory = deviceFactory;
             this.checkpointNamingScheme = checkpointNamingScheme;
+            this.fastCommitThrottleFreq = fastCommitThrottleFreq;
 
             this.semaphore = new SemaphoreSlim(0);
 
@@ -107,6 +110,8 @@ namespace FASTER.core
         /// <inheritdoc />
         public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum)
         {
+            if (commitNum % fastCommitThrottleFreq != 0) return;
+
             using var device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
 
             // Two phase to ensure we write metadata in single Write operation
