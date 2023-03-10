@@ -84,7 +84,7 @@ namespace FASTER.core
         public byte NumLockedShared => (byte)((word & kSharedLockMaskInWord) >> kLockShiftInWord);
 
         // We ignore locks and temp bits for disk images
-        public void ClearBitsForDiskImages() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kDirtyBitMask);
+        public void ClearBitsForDiskImages() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kDirtyBitMask | kSealedBitMask);
 
         private static bool IsClosedWord(long word) => (word & (kSealedBitMask | kValidBitMask)) != kValidBitMask;
 
