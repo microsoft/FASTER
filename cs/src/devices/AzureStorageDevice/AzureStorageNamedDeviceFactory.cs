@@ -59,7 +59,7 @@ namespace FASTER.devices
             if (fileInfo.fileName != null)
             {
                 // We delete all files with fileName prefix, since shards have extensions as .0, .1, etc.
-                foreach (var blob in dir.GetBlobsAsync(fileInfo.fileName, default).GetAwaiter().GetResult())
+                foreach (var blob in dir.GetBlobsAsync(fileInfo.fileName + ".", default).GetAwaiter().GetResult())
                 {
                     BlobUtilsV12.ForceDeleteAsync(pageBlobContainer.Default, blob).GetAwaiter().GetResult();
                 }
