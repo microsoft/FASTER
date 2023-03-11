@@ -1844,14 +1844,17 @@ namespace FASTER.core
             if (!fastCommitMode)
                 UpdateCommittedState(recoveryInfo);
             // Issue any potential physical deletes due to shifts in begin address
-            try
+            if (allocator.BeginAddress < recoveryInfo.BeginAddress)
             {
-                epoch.Resume();
-                allocator.ShiftBeginAddress(recoveryInfo.BeginAddress, true);
-            }
-            finally
-            {
-                epoch.Suspend();
+                try
+                {
+                    epoch.Resume();
+                    allocator.ShiftBeginAddress(recoveryInfo.BeginAddress, true);
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
             }
         }
 
