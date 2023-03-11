@@ -3425,16 +3425,6 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
   }
 
   std::deque<std::thread> threads;
-  /*
-  LogPageIterator<faster_t> iter(&hlog, hlog.begin_address.load(),
-                                  Address(until_address), &disk);
-  LogPageCollection<faster_t> pages (
-    LogPageCollection<faster_t>::kDefaultNumPages,
-    hlog.sector_size); // first GetNext() will return false
-
-  compaction_context_.Initialize(&iter, &pages, to_other_store);
-  */
-  //CompactionThreadsContext<faster_t> threads_context{ &iter, n_threads-1 };
 
   ConcurrentLogPageIterator<faster_t> iter(&hlog, &disk, &epoch_, hlog.begin_address.load(), Address(until_address));
   compaction_context_.Initialize(&iter, n_threads-1, to_other_store);
@@ -3466,8 +3456,7 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     }
     std::this_thread::yield();
   }
-  //assert(compaction_context_..load() == 0);
-  //assert(remaining == 0);
+  assert(remaining == 0);
 
   if (checkpoint) {
     // index checkpoint
@@ -3658,18 +3647,11 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id) {
     }
 
     // get next record from hybrid log
-    //record = pages.GetNextRecord(record_address);
     if (page != nullptr) {
       record = page->GetNextRecord(record_address);
     }
 
     if (record == nullptr || page == nullptr) {
-      //if (!pending_records.empty()) {
-        // Should not move to a new page, until all pending
-        // requests for this page have been completed
-      //  goto complete_pending;
-      //}
-
       // Try to get next page
       while (pages_available) {
         Refresh();
@@ -3685,13 +3667,6 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id) {
         std::this_thread::yield();
       }
       continue;
-
-      /*
-      if(!compaction_context_->iter->GetNextPage(page)) {
-        pages_available = false; // No more pages
-      }
-      continue;
-      */
     }
 
     if (record->header.tombstone && !to_other_store)  {
@@ -3835,7 +3810,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
 
   Address min_search_offset = pending_context.min_search_offset;
   assert(!min_search_offset.in_readcache());
-  //assert(!pending_context.start_search_entry.address().in_readcache());
 
   // Handle hash index GC operation
   if(thread_ctx().phase != Phase::REST) {
@@ -3869,7 +3843,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
     address = read_cache_->Skip(pending_context);
   }
   pending_context.expected_hlog_address = address;
-  //Address hlog_address = address;
   assert(!address.in_readcache());
 
   // (Note that address will be Address::kInvalidAddress, if the entry was created.)
@@ -3904,7 +3877,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
     return OperationStatus::NOT_FOUND;
   }
   assert(address != Address::kInvalidAddress && min_search_offset != Address::kInvalidAddress);
-  //assert(min_search_offset <= pending_context.start_search_entry.address());
 
   if(address >= head_address && min_search_offset != pending_context.expected_hlog_address) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
@@ -3946,7 +3918,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
   }
 
   // Update search range
-  //pending_context.start_search_entry = hlog_address;
   pending_context.min_search_offset = pending_context.expected_hlog_address;
 
 create_record:
