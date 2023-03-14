@@ -12,7 +12,7 @@ using static FASTER.core.Utility;
 namespace FASTER.core
 {
     // RecordInfo layout (64 bits total):
-    // [Unused2][Modified][InNewVersion][Filler][Dirty][Unused2][Sealed] [Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    // [Unused3][Modified][InNewVersion][Filler][Dirty][Unused2][Unused1][Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     //     where X = exclusive lock, S = shared lock, R = readcache, A = address
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
@@ -44,23 +44,23 @@ namespace FASTER.core
         const int kTombstoneBitOffset = kExclusiveLockBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
         const int kUnused1BitOffset = kValidBitOffset + 1;
-        const int kSealedBitOffset = kUnused1BitOffset + 1;
-        const int kDirtyBitOffset = kSealedBitOffset + 1;
+        const int kUnused2BitOffset = kUnused1BitOffset + 1;
+        const int kDirtyBitOffset = kUnused2BitOffset + 1;
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
-        // If these become used, start with the highest number
-        internal const int kUnusedBitOffset = kModifiedBitOffset + 1;
+        // If kUnused*BitOffset become used, start with the highest number
+        internal const int kUnused3BitOffset = kModifiedBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
         const long kUnused1BitMask = 1L << kUnused1BitOffset;
-        const long kSealedBitMask = 1L << kSealedBitOffset;
+        const long kUnused2BitMask = 1L << kUnused2BitOffset;
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kFillerBitMask = 1L << kFillerBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
-        internal const long kUnused2BitMask = 1L << kUnusedBitOffset;
+        internal const long kUnused3BitMask = 1L << kUnused3BitOffset;
 
         [FieldOffset(0)]
         private long word;
@@ -84,9 +84,14 @@ namespace FASTER.core
         public byte NumLockedShared => (byte)((word & kSharedLockMaskInWord) >> kLockShiftInWord);
 
         // We ignore locks and temp bits for disk images
-        public void ClearBitsForDiskImages() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kDirtyBitMask | kSealedBitMask);
+        public void ClearBitsForDiskImages() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kDirtyBitMask);
 
-        private static bool IsClosedWord(long word) => (word & (kSealedBitMask | kValidBitMask)) != kValidBitMask;
+        private static bool IsClosedWord(long word)
+        {
+            // Currently we have only the Invalid state, after removing the Sealed state for main-log records. Retaining
+            // separate methods (instead of replacing with IsValid) in case something like that becomes necessary again.
+            return (word & kValidBitMask) != kValidBitMask;
+        }
 
         public bool IsClosed => IsClosedWord(word);
 
@@ -130,7 +135,7 @@ namespace FASTER.core
             {
                 if ((word & kSharedLockMaskInWord) == 0)
                 {
-                    // Someone else may have transferred/invalidated the record while we were draining reads.
+                    // Someone else may have closed the record while we were draining reads.
                     if (!IsClosedWord(this.word))
                         return true;
                     break;
@@ -212,24 +217,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CloseAtomic(bool seal)
-        {
-            // Following a successful copy from readcache or immutable log, mark the source record as closed.
-            // We need to do this atomically; otherwise this could race with ReadCacheEvict unlinking records,
-            // or lose an update if another thread is trying to do update in place.
-            for (; ; Thread.Yield())
-            {
-                long expected_word = this.word;
-
-                // If this is invalid or sealed, someone else won the race.
-                if (IsClosedWord(expected_word))
-                    return;
-
-                var new_word = seal ? expected_word | kSealedBitMask : expected_word & ~kValidBitMask;
-                if (expected_word == Interlocked.CompareExchange(ref this.word, new_word, expected_word))
-                    return;
-            }
-        }
+        public void CloseAtomic() => SetInvalidAtomic();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryUpdateAddress(long expectedPrevAddress, long newPrevAddress)
@@ -263,9 +251,6 @@ namespace FASTER.core
                 else word &= ~kValidBitMask;
             }
         }
-
-        public bool Sealed => (word & kSealedBitMask) > 0;
-        public void Seal() => word |= kSealedBitMask;
 
         public void ClearDirtyAtomic()
         {
@@ -366,13 +351,19 @@ namespace FASTER.core
             set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask;
         }
 
+        internal bool Unused3
+        {
+            get => (word & kUnused3BitMask) != 0;
+            set => word = value ? word | kUnused3BitMask : word & ~kUnused3BitMask;
+        }
+
         public override string ToString()
         {
             var paRC = this.PreviousAddressIsReadCache ? "(rc)" : string.Empty;
             var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";
             static string bstr(bool value) => value ? "T" : "F";
             return $"prev {this.AbsolutePreviousAddress}{paRC}, locks {locks}, valid {bstr(Valid)}, mod {bstr(Modified)},"
-                 + $" tomb {bstr(Tombstone)}, seal {bstr(Sealed)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
+                 + $" tomb {bstr(Tombstone)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}";
         }
     }
 }

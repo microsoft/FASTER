@@ -94,19 +94,6 @@ namespace FASTER.core
             this.Log = srcLog;
         }
 
-        /// <summary>
-        /// After a successful CopyUpdate or other replacement of a source record, this marks the source record as Sealed or Invalid.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CloseSourceRecordAfterCopy(ref RecordInfo srcRecordInfo)
-        {
-            if (this.HasInMemorySrc)
-            {
-                Debug.Assert(this.LogicalAddress >= this.Log.ClosedUntilAddress, "Should not have evicted the source record while we held the epoch");
-                srcRecordInfo.CloseAtomic(seal: this.HasMainLogSrc);
-            }
-        }
-
         public override string ToString()
         {
             var isRC = "(rc)";

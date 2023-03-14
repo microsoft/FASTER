@@ -300,7 +300,6 @@ namespace FASTER.test.LockTests
             Assert.IsFalse(status.IsPending);
 
             Assert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Update");
-            Assert.IsTrue(recordInfo.Sealed, "Sealed should be true after Update");
         }
 
         [Test]
