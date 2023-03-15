@@ -35,6 +35,11 @@ namespace FASTER.core
         Standard,
 
         /// <summary>
+        /// Keys are locked only for the duration of a concurrent IFunctions call (one that operates on data in the mutable region of the log).
+        /// </summary>
+        Ephemeral,
+
+        /// <summary>
         /// Locking is not done in FASTER.
         /// </summary>
         None

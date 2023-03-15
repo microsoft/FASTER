@@ -240,8 +240,10 @@ namespace FASTER.core
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo))
+                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo, out bool lockFailed))
                     return OperationStatus.SUCCESS;
+                if (lockFailed)
+                    return OperationStatus.RETRY_LATER;
                 if (readInfo.Action == ReadAction.CancelOperation)
                     return OperationStatus.CANCELED;
                 if (readInfo.Action == ReadAction.Expire)

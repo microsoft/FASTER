@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace FASTER.core
 {
@@ -15,11 +13,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-
-            if (!this.LockTable.IsEnabled)
-                return true;
-
-            if (fasterSession.TryLockTransientExclusive(ref key, ref stackCtx))
+            if (!this.LockTable.IsEnabled || fasterSession.TryLockTransientExclusive(ref key, ref stackCtx))
                 return true;
             status = OperationStatus.RETRY_LATER;
             return false;
@@ -31,11 +25,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-
-            if (!this.LockTable.IsEnabled)
-                return true;
-
-            if (fasterSession.TryLockTransientShared(ref key, ref stackCtx))
+            if (!this.LockTable.IsEnabled || fasterSession.TryLockTransientShared(ref key, ref stackCtx))
                 return true;
             status = OperationStatus.RETRY_LATER;
             return false;

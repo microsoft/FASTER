@@ -10,6 +10,8 @@ using static FASTER.test.TestUtils;
 using System.Threading.Tasks;
 using System.Diagnostics;
 
+#pragma warning disable IDE0060 // Remove unused parameter: used by Setup
+
 namespace FASTER.test.LockTests
 {
     [TestFixture]
@@ -99,8 +101,19 @@ namespace FASTER.test.LockTests
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
+
+            var lockingMode = LockingMode.None;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is LockingMode lm)
+                {
+                    lockingMode = lm;
+                    continue;
+                }
+            }
+
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, ReadCacheSettings = readCacheSettings },
-                comparer: new ChainComparer(mod), lockingMode: LockingMode.None);
+                comparer: new ChainComparer(mod), lockingMode: lockingMode);
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 
@@ -132,7 +145,7 @@ namespace FASTER.test.LockTests
         [Category(FasterKVTestCategory)]
         [Category(LockTestCategory)]
         //[Repeat(100)]
-        public async ValueTask SameKeyInsertAndCTTTest()
+        public async ValueTask SameKeyInsertAndCTTTest([Values(LockingMode.None, LockingMode.Ephemeral /* Standard will hang */)] LockingMode lockingMode)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");

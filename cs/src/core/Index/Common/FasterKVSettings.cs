@@ -139,6 +139,7 @@ namespace FASTER.core
         /// </summary>
         public int ThrottleCheckpointFlushDelayMs = -1;
 
+        /// <summary>
         /// Create default configuration settings for FasterKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").

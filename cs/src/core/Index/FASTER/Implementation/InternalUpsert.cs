@@ -105,12 +105,17 @@ namespace FASTER.core
 
                     upsertInfo.RecordInfo = srcRecordInfo;
                     ref Value recordValue = ref stackCtx.recSrc.GetValue();
-                    if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo))
+                    if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo, out bool lockFailed))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        goto LatchRelease;
+                    }
+                    if (lockFailed)
+                    {
+                        status = OperationStatus.RETRY_LATER;
                         goto LatchRelease;
                     }
                     if (upsertInfo.Action == UpsertAction.CancelOperation)

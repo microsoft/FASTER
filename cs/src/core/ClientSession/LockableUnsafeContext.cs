@@ -462,8 +462,9 @@ namespace FASTER.core
                 => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out bool lockFailed)
             {
+                lockFailed = false;     // Ephemeral locking is not used with Lockable contexts
                 if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
                     return true;
                 if (readInfo.Action == ReadAction.Expire)
@@ -489,14 +490,15 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
+            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out bool lockFailed)
             {
+                lockFailed = false;     // Ephemeral locking is not used with Lockable contexts
+                if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo))
+                    return false;
                 recordInfo.SetDirtyAndModified();
-
-                // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-                return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
+                return true;
             }
-#endregion IFunctions - Upserts
+            #endregion IFunctions - Upserts
 
             #region IFunctions - RMWs
             #region InitialUpdater
@@ -537,8 +539,10 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
             {
+                if (!_clientSession.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
+                    return false;
                 recordInfo.SetDirtyAndModified();
-                return _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
+                return true;
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
@@ -560,11 +564,14 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
             {
+                lockFailed = false;     // Ephemeral locking is not used with Lockable contexts
+                if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo))
+                    return false;
                 recordInfo.SetDirtyAndModified();
                 recordInfo.SetTombstone();
-                return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
+                return true;
             }
             #endregion IFunctions - Deletes
 

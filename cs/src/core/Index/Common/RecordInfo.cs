@@ -80,16 +80,21 @@ namespace FASTER.core
 
         public bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
         public bool IsLockedShared => NumLockedShared != 0;
+        public bool IsLocked => IsLockedExclusive || IsLockedShared;
 
         public byte NumLockedShared => (byte)((word & kSharedLockMaskInWord) >> kLockShiftInWord);
 
         // We ignore locks and temp bits for disk images
-        public void ClearBitsForDiskImages() => word &= ~(kExclusiveLockBitMask | kSharedLockMaskInWord | kDirtyBitMask);
+        public void ClearBitsForDiskImages()
+        {
+            Debug.Assert(!this.IsLocked, "Should never retrieve a locked record from disk; Ephemeral locks should never be evicted");
+            word &= ~(kLockBitMask | kDirtyBitMask);
+        }
 
         private static bool IsClosedWord(long word)
         {
-            // Currently we have only the Invalid state, after removing the Sealed state for main-log records. Retaining
-            // separate methods (instead of replacing with IsValid) in case something like that becomes necessary again.
+            // Currently we have only the Invalid state, after removing the Sealed state for main-log records. Only readcache records should be
+            // Invalid in the tag chain. Retaining separate methods (instead of replacing with IsValid) in case Sealing becomes necessary again.
             return (word & kValidBitMask) != kValidBitMask;
         }
 
@@ -119,8 +124,7 @@ namespace FASTER.core
             for (; ; Thread.Yield())
             {
                 long expected_word = word;
-                if (IsClosedWord(expected_word))
-                    return false;
+                Debug.Assert(!IsClosedWord(expected_word), "Should not be X locking readcache records, pt 1");
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
@@ -136,9 +140,8 @@ namespace FASTER.core
                 if ((word & kSharedLockMaskInWord) == 0)
                 {
                     // Someone else may have closed the record while we were draining reads.
-                    if (!IsClosedWord(this.word))
-                        return true;
-                    break;
+                    Debug.Assert(!IsClosedWord(this.word), "Should not be X locking readcache records, pt 2");
+                    return true;
                 }
                 Thread.Yield();
             }
@@ -156,14 +159,12 @@ namespace FASTER.core
 
         /// <summary>Unlock RecordInfo that was previously locked for shared access, via <see cref="TryLockShared"/></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryUnlockShared()
+        public void UnlockShared()
         {
-            // X and S locks means an X lock is still trying to drain readers, like this one.
+            // X *and* S locks means an X lock is still trying to drain readers, like this one.
             Debug.Assert((word & kLockBitMask) != kExclusiveLockBitMask, "Trying to S unlock an X-only locked record");
             Debug.Assert(IsLockedShared, "Trying to S unlock an unlocked record");
-
-            var result_word = Interlocked.Add(ref word, -kSharedLockIncrement);
-            return !IsClosedWord(result_word);
+            Interlocked.Add(ref word, -kSharedLockIncrement);
         }
 
         /// <summary>
@@ -179,18 +180,16 @@ namespace FASTER.core
             for (; ; Thread.Yield())
             {
                 long expected_word = word;
-                if (IsClosedWord(expected_word))
-                    return false;
+                Debug.Assert(!IsClosedWord(expected_word), "Should not be S locking readcache records");
                 if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
                     && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
                 {
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word + kSharedLockIncrement, expected_word))
-                        break;
+                        return true;
                 }
                 if (spinCount > 0 && --spinCount <= 0) 
                     return false;
             }
-            return true;
         }
 
         /// <summary>
@@ -209,11 +208,10 @@ namespace FASTER.core
                 if ((expected_word & kModifiedBitMask) == 0)
                     return true;
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & (~kModifiedBitMask), expected_word))
-                    break;
+                    return true;
                 if (spinCount > 0 && --spinCount <= 0)
                     return false;
             }
-            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -362,8 +360,8 @@ namespace FASTER.core
             var paRC = this.PreviousAddressIsReadCache ? "(rc)" : string.Empty;
             var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";
             static string bstr(bool value) => value ? "T" : "F";
-            return $"prev {this.AbsolutePreviousAddress}{paRC}, locks {locks}, valid {bstr(Valid)}, mod {bstr(Modified)},"
-                 + $" tomb {bstr(Tombstone)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}";
+            return $"prev {this.AbsolutePreviousAddress}{paRC}, locks {locks}, valid {bstr(Valid)}, tomb {bstr(Tombstone)},"
+                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}";
         }
     }
 }
