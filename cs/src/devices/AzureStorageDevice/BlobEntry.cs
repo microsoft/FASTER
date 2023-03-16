@@ -55,11 +55,6 @@ namespace FASTER.devices
         /// <param name="pageBlob">The page blob to create</param>
         public async Task CreateAsync(long size, BlobUtilsV12.PageBlobClients pageBlob)
         {
-            if (this.waitingCount != 0)
-            {
-                this.azureStorageDevice.BlobManager?.HandleStorageError(nameof(CreateAsync), "expect to be called on blobs that don't already exist and exactly once", pageBlob.Default?.Name, null, false, false);
-            }
-
             await this.azureStorageDevice.BlobManager.PerformWithRetriesAsync(
                 this.azureStorageDevice.BlobManager.AsynchronousStorageReadMaxConcurrency,
                 true,
