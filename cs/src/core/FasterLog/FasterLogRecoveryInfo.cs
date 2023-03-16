@@ -239,7 +239,8 @@ namespace FASTER.core
             {
                 foreach (var kvp in Iterators)
                 {
-                    persistedIterators[kvp.Key].UpdateCompletedUntilAddress(kvp.Value);
+                    if (persistedIterators.TryGetValue(kvp.Key, out FasterLogScanIterator iterator))
+                        iterator.UpdateCompletedUntilAddress(kvp.Value);
                 }
             }
         }
