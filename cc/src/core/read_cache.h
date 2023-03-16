@@ -37,6 +37,8 @@ class ReadCache {
   typedef FASTER::device::NullDisk disk_t;
   typedef ReadCachePersistentMemoryMalloc<disk_t> hlog_t;
 
+  constexpr static bool CopyToTail = true;
+
   ReadCache(LightEpoch& epoch, hash_index_t& hash_index, faster_hlog_t& faster_hlog,
             ReadCacheBlockAllocateCallback block_allocate_callback,
             ReadCacheConfig& config)
@@ -55,7 +57,7 @@ class ReadCache {
   }
 
   template <class C>
-  Status Read(C& pending_context, Address& address) const;
+  Status Read(C& pending_context, Address& address);
 
   template <class C>
   Address Skip(C& pending_context) const;
@@ -109,7 +111,7 @@ class ReadCache {
 
 template <class K, class V, class D, class H>
 template <class C>
-inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) const {
+inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) {
   if (pending_context.skip_read_cache) {
     address = Skip(pending_context);
     return Status::NotFound;
@@ -118,7 +120,7 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
   if (address.in_readcache()) {
     Address rc_address = address.readcache_address();
 
-    const record_t* record = reinterpret_cast<const record_t*>(read_cache_.Get(rc_address));
+    record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(rc_address));
     ReadCacheRecordInfo rc_record_info = ReadCacheRecordInfo{ record->header };
 
     assert(!rc_record_info.tombstone); // read cache does not store tombstones
@@ -126,6 +128,17 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
     if (!rc_record_info.invalid && pending_context.is_key_equal(record->key())) {
       if (rc_address >= read_cache_.safe_head_address.load()) {
         pending_context.Get(record);
+
+        if (CopyToTail && rc_address < read_cache_.read_only_address.load()) {
+          ExecutionContext exec_context; // init invalid/empty context; not used in sync (hot) hash index
+
+          Status status = Insert(exec_context, pending_context, record,
+                              ReadCacheRecordInfo{ record->header }.in_cold_hlog);
+          if (status == Status::Ok) {
+            // Invalidate this record, since we copied it to the tail
+            record->header.invalid = true;
+          }
+        }
         return Status::Ok;
       }
       assert(rc_address >= read_cache_.head_address.load());
