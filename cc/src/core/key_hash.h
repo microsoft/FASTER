@@ -108,9 +108,13 @@ struct IndexKeyHash {
 
 // Hot index hash bucket definition -- no chunks
 typedef IndexKeyHash<index::HotLogIndexBucketEntryDef, 0, 0> HotLogIndexKeyHash;
-// Cold index hash bucket definition -- 64 buckets in chunk, 8 entries per chunk bucket
+// Cold index hash bucket definition (4096 bytes) -- 64 buckets in chunk, 8 entries per chunk bucket
+//static_assert(Constants::kCacheLineBytes == 64);
+//typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 6, 3> ColdLogIndexKeyHash;
+
+// Cold index hash bucket definition (512 bytes)-- 8 buckets in chunk, 8 entries per chunk bucket
 static_assert(Constants::kCacheLineBytes == 64);
-typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 6, 3> ColdLogIndexKeyHash;
+typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 3, 3> ColdLogIndexKeyHash;
 
 }
 } // namespace FASTER::core

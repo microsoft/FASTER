@@ -46,11 +46,13 @@ struct alignas(Constants::kCacheLineBytes) HashIndexChunkEntry {
     return static_cast<uint32_t>(sizeof(HashIndexChunkEntry));
   }
   /// Number of entries per bucket
-  static constexpr uint32_t kNumEntries = 64;
+  //static constexpr uint32_t kNumEntries = 64;
+  static constexpr uint32_t kNumEntries = 8;
   /// The entries.
   ColdLogIndexHashBucket entries[kNumEntries];
 };
-static_assert(sizeof(HashIndexChunkEntry) == 4096, "sizeof(HashIndexChunkEntry) != 4kB");
+//static_assert(sizeof(HashIndexChunkEntry) == 4096, "sizeof(HashIndexChunkEntry) != 4kB");
+static_assert(sizeof(HashIndexChunkEntry) == 512, "sizeof(HashIndexChunkEntry) != 512B");
 
 enum class HashIndexOp : uint8_t {
   FIND_ENTRY = 0,
