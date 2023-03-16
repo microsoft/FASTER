@@ -1002,11 +1002,7 @@ namespace FASTER.core
                 _clientSession = clientSession;
             }
 
-            #region IFunctions - Optional features supported
             public bool IsManualLocking => false;
-
-            public SessionType SessionType => SessionType.BasicContext;
-            #endregion IFunctions - Optional features supported
 
             #region IFunctions - Reads
             public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)

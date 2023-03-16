@@ -185,7 +185,6 @@ namespace FASTER.core
 
                 ReadInfo readInfo = new()
                 {
-                    SessionType = fasterSession.SessionType,
                     Version = fasterSession.Ctx.version,
                     Address = Constants.kInvalidAddress,    // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
                     RecordInfo = srcRecordInfo
@@ -221,7 +220,6 @@ namespace FASTER.core
 
             ReadInfo readInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
                 RecordInfo = srcRecordInfo
@@ -272,7 +270,6 @@ namespace FASTER.core
 
             ReadInfo readInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
                 RecordInfo = srcRecordInfo

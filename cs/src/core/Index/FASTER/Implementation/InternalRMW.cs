@@ -73,7 +73,6 @@ namespace FASTER.core
 
             RMWInfo rmwInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = stackCtx.recSrc.LogicalAddress,
@@ -353,7 +352,6 @@ namespace FASTER.core
 
             RMWInfo rmwInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,

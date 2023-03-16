@@ -26,11 +26,7 @@ namespace FASTER.core
     /// <typeparam name="Context"></typeparam>
     internal interface IFasterSession<Key, Value, Input, Output, Context> : IFasterSession, IVariableLengthStruct<Value, Input>
     {
-        #region Optional features supported by this implementation
         bool IsManualLocking { get; }
-
-        SessionType SessionType { get; }
-        #endregion Optional features supported by this implementation
 
         #region Reads
         bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo);

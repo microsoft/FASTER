@@ -68,7 +68,6 @@ namespace FASTER.core
 
             UpsertInfo upsertInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = stackCtx.recSrc.LogicalAddress,
@@ -316,7 +315,6 @@ namespace FASTER.core
 
             UpsertInfo upsertInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = newLogicalAddress,

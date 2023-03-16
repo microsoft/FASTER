@@ -616,13 +616,9 @@ namespace FASTER.core
                 _clientSession = clientSession;
             }
 
-            #region IFunctions - Optional features supported
             public bool DisableTransientLocking => true;       // We only lock in Lock/Unlock, explicitly; these are longer-duration locks.
 
             public bool IsManualLocking => true;
-
-            public SessionType SessionType => SessionType.LockableContext;
-            #endregion IFunctions - Optional features supported
 
             #region IFunctions - Reads
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
