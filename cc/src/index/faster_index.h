@@ -534,12 +534,23 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
     // last thread after garbage collection is finished
     // truncate log -- no need to define/wait for callbacks
     Address begin_address = store_->hlog.begin_address.load();
+    Address read_only_address = store_->hlog.read_only_address.load();
+
     Address new_begin_address = gc_state_->min_address.load();
     log_debug("FasterIndex-GC: Min address [%lu]", new_begin_address.control());
     assert(new_begin_address >= store_->hlog.begin_address.load());
 
-    if (new_begin_address > begin_address) {
+    log_debug("FasterIndex-GC: [BA=%lu] [HA=%lu] [ROA=%lu]",
+      begin_address.control(), store_->hlog.read_only_address.load().control(), read_only_address.control());
+
+    // Truncate log, if possible
+    if (new_begin_address > begin_address && new_begin_address < read_only_address) {
+      log_debug("FasterIndex-GC: Truncating to [%lu]", new_begin_address.control());
       store_->ShiftBeginAddress(new_begin_address, nullptr, nullptr);
+    } else if (new_begin_address >= read_only_address) {
+      log_debug("FasterIndex-GC: Skipped truncation due to min-address being inside IPU region");
+    } else {
+      log_debug("FasterIndex-GC: Skipped truncation due to min-address being less-or-equal to begin_address");
     }
   }
 
