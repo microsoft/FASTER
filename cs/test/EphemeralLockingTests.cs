@@ -7,15 +7,14 @@ using NUnit.Framework;
 using FASTER.test.ReadCacheTests;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
-using FASTER.test.LockTable;
 
-namespace FASTER.test.EphemeralOnlyLock
+namespace FASTER.test.EphemeralLocking
 {
     // Functions for ephemeral locking--locking only for the duration of a concurrent IFunctions call.
     internal class EphemeralLockingTestFunctions : SimpleFunctions<long, long> { }
 
     [TestFixture]
-    class EphemeralOnlyLockTests
+    class EphemeralLockingTests
     {
         const int numRecords = 1000;
         const int useNewKey = 1010;
@@ -139,8 +138,6 @@ namespace FASTER.test.EphemeralOnlyLock
                 }
             }
         }
-
-        void GetBucket(ref HashEntryInfo hei) => OverflowBucketLockTableTests.PopulateHei(fht, ref hei);
 
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
