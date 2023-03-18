@@ -1,4 +1,5 @@
 ﻿using FASTER.core;
+using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -13,13 +14,15 @@ namespace FASTER.devices
         readonly BlobUtilsV12.ServiceClients pageBlobAccount;
         BlobUtilsV12.ContainerClients pageBlobContainer;
         BlobUtilsV12.BlobDirectory pageBlobDirectory;
+        readonly ILogger logger;
 
         /// <summary>
         /// Create instance of factory for Azure devices
         /// </summary>
         /// <param name="connectionString"></param>
-        public AzureStorageNamedDeviceFactory(string connectionString)
-            : this(BlobUtilsV12.GetServiceClients(connectionString))
+        /// <param name="logger"></param>
+        public AzureStorageNamedDeviceFactory(string connectionString, ILogger logger = null)
+            : this(BlobUtilsV12.GetServiceClients(connectionString), logger)
         {
         }
 
@@ -27,9 +30,11 @@ namespace FASTER.devices
         /// Create instance of factory for Azure devices
         /// </summary>
         /// <param name="pageBlobAccount"></param>
-        AzureStorageNamedDeviceFactory(BlobUtilsV12.ServiceClients pageBlobAccount)
+        /// <param name="logger"></param>
+        AzureStorageNamedDeviceFactory(BlobUtilsV12.ServiceClients pageBlobAccount, ILogger logger = null)
         {
             this.pageBlobAccount = pageBlobAccount;
+            this.logger = logger;
         }
 
         /// <inheritdoc />
@@ -76,7 +81,7 @@ namespace FASTER.devices
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
-            return new AzureStorageDevice(fileInfo.fileName, pageBlobDirectory.GetSubDirectory(fileInfo.directoryName), null, false);
+            return new AzureStorageDevice(fileInfo.fileName, pageBlobDirectory.GetSubDirectory(fileInfo.directoryName), null, false, false, logger);
         }
 
         /// <inheritdoc />
