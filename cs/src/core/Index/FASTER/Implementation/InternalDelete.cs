@@ -258,10 +258,10 @@ namespace FASTER.core
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             deleteInfo.RecordInfo = newRecordInfo;
-            bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
+            bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
-                CompleteUpdate(ref key, ref stackCtx, ref srcRecordInfo);
+                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.

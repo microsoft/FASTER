@@ -88,11 +88,29 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CASRecordIntoChain(ref OperationStackContext<Key, Value> stackCtx, long newLogicalAddress)
+        private bool CASRecordIntoChain(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long newLogicalAddress, ref RecordInfo newRecordInfo)
         {
+            // If Ephemeral locking, we consider this insertion to the mutable portion of the log as a "concurrent" operation, and
+            // we don't want other threads accessing this record until we complete Post* (which unlock if doing Ephemeral locking).
+            if (DoEphemeralLocking)
+                newRecordInfo.InitializeLockExclusive();
+
             return stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
-                : SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx.recSrc, newLogicalAddress);
+                : SpliceIntoHashChainAtReadCacheBoundary(ref key, ref stackCtx, newLogicalAddress);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void PostInsertAtTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
+        {
+            if (stackCtx.recSrc.HasReadCacheSrc)
+                srcRecordInfo.CloseAtomic();
+
+            // If we are not using the LockTable, then we ElideAndReinsertReadCacheChain ensured no conflict between the readcache
+            // and the newly-inserted record. Otherwise we spliced it in directly, in which case a competing readcache record may
+            // have been inserted; if so, invalidate it.
+            if (UseReadCache && LockTable.IsEnabled)
+                ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
         }
 
         // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.

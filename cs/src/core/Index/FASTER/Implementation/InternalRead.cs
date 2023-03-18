@@ -233,8 +233,6 @@ namespace FASTER.core
 
             try
             {
-                if (pendingContext.ResetModifiedBit && !srcRecordInfo.TryResetModifiedAtomic())
-                    return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
@@ -283,8 +281,6 @@ namespace FASTER.core
 
             try
             {
-                if (pendingContext.ResetModifiedBit && !srcRecordInfo.TryResetModifiedAtomic())
-                    return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
                 ref Value recordValue = ref stackCtx.recSrc.GetValue();

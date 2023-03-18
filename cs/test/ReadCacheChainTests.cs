@@ -12,6 +12,8 @@ using static FASTER.test.TestUtils;
 using FASTER.test.LockTable;
 using FASTER.test.LockableUnsafeContext;
 
+#pragma warning disable IDE0060 // Remove unused parameter (used for Setup)
+
 namespace FASTER.test.ReadCacheTests
 {
     class ChainTests
@@ -54,9 +56,20 @@ namespace FASTER.test.ReadCacheTests
             DeleteDirectory(MethodTestDir, wait: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
             log = Devices.CreateLogDevice(MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
+
+            var lockingMode = LockingMode.None;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is LockingMode lm)
+                {
+                    lockingMode = lm;
+                    continue;
+                }
+            }
+
             fht = new FasterKV<long, long>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
-                comparer: new ChainComparer(mod));
+                comparer: new ChainComparer(mod), lockingMode: lockingMode);
         }
 
         [TearDown]
@@ -278,7 +291,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteCacheRecordTest()
+        public void DeleteCacheRecordTest([Values] LockingMode lockingMode)
         {
             PopulateAndEvict();
             CreateChain();
@@ -306,7 +319,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteHalfOfAllCacheRecordsTest()
+        public void DeleteHalfOfAllCacheRecordsTest([Values] LockingMode lockingMode)
         {
             PopulateAndEvict();
             CreateChain();
@@ -358,7 +371,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void UpsertCacheRecordTest()
+        public void UpsertCacheRecordTest([Values] LockingMode lockingMode)
         {
             DoUpdateTest(useRMW: false);
         }
@@ -367,7 +380,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void RMWCacheRecordTest()
+        public void RMWCacheRecordTest([Values] LockingMode lockingMode)
         {
             DoUpdateTest(useRMW: true);
         }
@@ -416,7 +429,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromCTTTest()
+        public void SpliceInFromCTTTest([Values] LockingMode lockingMode)
         {
             PopulateAndEvict();
             CreateChain();
@@ -436,7 +449,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion)
+        public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion, [Values] LockingMode lockingMode)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -464,7 +477,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromRMWTest([Values] RecordRegion recordRegion)
+        public void SpliceInFromRMWTest([Values] RecordRegion recordRegion, [Values] LockingMode lockingMode)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -511,7 +524,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion)
+        public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion, [Values] LockingMode lockingMode)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -539,7 +552,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void VerifyLockCountsAfterReadCacheEvict()
+        public void VerifyLockCountsAfterReadCacheEvict([Values(LockingMode.Standard)] LockingMode lockingMode)
         {
             PopulateAndEvict();
             CreateChain();
@@ -650,7 +663,7 @@ namespace FASTER.test.ReadCacheTests
             this.log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
 
             // Make the main log small enough that we force the readcache
-            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
+            ReadCacheSettings readCacheSettings = new() { MemorySizeBits = 15, PageSizeBits = 9 };
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
 
             ModuloRange modRange = ModuloRange.None;
@@ -664,7 +677,7 @@ namespace FASTER.test.ReadCacheTests
             }
 
             fht = new FasterKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange),
-                lockingMode: LockingMode.Standard);
+                lockingMode: LockingMode.Ephemeral);
         }
 
         [TearDown]
@@ -776,7 +789,7 @@ namespace FASTER.test.ReadCacheTests
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
                             Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
                         }
-                        Assert.IsTrue(status.Found, $"key {key}, status {status}");
+                        Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {wasPending}");
                         Assert.AreEqual(ii, output % valueAdd);
                     }
                 }
@@ -806,7 +819,7 @@ namespace FASTER.test.ReadCacheTests
                             // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
                         }
                         if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                            Assert.IsTrue(status.Found, $"key {key}, status {status}");
+                            Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {wasPending}");
                         Assert.AreEqual(ii + valueAdd * tid, output);
                     }
                 }

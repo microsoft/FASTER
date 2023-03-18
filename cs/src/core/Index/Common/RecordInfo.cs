@@ -49,7 +49,6 @@ namespace FASTER.core
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
-        // If kUnused*BitOffset become used, start with the highest number
         internal const int kUnused3BitOffset = kModifiedBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
@@ -99,6 +98,12 @@ namespace FASTER.core
         }
 
         public bool IsClosed => IsClosedWord(word);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void InitializeLockShared() => this.word += kSharedLockIncrement;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void InitializeLockExclusive() => this.word |= kExclusiveLockBitMask;
 
         /// <summary>
         /// Unlock RecordInfo that was previously locked for exclusive access, via <see cref="TryLockExclusive"/>

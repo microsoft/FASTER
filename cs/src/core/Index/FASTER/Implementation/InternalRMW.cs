@@ -459,10 +459,10 @@ namespace FASTER.core
         DoCAS:
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             rmwInfo.RecordInfo = newRecordInfo;
-            bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
+            bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
-                CompleteUpdate(ref key, ref stackCtx, ref srcRecordInfo);
+                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 // If IU, status will be NOTFOUND; return that.
                 if (!doingCU)

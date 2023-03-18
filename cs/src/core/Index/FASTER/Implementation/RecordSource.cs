@@ -86,9 +86,8 @@ namespace FASTER.core
             LowestReadCachePhysicalAddress = default;
             HasMainLogSrc = false;
             HasReadCacheSrc = default;
-            
-            // Do not clear the locktable lock; this is not affected by record transfers, eviction, etc.
-            //HasLockTableLock = false;
+
+            // HasTransientLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
 
             this.LatestLogicalAddress = this.LogicalAddress = AbsoluteAddress(latestLogicalAddress);
             this.Log = srcLog;

@@ -333,10 +333,10 @@ namespace FASTER.core
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             upsertInfo.RecordInfo = newRecordInfo;
-            bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
+            bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
-                CompleteUpdate(ref key, ref stackCtx, ref srcRecordInfo);
+                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
                 stackCtx.ClearNewRecord();

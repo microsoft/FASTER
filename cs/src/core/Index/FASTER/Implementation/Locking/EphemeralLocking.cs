@@ -47,33 +47,5 @@ namespace FASTER.core
             if (stackCtx.recSrc.HasTransientLock)
                 fasterSession.UnlockTransientExclusive(ref key, ref stackCtx);
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CompleteUpdate(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-        {
-            if (UseReadCache)
-            {
-                if (stackCtx.recSrc.HasReadCacheSrc)
-                    srcRecordInfo.CloseAtomic();
-
-                // If we did not have a source lock, it is possible that a readcache record was inserted.
-                if (!stackCtx.recSrc.HasTransientLock)
-                    ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CompleteCopyToTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-        {
-            if (UseReadCache)
-            {
-                if (stackCtx.recSrc.HasReadCacheSrc)
-                    srcRecordInfo.CloseAtomic();
-
-                // If we did not have a source lock, it is possible that a readcache record was inserted.
-                if (!stackCtx.recSrc.HasTransientLock)
-                    ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
-            }
-        }
     }
 }

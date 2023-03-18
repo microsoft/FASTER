@@ -447,6 +447,8 @@ namespace FASTER.core
             // It is possible that we will successfully CAS but subsequently fail validation.
             bool success = true, casSuccess = false;
             OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
+            if (!copyToReadCache && DoEphemeralLocking)
+                newRecordInfo.InitializeLockShared();                   // For PostSingleWriter
             if (copyToReadCache || (stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress))
             {
                 Debug.Assert(!stackCtx.hei.IsReadCache || (readcacheNewAddressBit != 0), $"Inconsistent IsReadCache ({stackCtx.hei.IsReadCache}) vs. readcacheNewAddressBit ({readcacheNewAddressBit})");
@@ -469,13 +471,13 @@ namespace FASTER.core
 
                 // We are doing CopyToTail; we may have a source record from either main log (Compaction) or ReadCache, or have a LockTable lock.
                 Debug.Assert(reason == WriteReason.CopyToTail || reason == WriteReason.Compaction, "Expected WriteReason.CopyToTail or .Compaction");
-                success = casSuccess = SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx.recSrc, newLogicalAddress);
+                success = casSuccess = SpliceIntoHashChainAtReadCacheBoundary(ref key, ref stackCtx, newLogicalAddress);
             }
 
             if (success)
             {
                 if (!copyToReadCache)
-                    CompleteCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
+                    PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
             }
             else 
             {
@@ -492,17 +494,11 @@ namespace FASTER.core
                 return failStatus;
             }
 
-            // Success, and any read locks have been transferred.
+            // Success.
             pendingContext.recordInfo = newRecordInfo;
             pendingContext.logicalAddress = upsertInfo.Address;
-            fasterSession.PostSingleWriter(ref key, ref input, ref value,
-                                    ref localLog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                    ref newRecordInfo, ref upsertInfo, reason);
-            if (pendingContext.ResetModifiedBit)
-            {
-                newRecordInfo.Modified = false;
-                pendingContext.recordInfo = newRecordInfo;
-            }
+            fasterSession.PostSingleWriter(ref key, ref input, ref value, ref localLog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+                                           ref output, ref newRecordInfo, ref upsertInfo, reason);
             stackCtx.ClearNewRecord();
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
 #endregion

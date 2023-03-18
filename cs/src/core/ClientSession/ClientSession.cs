@@ -6,7 +6,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -1017,6 +1016,7 @@ namespace FASTER.core
                     : ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentReaderNoLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 bool success = _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
@@ -1051,10 +1051,34 @@ namespace FASTER.core
                 => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) 
+            {
+                if (_clientSession.fht.DoEphemeralLocking)
+                    PostSingleWriterLockEphemeral(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, reason);
+                else
+                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, reason);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostSingleWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+            }
+
+            public void PostSingleWriterLockEphemeral(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            {
+                try
+                {
+                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, reason);
+                }
+                finally
+                {
+                    if (reason == WriteReason.Upsert)
+                        recordInfo.UnlockExclusive();
+                    else if (recordInfo.IsLockedShared) // readcache records are not locked
+                        recordInfo.UnlockShared();
+                }
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1102,10 +1126,32 @@ namespace FASTER.core
                 => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
+            {
+                if (_clientSession.fht.DoEphemeralLocking)
+                    PostInitialUpdaterLockEphemeral(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+                else
+                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostInitialUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostInitialUpdaterLockEphemeral(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            {
+                try
+                { 
+                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+                }
+                finally
+                {
+                    recordInfo.UnlockExclusive();
+                }
             }
             #endregion InitialUpdater
 
@@ -1119,10 +1165,32 @@ namespace FASTER.core
                 => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
+            {
+                if (_clientSession.fht.DoEphemeralLocking)
+                    PostCopyUpdaterLockEphemeral(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref rmwInfo);
+                else
+                    PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref rmwInfo);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostCopyUpdaterLockEphemeral(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            {
+                try
+                {
+                    PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref rmwInfo);
+                }
+                finally
+                {
+                    recordInfo.UnlockExclusive();
+                }
             }
             #endregion CopyUpdater
 
@@ -1133,6 +1201,7 @@ namespace FASTER.core
                     ? InPlaceUpdaterLockEphemeral(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status)
                     : InPlaceUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status);
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
             {
                 if (!_clientSession.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
@@ -1170,12 +1239,33 @@ namespace FASTER.core
                 => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo) 
+            {
+                if (_clientSession.fht.DoEphemeralLocking)
+                    PostSingleDeleterLockEphemeral(ref key, ref recordInfo, ref deleteInfo);
+                else
+                    PostSingleDeleterNoLock(ref key, ref recordInfo, ref deleteInfo);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostSingleDeleterNoLock(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void PostSingleDeleterLockEphemeral(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+            {
+                try
+                {
+                    PostSingleDeleterNoLock(ref key, ref recordInfo, ref deleteInfo);
+                }
+                finally
+                {
+                    recordInfo.UnlockExclusive();
+                }
+            }
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
             {
@@ -1185,6 +1275,7 @@ namespace FASTER.core
                     : ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             { 
                 if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo))

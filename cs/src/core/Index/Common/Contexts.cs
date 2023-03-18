@@ -199,12 +199,11 @@ namespace FASTER.core
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
                 Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
                 Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
-                Debug.Assert((ushort)ReadFlags.ResetModifiedBit >> 1 == kResetModifiedBit);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static ushort GetOperationFlags(ReadFlags readFlags) 
-                => (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly | ReadFlags.ResetModifiedBit)) >> 1);
+                => (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey)
@@ -247,8 +246,6 @@ namespace FASTER.core
             internal bool CopyReadsToTailFromReadOnly => (operationFlags & (kCopyReadsToTail | kCopyFromDeviceOnly)) == kCopyReadsToTail;
 
             internal bool CopyFromDeviceOnly => (operationFlags & kCopyFromDeviceOnly) != 0;
-
-            internal bool ResetModifiedBit => (operationFlags & kResetModifiedBit) != 0;
 
             internal bool HasMinAddress => this.minAddress != Constants.kInvalidAddress;
 

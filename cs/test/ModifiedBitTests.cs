@@ -394,30 +394,5 @@ namespace FASTER.test.ModifiedTests
             luContext.EndLockable();
             luContext.EndUnsafe();
         }
-
-        [Test]
-        [Category(ModifiedBitTestCategory), Category(SmokeTestCategory)]
-        public void ReadFlagsResetModifiedBit([Values] FlushMode flushMode)
-        {
-            Populate();
-
-            int input = 0, output = 0, key = numRecords / 2;
-            AssertLockandModified(session, key, xlock: false, slock: false, modified: true);
-
-            if (flushMode == FlushMode.ReadOnly)
-                this.fht.hlog.ShiftReadOnlyAddress(fht.Log.TailAddress);
-            else if (flushMode == FlushMode.OnDisk)
-                this.fht.Log.FlushAndEvict(wait: true);
-
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail | ReadFlags.ResetModifiedBit };
-
-            // Check that reading the record clears the modified bit, even if it went through CopyToTail
-            var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
-            Assert.AreEqual(flushMode == FlushMode.OnDisk, status.IsPending, status.ToString());
-            if (status.IsPending)
-                session.CompletePending(wait: true);
-
-            AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
-        }
     }
 }
