@@ -20,8 +20,15 @@ namespace FASTER.core
         const byte logTokenCount = 1;
         const byte flogCommitCount = 1;
 
-        private readonly INamedDeviceFactory deviceFactory;
-        private readonly ICheckpointNamingScheme checkpointNamingScheme;
+        /// <summary>
+        /// deviceFactory
+        /// </summary>
+        protected readonly INamedDeviceFactory deviceFactory;
+
+        /// <summary>
+        /// checkpointNamingScheme
+        /// </summary>
+        protected readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
 
         private readonly bool removeOutdated;
@@ -35,6 +42,9 @@ namespace FASTER.core
         private byte indexTokenHistoryOffset, logTokenHistoryOffset, flogCommitHistoryOffset;
 
         readonly ILogger logger;
+        readonly WorkQueueFIFO<long> deleteQueue;
+        readonly int fastCommitThrottleFreq;
+        int commitCount;
 
         /// <summary>
         /// Create new instance of log commit manager
@@ -42,18 +52,22 @@ namespace FASTER.core
         /// <param name="deviceFactory">Factory for getting devices</param>
         /// <param name="checkpointNamingScheme">Checkpoint naming helper</param>
         /// <param name="removeOutdated">Remote older FASTER log commits</param>
+        /// <param name="fastCommitThrottleFreq">FastCommit throttle frequency - use only in FastCommit mode</param>
         /// <param name="logger">Remote older FASTER log commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, ILogger logger = null)
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
         {
             this.logger = logger;
             this.deviceFactory = deviceFactory;
             this.checkpointNamingScheme = checkpointNamingScheme;
+            this.fastCommitThrottleFreq = fastCommitThrottleFreq;
 
             this.semaphore = new SemaphoreSlim(0);
 
             this.removeOutdated = removeOutdated;
             if (removeOutdated)
             {
+                deleteQueue = new WorkQueueFIFO<long>(prior => deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(prior)));
+
                 // We keep two index checkpoints as the latest index might not have a
                 // later log checkpoint to work with
                 indexTokenHistory = new Guid[indexTokenCount];
@@ -97,6 +111,8 @@ namespace FASTER.core
         /// <inheritdoc />
         public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum)
         {
+            if (fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0)) return;
+
             using var device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
 
             // Two phase to ensure we write metadata in single Write operation
@@ -113,7 +129,10 @@ namespace FASTER.core
                 flogCommitHistory[flogCommitHistoryOffset] = commitNum;
                 flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
                 if (prior != default)
-                    deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(prior));
+                {
+                    // System.Threading.Tasks.Task.Run(() => deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(prior)));
+                    deleteQueue.EnqueueAndTryWork(prior, true);
+                }
             }
         }
 
@@ -161,6 +180,7 @@ namespace FASTER.core
         #endregion
 
         #region ICheckpointManager
+
         /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
@@ -209,7 +229,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
+        public virtual unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
             var device = NextLogCheckpointDevice(logToken);
 
@@ -233,7 +253,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog)
+        public virtual unsafe void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog)
         {
             deltaLog.Allocate(out int length, out long physicalAddress);
             if (length < commitMetadata.Length)
@@ -261,7 +281,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
+        public virtual byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             byte[] metadata = null;
             if (deltaLog != null && scanDelta)
@@ -419,7 +439,7 @@ namespace FASTER.core
         /// <param name="address"></param>
         /// <param name="buffer"></param>
         /// <param name="size"></param>
-        private unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
+        protected unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
         {
             if (bufferPool == null)
                 bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
@@ -445,7 +465,7 @@ namespace FASTER.core
         /// <param name="address"></param>
         /// <param name="buffer"></param>
         /// <param name="size"></param>
-        private unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
+        protected unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
         {
             if (bufferPool == null)
                 bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);

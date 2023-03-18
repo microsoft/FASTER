@@ -64,7 +64,7 @@ namespace FASTER.core
         ConcurrentDictionary<string, int> _recoveredSessionNameMap;
         int maxSessionID;
 
-        internal readonly bool DisableLocking;
+        internal readonly bool DisableEphemeralLocking;
         internal readonly LockTable<Key> LockTable;
 
         internal void IncrementNumLockingSessions()
@@ -74,6 +74,8 @@ namespace FASTER.core
         }
         internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref this.hlog.NumActiveLockingSessions);
 
+        internal readonly int ThrottleCheckpointFlushDelayMs = -1;
+        
         /// <summary>
         /// Create FasterKV instance
         /// </summary>
@@ -83,7 +85,7 @@ namespace FASTER.core
                 fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(),
                 fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
                 fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
-                fasterKVSettings.TryRecoverLatest, fasterKVSettings.DisableLocking)
+                fasterKVSettings.TryRecoverLatest, fasterKVSettings.DisableEphemeralLocking, null, fasterKVSettings.logger, fasterKVSettings.LockTableSize)
         { }
 
         /// <summary>
@@ -96,15 +98,18 @@ namespace FASTER.core
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="disableLocking">Whether FASTER takes read and write locks on records</param>
-        /// <param name="loggerFactory">Whether FASTER takes read and write locks on records</param>
+        /// <param name="disableEphemeralLocking">Whether FASTER takes ephemeral read and write locks on records</param>
+        /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="FasterKVSettings{Key, Value}"/>).</param>
+        /// <param name="logger">Logger to use.</param>
+        /// <param name="lockTableSize">Number of buckets in the lock table</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableLocking = false, ILoggerFactory loggerFactory = null)
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableEphemeralLocking = false,
+            ILoggerFactory loggerFactory = null, ILogger logger = null, int lockTableSize = Constants.kDefaultLockTableSize)
         {
             this.loggerFactory = loggerFactory;
-            this.logger = this.loggerFactory?.CreateLogger("FasterKV Constructor");
+            this.logger = logger ?? this.loggerFactory?.CreateLogger("FasterKV Constructor");
             if (comparer != null)
                 this.comparer = comparer;
             else
@@ -126,10 +131,12 @@ namespace FASTER.core
                 }
             }
 
-            this.DisableLocking = disableLocking;
+            this.DisableEphemeralLocking = disableEphemeralLocking;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
+
+            this.ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
                 logger?.LogInformation("CheckpointManager and CheckpointDir specified, ignoring CheckpointDir");
@@ -155,7 +162,7 @@ namespace FASTER.core
             {
                 WriteDefaultOnDelete = true;
 
-                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch, logger: loggerFactory?.CreateLogger("GenericAllocator HybridLog"));
+                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
@@ -168,7 +175,7 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch, logger: loggerFactory?.CreateLogger("GenericAllocator ReadCache"));
+                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator ReadCache"));
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
@@ -177,7 +184,7 @@ namespace FASTER.core
             {
                 keyLen = variableLengthStructSettings.keyLength;
                 hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,
-                    this.comparer, null, epoch, logger: loggerFactory?.CreateLogger("VariableLengthAllocator HybridLog"));
+                    this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("VariableLengthAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
@@ -189,14 +196,14 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch, logger: loggerFactory?.CreateLogger("VariableLengthAllocator ReadCache"));
+                        }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("VariableLengthAllocator ReadCache"));
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
             }
             else
             {
-                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch, logger: loggerFactory?.CreateLogger("BlittableAllocator HybridLog"));
+                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("BlittableAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
@@ -208,7 +215,7 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, this.comparer, ReadCacheEvict, epoch, logger: loggerFactory?.CreateLogger("VariableLengthAllocator ReadCache"));
+                        }, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("VariableLengthAllocator ReadCache"));
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
@@ -220,7 +227,7 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.LockTable = new LockTable<Key>(keyLen, this.comparer, keyLen is null ? null : hlog.bufferPool);
+            this.LockTable = new LockTable<Key>(lockTableSize, this.comparer, keyLen);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
@@ -545,7 +552,10 @@ namespace FASTER.core
                 }
 
                 if (valueTasks.Count == 0)
+                {
+                    // Note: The state machine will not advance as long as there are active locking sessions.
                     continue; // we need to re-check loop, so we return only when we are at REST
+                }
 
                 foreach (var task in valueTasks)
                 {
@@ -576,7 +586,7 @@ namespace FASTER.core
                 internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -595,7 +605,7 @@ namespace FASTER.core
                 internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
@@ -616,7 +626,7 @@ namespace FASTER.core
                 internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -635,7 +645,7 @@ namespace FASTER.core
                 internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -654,7 +664,7 @@ namespace FASTER.core
                 internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
@@ -680,7 +690,7 @@ namespace FASTER.core
                 internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
@@ -704,7 +714,7 @@ namespace FASTER.core
                 internalStatus = InternalDelete(ref key, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus, out _);
+            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
 
             Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
             sessionCtx.serialNum = serialNo;
@@ -853,8 +863,8 @@ namespace FASTER.core
                     for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
                         if (b.bucket_entries[bucket_entry] >= beginAddress)
                             ++total_entry_count;
-                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
-                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0) break;
+                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
                 }
             }
             return total_entry_count;
@@ -879,7 +889,7 @@ namespace FASTER.core
                     {
                         var x = default(HashBucketEntry);
                         x.word = b.bucket_entries[bucket_entry];
-                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && ((x.Address & ~Constants.kReadCacheBitMask) >= readcache.HeadAddress)))
+                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readcache.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new FasterException("Duplicate tag found in index");
@@ -888,8 +898,8 @@ namespace FASTER.core
                             ++total_record_count;
                         }
                     }
-                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
-                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0) break;
+                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
                 }
 
                 if (!histogram.ContainsKey(cnt)) histogram[cnt] = 0;

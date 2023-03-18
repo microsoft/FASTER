@@ -119,7 +119,7 @@ namespace FASTER.core
                 if (value > 0)
                 {
                     length |= kExtraMetadataBitMask;
-                    Debug.Assert(Length > MetadataSize);
+                    Debug.Assert(Length >= MetadataSize);
                     if (Serialized)
                         *(long*)Unsafe.AsPointer(ref payload) = value;
                     else

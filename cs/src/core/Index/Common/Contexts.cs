@@ -165,11 +165,11 @@ namespace FASTER.core
             internal const ushort kDisableReadCacheReads = 0x0002;
             internal const ushort kCopyReadsToTail = 0x0004;
             internal const ushort kCopyFromDeviceOnly = 0x0008;
+            internal const ushort kResetModifiedBit = 0x0010;
             // END  Must be kept in sync with corresponding ReadFlags enum values
 
             internal const ushort kNoKey = 0x0100;
             internal const ushort kIsAsync = 0x0200;
-            internal const ushort kHasPrevHighestKeyHashAddress = 0x0400;
 
             // Flags for various operations passed at multiple levels, e.g. through RETRY_NOW.
             internal const ushort kUnused1 = 0x1000;
@@ -193,47 +193,36 @@ namespace FASTER.core
                 return tempInputContainer;
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static ushort GetOperationFlags(ReadFlags readFlags)
+            static PendingContext()
             {
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
                 Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
                 Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
-                ushort flags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
-                return flags;
+                Debug.Assert((ushort)ReadFlags.ResetModifiedBit >> 1 == kResetModifiedBit);
             }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static ushort GetOperationFlags(ReadFlags readFlags) 
+                => (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly | ReadFlags.ResetModifiedBit)) >> 1);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey)
             {
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
-                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
-                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
-                ushort flags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
+                ushort flags = GetOperationFlags(readFlags);
                 if (noKey)
                     flags |= kNoKey;
                 return flags;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions) 
-                => this.SetOperationFlags(GetOperationFlags(readFlags), readOptions.StopAddress);
+            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions) => this.SetOperationFlags(GetOperationFlags(readFlags), readOptions.StopAddress);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey)
-                => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), readOptions.StopAddress);
+            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey) => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), readOptions.StopAddress);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags)
-            {
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
-                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
-                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
-                this.operationFlags = (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
-            }
+            internal void SetOperationFlags(ReadFlags readFlags) => this.operationFlags = GetOperationFlags(readFlags);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void SetOperationFlags(ushort flags, long stopAddress)
@@ -249,31 +238,17 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
             }
 
-            internal bool DisableReadCacheUpdates
-            {
-                get => (operationFlags & kDisableReadCacheUpdates) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kDisableReadCacheUpdates) : (ushort)(operationFlags & ~kDisableReadCacheUpdates);
-            }
+            internal bool DisableReadCacheUpdates => (operationFlags & kDisableReadCacheUpdates) != 0;
 
-            internal bool DisableReadCacheReads
-            {
-                get => (operationFlags & kDisableReadCacheReads) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kDisableReadCacheReads) : (ushort)(operationFlags & ~kDisableReadCacheReads);
-            }
+            internal bool DisableReadCacheReads => (operationFlags & kDisableReadCacheReads) != 0;
 
-            internal bool CopyReadsToTail
-            {
-                get => (operationFlags & kCopyReadsToTail) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kCopyReadsToTail) : (ushort)(operationFlags & ~kCopyReadsToTail);
-            }
+            internal bool CopyReadsToTail => (operationFlags & kCopyReadsToTail) != 0;
 
             internal bool CopyReadsToTailFromReadOnly => (operationFlags & (kCopyReadsToTail | kCopyFromDeviceOnly)) == kCopyReadsToTail;
 
-            internal bool CopyFromDeviceOnly
-            {
-                get => (operationFlags & kCopyFromDeviceOnly) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kCopyFromDeviceOnly) : (ushort)(operationFlags & ~kCopyFromDeviceOnly);
-            }
+            internal bool CopyFromDeviceOnly => (operationFlags & kCopyFromDeviceOnly) != 0;
+
+            internal bool ResetModifiedBit => (operationFlags & kResetModifiedBit) != 0;
 
             internal bool HasMinAddress => this.minAddress != Constants.kInvalidAddress;
 
@@ -283,10 +258,16 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
             }
 
-            internal bool HasPrevHighestKeyHashAddress
+            internal long PrevHighestKeyHashAddress
             {
-                get => (operationFlags & kHasPrevHighestKeyHashAddress) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kHasPrevHighestKeyHashAddress) : (ushort)(operationFlags & ~kHasPrevHighestKeyHashAddress);
+                get => recordInfo.PreviousAddress;
+                set => recordInfo.PreviousAddress = value;
+            }
+
+            internal long PrevLatestLogicalAddress
+            {
+                get => entry.word;
+                set => entry.word = value;
             }
 
             public void Dispose()
@@ -381,7 +362,7 @@ namespace FASTER.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        const int CheckpointVersion = 4;
+        const int CheckpointVersion = 5;
 
         /// <summary>
         /// Guid
@@ -400,9 +381,13 @@ namespace FASTER.core
         /// </summary>
         public long nextVersion;
         /// <summary>
-        /// Flushed logical address; indicates the latest immutable address on the main FASTER log at recovery time.
+        /// Flushed logical address; indicates the latest immutable address on the main FASTER log at checkpoint commit time.
         /// </summary>
         public long flushedLogicalAddress;
+        /// <summary>
+        /// Flushed logical address at snapshot start; indicates device offset for snapshot file
+        /// </summary>
+        public long snapshotStartFlushedLogicalAddress;
         /// <summary>
         /// Start logical address
         /// </summary>
@@ -473,6 +458,7 @@ namespace FASTER.core
             useSnapshotFile = 0;
             version = _version;
             flushedLogicalAddress = 0;
+            snapshotStartFlushedLogicalAddress = 0;
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
             snapshotFinalLogicalAddress = 0;
@@ -495,6 +481,9 @@ namespace FASTER.core
             string value = reader.ReadLine();
             var cversion = int.Parse(value);
 
+            if (cversion != CheckpointVersion)
+                throw new FasterException($"Invalid checkpoint version {cversion} encountered, current version is {CheckpointVersion}, cannot recover with this checkpoint");
+
             value = reader.ReadLine();
             var checksum = long.Parse(value);
 
@@ -512,6 +501,9 @@ namespace FASTER.core
 
             value = reader.ReadLine();
             flushedLogicalAddress = long.Parse(value);
+
+            value = reader.ReadLine();
+            snapshotStartFlushedLogicalAddress = long.Parse(value);
 
             value = reader.ReadLine();
             startLogicalAddress = long.Parse(value);
@@ -574,9 +566,6 @@ namespace FASTER.core
                     objectLogSegmentOffsets[i] = long.Parse(value);
                 }
             }
-
-            if (cversion != CheckpointVersion)
-                throw new FasterException("Invalid version");
 
             if (checksum != Checksum(continueTokens.Count))
                 throw new FasterException("Invalid checksum for checkpoint");
@@ -643,6 +632,7 @@ namespace FASTER.core
                     writer.WriteLine(version);
                     writer.WriteLine(nextVersion);
                     writer.WriteLine(flushedLogicalAddress);
+                    writer.WriteLine(snapshotStartFlushedLogicalAddress);
                     writer.WriteLine(startLogicalAddress);
                     writer.WriteLine(finalLogicalAddress);
                     writer.WriteLine(snapshotFinalLogicalAddress);
@@ -681,7 +671,7 @@ namespace FASTER.core
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
+            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
                 ^ checkpointTokensCount ^ (objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
         }
 
@@ -695,6 +685,7 @@ namespace FASTER.core
             logger?.LogInformation("Next Version: {nextVersion}", nextVersion);
             logger?.LogInformation("Is Snapshot?: {useSnapshotFile}", useSnapshotFile == 1);
             logger?.LogInformation("Flushed LogicalAddress: {flushedLogicalAddress}", flushedLogicalAddress);
+            logger?.LogInformation("SnapshotStart Flushed LogicalAddress: {snapshotStartFlushedLogicalAddress}", snapshotStartFlushedLogicalAddress);
             logger?.LogInformation("Start Logical Address: {startLogicalAddress}", startLogicalAddress);
             logger?.LogInformation("Final Logical Address: {finalLogicalAddress}", finalLogicalAddress);
             logger?.LogInformation("Snapshot Final Logical Address: {snapshotFinalLogicalAddress}", snapshotFinalLogicalAddress);

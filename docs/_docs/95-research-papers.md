@@ -13,6 +13,7 @@ classes: wide
 [[pdf](https://www.microsoft.com/en-us/research/uploads/prod/2018/03/faster-sigmod18.pdf)]
 * Badrish Chandramouli, Guna Prasaad, Donald Kossmann, Justin Levandoski, James Hunter, Mike Barnett. FASTER: An Embedded Concurrent Key-Value Store for State Management. <i>PVLDB 2018, Rio de Janeiro, Brazil, August 2018</i>
 [[pdf](https://www.microsoft.com/en-us/research/uploads/prod/2018/08/p809-chandramouli.pdf)]
+* Tianyu Li, Badrish Chandramouli, Sam Madden. Performant Almost-Latch-Free Data Structures Using Epoch Protection. In DaMoN, 2022. [[pdf](https://badrish.net/papers/epvs-damon2022.pdf)]
 
 ## Single-Node Recovery
 

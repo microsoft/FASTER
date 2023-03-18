@@ -96,8 +96,7 @@ namespace FASTER.test.statemachine
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
 
-            uc1.SuspendThread();
-            uc1.Dispose();
+            uc1.EndUnsafe();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -144,8 +143,7 @@ namespace FASTER.test.statemachine
             // We should be in REST, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
 
-            uc1.SuspendThread();
-            uc1.Dispose();
+            uc1.EndUnsafe();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -167,7 +165,7 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
 
             // Suspend s1
-            uc1.SuspendThread();
+            uc1.EndUnsafe();
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
@@ -179,15 +177,14 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
-            uc1.ResumeThread();
+            uc1.BeginUnsafe();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
 
-            uc1.SuspendThread();
-            uc1.Dispose();
+            uc1.EndUnsafe();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -218,7 +215,7 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
 
             // Suspend s1
-            uc1.SuspendThread();
+            uc1.EndUnsafe();
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
@@ -230,15 +227,14 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
-            uc1.ResumeThread();
+            uc1.BeginUnsafe();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
 
-            uc1.SuspendThread();
-            uc1.Dispose();
+            uc1.EndUnsafe();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -286,7 +282,7 @@ namespace FASTER.test.statemachine
             uc1.Refresh();
 
             // Suspend s1
-            uc1.SuspendThread();
+            uc1.EndUnsafe();
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
@@ -298,15 +294,14 @@ namespace FASTER.test.statemachine
             // Expect no checkpoint completion callback on resume
             f.checkpointCallbackExpectation = 0;
 
-            uc1.ResumeThread();
+            uc1.BeginUnsafe();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
 
-            uc1.SuspendThread();
-            uc1.Dispose();
+            uc1.EndUnsafe();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -320,7 +315,7 @@ namespace FASTER.test.statemachine
             Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // Suspend s1
-            uc1.SuspendThread();
+            uc1.EndUnsafe();
 
             // s1 is now in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
@@ -346,19 +341,16 @@ namespace FASTER.test.statemachine
             // Expect checkpoint completion callback on resume
             f.checkpointCallbackExpectation = 1;
 
-            uc1.ResumeThread();
+            uc1.BeginUnsafe();
 
             // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
-            uc1.SuspendThread();
-            uc1.Dispose();
+            uc1.EndUnsafe();
             s1.Dispose();
 
             RecoverAndTest(log);
         }
-
-
 
         [TestCase]
         [Category("FasterKV"), Category("CheckpointRestore")]
@@ -407,8 +399,8 @@ namespace FASTER.test.statemachine
             // System should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
-            var uc1 = s1.GetUnsafeContext();
-            uc1.ResumeThread();
+            var uc1 = s1.UnsafeContext;
+            uc1.BeginUnsafe();
             
             fht1.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
@@ -427,8 +419,7 @@ namespace FASTER.test.statemachine
             lts.getLUC();
             Assert.IsFalse(lts.isProtected);
 
-            uc1.SuspendThread();
-            uc1.Dispose();
+            uc1.EndUnsafe();
 
             // fast-foward state machine to completion
             ts.Refresh();
@@ -457,8 +448,9 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), fht1.SystemState));
 
             // Start first LUC before checkpoint
-            var luc1 = s1.GetLockableUnsafeContext();
-            luc1.ResumeThread();
+            var luc1 = s1.LockableUnsafeContext;
+            luc1.BeginUnsafe();
+            luc1.BeginLockable();
 
             fht1.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
@@ -480,8 +472,8 @@ namespace FASTER.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), fht1.SystemState));
 
             // End first LUC 
-            luc1.SuspendThread();
-            luc1.Dispose();
+            luc1.EndLockable();
+            luc1.EndUnsafe();
 
             s1.Refresh();
             // System should be in IN_PROGRESS, 1 
@@ -553,8 +545,7 @@ namespace FASTER.test.statemachine
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
 
-            uc1.SuspendThread();
-            uc1.Dispose();
+            uc1.EndUnsafe();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -603,8 +594,7 @@ namespace FASTER.test.statemachine
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
 
-            uc1.SuspendThread();
-            uc1.Dispose();
+            uc1.EndUnsafe();
             s1.Dispose();
 
             RecoverAndTest(log);
@@ -644,8 +634,8 @@ namespace FASTER.test.statemachine
             fht1.Log.ShiftReadOnlyAddress(fht1.Log.TailAddress, true);
 
             // Create unsafe context and hold epoch to prepare for manual state machine driver
-            uc1 = s1.GetUnsafeContext();
-            uc1.ResumeThread();
+            uc1 = s1.UnsafeContext;
+            uc1.BeginUnsafe();
 
             // Start session s2 on another thread for testing
             s2 = fht1.For(f).CreateThreadSession(f);
@@ -697,14 +687,8 @@ namespace FASTER.test.statemachine
             ref LockableUnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> luContext,
             ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> session)
         {
-
-            luContext = session.GetLockableUnsafeContext();
-            if (session.IsInPreparePhase())
-            {
-                luContext.Dispose();
-                return false;
-            }
-            return true;
+            luContext = session.LockableUnsafeContext;
+            return !session.IsInPreparePhase();
         }
         void RecoverAndTest(IDevice log)
         {

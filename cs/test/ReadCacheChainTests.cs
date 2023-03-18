@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
+using FASTER.test.LockTable;
 
 namespace FASTER.test.ReadCacheTests
 {
@@ -33,7 +34,7 @@ namespace FASTER.test.ReadCacheTests
 
         // This is the record after the first readcache record we insert; it lets us limit the range to ReadCacheEvict
         // so we get outsplicing rather than successively overwriting the hash table entry on ReadCacheEvict.
-        long readCacheHighEvictionAddress;
+        long readCacheBelowMidChainKeyEvictionAddress;
 
         internal class ChainComparer : IFasterEqualityComparer<int>
         {
@@ -113,8 +114,8 @@ namespace FASTER.test.ReadCacheTests
                     Assert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                 }
                 Assert.IsTrue(status.Found, status.ToString());
-                if (ii == 0)
-                    readCacheHighEvictionAddress = fht.ReadCache.TailAddress;
+                if (key < midChainKey)
+                    readCacheBelowMidChainKeyEvictionAddress = fht.ReadCache.TailAddress;
             }
 
             // Pass2: non-PENDING reads from the cache
@@ -143,17 +144,40 @@ namespace FASTER.test.ReadCacheTests
             }
         }
 
-        unsafe (long logicalAddress, long physicalAddress) GetHashChain(int key, out int recordKey, out bool invalid, out bool isReadCache)
-            => GetHashChain(fht, key, out recordKey, out invalid, out isReadCache);
+        unsafe bool GetRecordInInMemoryHashChain(int key, out bool isReadCache)
+        {
+            // returns whether the key was found before we'd go pending
+            var (la, pa) = GetHashChain(fht, key, out int recordKey, out bool invalid, out isReadCache);
+            while (isReadCache || la >= fht.hlog.HeadAddress)
+            {
+                if (recordKey == key && !invalid)
+                    return true;
+                (la, pa) = NextInChain(fht, pa, out recordKey, out invalid, ref isReadCache);
+            }
+            return false;
+        }
 
-        internal static unsafe (long logicalAddress, long physicalAddress) GetHashChain(FasterKV<int, int> fht, int key, out int recordKey, out bool invalid, out bool isReadCache)
+        internal bool FindRecordInReadCache(int key, out bool invalid, out long logicalAddress, out long physicalAddress)
+        {
+            // returns whether the key was found before we'd go pending
+            (logicalAddress, physicalAddress) = GetHashChain(fht, key, out int recordKey, out invalid, out bool isReadCache);
+            while (isReadCache)
+            {
+                if (recordKey == key)
+                    return true;
+                (logicalAddress, physicalAddress) = NextInChain(fht, physicalAddress, out recordKey, out invalid, ref isReadCache);
+            }
+            return false;
+        }
+
+        internal static (long logicalAddress, long physicalAddress) GetHashChain(FasterKV<int, int> fht, int key, out int recordKey, out bool invalid, out bool isReadCache)
         {
             var tagExists = fht.FindKey(ref key, out var entry);
             Assert.IsTrue(tagExists);
 
             isReadCache = entry.ReadCache;
             var log = isReadCache ? fht.readcache : fht.hlog;
-            var pa = log.GetPhysicalAddress(entry.Address);
+            var pa = log.GetPhysicalAddress(entry.Address &~ Constants.kReadCacheBitMask);
             recordKey = log.GetKey(pa);
             invalid = log.GetInfo(pa).Invalid;
 
@@ -171,38 +195,38 @@ namespace FASTER.test.ReadCacheTests
 
             isReadCache = new HashBucketEntry { word = la }.ReadCache;
             log = isReadCache ? fht.readcache : fht.hlog;
+            la &= ~Constants.kReadCacheBitMask;
             var pa = log.GetPhysicalAddress(la);
             recordKey = log.GetKey(pa);
             invalid = log.GetInfo(pa).Invalid;
             return (la, pa);
         }
 
-        (long logicalAddress, long physicalAddress) ScanReadCacheChain(int[] omitted = null, bool evicted = false)
+        (long logicalAddress, long physicalAddress) ScanReadCacheChain(int[] omitted = null, bool evicted = false, bool deleted = false)
         {
             omitted ??= Array.Empty<int>();
 
             var (la, pa) = GetHashChain(fht, lowChainKey, out int actualKey, out bool invalid, out bool isReadCache);
             for (var expectedKey = highChainKey; expectedKey >= lowChainKey; expectedKey -= mod)
             {
-                if (omitted.Contains(expectedKey))
+                // We evict from readcache only to just below midChainKey
+                if (!evicted || expectedKey >= midChainKey)
+                    Assert.IsTrue(isReadCache);
+
+                if (isReadCache)
                 {
-                    // Either we have not yet evicted Invalid readcache records, in which case we'll see an Invalid record,
-                    // or we have, in which case we don't see that record.
-                    if (evicted)
-                    {
-                        expectedKey -= mod;
-                        if (expectedKey < lowChainKey)
-                        {
-                            Assert.IsFalse(isReadCache);
-                            break;
-                        }
-                    }
-                    else
+                    Assert.AreEqual(expectedKey, actualKey);
+                    if (omitted.Contains(expectedKey))
                         Assert.IsTrue(invalid);
                 }
-                Assert.AreEqual(expectedKey, actualKey);
-                Assert.IsTrue(isReadCache);
+                else if (omitted.Contains(actualKey))
+                {
+                    Assert.AreEqual(deleted, fht.hlog.GetInfo(pa).Tombstone);
+                }
+
                 (la, pa) = NextInChain(pa, out actualKey, out invalid, ref isReadCache);
+                if (!isReadCache && la < fht.hlog.HeadAddress)
+                    break;
             }
             Assert.IsFalse(isReadCache);
             return (la, pa);
@@ -227,12 +251,15 @@ namespace FASTER.test.ReadCacheTests
             Assert.AreEqual(expectedKey, storedKey);
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
+        static void ClearCountsOnError(ClientSession<int, int, int, int, Empty, IFunctions<int, int, int, int, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
             luContext.exclusiveLockCount = 0;
         }
+
+        bool LockTableHasEntries() => LockTableTests.LockTableHasEntries(fht.LockTable);
+        int LockTableEntryCount() => LockTableTests.LockTableEntryCount(fht.LockTable);
 
         [Test]
         [Category(FasterKVTestCategory)]
@@ -270,15 +297,15 @@ namespace FASTER.test.ReadCacheTests
             doTest(midChainKey);
             ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: false);
 
-            fht.ReadCacheEvict(fht.ReadCache.BeginAddress, readCacheHighEvictionAddress);
-            ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: true);
+            fht.ReadCacheEvict(fht.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
+            ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: true, deleted: true);
         }
 
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteAllCacheRecordsTest()
+        public void DeleteHalfOfAllCacheRecordsTest()
         {
             PopulateAndEvict();
             CreateChain();
@@ -293,18 +320,37 @@ namespace FASTER.test.ReadCacheTests
                 Assert.IsFalse(status.Found, status.ToString());
             }
 
-            // Delete all keys in the readcache chain.
-            for (var ii = lowChainKey; ii <= highChainKey; ++ii)
+            // Should be found in the readcache before deletion
+            Assert.IsTrue(GetRecordInInMemoryHashChain(lowChainKey, out bool isReadCache));
+            Assert.IsTrue(isReadCache);
+            Assert.IsTrue(GetRecordInInMemoryHashChain(midChainKey, out isReadCache));
+            Assert.IsTrue(isReadCache);
+            Assert.IsTrue(GetRecordInInMemoryHashChain(highChainKey, out isReadCache));
+            Assert.IsTrue(isReadCache);
+
+            // Delete all keys in the readcache chain below midChainKey.
+            for (var ii = lowChainKey; ii < midChainKey; ++ii)
                 doTest(ii);
 
-            var _ = GetHashChain(lowChainKey, out int actualKey, out bool invalid, out bool isReadCache);
-            Assert.IsTrue(isReadCache);
-            Assert.IsTrue(invalid);
-
-            fht.ReadCacheEvict(fht.ReadCache.BeginAddress, readCacheHighEvictionAddress);
-            _ = GetHashChain(lowChainKey, out actualKey, out invalid, out isReadCache);
+            // LowChainKey should not be found in the readcache after deletion to just below midChainKey, but mid- and highChainKey should not be affected.
+            Assert.IsTrue(GetRecordInInMemoryHashChain(lowChainKey, out isReadCache));
             Assert.IsFalse(isReadCache);
-            Assert.IsFalse(invalid);
+            Assert.IsTrue(GetRecordInInMemoryHashChain(midChainKey, out isReadCache));
+            Assert.IsTrue(isReadCache);
+            Assert.IsTrue(GetRecordInInMemoryHashChain(highChainKey, out isReadCache));
+            Assert.IsTrue(isReadCache);
+
+            fht.ReadCacheEvict(fht.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
+
+            // Following deletion to just below midChainKey:
+            //  lowChainKey's tombstone should still be found in the mutable portion of the log
+            //  midChainKey and highChainKey should be found in the readcache
+            Assert.IsTrue(GetRecordInInMemoryHashChain(lowChainKey, out isReadCache));
+            Assert.IsFalse(isReadCache);
+            Assert.IsTrue(GetRecordInInMemoryHashChain(midChainKey, out isReadCache));
+            Assert.IsTrue(isReadCache);
+            Assert.IsTrue(GetRecordInInMemoryHashChain(highChainKey, out isReadCache));
+            Assert.IsTrue(isReadCache);
         }
 
         [Test]
@@ -338,10 +384,12 @@ namespace FASTER.test.ReadCacheTests
 
                 if (useRMW)
                 {
-                    // RMW will get the old value from disk, unlike Upsert
+                    // RMW will use the readcache entry for its source and then invalidate it.
                     status = session.RMW(key, value + valueAdd);
-                    Assert.IsTrue(status.IsPending, status.ToString());
-                    session.CompletePending(wait: true);
+                    Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
+
+                    Assert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
+                    Assert.IsTrue(invalid);
                 }
                 else
                 {
@@ -359,7 +407,7 @@ namespace FASTER.test.ReadCacheTests
             doTest(midChainKey);
             ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: false);
 
-            fht.ReadCacheEvict(fht.ReadCache.BeginAddress, readCacheHighEvictionAddress);
+            fht.ReadCacheEvict(fht.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
             ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: true);
         }
 
@@ -428,13 +476,14 @@ namespace FASTER.test.ReadCacheTests
                 // Existing key
                 key = spliceInExistingKey;
                 var status = session.RMW(key, key + valueAdd);
+
+                // If OnDisk, this used the readcache entry for its source and then invalidated it.
+                Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
                 if (recordRegion == RecordRegion.OnDisk)
                 {
-                    Assert.IsTrue(status.IsPending, status.ToString());
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
-                    (status, output) = GetSinglePendingResult(outputs);
+                    Assert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
+                    Assert.IsTrue(invalid);
                 }
-                Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
 
                 { // New key
                     key = spliceInNewKey;
@@ -495,7 +544,7 @@ namespace FASTER.test.ReadCacheTests
             CreateChain();
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            using var luContext = session.GetLockableUnsafeContext();
+            var luContext = session.LockableUnsafeContext;
 
             Dictionary<int, LockType> locks = new()
             {
@@ -504,7 +553,8 @@ namespace FASTER.test.ReadCacheTests
                 { highChainKey, LockType.Exclusive }
             };
 
-            luContext.ResumeThread();
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
 
             try
             {
@@ -514,33 +564,35 @@ namespace FASTER.test.ReadCacheTests
 
                 fht.ReadCache.FlushAndEvict(wait: true);
 
-                Assert.IsTrue(fht.LockTable.IsActive);
-                Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
+                Assert.IsTrue(LockTableHasEntries());
+                Assert.AreEqual(locks.Count, LockTableEntryCount());
 
                 foreach (var key in locks.Keys)
                 {
-                    var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
+                    var localKey = key;    // can't ref the iteration variable
+                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
                     Assert.IsTrue(found);
                     var lockType = locks[key];
                     Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                    Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
+                    Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
 
                     luContext.Unlock(key, lockType);
-                    Assert.IsFalse(fht.LockTable.Get(key, out recordInfo));
+                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out recordInfo));
                 }
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
             {
-                luContext.SuspendThread();
+                luContext.EndLockable();
+                luContext.EndUnsafe();
             }
 
-            Assert.IsFalse(fht.LockTable.IsActive);
-            Assert.AreEqual(0, fht.LockTable.dict.Count);
+            Assert.IsFalse(LockTableHasEntries());
+            Assert.AreEqual(0, LockTableEntryCount());
         }
 
         [Test]
@@ -556,7 +608,7 @@ namespace FASTER.test.ReadCacheTests
             //CreateChain();
 
             using var session = fht.NewSession(new SimpleFunctions<int, int>());
-            using var luContext = session.GetLockableUnsafeContext();
+            var luContext = session.LockableUnsafeContext;
 
             Dictionary<int, LockType> locks = new()
             {
@@ -565,7 +617,9 @@ namespace FASTER.test.ReadCacheTests
                 { highChainKey, LockType.Exclusive }
             };
 
-            luContext.ResumeThread();
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
+
             try
             {
                 // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
@@ -575,16 +629,17 @@ namespace FASTER.test.ReadCacheTests
                 fht.ReadCache.FlushAndEvict(wait: true);
 
                 // Verify the locks have been evicted to the lockTable
-                Assert.IsTrue(fht.LockTable.IsActive);
-                Assert.AreEqual(locks.Count, fht.LockTable.dict.Count);
+                Assert.IsTrue(LockTableHasEntries());
+                Assert.AreEqual(locks.Count, LockTableEntryCount());
 
                 foreach (var key in locks.Keys)
                 {
-                    var found = fht.LockTable.Get(key, out RecordInfo recordInfo);
+                    var localKey = key;    // can't ref the iteration variable
+                    var found = fht.LockTable.TryGet(ref localKey, out RecordInfo recordInfo);
                     Assert.IsTrue(found);
                     var lockType = locks[key];
                     Assert.AreEqual(lockType == LockType.Exclusive, recordInfo.IsLockedExclusive);
-                    Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.NumLockedShared > 0);
+                    Assert.AreEqual(lockType != LockType.Exclusive, recordInfo.IsLockedShared);
                 }
 
                 fht.Log.FlushAndEvict(wait: true);
@@ -602,21 +657,23 @@ namespace FASTER.test.ReadCacheTests
                     Assert.AreEqual(lockType != LockType.Exclusive, sharedCount > 0);
 
                     luContext.Unlock(key, lockType);
-                    Assert.IsFalse(fht.LockTable.Get(key, out _));
+                    var localKey = key;    // can't ref the iteration variable
+                    Assert.IsFalse(fht.LockTable.TryGet(ref localKey, out _));
                 }
             }
             catch (Exception)
             {
-                ClearCountsOnError(luContext);
+                ClearCountsOnError(session);
                 throw;
             }
             finally
             {
-                luContext.SuspendThread();
+                luContext.EndLockable();
+                luContext.EndUnsafe();
             }
 
-            Assert.IsFalse(fht.LockTable.IsActive);
-            Assert.AreEqual(0, fht.LockTable.dict.Count);
+            Assert.IsFalse(LockTableHasEntries());
+            Assert.AreEqual(0, LockTableEntryCount());
         }
     }
 
@@ -649,9 +706,19 @@ namespace FASTER.test.ReadCacheTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
-            // Make this small enough that we force the readcache
+            string filename = MethodTestDir + $"/{this.GetType().Name}.log";
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is DeviceType deviceType)
+                {
+                    log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
+                    continue;
+                }
+            }
+            this.log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
+
+            // Make the main log small enough that we force the readcache
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
-            log = Devices.CreateLogDevice(MethodTestDir + $"/{this.GetType().Name}.log", deleteOnClose: true);
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
 
             ModuloRange modRange = ModuloRange.None;
@@ -679,6 +746,20 @@ namespace FASTER.test.ReadCacheTests
 
         internal class RmwLongFunctions : SimpleFunctions<long, long, Empty>
         {
+            /// <inheritdoc/>
+            public override bool ConcurrentWriter(ref long key, ref long input, ref long src, ref long dst, ref long output, ref UpsertInfo upsertInfo)
+            {
+                dst = output = src;
+                return true;
+            }
+
+            /// <inheritdoc/>
+            public override bool SingleWriter(ref long key, ref long input, ref long src, ref long dst, ref long output, ref UpsertInfo upsertInfo, WriteReason reason)
+            {
+                dst = output = src;
+                return true;
+            }
+
             /// <inheritdoc/>
             public override bool CopyUpdater(ref long key, ref long input, ref long oldValue, ref long newValue, ref long output, ref RMWInfo rmwInfo)
             {
@@ -712,26 +793,35 @@ namespace FASTER.test.ReadCacheTests
                 long key = ii;
                 var status = session.Upsert(ref key, ref key);
                 Assert.IsFalse(status.IsPending);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                Assert.IsTrue(status.Record.Created, $"key {key}, status {status}");
             }
             session.CompletePending(true);
             fht.Log.FlushAndEvict(true);
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<long, long, long, long, Empty, IFunctions<long, long, long, long, Empty>> luContext)
-        {
-            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
-            luContext.sharedLockCount = 0;
-            luContext.exclusiveLockCount = 0;
-        }
-
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
-        public void LongRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
+        [Category(StressTestCategory)]
+        //[Repeat(300)]
+#pragma warning disable IDE0060 // Remove unused parameter (modRange is used by Setup())
+        public void LongRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
+                                          [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
+#if WINDOWS
+                                              [Values(DeviceType.LSD
+#else
+                                              [Values(DeviceType.MLSD
+#endif
+                                              )] DeviceType deviceType)
+#pragma warning restore IDE0060 // Remove unused parameter
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
-                Assert.Ignore();
+                Assert.Ignore("Skipped due to 0 threads for both read and update");
+            if ((numReadThreads > 2 || numWriteThreads > 2) && IsRunningAzureTests)
+                Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
             PopulateAndEvict();
 
             const int numIterations = 1;
@@ -753,9 +843,8 @@ namespace FASTER.test.ReadCacheTests
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
                             Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
                         }
-                        Assert.IsTrue(status.Found, status.ToString());
-
-                        Assert.IsTrue((output % valueAdd) == ii);
+                        Assert.IsTrue(status.Found, $"key {key}, status {status}");
+                        Assert.AreEqual(ii, output % valueAdd);
                     }
                 }
             }
@@ -770,24 +859,27 @@ namespace FASTER.test.ReadCacheTests
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         long key = ii, input = ii + valueAdd * tid, output = 0;
-                        var status = session.RMW(ref key, ref input, ref output);
+                        var status = updateOp == UpdateOp.RMW
+                                        ? session.RMW(ref key, ref input, ref output)
+                                        : session.Upsert(ref key, ref input, ref input, ref output);
                         bool wasPending = status.IsPending;
                         if (wasPending)
                         {
+                            Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs);
                             
-                            // Record may have been updated in-place
+                            // Record may have been updated in-place if a CTT was done during the pending operation.
                             // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
                         }
-                        Assert.IsTrue(status.Found, status.ToString());
-
+                        if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
+                            Assert.IsTrue(status.Found, $"key {key}, status {status}");
                         Assert.AreEqual(ii + valueAdd * tid, output);
                     }
                 }
             }
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            List<Task> tasks = new();   // Task rather than Thread for propagation of exceptions.
             for (int t = 1; t <= numReadThreads + numWriteThreads; t++)
             {
                 var tid = t;
@@ -829,9 +921,19 @@ namespace FASTER.test.ReadCacheTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
-            // Make this small enough that we force the readcache
+            string filename = MethodTestDir + $"/{this.GetType().Name}.log";
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is DeviceType deviceType)
+                {
+                    log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
+                    continue;
+                }
+            }
+            this.log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
+
+            // Make the main log small enough that we force the readcache
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
-            log = Devices.CreateLogDevice(MethodTestDir + $"/{this.GetType().Name}.log", deleteOnClose: true);
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
 
             ModuloRange modRange = ModuloRange.None;
@@ -859,6 +961,22 @@ namespace FASTER.test.ReadCacheTests
 
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
         {
+            /// <inheritdoc/>
+            public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            {
+                src.CopyTo(ref dst);
+                src.CopyTo(ref output, base.memoryPool);
+                return true;
+            }
+
+            /// <inheritdoc/>
+            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            {
+                src.CopyTo(ref dst);
+                src.CopyTo(ref output, base.memoryPool);
+                return true;
+            }
+
             /// <inheritdoc/>
             public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
@@ -903,7 +1021,7 @@ namespace FASTER.test.ReadCacheTests
             fht.Log.FlushAndEvict(true);
         }
 
-        static void ClearCountsOnError(LockableUnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty>> luContext)
+        static void ClearCountsOnError(ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -913,13 +1031,24 @@ namespace FASTER.test.ReadCacheTests
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
-        // [Repeat(1000)]
-        public void SpanByteRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads)
+        [Category(StressTestCategory)]
+        //[Repeat(300)]
+        public void SpanByteRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
+                                              [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
+#if WINDOWS
+                                              [Values(DeviceType.LSD
+#else
+                                              [Values(DeviceType.MLSD
+#endif
+                                              )] DeviceType deviceType)
         {
-            //Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-            
             if (numReadThreads == 0 && numWriteThreads == 0)
-                Assert.Ignore();
+                Assert.Ignore("Skipped due to 0 threads for both read and update");
+            if ((numReadThreads > 2 || numWriteThreads > 2) && IsRunningAzureTests)
+                Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
             PopulateAndEvict();
 
             const int numIterations = 1;
@@ -944,11 +1073,9 @@ namespace FASTER.test.ReadCacheTests
                         {
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
                             Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
                         }
-                        else
-                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
+                        Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {wasPending}");
 
                         long value = BitConverter.ToInt64(output.Memory.Memory.Span);
                         Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}, wasPending {wasPending}");
@@ -976,18 +1103,20 @@ namespace FASTER.test.ReadCacheTests
 
                         Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
                         Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
-                        var status = session.RMW(ref key, ref input, ref output);
+                        var status = updateOp == UpdateOp.RMW
+                                        ? session.RMW(ref key, ref input, ref output)
+                                        : session.Upsert(ref key, ref input, ref input, ref output);
                         bool wasPending = status.IsPending;
                         if (wasPending)
                         {
+                            Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
                             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs);
-                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                            // Record may have been updated in-place
+                            // Record may have been updated in-place if a CTT was done during the pending operation.
                             // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
                         }
-                        else
+                        if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
                             Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
                         long value = BitConverter.ToInt64(output.Memory.Memory.Span);

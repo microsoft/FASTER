@@ -28,7 +28,7 @@ namespace StoreVarLenTypes
             // For this test we require record-level locking
             using var store = new FasterKV<SpanByte, SpanByte>(
                 size: 1L << 20,
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 }, disableLocking: false);
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 }, disableEphemeralLocking: false);
 
             // Create session for ASCII sums. We require two callback function types to be provided:
             //    AsciiSumSpanByteFunctions implements RMW callback functions
@@ -59,7 +59,7 @@ namespace StoreVarLenTypes
                 store.Log.FlushAndEvict(true); // Flush and evict all records to disk
                 var _status = s.RMW(_key, _input); // CopyUpdater to 270 (due to immutable source value on disk)
 
-                if (_status.IsPending)
+                if (!_status.IsPending)
                 {
                     Console.WriteLine("Error!");
                     return;

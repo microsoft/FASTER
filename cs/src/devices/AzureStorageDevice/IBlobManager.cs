@@ -1,69 +1,65 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT license.
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
-using Microsoft.Azure.Storage.Blob;
-using System;
-using System.Threading;
 using System.Threading.Tasks;
+using System.Threading;
+using System;
 
 namespace FASTER.devices
 {
     /// <summary>
-    /// Manager for blobs, can be shared across devices.
+    /// Blob manager interface
     /// </summary>
     public interface IBlobManager
     {
         /// <summary>
-        /// Get blob request options (default)
+        /// Stop tasks associated with blob manager
         /// </summary>
-        /// <returns></returns>
-        BlobRequestOptions GetBlobRequestOptionsWithoutRetry();
+        Task StopAsync();
 
         /// <summary>
-        /// Get blob request options (with retry)
+        /// Storage error handler
         /// </summary>
-        /// <returns></returns>
-        BlobRequestOptions GetBlobRequestOptionsWithRetry();
+        IStorageErrorHandler StorageErrorHandler { get; }
 
         /// <summary>
-        /// Cancellation token for blob operations
+        /// Storage tracer
         /// </summary>
-        CancellationToken CancellationToken { get; }
+        FasterTraceHelper StorageTracer { get; }
 
         /// <summary>
-        /// Error handler for blob operations
+        /// Handle storage error
         /// </summary>
-        /// <param name="where"></param>
-        /// <param name="message"></param>
-        /// <param name="blobName"></param>
-        /// <param name="e"></param>
-        /// <param name="isFatal"></param>
-        void HandleBlobError(string where, string message, string blobName, Exception e, bool isFatal);
+        void HandleStorageError(string where, string message, string blobName, Exception e, bool isFatal, bool isWarning);
 
         /// <summary>
-        /// Confirm lease ownership
+        /// Read concurrency
         /// </summary>
-        /// <returns></returns>
-        ValueTask ConfirmLeaseAsync();
+        SemaphoreSlim AsynchronousStorageReadMaxConcurrency { get; }
 
         /// <summary>
-        /// Max concurrency on async storage read
+        /// Write concurrency
         /// </summary>
-        SemaphoreSlim AsyncStorageReadMaxConcurrency { get; }
+        SemaphoreSlim AsynchronousStorageWriteMaxConcurrency { get; }
 
         /// <summary>
-        /// Max concurrency on async storage write
+        /// Perform operation with retries
         /// </summary>
-        SemaphoreSlim AsyncStorageWriteMaxConcurrency { get; }
+        Task PerformWithRetriesAsync(
+            SemaphoreSlim semaphore,
+            bool requireLease,
+            string name,
+            string intent,
+            string data,
+            string target,
+            int expectedLatencyBound,
+            bool isCritical,
+            Func<int, Task<long>> operationAsync,
+            Func<Task> readETagAsync = null);
 
         /// <summary>
-        /// Max retries
+        /// Confirm lease is good for a while
         /// </summary>
-        int MaxRetries { get; }
-
-        /// <summary>
-        /// Configure await for storage
-        /// </summary>
-        bool ConfigureAwaitForStorage { get; }
+        ValueTask ConfirmLeaseIsGoodForAWhileAsync();
     }
 }

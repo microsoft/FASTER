@@ -22,8 +22,6 @@ namespace FASTER.core
         [FieldOffset(0)]
         public long LastFlushedUntilAddress;
         [FieldOffset(8)]
-        public long LastClosedUntilAddress;
-        [FieldOffset(16)]
         public long Dirty;
     }
 
@@ -166,6 +164,16 @@ namespace FASTER.core
         /// Begin address
         /// </summary>
         public long BeginAddress;
+
+        /// <summary>
+        /// Address until which we are currently closing. Used to coordinate linear closing of pages.
+        /// Only one thread will be closing pages at a time.
+        /// </summary>
+        long OngoingCloseUntilAddress;
+
+        /// <inheritdoc/>
+        public override string ToString()
+            => $"TA {GetTailAddress()}, ROA {ReadOnlyAddress}, SafeROA {SafeReadOnlyAddress}, HA {HeadAddress}, SafeHA {SafeHeadAddress}, CUA {ClosedUntilAddress}, FUA {FlushedUntilAddress}, BA {BeginAddress}";
 
         #endregion
 
@@ -408,7 +416,8 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="localSegmentOffsets"></param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
+        /// <param name="fuzzyStartLogicalAddress">Start address of fuzzy region, which contains old and new version records (we use this to selectively flush only old-version records during snapshot checkpoint)</param>
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress);
 
         private protected void VerifyCompatibleSectorSize(IDevice device)
         {
@@ -424,73 +433,110 @@ namespace FASTER.core
         /// <param name="prevEndAddress"></param>
         /// <param name="version"></param>
         /// <param name="deltaLog"></param>
-        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog)
+        /// <param name="completedSemaphore"></param>
+        /// <param name="throttleCheckpointFlushDelayMs"></param>
+        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
-            long startPage = GetPage(startAddress);
-            long endPage = GetPage(endAddress);
-            if (endAddress > GetStartLogicalAddress(endPage))
-                endPage++;
+            logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            long prevEndPage = GetPage(prevEndAddress);
-            deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
-            int destOffset = 0;
+            var _completedSemaphore = new SemaphoreSlim(0);
+            completedSemaphore = _completedSemaphore;
 
-            for (long p = startPage; p < endPage; p++)
+            if (throttleCheckpointFlushDelayMs >= 0)
+                Task.Run(FlushRunner);
+            else
+                FlushRunner();
+
+            void FlushRunner()
             {
-                // All RCU pages need to be added to delta
-                // For IPU-only pages, prune based on dirty bit
-                if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
-                    continue;
+                long startPage = GetPage(startAddress);
+                long endPage = GetPage(endAddress);
+                if (endAddress > GetStartLogicalAddress(endPage))
+                    endPage++;
 
-                var logicalAddress = p << LogPageSizeBits;
-                var physicalAddress = GetPhysicalAddress(logicalAddress);
+                long prevEndPage = GetPage(prevEndAddress);
+                deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
+                int destOffset = 0;
 
-                var endLogicalAddress = logicalAddress + PageSize;
-                if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
-                Debug.Assert(endLogicalAddress > logicalAddress);
-                var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
-
-                if (p == startPage)
+                // We perform delta capture under epoch protection with page-wise refresh for latency reasons
+                bool epochTaken = false;
+                if (!epoch.ThisInstanceProtected())
                 {
-                    physicalAddress += (int)(startAddress & PageSizeMask);
-                    logicalAddress += (int)(startAddress & PageSizeMask);
+                    epochTaken = true;
+                    epoch.Resume();
                 }
 
-                while (physicalAddress < endPhysicalAddress)
+                try
                 {
-                    ref var info = ref GetInfo(physicalAddress);
-                    var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
-                    if (info.Dirty)
+                    for (long p = startPage; p < endPage; p++)
                     {
-                        info.DirtyAtomic = false; // there may be read locks being taken, hence atomic
-                        int size = sizeof(long) + sizeof(int) + alignedRecordSize;
-                        if (destOffset + size > entryLength)
-                        {
-                            deltaLog.Seal(destOffset);
-                            deltaLog.Allocate(out entryLength, out destPhysicalAddress);
-                            destOffset = 0;
-                            if (destOffset + size > entryLength)
-                            {
-                                deltaLog.Seal(0);
-                                deltaLog.Allocate(out entryLength, out destPhysicalAddress);
-                            }
-                            if (destOffset + size > entryLength)
-                                throw new FasterException("Insufficient page size to write delta");
-                        }
-                        *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
-                        destOffset += sizeof(long);
-                        *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
-                        destOffset += sizeof(int);
-                        Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
-                        destOffset += alignedRecordSize;
-                    }
-                    physicalAddress += alignedRecordSize;
-                    logicalAddress += alignedRecordSize;
-                }
-            }
+                        // Check if we have the page safely available to process in memory
+                        if (HeadAddress >= (p << LogPageSizeBits) + PageSize)
+                            continue;
 
-            if (destOffset > 0)
-                deltaLog.Seal(destOffset);
+                        // All RCU pages need to be added to delta
+                        // For IPU-only pages, prune based on dirty bit
+                        if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
+                            continue;
+
+                        var logicalAddress = p << LogPageSizeBits;
+                        var physicalAddress = GetPhysicalAddress(logicalAddress);
+
+                        var endLogicalAddress = logicalAddress + PageSize;
+                        if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
+                        Debug.Assert(endLogicalAddress > logicalAddress);
+                        var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
+
+                        if (p == startPage)
+                        {
+                            physicalAddress += (int)(startAddress & PageSizeMask);
+                            logicalAddress += (int)(startAddress & PageSizeMask);
+                        }
+
+                        while (physicalAddress < endPhysicalAddress)
+                        {
+                            ref var info = ref GetInfo(physicalAddress);
+                            var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                            if (info.Dirty)
+                            {
+                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
+                                int size = sizeof(long) + sizeof(int) + alignedRecordSize;
+                                if (destOffset + size > entryLength)
+                                {
+                                    deltaLog.Seal(destOffset);
+                                    deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                                    destOffset = 0;
+                                    if (destOffset + size > entryLength)
+                                    {
+                                        deltaLog.Seal(0);
+                                        deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                                    }
+                                    if (destOffset + size > entryLength)
+                                        throw new FasterException("Insufficient page size to write delta");
+                                }
+                                *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
+                                destOffset += sizeof(long);
+                                *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
+                                destOffset += sizeof(int);
+                                Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
+                                destOffset += alignedRecordSize;
+                            }
+                            physicalAddress += alignedRecordSize;
+                            logicalAddress += alignedRecordSize;
+                        }
+                        epoch.ProtectAndDrain();
+                    }
+                }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
+
+                if (destOffset > 0)
+                    deltaLog.Seal(destOffset);
+                _completedSemaphore.Release();
+            }
         }
 
         internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
@@ -517,7 +563,19 @@ namespace FASTER.core
                             if (address >= startLogicalAddress && address < endLogicalAddress)
                             {
                                 var destination = GetPhysicalAddress(address);
+
+                                // Clear extra space (if any) in old record
+                                var oldSize = GetRecordSize(destination).Item2;
+                                if (oldSize > size)
+                                    new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
+
+                                // Update with new record
                                 Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
+
+                                // Clean up temporary bits when applying the delta log
+                                ref var destInfo = ref GetInfo(destination);
+                                destInfo.ClearLocks();
+                                destInfo.Unseal();
                             }
                             physicalAddress += size;
                         }
@@ -586,6 +644,31 @@ namespace FASTER.core
             }
         }
 
+        private unsafe void VerifyPage(long page)
+        {
+            var startLogicalAddress = GetStartLogicalAddress(page);
+            var endLogicalAddress = GetStartLogicalAddress(page + 1);
+            var physicalAddress = GetPhysicalAddress(startLogicalAddress);
+
+            long untilLogicalAddressInPage = GetPageSize();
+            long pointer = 0;
+
+            while (pointer < untilLogicalAddressInPage)
+            {
+                long recordStart = physicalAddress + pointer;
+                ref RecordInfo info = ref GetInfo(recordStart);
+
+                if (info.IsNull())
+                    pointer += RecordInfo.GetLength();
+                else
+                {
+                    int size = GetRecordSize(recordStart).Item2;
+                    Debug.Assert(size < 50);
+                    Debug.Assert(size <= GetPageSize());
+                    pointer += size;
+                }
+            }
+        }
 
         /// <summary>
         /// Read objects to memory (async)
@@ -885,6 +968,7 @@ namespace FASTER.core
                     emptyPageCount = value;
                     headOffsetLagSize -= emptyPageCount;
 
+                    // Lag addresses are the number of pages "behind" TailPageOffset (the tail in the circular buffer).
                     ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
                     HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
                 }
@@ -892,13 +976,12 @@ namespace FASTER.core
                 // Force eviction now if empty page count has increased
                 if (value >= oldEPC)
                 {
-                    bool prot = true;
-                    if (!epoch.ThisInstanceProtected())
-                        prot = false;
+                    bool prot = epoch.ThisInstanceProtected();
 
                     if (!prot) epoch.Resume();
                     try
                     {
+                        // These shifts adjust via application of the lag addresses.
                         var _tailAddress = GetTailAddress();
                         PageAlignedShiftReadOnlyAddress(_tailAddress);
                         PageAlignedShiftHeadAddress(_tailAddress);
@@ -1214,7 +1297,7 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         protected virtual void TruncateUntilAddress(long toAddress)
         {
-            device.TruncateUntilAddress(toAddress);
+            Task.Run(() => device.TruncateUntilAddress(toAddress));
         }
 
         internal virtual bool TryComplete()
@@ -1241,59 +1324,78 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
+        /// <summary>   
         /// Action to be performed for when all threads have 
         /// agreed that a page range is closed.
         /// </summary>
         /// <param name="newSafeHeadAddress"></param>
         private void OnPagesClosed(long newSafeHeadAddress)
         {
+            Debug.Assert(newSafeHeadAddress > 0);
             if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
             {
-                // Also shift begin address if we are using a null storage device
-                if (IsNullDevice)
-                    Utility.MonotonicUpdate(ref BeginAddress, newSafeHeadAddress, out _);
+                // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
+                for (; ; Thread.Yield())
+                {
+                    long _ongoingCloseUntilAddress = OngoingCloseUntilAddress;
+
+                    // If we are closing in the middle of an ongoing OPCWorker loop, exit.
+                    if (_ongoingCloseUntilAddress >= newSafeHeadAddress)
+                        break;
+
+                    // We'll continue the loop if we fail the CAS here; that means another thread extended the Ongoing range.
+                    if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, newSafeHeadAddress, _ongoingCloseUntilAddress) == _ongoingCloseUntilAddress)
+                    {
+                        if (_ongoingCloseUntilAddress == 0)
+                        {
+                            // There was no other thread running the OPCWorker loop, so this thread is responsible for closing [ClosedUntilAddress -> newSafeHeadAddress]
+                            OnPagesClosedWorker();
+                        }
+                        else
+                        {
+                            // There was another thread runnning the OPCWorker loop, and its ongoing close operation was successfully extended to include the new safe
+                            // head address; we have no further work here.
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+
+        private void OnPagesClosedWorker()
+        {
+            for (; ; Thread.Yield())
+            {
+                long closeStartAddress = ClosedUntilAddress;
+                long closeEndAddress = OngoingCloseUntilAddress;
 
                 if (ReadCache)
-                    EvictCallback(oldSafeHeadAddress, newSafeHeadAddress);
+                    EvictCallback(closeStartAddress, closeEndAddress);
 
-                for (long closePageAddress = oldSafeHeadAddress & ~PageSizeMask; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
+                for (long closePageAddress = closeStartAddress & ~PageSizeMask; closePageAddress < closeEndAddress; closePageAddress += PageSize)
                 {
-                    long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
-                    long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
+                    long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
+                    long end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
-                    // If there are no active locking sessions, there should be no locks in the log.
-                    if (this.NumActiveLockingSessions > 0 && OnLockEvictionObserver is not null)
+                    if (OnLockEvictionObserver is not null)
                         MemoryPageScan(start, end, OnLockEvictionObserver);
-
                     if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
 
-                    int closePage = (int)(closePageAddress >> LogPageSizeBits);
-                    int closePageIndex = closePage % BufferSize;
+                    // If we are using a null storage device, we must also shift BeginAddress 
+                    if (IsNullDevice)
+                        Utility.MonotonicUpdate(ref BeginAddress, end, out _);
 
                     // If the end of the closing range is at the end of the page, free the page
                     if (end == closePageAddress + PageSize)
-                    {
-                        // If the start of the closing range is not at the beginning of this page, spin-wait until the adjacent earlier ranges on this page are closed
-                        if ((start & PageSizeMask) > 0)
-                        {
-                            while (ClosedUntilAddress < start)
-                            {
-                                epoch.ProtectAndDrain();
-                                Thread.Yield();
-                            }
-                        }
-                        FreePage(closePage);
-                    }
+                        FreePage((int)(closePageAddress >> LogPageSizeBits));
 
-                    Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, end, out _);
-                    ShiftClosedUntilAddress();
-                    if (ClosedUntilAddress > FlushedUntilAddress)
-                    {
-                        throw new FasterException($"Closed address {ClosedUntilAddress} exceeds flushed address {FlushedUntilAddress}");
-                    }
+                    Utility.MonotonicUpdate(ref ClosedUntilAddress, end, out _);
                 }
+
+                // End if we have exhausted co-operative work
+                if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, 0, closeEndAddress) == closeEndAddress)
+                    break;
             }
         }
 
@@ -1420,30 +1522,6 @@ namespace FASTER.core
                     FlushCallback?.Invoke(info);
                 }
                 // Otherwise, do nothing and wait for the next invocation.
-            }
-        }
-
-        /// <summary>
-        /// Shift ClosedUntil address
-        /// </summary>
-        protected void ShiftClosedUntilAddress()
-        {
-            long currentClosedUntilAddress = ClosedUntilAddress;
-            long page = GetPage(currentClosedUntilAddress);
-
-            bool update = false;
-            long pageLastClosedAddress = PageStatusIndicator[page % BufferSize].LastClosedUntilAddress;
-            while (pageLastClosedAddress >= currentClosedUntilAddress && currentClosedUntilAddress >= (page << LogPageSizeBits))
-            {
-                currentClosedUntilAddress = pageLastClosedAddress;
-                update = true;
-                page++;
-                pageLastClosedAddress = PageStatusIndicator[(int)(page % BufferSize)].LastClosedUntilAddress;
-            }
-
-            if (update)
-            {
-                Utility.MonotonicUpdate(ref ClosedUntilAddress, currentClosedUntilAddress, out _);
             }
         }
 
@@ -1784,34 +1862,57 @@ namespace FASTER.core
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
         /// <param name="endLogicalAddress"></param>
+        /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="completedSemaphore"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore)
+        /// <param name="throttleCheckpointFlushDelayMs"></param>
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
-            int totalNumPages = (int)(endPage - startPage);
-            completedSemaphore = new SemaphoreSlim(0);
-            var flushCompletionTracker = new FlushCompletionTracker(completedSemaphore, totalNumPages);
-            var localSegmentOffsets = new long[SegmentBufferSize];
+            logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            for (long flushPage = startPage; flushPage < endPage; flushPage++)
+            var _completedSemaphore = new SemaphoreSlim(0);
+            completedSemaphore = _completedSemaphore;
+
+            // If throttled, convert rest of the method into a truly async task run
+            // because issuing IO can take up synchronous time
+            if (throttleCheckpointFlushDelayMs >= 0)
+                Task.Run(FlushRunner);
+            else
+                FlushRunner();
+
+            void FlushRunner()
             {
-                long flushPageAddress = flushPage << LogPageSizeBits;
-                var pageSize = PageSize;
-                if (flushPage == endPage - 1)
-                    pageSize = (int)(endLogicalAddress - flushPageAddress);
+                int totalNumPages = (int)(endPage - startPage);
 
-                var asyncResult = new PageAsyncFlushResult<Empty>
+                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
+                var localSegmentOffsets = new long[SegmentBufferSize];
+
+                for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
-                    flushCompletionTracker = flushCompletionTracker,
-                    page = flushPage,
-                    fromAddress = flushPageAddress,
-                    untilAddress = flushPageAddress + pageSize,
-                    count = 1
-                };
+                    long flushPageAddress = flushPage << LogPageSizeBits;
+                    var pageSize = PageSize;
+                    if (flushPage == endPage - 1)
+                        pageSize = (int)(endLogicalAddress - flushPageAddress);
 
-                // Intended destination is flushPage
-                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);
+                    var asyncResult = new PageAsyncFlushResult<Empty>
+                    {
+                        flushCompletionTracker = flushCompletionTracker,
+                        page = flushPage,
+                        fromAddress = flushPageAddress,
+                        untilAddress = flushPageAddress + pageSize,
+                        count = 1
+                    };
+
+                    // Intended destination is flushPage
+                    WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
+
+                    if (throttleCheckpointFlushDelayMs >= 0)
+                    {
+                        flushCompletionTracker.WaitOneFlush();
+                        Thread.Sleep(throttleCheckpointFlushDelayMs);
+                    }
+                }
             }
         }
 
@@ -1847,7 +1948,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError($"AsyncGetFromDiskCallback error: {errorCode}");
+                logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
             }
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;
@@ -2025,7 +2126,7 @@ namespace FASTER.core
                             ref var info = ref GetInfo(physicalAddress);
                             var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
                             if (info.Dirty)
-                                info.DirtyAtomic = false; // there may be read locks being taken, hence atomic
+                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;
                         }
                     }

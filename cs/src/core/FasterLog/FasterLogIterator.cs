@@ -480,10 +480,12 @@ namespace FASTER.core
                     throw;
                 }
                 
+                entry = (byte*)(headerSize + physicalAddress);
+
                 if (isCommitRecord)
                 {
                     FasterLogRecoveryInfo info = new();
-                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte *)physicalAddress, entryLength)));
+                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream(entry, entryLength)));
                     if (info.CommitNum != long.MaxValue) continue;
                     
                     // Otherwise, no more entries
@@ -493,7 +495,6 @@ namespace FASTER.core
                     return false;
                 }
                 
-                entry = (byte*)(headerSize + physicalAddress);
                 return true;
             }
         }
@@ -551,10 +552,11 @@ namespace FASTER.core
                 if (name != null)
                     fasterLog.PersistedIterators.TryRemove(name, out _);
 
+                if (Interlocked.Decrement(ref fasterLog.logRefCount) == 0)
+                    fasterLog.TrueDispose();
+
                 disposed = true;
             }
-            if (Interlocked.Decrement(ref fasterLog.logRefCount) == 0)
-                fasterLog.TrueDispose();
         }
 
         internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
@@ -656,13 +658,15 @@ namespace FASTER.core
                 physicalAddress = 0;
                 entryLength = 0;
                 currentAddress = nextAddress;
-                outNextAddress = nextAddress;
+                outNextAddress = currentAddress;
                 commitRecord = false;
 
                 // Check for boundary conditions
                 if (currentAddress < allocator.BeginAddress)
                 {
-                    currentAddress = allocator.BeginAddress;
+                    Utility.MonotonicUpdate(ref nextAddress, allocator.BeginAddress, out _);
+                    currentAddress = nextAddress;
+                    outNextAddress = currentAddress;
                 }
 
                 var _currentPage = currentAddress >> allocator.LogPageSizeBits;

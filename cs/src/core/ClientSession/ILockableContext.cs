@@ -10,6 +10,16 @@ namespace FASTER.core
     public interface ILockableContext<TKey>
     {
         /// <summary>
+        /// Begins a series of lock operations on possibly multiple keys; call before any locks are taken.
+        /// </summary>
+        void BeginLockable();
+
+        /// <summary>
+        /// Ends a series of lock operations on possibly multiple keys; call after all locks are released.
+        /// </summary>
+        void EndLockable();
+
+        /// <summary>
         /// Lock the key with the specified <paramref name="lockType"/>, waiting until it is acquired
         /// </summary>
         /// <param name="key">The key to lock</param>

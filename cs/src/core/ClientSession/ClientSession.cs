@@ -4,6 +4,7 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,14 +36,68 @@ namespace FASTER.core
 
         internal readonly InternalFasterSession FasterSession;
 
-        UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
-        LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
-        LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
+        readonly UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
+        readonly LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
+        readonly LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
+        readonly BasicContext<Key, Value, Input, Output, Context, Functions> bContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;
+
+        internal ulong TotalLockCount => sharedLockCount + exclusiveLockCount;
+        internal ulong sharedLockCount;
+        internal ulong exclusiveLockCount;
+
+        bool isAcquiredLockable;
+
+        internal void AcquireLockable()
+        {
+            CheckIsNotAcquiredLockable();
+
+            while (true)
+            {
+                // Checkpoints cannot complete while we have active locking sessions.
+                while (IsInPreparePhase())
+                    Thread.Yield();
+
+                fht.IncrementNumLockingSessions();
+                isAcquiredLockable = true;
+
+                if (!IsInPreparePhase())
+                    break;
+                InternalReleaseLockable();
+                Thread.Yield();
+            }
+        }
+
+        internal void ReleaseLockable()
+        {
+            CheckIsAcquiredLockable();
+            if (TotalLockCount > 0)
+                throw new FasterException($"EndLockable called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+            InternalReleaseLockable();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void InternalReleaseLockable()
+        {
+            isAcquiredLockable = false;
+            fht.DecrementNumLockingSessions();
+        }
+
+        internal void CheckIsAcquiredLockable()
+        {
+            if (!isAcquiredLockable)
+                throw new FasterException("Lockable method call when BeginLockable has not been called");
+        }
+
+        void CheckIsNotAcquiredLockable()
+        {
+            if (isAcquiredLockable)
+                throw new FasterException("BeginLockable cannot be called twice (call EndLockable first)");
+        }
 
         internal ClientSession(
             FasterKV<Key, Value> fht,
@@ -51,8 +106,13 @@ namespace FASTER.core
             SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings,
             ILoggerFactory loggerFactory = null)
         {
+            this.lContext = new(this);
+            this.bContext = new(this);
+            this.luContext = new(this);
+            this.uContext = new(this);
+
             this.loggerFactory = loggerFactory;
-            this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode().ToString("X8")}");
+            this.logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
             this.fht = fht;
             this.ctx = ctx;
             this.functions = functions;
@@ -72,7 +132,7 @@ namespace FASTER.core
             }
             else
             {
-                if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
+                if (fht.hlog is not VariableLengthBlittableAllocator<Key, Value>)
                     logger?.LogWarning("Warning: Session param of variableLengthStruct provided for non-varlen allocator");
             }
 
@@ -101,7 +161,7 @@ namespace FASTER.core
 
         private void UpdateVarlen(ref IVariableLengthStruct<Value, Input> variableLengthStruct)
         {
-            if (!(fht.hlog is VariableLengthBlittableAllocator<Key, Value>))
+            if (fht.hlog is not VariableLengthBlittableAllocator<Key, Value>)
                 return;
 
             if (typeof(Value) == typeof(SpanByte) && typeof(Input) == typeof(SpanByte))
@@ -163,32 +223,22 @@ namespace FASTER.core
         /// <summary>
         /// Return a new interface to Faster operations that supports manual epoch control.
         /// </summary>
-        public UnsafeContext<Key, Value, Input, Output, Context, Functions> GetUnsafeContext()
-        {
-            this.uContext ??= new(this);
-            this.uContext.Acquire();
-            return this.uContext;
-        }
+        public UnsafeContext<Key, Value, Input, Output, Context, Functions> UnsafeContext => uContext;
 
         /// <summary>
         /// Return a new interface to Faster operations that supports manual locking and epoch control.
         /// </summary>
-        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> GetLockableUnsafeContext()
-        {
-            this.luContext ??= new(this);
-            this.luContext.Acquire();
-            return this.luContext;
-        }
+        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> LockableUnsafeContext => luContext;
 
         /// <summary>
-        /// Return a new interface to Faster operations that supports manual locking.
+        /// Return a session wrapper that supports manual locking.
         /// </summary>
-        public LockableContext<Key, Value, Input, Output, Context, Functions> GetLockableContext()
-        {
-            this.lContext ??= new(this);
-            this.lContext.Acquire();
-            return this.lContext;
-        }
+        public LockableContext<Key, Value, Input, Output, Context, Functions> LockableContext => lContext;
+
+        /// <summary>
+        /// Return a session wrapper struct that passes through to client session
+        /// </summary>
+        public BasicContext<Key, Value, Input, Output, Context, Functions> BasicContext => bContext;
 
         #region IFasterContext
         /// <inheritdoc/>
@@ -618,6 +668,58 @@ namespace FASTER.core
 
         #region Other Operations
 
+        /// <inheritdoc/>
+        public void ResetModified(ref Key key)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                UnsafeResetModified(ref key);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
+
+        internal void UnsafeResetModified(ref Key key)
+        {
+            OperationStatus status;
+            do
+                status = fht.InternalModifiedBitOperation(ref key, out _);
+            while (fht.HandleImmediateNonPendingRetryStatus(status, ctx, FasterSession));
+        }
+
+        /// <inheritdoc/>
+        public unsafe void ResetModified(Key key) => ResetModified(ref key);
+
+        /// <inheritdoc/>
+        internal bool IsModified(ref Key key)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return UnsafeIsModified(ref key);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
+
+        internal bool UnsafeIsModified(ref Key key)
+        {
+            RecordInfo modifiedInfo;
+            OperationStatus status;
+            do
+                status = fht.InternalModifiedBitOperation(ref key, out modifiedInfo, false);
+            while (fht.HandleImmediateNonPendingRetryStatus(status, ctx, FasterSession));
+            return modifiedInfo.Modified;
+        }
+
+        /// <inheritdoc/>
+        internal unsafe bool IsModified(Key key) => IsModified(ref key);
+
         /// <summary>
         /// Wait for commit of all operations completed until the current point in session.
         /// Does not itself issue checkpoint/commits.
@@ -713,14 +815,15 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <param name="desiredValue"></param>
-        /// <param name="expectedLogicalAddress">Address of existing key (or upper bound)</param>
+        /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
+        /// <param name="actualAddress">Actual address of existing key record</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus CompactionCopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long expectedLogicalAddress)
+        internal OperationStatus CompactionCopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long untilAddress, long actualAddress)
         {
             UnsafeResumeThread();
             try
             {
-                return fht.InternalCopyToTail(ref key, ref input, ref desiredValue, ref output, expectedLogicalAddress, FasterSession, ctx, WriteReason.Compaction);
+                return fht.InternalCopyToTailForCompaction(ref key, ref input, ref desiredValue, ref output, untilAddress, actualAddress, FasterSession, ctx);
             }
             finally
             {
@@ -771,18 +874,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnsafeResumeThread()
         {
+            // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
+            // get the "trying to acquire already-acquired epoch" error.
             fht.epoch.Resume();
-            fht.InternalRefresh(ctx, FasterSession);
-        }
-
-        /// <summary>
-        /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// </summary>
-        /// <param name="resumeEpoch">Epoch that session resumes on; can be saved to see if epoch has changed</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeResumeThread(out int resumeEpoch)
-        {
-            fht.epoch.Resume(out resumeEpoch);
             fht.InternalRefresh(ctx, FasterSession);
         }
 
@@ -790,8 +884,11 @@ namespace FASTER.core
         /// Suspend session on current thread
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeSuspendThread() 
-            => fht.epoch.Suspend();
+        internal void UnsafeSuspendThread()
+        {
+            Debug.Assert(fht.epoch.ThisInstanceProtected());
+            fht.epoch.Suspend();
+        }
 
         void IClientSession.AtomicSwitch(long version)
         {
@@ -801,7 +898,7 @@ namespace FASTER.core
         /// <summary>
         /// Return true if Faster State Machine is in PREPARE sate
         /// </summary>
-        public bool IsInPreparePhase()
+        internal bool IsInPreparePhase()
         {
             return this.fht.SystemState.Phase == Phase.PREPARE;
         }
@@ -860,11 +957,11 @@ namespace FASTER.core
             }
 
             #region IFunctions - Optional features supported
-            public bool DisableLocking => _clientSession.fht.DisableLocking;
+            public bool DisableEphemeralLocking => _clientSession.fht.DisableEphemeralLocking;
 
             public bool IsManualLocking => false;
 
-            public SessionType SessionType => SessionType.ClientSession;
+            public SessionType SessionType => SessionType.BasicContext;
             #endregion IFunctions - Optional features supported
 
             #region IFunctions - Reads
@@ -872,16 +969,7 @@ namespace FASTER.core
                 => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out bool lockFailed)
-            {
-                lockFailed = false;
-                return this.DisableLocking
-                                   ? ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo)
-                                   : ConcurrentReaderLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo, out lockFailed);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReaderNoLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
             {
                 if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
                     return true;
@@ -890,31 +978,10 @@ namespace FASTER.core
                 return false;
             }
 
-            public bool ConcurrentReaderLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out bool lockFailed)
-            {
-                if (!recordInfo.LockShared())
-                {
-                    lockFailed = true;
-                    return false;
-                }
-                try
-                {
-                    lockFailed = false;
-                    return !recordInfo.Tombstone && ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
-                }
-                finally
-                {
-                    recordInfo.UnlockShared();
-                }
-            }
-
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
                 => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
 
             #endregion IFunctions - Reads
-
-            // Except for readcache/copy-to-tail usage of SingleWriter, all operations that append a record must lock in the <Operation>() call and unlock
-            // in the Post<Operation> call; otherwise another session can try to access the record as soon as it's CAS'd and before Post<Operation> is called.
 
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -922,43 +989,19 @@ namespace FASTER.core
                 => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) 
-                => _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out bool lockFailed)
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
             {
-                lockFailed = false;
-                return this.DisableLocking
-                                   ? ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo)
-                                   : ConcurrentWriterLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, out lockFailed);
+                recordInfo.SetDirtyAndModified();
+                _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
+            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
             {
-                recordInfo.SetDirty();
+                recordInfo.SetDirtyAndModified();
+
                 // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
                 return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out bool lockFailed)
-            {
-                if (!recordInfo.LockExclusive())
-                {
-                    lockFailed = true;
-                    return false;
-                }
-                try
-                {
-                    lockFailed = false;
-                    return !recordInfo.Tombstone && ConcurrentWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
             }
             #endregion IFunctions - Upserts
 
@@ -973,8 +1016,11 @@ namespace FASTER.core
                 => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
-                => _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            {
+                recordInfo.SetDirtyAndModified();
+                _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+            }
             #endregion InitialUpdater
 
             #region CopyUpdater
@@ -987,46 +1033,19 @@ namespace FASTER.core
                 => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
-                => _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+            public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            {
+                recordInfo.SetDirtyAndModified();
+                _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+            }
             #endregion CopyUpdater
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
+            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
             {
-                lockFailed = false;
-                return this.DisableLocking
-                                   ? InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status)
-                                   : InPlaceUpdaterLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out lockFailed, out status);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool InPlaceUpdaterNoLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status) 
-                => _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
-
-            private bool InPlaceUpdaterLock(ref Key key, ref Input input, ref Output output, ref Value value, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status)
-            {
-                if (!recordInfo.LockExclusive())
-                {
-                    lockFailed = true;
-                    status = OperationStatus.SUCCESS;
-                    return false;
-                }
-                try
-                {
-                    lockFailed = false;
-                    if (recordInfo.Tombstone)
-                    {
-                        status = OperationStatus.SUCCESS;
-                        return false;
-                    }
-                    return InPlaceUpdaterNoLock(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
+                recordInfo.SetDirtyAndModified();
+                return _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
             }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
@@ -1043,44 +1062,16 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             {
-                recordInfo.SetDirty();
+                recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
+            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             {
-                lockFailed = false;
-                return this.DisableLocking
-                                   ? ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo)
-                                   : ConcurrentDeleterLock(ref key, ref value, ref recordInfo, ref deleteInfo, out lockFailed);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentDeleterNoLock(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
-            {
-                recordInfo.SetDirty();
+                recordInfo.SetDirtyAndModified();
                 recordInfo.SetTombstone();
                 return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentDeleterLock(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed)
-            {
-                if (!recordInfo.LockExclusive())
-                {
-                    lockFailed = true;
-                    return false;
-                }
-                try
-                {
-                    lockFailed = false;
-                    return recordInfo.Tombstone || ConcurrentDeleterNoLock(ref key, ref value, ref recordInfo, ref deleteInfo);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
             }
             #endregion IFunctions - Deletes
 
@@ -1104,6 +1095,17 @@ namespace FASTER.core
                 _clientSession.LatestCommitPoint = commitPoint;
             }
             #endregion IFunctions - Checkpointing
+
+            #region Ephemeral locking
+            public bool TryLockEphemeralExclusive(ref RecordInfo recordInfo)  => _clientSession.fht.DisableEphemeralLocking || recordInfo.TryLockExclusive();
+            public bool TryLockEphemeralShared(ref RecordInfo recordInfo) => _clientSession.fht.DisableEphemeralLocking || recordInfo.TryLockShared();
+            public void UnlockEphemeralExclusive(ref RecordInfo recordInfo)
+            {
+                if (!_clientSession.fht.DisableEphemeralLocking)
+                    recordInfo.UnlockExclusive();
+            }
+            public bool TryUnlockEphemeralShared(ref RecordInfo recordInfo) => _clientSession.fht.DisableEphemeralLocking || recordInfo.TryUnlockShared();
+            #endregion Ephemeral locking
 
             #region Internal utilities
             public int GetInitialLength(ref Input input)

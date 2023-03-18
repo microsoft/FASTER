@@ -26,7 +26,7 @@ namespace FASTER.core
     internal interface IFasterSession<Key, Value, Input, Output, Context> : IFasterSession, IVariableLengthStruct<Value, Input>
     {
         #region Optional features supported by this implementation
-        bool DisableLocking { get; }
+        bool DisableEphemeralLocking { get; }
 
         bool IsManualLocking { get; }
 
@@ -35,14 +35,14 @@ namespace FASTER.core
 
         #region Reads
         bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo);
-        bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out bool lockFailed);
+        bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo);
         void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata);
         #endregion reads
 
         #region Upserts
         bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason);
         void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason);
-        bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out bool lockFailed);
+        bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo);
         #endregion Upserts
 
         #region RMWs
@@ -59,7 +59,7 @@ namespace FASTER.core
         #endregion CopyUpdater
 
         #region InPlaceUpdater
-        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out bool lockFailed, out OperationStatus status);
+        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status);
         #endregion InPlaceUpdater
 
         void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata);
@@ -68,7 +68,7 @@ namespace FASTER.core
         #region Deletes
         bool SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo);
         void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo);
-        bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out bool lockFailed);
+        bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo);
         #endregion Deletes
 
         #region Disposal
@@ -78,6 +78,13 @@ namespace FASTER.core
         void DisposeSingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo);
         void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo);
         #endregion Disposal
+
+        #region Ephemeral locking
+        bool TryLockEphemeralExclusive(ref RecordInfo recordInfo);
+        bool TryLockEphemeralShared(ref RecordInfo recordInfo);
+        void UnlockEphemeralExclusive(ref RecordInfo recordInfo);
+        bool TryUnlockEphemeralShared(ref RecordInfo recordInfo);
+        #endregion 
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 

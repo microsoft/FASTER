@@ -3,7 +3,6 @@
 
 using Microsoft.Extensions.Logging;
 using System;
-using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -92,7 +91,6 @@ namespace FASTER.core
             return (int)Math.Log(adjustedSize, 2);
         }
 
-
         /// <summary>
         /// Previous power of 2
         /// </summary>
@@ -142,6 +140,12 @@ namespace FASTER.core
                 return v.ToString() + suffix[-exp / 3 - 1] + "B";
             return v.ToString() + "B";
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsReadCache(long address) => (address & Constants.kReadCacheBitMask) != 0;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long AbsoluteAddress(long address) => address & ~Constants.kReadCacheBitMask;
 
         /// <summary>
         /// Is type blittable

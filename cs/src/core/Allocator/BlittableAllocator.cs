@@ -203,7 +203,7 @@ namespace FASTER.core
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress)
         {
             base.VerifyCompatibleSectorSize(device);
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);

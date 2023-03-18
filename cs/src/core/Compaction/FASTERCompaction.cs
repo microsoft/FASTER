@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
 
 namespace FASTER.core
 {
@@ -83,7 +84,7 @@ namespace FASTER.core
                             if (status.Found || recordMetadata.Address >= iter1.NextAddress)
                                 break;
                             
-                            copyStatus = fhtSession.CompactionCopyToTail(ref key, ref input, ref value, ref output, checkedAddress);
+                            copyStatus = fhtSession.CompactionCopyToTail(ref key, ref input, ref value, ref output, checkedAddress, iter1.CurrentAddress);
                             recordMetadata.RecordInfo.PreviousAddress = checkedAddress;
                         } while (copyStatus == OperationStatus.RECORD_ON_DISK);
                     }
@@ -159,7 +160,7 @@ namespace FASTER.core
                             if (untilAddress < scanUntil)
                                 LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
 
-                            // If record is not the latest in memory
+                            // If record is not the latest in tempKv's memory for this key, ignore it
                             if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress).Found)
                             {
                                 if (iter3.CurrentAddress != tempKeyAddress)
@@ -171,8 +172,8 @@ namespace FASTER.core
                                 continue;
                             }
                             // As long as there's no record of the same key whose address is >= untilAddress (scan boundary),
-                            // we are safe to copy the old record to the tail.
-                            copyStatus = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1);
+                            // we are safe to copy the old record to the tail. We don't know the actualAddress in the main kv.
+                            copyStatus = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1, actualAddress: Constants.kUnknownAddress);
                         } while (copyStatus == OperationStatus.RECORD_ON_DISK);
                     }
                 }

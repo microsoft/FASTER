@@ -23,17 +23,15 @@ namespace FASTER.core
 
         internal static bool HandleIntermediate(this ref RecordInfo recordInfo, out OperationStatus internalStatus, bool isReadingAtAddress = false)
         {
-            // Tentative records have already been allocated.
-            while (recordInfo.Tentative)
-                Thread.Yield();
+            SpinWaitWhileTentativeAndReturnValidity(ref recordInfo);
 
             // We don't want to jump out on Sealed/Invalid and restart if we are traversing the "read by address" chain
             if ((recordInfo.Sealed || recordInfo.Invalid) && !isReadingAtAddress)
             {
                 Thread.Yield();
 
-                // A Sealed record implies the session that sealed it must make another allocation for a new record, so RETRY_LATER.
-                internalStatus = recordInfo.Sealed ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW;
+                // A record is only Sealed or Invalidated in the hash chain after the new record has been successfully inserted.
+                internalStatus = OperationStatus.RETRY_LATER;
                 return true;
             }
             internalStatus = OperationStatus.SUCCESS;
@@ -41,41 +39,27 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool HandleLockOperation(this ref RecordInfo recordInfo, LockOperation lockOp, out bool isLock)
+        internal static bool SpinWaitWhileTentativeAndReturnValidity(ref RecordInfo recordInfo)
         {
-            isLock = lockOp.LockOperationType == LockOperationType.Lock;
+            // This is called for Tentative records encountered in the hash chain, and no epoch-changing allocations should be done after they have been
+            // added to the hash chain. Therefore, it is safe to spin. This routine centralizes this, in the event it needs to change, e.g. by limiting spin
+            // count and returning bool.
+            while (recordInfo.Tentative)
+                Thread.Yield();
+            return recordInfo.Valid;
+        }
 
-            if (isLock)
-                return recordInfo.Lock(lockOp.LockType);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool TryLockOperation(this ref RecordInfo recordInfo, LockOperation lockOp)
+        {
+            if (lockOp.LockOperationType == LockOperationType.Lock)
+                return recordInfo.TryLock(lockOp.LockType);
 
             if (lockOp.LockOperationType == LockOperationType.Unlock)
-                recordInfo.Unlock(lockOp.LockType);
+                recordInfo.TryUnlock(lockOp.LockType);
             else
                 Debug.Fail($"Unexpected LockOperation {lockOp.LockOperationType}");
             return true;
-        }
-
-        internal static bool Lock(this ref RecordInfo recordInfo, LockType lockType)
-        {
-            if (lockType == LockType.Shared)
-                return recordInfo.LockShared();
-            if (lockType == LockType.Exclusive)
-                return recordInfo.LockExclusive();
-            if (lockType == LockType.ExclusiveFromShared)
-                return recordInfo.LockExclusiveFromShared();
-            else
-                Debug.Fail($"Unexpected LockType: {lockType}");
-            return false;
-        }
-
-        internal static void Unlock(this ref RecordInfo recordInfo, LockType lockType)
-        {
-            if (lockType == LockType.Shared)
-                recordInfo.UnlockShared();
-            else if (lockType == LockType.Exclusive)
-                recordInfo.UnlockExclusive();
-            else
-                Debug.Fail($"Unexpected LockType: {lockType}");
         }
     }
 }
