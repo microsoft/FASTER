@@ -600,7 +600,7 @@ namespace FASTER.test.ReadCacheTests
                     Assert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
                     Assert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
 
-                    luContext.Unlock(key.Key, key.LockType);
+                    luContext.Unlock(keys, idx, 1);
                     lockState = fht.LockTable.GetLockState(ref key.Key, ref hei);
                     Assert.IsFalse(lockState.IsLockedExclusive);
                     Assert.AreEqual(0, lockState.NumLockedShared);

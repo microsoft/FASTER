@@ -38,66 +38,6 @@ namespace FASTER.core
 
         #region Key Locking
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe void DoInternalLockOp<FasterSession>(FasterSession fasterSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                                                                   Key key, LockOperation lockOp)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            OperationStatus status;
-            do
-                status = clientSession.fht.InternalLock(ref key, lockOp);
-            while (clientSession.fht.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession));
-            Debug.Assert(status == OperationStatus.SUCCESS);
-        }
-
-        /// <inheritdoc/>
-        public void Lock(ref Key key, LockType lockType)
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
-
-            clientSession.UnsafeResumeThread();
-            try
-            {
-                DoInternalLockOp(FasterSession, clientSession, key, new(LockOperationType.Lock, lockType));
-                if (lockType == LockType.Exclusive)
-                    ++clientSession.exclusiveLockCount;
-                else
-                    ++clientSession.sharedLockCount;
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
-
-        /// <inheritdoc/>
-        public void Lock(Key key, LockType lockType) => Lock(ref key, lockType);
-
-        /// <inheritdoc/>
-        public void Unlock(ref Key key, LockType lockType)
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Unlock()");
-
-            clientSession.UnsafeResumeThread();
-            try
-            {
-                DoInternalLockOp(FasterSession, clientSession, key, new(LockOperationType.Unlock, lockType));
-                if (lockType == LockType.Exclusive)
-                    --clientSession.exclusiveLockCount;
-                else
-                    --clientSession.sharedLockCount;
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
-
-        /// <inheritdoc/>
-        public void Unlock(Key key, LockType lockType) => Unlock(ref key, lockType);
-
         /// <inheritdoc/>
         public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
 

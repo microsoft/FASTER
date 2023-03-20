@@ -12,7 +12,7 @@ namespace FASTER.stress
         readonly IValueTester<string> valueTester;
         readonly Random rng;
         readonly int[] lockOrdinals;
-        readonly string[] lockKeys;
+        readonly FixedLengthLockableKeyStruct<string>[] lockKeys;
 
         static string[] keys;       // Keep these so we don't invoke the GC
 
@@ -29,7 +29,7 @@ namespace FASTER.stress
             };
             rng = new Random(tid * testLoader.Options.RandomSeed);
             lockOrdinals = new int[testLoader.LockKeyArraySize];
-            lockKeys = new string[testLoader.LockKeyArraySize];
+            lockKeys = new FixedLengthLockableKeyStruct<string>[testLoader.LockKeyArraySize];
             keys = new string[testLoader.Options.KeyCount];
         }
 
@@ -68,15 +68,9 @@ namespace FASTER.stress
             }
         }
 
-        class StringSortComparer : IComparer<string>
-        {
-            public int Compare(string x, string y) => String.CompareOrdinal(x, y);
-        }
-        readonly StringSortComparer sortComparer = new();
+        public void Test() => testLoader.Test(tid, rng, lockOrdinals, lockKeys, ordinal => keys[ordinal], valueTester);
 
-        public void Test() => testLoader.Test(tid, rng, lockOrdinals, lockKeys, ordinal => keys[ordinal], sortComparer, valueTester);
-
-        public Task TestAsync() => testLoader.TestAsync(tid, rng, lockOrdinals, lockKeys, ordinal => keys[ordinal], sortComparer, valueTester);
+        public Task TestAsync() => testLoader.TestAsync(tid, rng, lockOrdinals, lockKeys, ordinal => keys[ordinal], valueTester);
 
         public void Dispose() { }
     }
