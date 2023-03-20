@@ -68,9 +68,6 @@ namespace FASTER.core
                                   bool recoverDevice = false, bool useIoCompletionPort = false)
             : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort)
         {
-            // -11 to allow for ".<segment>"
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && filename.Length > Native32.WIN32_MAX_PATH - 11)
-                throw new FasterException($"Path {filename} is too long");
         }
 
         void _callback(uint errorCode, uint numBytes, NativeOverlapped* pOVERLAP)
@@ -109,6 +106,9 @@ namespace FASTER.core
             {
                 throw new FasterException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
             }
+
+            if (filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
+                throw new FasterException($"Path {filename} is too long");
 
             ThrottleLimit = 120;
             this.useIoCompletionPort = useIoCompletionPort;
@@ -279,9 +279,9 @@ namespace FASTER.core
 
             try
             {
-                var logHandle = GetOrAddHandle(segmentId);
-
                 Interlocked.Increment(ref numPending);
+
+                var logHandle = GetOrAddHandle(segmentId);
 
                 bool _result = Native32.WriteFile(logHandle,
                                         sourceAddress,
@@ -415,7 +415,7 @@ namespace FASTER.core
             {
                 var error = Marshal.GetLastWin32Error();
                 var message = $"Error creating log file for {segmentFileName}, error: {error} 0x({Native32.MakeHRFromErrorCode(error)})";
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && error == Native32.ERROR_PATH_NOT_FOUND)
+                if (error == Native32.ERROR_PATH_NOT_FOUND)
                     message += $" (Path not found; name length = {segmentFileName.Length}, MAX_PATH = {Native32.WIN32_MAX_PATH}";
                 throw new IOException(message);
             }
