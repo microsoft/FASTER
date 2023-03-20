@@ -40,26 +40,26 @@ namespace FASTER.core
         const long kExclusiveLockBitMask = 1L << kExclusiveLockBitOffset;
         const long kLockBitMask = kSharedLockMaskInWord | kExclusiveLockBitMask;
 
-        // Other marker bits
+        // Other marker bits. Unused* means bits not yet assigned; use the highest number when assigning
         const int kTombstoneBitOffset = kExclusiveLockBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
-        const int kUnused1BitOffset = kValidBitOffset + 1;
-        const int kUnused2BitOffset = kUnused1BitOffset + 1;
+        const int kSealedBitOffset = kValidBitOffset + 1;
+        const int kUnused2BitOffset = kSealedBitOffset + 1;
         const int kDirtyBitOffset = kUnused2BitOffset + 1;
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
-        internal const int kUnused3BitOffset = kModifiedBitOffset + 1;
+        internal const int kUnused1BitOffset = kModifiedBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
-        const long kUnused1BitMask = 1L << kUnused1BitOffset;
+        const long kSealedBitMask = 1L << kSealedBitOffset;
         const long kUnused2BitMask = 1L << kUnused2BitOffset;
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kFillerBitMask = 1L << kFillerBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
-        internal const long kUnused3BitMask = 1L << kUnused3BitOffset;
+        internal const long kUnused1BitMask = 1L << kUnused1BitOffset;
 
         [FieldOffset(0)]
         private long word;
@@ -86,18 +86,17 @@ namespace FASTER.core
         // We ignore locks and temp bits for disk images
         public void ClearBitsForDiskImages()
         {
-            Debug.Assert(!this.IsLocked, "Should never retrieve a locked record from disk; Ephemeral locks should never be evicted");
-            word &= ~(kLockBitMask | kDirtyBitMask);
+            // Locks can be evicted even with ephemeral locks, if the record is locked when BlockAllocate allows an epoch refresh
+            // that sends it below HeadAddress. Sealed records are normal. In Pending IO completions, Ephemeral locking does not
+            // lock records read from disk (they should be found in memory). But a Sealed record may become current again during
+            // recovery, if the RCU-inserted record was not written to disk during a crash, etc. So clear these bits here.
+            word &= ~(kLockBitMask | kDirtyBitMask | kSealedBitMask);
         }
 
-        private static bool IsClosedWord(long word)
-        {
-            // Currently we have only the Invalid state, after removing the Sealed state for main-log records. Only readcache records should be
-            // Invalid in the tag chain. Retaining separate methods (instead of replacing with IsValid) in case Sealing becomes necessary again.
-            return (word & kValidBitMask) != kValidBitMask;
-        }
+        private static bool IsClosedWord(long word) => (word & (kValidBitMask | kSealedBitMask)) != kValidBitMask;
 
         public bool IsClosed => IsClosedWord(word);
+        private bool IsSealed => (this.word & kSealedBitMask) != 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InitializeLockShared() => this.word += kSharedLockIncrement;
@@ -113,7 +112,20 @@ namespace FASTER.core
         {
             Debug.Assert(!IsLockedShared, "Trying to X unlock an S locked record");
             Debug.Assert(IsLockedExclusive, "Trying to X unlock an unlocked record");
+            Debug.Assert(!IsSealed, "Trying to X unlock a Sealed record");
             word &= ~kExclusiveLockBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
+        }
+
+        /// <summary>
+        /// Unlock RecordInfo that was previously locked for exclusive access, via <see cref="TryLockExclusive"/>, and which is a source that has become Sealed.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnlockExclusiveAndSeal()
+        {
+            Debug.Assert(!IsLockedShared, "Trying to X unlock an S locked record");
+            Debug.Assert(IsLockedExclusive, "Trying to X unlock an unlocked record");
+            Debug.Assert(!IsSealed, "Trying to X unlock a Sealed record");
+            word = (word & ~kExclusiveLockBitMask) | kSealedBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
         }
 
         /// <summary>
@@ -169,6 +181,7 @@ namespace FASTER.core
             // X *and* S locks means an X lock is still trying to drain readers, like this one.
             Debug.Assert((word & kLockBitMask) != kExclusiveLockBitMask, "Trying to S unlock an X-only locked record");
             Debug.Assert(IsLockedShared, "Trying to S unlock an unlocked record");
+            Debug.Assert(!IsSealed, "Trying to S unlock a Sealed record");
             Interlocked.Add(ref word, -kSharedLockIncrement);
         }
 
@@ -343,8 +356,8 @@ namespace FASTER.core
         public static int GetLength() => kTotalSizeInBytes;
 
         internal bool Unused1
-        { 
-            get => (word & kUnused1BitMask) != 0; 
+        {
+            get => (word & kUnused1BitMask) != 0;
             set => word = value ? word | kUnused1BitMask : word & ~kUnused1BitMask;
         }
 
@@ -354,19 +367,13 @@ namespace FASTER.core
             set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask;
         }
 
-        internal bool Unused3
-        {
-            get => (word & kUnused3BitMask) != 0;
-            set => word = value ? word | kUnused3BitMask : word & ~kUnused3BitMask;
-        }
-
         public override string ToString()
         {
             var paRC = this.PreviousAddressIsReadCache ? "(rc)" : string.Empty;
             var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";
             static string bstr(bool value) => value ? "T" : "F";
-            return $"prev {this.AbsolutePreviousAddress}{paRC}, locks {locks}, valid {bstr(Valid)}, tomb {bstr(Tombstone)},"
-                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}";
+            return $"prev {this.AbsolutePreviousAddress}{paRC}, locks {locks}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(this.IsSealed)},"
+                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
         }
     }
 }

@@ -9,6 +9,9 @@ using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 using static FASTER.test.TestUtils;
+using static FASTER.core.Utility;
+
+#pragma warning disable IDE0060 // Remove unused parameter; used for Setup only
 
 namespace FASTER.test.Dispose
 {
@@ -35,6 +38,7 @@ namespace FASTER.test.Dispose
             objlog = Devices.CreateLogDevice(MethodTestDir + "/ObjectFASTERTests.obj.log", deleteOnClose: true);
 
             LogSettings logSettings = new () { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 };
+            var lockingMode = LockingMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCopyDestination dest)
@@ -43,11 +47,16 @@ namespace FASTER.test.Dispose
                         logSettings.ReadCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
                     continue;
                 }
+                if (arg is LockingMode lm)
+                {
+                    lockingMode = lm;
+                    continue;
+                }
             }
 
             fht = new FasterKV<MyKey, MyValue>(128, logSettings: logSettings, comparer: new MyKeyComparer(),
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                lockingMode: LockingMode.None   // Standard locking will deadlock as both keys map to the same LockCode
+                lockingMode: lockingMode   // Warning: LockingMode.Standard will deadlock with X locks as both keys map to the same LockCode
                 );
         }
 
@@ -123,27 +132,33 @@ namespace FASTER.test.Dispose
                         ref RecordInfo recordInfo = ref tester.fht.readcache.GetInfo(physicalAddress);
                         address = recordInfo.PreviousAddress;
 
-                        // There should be only one readcache entry for this test.
-                        Assert.IsFalse(new HashBucketEntry() { word = address }.ReadCache);
+                        // There should be only one readcache entry for this test. The address we just got may have been kTempInvalidAddress,
+                        // and if not then it should have been a pre-FlushAndEvict()ed record.
+                        Assert.IsFalse(IsReadCache(address));
+
+                        // Retry will have already inserted something post-FlushAndEvict.
+                        Assert.IsTrue(isRetry || address < tester.fht.hlog.HeadAddress);
                     }
                     tester.otherGate.Release();
                     tester.sutGate.Wait();
 
+                    tester.fht.FindHashBucketEntryForKey(ref key, out entry);
+
                     // There's a little race where the SUT session could still beat the other session to the CAS
                     if (!isRetry)
                     {
-                        if (!isSplice)
+                        if (isSplice)
                         {
-                            // We're not the splice thread, so wait until the address in the hash entry changes.
-                            while (entry.Address == address)
+                            // If this is not Standard locking, then we use detach-and-reattach logic on the hash chain. That happens after SingleWriter,
+                            // so 'other' thread may still be in progress . Wait for it.
+                            while (!entry.ReadCache)
                             {
+                                Assert.IsFalse(tester.fht.LockTable.IsEnabled, "Standard locking should have spliced directly");
                                 Thread.Yield();
                                 tester.fht.FindHashBucketEntryForKey(ref key, out entry);
                             }
-                        }
-                        else
-                        {
-                            // We're the splice thread, so wait until the address in the last readcache record changes.
+
+                            // We're the thread awaiting the splice, so wait until the address in the last readcache record changes.
                             Assert.IsTrue(entry.ReadCache, "Expected readcache entry in WaitForEvent pt 2");
                             Assert.GreaterOrEqual(entry.AbsoluteAddress, tester.fht.ReadCache.HeadAddress);
                             var physicalAddress = tester.fht.readcache.GetPhysicalAddress(entry.AbsoluteAddress);
@@ -152,6 +167,17 @@ namespace FASTER.test.Dispose
                             {
                                 // Wait for the splice to happen
                                 Thread.Yield();
+                            }
+                            Assert.IsFalse(IsReadCache(recordInfo.PreviousAddress));
+                            Assert.IsTrue(recordInfo.PreviousAddress >= tester.fht.hlog.HeadAddress);
+                        }
+                        else
+                        {
+                            // We're not the splice thread, so wait until the address in the hash entry changes.
+                            while (entry.Address == address)
+                            {
+                                Thread.Yield();
+                                tester.fht.FindHashBucketEntryForKey(ref key, out entry);
                             }
                         }
                     }
@@ -337,7 +363,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeSingleWriter2Threads()
+        public void DisposeSingleWriter2Threads([Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -374,7 +400,8 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeInitialUpdater2Threads([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode)
+        public void DisposeInitialUpdater2Threads([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode,
+                                                  [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -412,7 +439,8 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeCopyUpdater2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode)
+        public void DisposeCopyUpdater2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode,
+                                               [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -475,7 +503,8 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeSingleDeleter2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode)
+        public void DisposeSingleDeleter2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode,
+                                                  [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -521,7 +550,8 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void PendingRead([Values] ReadCopyDestination copyDest)
+        public void PendingRead([Values] ReadCopyDestination copyDest, [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
+
         {
             DoPendingReadInsertTest(copyDest, initialReadCacheInsert: false);
         }
@@ -529,7 +559,8 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void CopyToTailWithInitialReadCache([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest)
+        public void CopyToTailWithInitialReadCache([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest,
+                                                   [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
         {
             // We use the ReadCopyDestination.ReadCache parameter so Setup() knows to set up the readcache, but
             // for the actual test it is used only for setup; we execute CopyToTail.
@@ -577,7 +608,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposePendingRead2Threads([Values] ReadCopyDestination copyDest)
+        public void DisposePendingRead2Threads([Values] ReadCopyDestination copyDest, [Values] LockingMode lockingMode)
         {
             DoDisposePendingReadInsertTest2Threads(copyDest, initialReadCacheInsert: false);
         }
@@ -585,7 +616,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeCopyToTailWithInitialReadCache2Threads([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest)
+        public void DisposeCopyToTailWithInitialReadCache2Threads([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest, [Values] LockingMode lockingMode)
         {
             // We use the ReadCopyDestination.ReadCache parameter so Setup() knows to set up the readcache, but
             // for the actual test it is used only for setup; we execute CopyToTail.
@@ -598,6 +629,8 @@ namespace FASTER.test.Dispose
             var functions2 = new DisposeFunctions(this, sut: false);
 
             MyKey key = new() { key = TestKey };
+            MyKey collidingKey = new() { key = TestCollidingKey };
+            MyValue collidingValue = new() { value = TestCollidingValue };
             MyKey collidingKey2 = new() { key = TestCollidingKey2 };
             MyValue collidingValue2 = new() { value = TestCollidingValue2 };
 
@@ -606,6 +639,7 @@ namespace FASTER.test.Dispose
                 using var session = fht.NewSession(new DisposeFunctionsNoSync());
                 MyValue value = new() { value = TestInitialValue };
                 session.Upsert(ref key, ref value);
+                session.Upsert(ref collidingKey, ref collidingValue);
                 if (initialReadCacheInsert)
                     session.Upsert(ref collidingKey2, ref collidingValue2);
             }
@@ -618,19 +652,22 @@ namespace FASTER.test.Dispose
                 using var session = fht.NewSession(new DisposeFunctionsNoSync());
                 MyOutput output = new();
                 var status = session.Read(ref collidingKey2, ref output);
+                Assert.IsTrue(status.IsPending, status.ToString());
                 session.CompletePending(wait: true);
             }
 
+            // We use Read() only here (not Upsert()), so we have only read locks and thus do not self-deadlock with an XLock on the colliding bucket.
             void DoRead(DisposeFunctions functions)
             {
+                MyOutput output = new();
+                MyInput input = new();
+                ReadOptions readOptions = default;
+                if (copyDest == ReadCopyDestination.Tail)
+                    readOptions.ReadFlags = ReadFlags.CopyReadsToTail;
+
                 using var session = fht.NewSession(functions);
                 if (functions.isSUT)
                 {
-                    MyOutput output = new();
-                    MyInput input = new();
-                    ReadOptions readOptions = default;
-                    if (copyDest == ReadCopyDestination.Tail)
-                        readOptions.ReadFlags = ReadFlags.CopyReadsToTail;
                     var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
                     Assert.IsTrue(status.IsPending, status.ToString());
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -640,11 +677,13 @@ namespace FASTER.test.Dispose
                 }
                 else
                 {
-                    // Do an upsert here to cause the collision (it will blindly insert)
                     otherGate.Wait();
-                    MyKey collidingKey = new() { key = TestCollidingKey };
-                    MyValue collidingValue = new() { value = TestCollidingValue };
-                    session.Upsert(ref collidingKey, ref collidingValue);
+                    var status = session.Read(ref collidingKey, ref input, ref output, ref readOptions, out _);
+                    Assert.IsTrue(status.IsPending, status.ToString());
+                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
+                    Assert.IsTrue(status.Found, status.ToString());
+                    Assert.AreEqual(TestCollidingValue, output.value.value);
                 }
             }
 
@@ -655,7 +694,8 @@ namespace FASTER.test.Dispose
             };
             Task.WaitAll(tasks);
 
-            Assert.AreEqual(DisposeHandler.SingleWriter, functions1.handlerQueue.Dequeue());
+            if (fht.LockTable.IsEnabled || !initialReadCacheInsert)    // This allows true splice, so we generated a conflict.
+                Assert.AreEqual(DisposeHandler.SingleWriter, functions1.handlerQueue.Dequeue());
             Assert.AreEqual(DisposeHandler.DeserializedFromDisk, functions1.handlerQueue.Dequeue());
             Assert.IsEmpty(functions1.handlerQueue);
         }
@@ -663,7 +703,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposePendingReadWithNoInsertTest()
+        public void DisposePendingReadWithNoInsertTest([Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
         {
             var functions = new DisposeFunctionsNoSync();
 
@@ -690,7 +730,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposePendingRmwWithNoConflictTest()
+        public void DisposePendingRmwWithNoConflictTest([Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
         {
             var functions = new DisposeFunctionsNoSync();
 
@@ -716,5 +756,4 @@ namespace FASTER.test.Dispose
         }
     }
 }
-
 #endif

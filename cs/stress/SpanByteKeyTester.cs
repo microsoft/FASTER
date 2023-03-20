@@ -39,7 +39,7 @@ namespace FASTER.stress
         readonly IValueTester<SpanByte> valueTester;
         readonly Random rng;
         readonly int[] lockOrdinals;
-        readonly SpanByte[] lockKeys;
+        readonly FixedLengthLockableKeyStruct<SpanByte>[] lockKeys;
 
         static PinnedByteArray[] keys;
 
@@ -56,7 +56,7 @@ namespace FASTER.stress
             };
             rng = new Random(tid * testLoader.Options.RandomSeed);
             lockOrdinals = new int[testLoader.LockKeyArraySize];
-            lockKeys = new SpanByte[testLoader.LockKeyArraySize];
+            lockKeys = new FixedLengthLockableKeyStruct<SpanByte>[testLoader.LockKeyArraySize];
             keys = new PinnedByteArray[testLoader.Options.KeyCount];
         }
 
@@ -93,15 +93,9 @@ namespace FASTER.stress
             }
         }
 
-        class SpanByteSortComparer : IComparer<SpanByte>
-        {
-            public int Compare(SpanByte x, SpanByte y) => x.AsReadOnlySpan().SequenceCompareTo(y.AsReadOnlySpan());
-        }
-        readonly SpanByteSortComparer sortComparer = new();
+        public void Test() => testLoader.Test(tid, rng, lockOrdinals, lockKeys, ordinal => keys[ordinal].GetSpanByte(), valueTester);
 
-        public void Test() => testLoader.Test(tid, rng, lockOrdinals, lockKeys, ordinal => keys[ordinal].GetSpanByte(), sortComparer, valueTester);
-
-        public Task TestAsync() => testLoader.TestAsync(tid, rng, lockOrdinals, lockKeys, ordinal => keys[ordinal].GetSpanByte(), sortComparer, valueTester);
+        public Task TestAsync() => testLoader.TestAsync(tid, rng, lockOrdinals, lockKeys, ordinal => keys[ordinal].GetSpanByte(), valueTester);
 
         public void Dispose()
         {

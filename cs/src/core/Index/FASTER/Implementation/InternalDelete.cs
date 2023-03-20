@@ -105,7 +105,7 @@ namespace FASTER.core
                     // Mutable Region: Update the record in-place
                     deleteInfo.RecordInfo = srcRecordInfo;
                     ref Value recordValue = ref stackCtx.recSrc.GetValue();
-                    if (fasterSession.ConcurrentDeleter(ref stackCtx.recSrc.GetKey(), ref recordValue, ref srcRecordInfo, ref deleteInfo, out bool lockFailed))
+                    if (fasterSession.ConcurrentDeleter(ref stackCtx.recSrc.GetKey(), ref recordValue, ref srcRecordInfo, ref deleteInfo, out stackCtx.recSrc.ephemeralLockResult))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                         if (WriteDefaultOnDelete)
@@ -123,7 +123,7 @@ namespace FASTER.core
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto LatchRelease;
                     }
-                    if (lockFailed)
+                    if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
                     {
                         status = OperationStatus.RETRY_LATER;
                         goto LatchRelease;

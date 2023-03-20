@@ -108,7 +108,7 @@ namespace FASTER.core
                         goto CreateNewRecord;
 
                     rmwInfo.RecordInfo = srcRecordInfo;
-                    if (fasterSession.InPlaceUpdater(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref rmwInfo, out status)
+                    if (fasterSession.InPlaceUpdater(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref rmwInfo, out status, out stackCtx.recSrc.ephemeralLockResult)
                         || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
@@ -119,6 +119,7 @@ namespace FASTER.core
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         goto LatchRelease;
                     }
+                    // Note: stackCtx.recSrc.ephemeralLockResult == Failed was already handled by 'out status' above
                     if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                         goto LatchRelease;
 
@@ -176,6 +177,10 @@ namespace FASTER.core
             }
             finally
             {
+                // On success, we call UnlockAndSeal. Non-success includes the source address going below HeadAddress, in which case we rely on
+                // recordInfo.ClearBitsForDiskImages clearing locks and Seal.
+                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal && stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress && srcRecordInfo.IsLocked)
+                    srcRecordInfo.UnlockExclusive();
                 stackCtx.HandleNewRecordOnException(this);
                 TransientXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
             }
@@ -475,6 +480,8 @@ namespace FASTER.core
                 {
                     // Else it was a CopyUpdater so call PCU
                     fasterSession.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref newRecordInfo, ref rmwInfo);
+                    if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal)
+                        srcRecordInfo.UnlockExclusiveAndSeal();
                 }
                 stackCtx.ClearNewRecord();
 

@@ -104,7 +104,7 @@ namespace FASTER.core
 
                     upsertInfo.RecordInfo = srcRecordInfo;
                     ref Value recordValue = ref stackCtx.recSrc.GetValue();
-                    if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo, out bool lockFailed))
+                    if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo, out stackCtx.recSrc.ephemeralLockResult))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
@@ -112,7 +112,7 @@ namespace FASTER.core
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto LatchRelease;
                     }
-                    if (lockFailed)
+                    if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
                     {
                         status = OperationStatus.RETRY_LATER;
                         goto LatchRelease;
@@ -160,6 +160,10 @@ namespace FASTER.core
             }
             finally
             {
+                // On success, we call UnlockAndSeal. Non-success includes the source address going below HeadAddress, in which case we rely on
+                // recordInfo.ClearBitsForDiskImages clearing locks and Seal.
+                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal && stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress && srcRecordInfo.IsLocked)
+                    srcRecordInfo.UnlockExclusive();
                 stackCtx.HandleNewRecordOnException(this);
                 TransientXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
             }
@@ -339,6 +343,8 @@ namespace FASTER.core
                 PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
+                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal)
+                    srcRecordInfo.UnlockExclusiveAndSeal();
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;

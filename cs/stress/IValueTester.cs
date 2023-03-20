@@ -22,7 +22,9 @@ namespace FASTER.stress
 
         void AddRecord(int keyOrdinal, ref TKey key);
 
-        void TestRecord(int keyOrdinal, int keyCount, TKey[] keys);
-        Task TestRecordAsync(int keyOrdinal, int keyCount, TKey[] keys);
+        ILockableContext<TKey> LockableContext { get; }
+
+        void TestRecord(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] keys);
+        Task TestRecordAsync(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] keys);
     }
 }

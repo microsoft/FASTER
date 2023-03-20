@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static FASTER.core.Utility;
 
@@ -65,6 +64,11 @@ namespace FASTER.core
         /// </summary>
         internal bool HasTransientLock;
 
+        /// <summary>
+        /// Status of ephemeral locking, if applicable.
+        /// </summary>
+        internal EphemeralLockResult ephemeralLockResult;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ref RecordInfo GetInfo() => ref Log.GetInfo(PhysicalAddress);
         internal ref Key GetKey() => ref Log.GetKey(PhysicalAddress);
@@ -99,8 +103,15 @@ namespace FASTER.core
             var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
+            string ephLockResult = this.ephemeralLockResult switch
+            {
+                EphemeralLockResult.Success => "S",
+                EphemeralLockResult.Failed => "F",
+                EphemeralLockResult.HoldForSeal => "H",
+                _ => "unknown"
+            };
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
-                 + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, tLock {bstr(HasTransientLock)}";
+                 + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, tLock {bstr(HasTransientLock)}, eLock {ephLockResult}";
         }
     }
 }

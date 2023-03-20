@@ -236,9 +236,9 @@ namespace FASTER.core
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo, out bool lockFailed))
+                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo, out stackCtx.recSrc.ephemeralLockResult))
                     return OperationStatus.SUCCESS;
-                if (lockFailed)
+                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
                     return OperationStatus.RETRY_LATER;
                 if (readInfo.Action == ReadAction.CancelOperation)
                     return OperationStatus.CANCELED;

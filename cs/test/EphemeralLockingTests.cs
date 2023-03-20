@@ -11,7 +11,16 @@ using static FASTER.test.TestUtils;
 namespace FASTER.test.EphemeralLocking
 {
     // Functions for ephemeral locking--locking only for the duration of a concurrent IFunctions call.
-    internal class EphemeralLockingTestFunctions : SimpleFunctions<long, long> { }
+    internal class EphemeralLockingTestFunctions : SimpleFunctions<long, long>
+    {
+        internal bool failInPlace;
+
+        public override bool ConcurrentWriter(ref long key, ref long input, ref long src, ref long dst, ref long output, ref UpsertInfo upsertInfo)
+            => !failInPlace && base.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
+
+        public override bool InPlaceUpdater(ref long key, ref long input, ref long value, ref long output, ref RMWInfo rmwInfo)
+            => !failInPlace && base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
+    }
 
     [TestFixture]
     class EphemeralLockingTests
@@ -468,6 +477,38 @@ namespace FASTER.test.EphemeralLocking
                 Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
             else
                 Assert.IsTrue(status.Record.Created, status.ToString());
+
+            AssertNoLocks();
+        }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void FailInPlaceAndSealTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        {
+            Populate();
+
+            functions.failInPlace = true;
+
+            const int key = 42;
+            static int getValue(int key) => key + valueMult;
+
+            var status = updateOp switch
+            {
+                UpdateOp.Upsert => session.Upsert(key, getValue(key)),
+                UpdateOp.RMW => session.RMW(key, getValue(key)),
+                _ => new(StatusCode.Error)
+            };
+            Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+            if (updateOp == UpdateOp.RMW)
+                Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
+            else
+                Assert.IsTrue(status.Record.Created, status.ToString());
+
+            long output;
+            (status, output) = session.Read(key);
+            Assert.IsTrue(status.Found, status.ToString());
+            Assert.AreEqual(getValue(key), output);
 
             AssertNoLocks();
         }

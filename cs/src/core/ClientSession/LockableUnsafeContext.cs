@@ -48,39 +48,7 @@ namespace FASTER.core
         #endregion Begin/EndLockable
 
         #region Key Locking
-
-        /// <inheritdoc/>
-        public void Lock(ref Key key, LockType lockType)
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
-
-            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, key, new(LockOperationType.Lock, lockType));
-            if (lockType == LockType.Exclusive)
-                ++clientSession.exclusiveLockCount;
-            else
-                ++clientSession.sharedLockCount;
-        }
-
-        /// <inheritdoc/>
-        public void Lock(Key key, LockType lockType) => Lock(ref key, lockType);
-
-        /// <inheritdoc/>
-        public void Unlock(ref Key key, LockType lockType)
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Unlock()");
-
-            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, key, new(LockOperationType.Unlock, lockType));
-            if (lockType == LockType.Exclusive)
-                --clientSession.exclusiveLockCount;
-            else
-                --clientSession.sharedLockCount;
-        }
-
-        /// <inheritdoc/>
-        public void Unlock(Key key, LockType lockType) => Unlock(ref key, lockType);
-
+ 
         /// <inheritdoc/>
         public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
 
