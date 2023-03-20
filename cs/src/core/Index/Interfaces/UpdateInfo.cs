@@ -14,11 +14,6 @@ namespace FASTER.core
         Default,
 
         /// <summary>
-        /// The operation cannot not be completed in-place because it would exceed available space.
-        /// </summary>
-        NeedMoreSpace,
-
-        /// <summary>
         /// Stop the operation immediately and return.
         /// </summary>
         CancelOperation
@@ -82,11 +77,6 @@ namespace FASTER.core
         /// Execute the default action for the method 'false' return.
         /// </summary>
         Default,
-
-        /// <summary>
-        /// The operation cannot not be completed in-place because it would exceed available space.
-        /// </summary>
-        NeedMoreSpace,
 
         /// <summary>
         /// Expire the record, including continuing actions to reinsert a new record with initial state.

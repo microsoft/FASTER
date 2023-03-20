@@ -45,6 +45,13 @@ namespace FASTER.core
         None
     }
 
+    internal enum EphemeralLockResult
+    {
+        Success,        // Lock succeeded
+        Failed,         // Lock failed due to timeout; must do RETRY_LATER
+        HoldForSeal     // Lock succeeded, but was not unlocked because the user's IFunctions method requires a read-copy-update
+    }
+
     /// <summary>
     /// Interface that must be implemented to participate in keycode-based locking.
     /// </summary>

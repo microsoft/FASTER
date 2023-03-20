@@ -86,9 +86,9 @@ namespace FASTER.core
                         {
                             // If this succeeds, we obviously don't need to copy to tail or readcache, so return success.
                             if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref stackCtx.recSrc.GetValue(),
-                                    ref pendingContext.output, ref srcRecordInfo, ref readInfo, out bool lockFailed))
+                                    ref pendingContext.output, ref srcRecordInfo, ref readInfo, out EphemeralLockResult lockResult))
                                 return OperationStatus.SUCCESS;
-                            if (lockFailed)
+                            if (lockResult == EphemeralLockResult.Failed)
                             {
                                 HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, fasterSession, ref pendingContext);
                                 continue;
