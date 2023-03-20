@@ -26,6 +26,8 @@ namespace FASTER.stress
             this.session = new(testLoader, output => (int)(output % testLoader.ValueIncrement), rng);
         }
 
+        public ILockableContext<TKey> LockableContext => this.session.LockableContext;
+
         public long GetAverageSize() => sizeof(long);
 
         public void Create(int hashTableCacheLines, LogSettings logSettings, CheckpointSettings checkpointSettings, IFasterEqualityComparer<TKey> comparer)
@@ -63,7 +65,7 @@ namespace FASTER.stress
             return true;
         }
 
-        public void TestRecord(int keyOrdinal, int keyCount, TKey[] keys)
+        public void TestRecord(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] lockKeys)
         {
             var opType = testLoader.GetOperationType(rng);
 
@@ -74,21 +76,21 @@ namespace FASTER.stress
             switch (opType)
             {
                 case OperationType.READ:
-                    this.session.Read(keyOrdinal, keyCount, keys);
+                    this.session.Read(keyOrdinal, keyCount, lockKeys);
                     return;
                 case OperationType.DELETE:
-                    session.Delete(keys);
+                    session.Delete(lockKeys);
                     return;
                 case OperationType.RMW:
-                    session.RMW(keyOrdinal, keyCount, keys, value);
+                    session.RMW(keyOrdinal, keyCount, lockKeys, value);
                     return;
                 default:
-                    session.Upsert(keys, value);
+                    session.Upsert(lockKeys, value);
                     return;
             }
         }
 
-        public Task TestRecordAsync(int keyOrdinal, int keyCount, TKey[] keys)
+        public Task TestRecordAsync(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] lockKeys)
         {
             var opType = testLoader.GetOperationType(rng);
 
@@ -98,10 +100,10 @@ namespace FASTER.stress
             // Read and Delete do not take a value
             return opType switch
             {
-                OperationType.READ => session.ReadAsync(keyOrdinal, keyCount, keys),
-                OperationType.DELETE => session.DeleteAsync(keys),
-                OperationType.RMW => session.RMWAsync(keyOrdinal, keyCount, keys, value),
-                _ => session.UpsertAsync(keys, value)
+                OperationType.READ => session.ReadAsync(keyOrdinal, keyCount, lockKeys),
+                OperationType.DELETE => session.DeleteAsync(lockKeys),
+                OperationType.RMW => session.RMWAsync(keyOrdinal, keyCount, lockKeys, value),
+                _ => session.UpsertAsync(lockKeys, value)
             };
         }
 

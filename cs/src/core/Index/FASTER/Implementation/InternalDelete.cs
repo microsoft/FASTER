@@ -72,7 +72,6 @@ namespace FASTER.core
 
             DeleteInfo deleteInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = stackCtx.recSrc.LogicalAddress,
@@ -106,7 +105,7 @@ namespace FASTER.core
                     // Mutable Region: Update the record in-place
                     deleteInfo.RecordInfo = srcRecordInfo;
                     ref Value recordValue = ref stackCtx.recSrc.GetValue();
-                    if (fasterSession.ConcurrentDeleter(ref stackCtx.recSrc.GetKey(), ref recordValue, ref srcRecordInfo, ref deleteInfo))
+                    if (fasterSession.ConcurrentDeleter(ref stackCtx.recSrc.GetKey(), ref recordValue, ref srcRecordInfo, ref deleteInfo, out stackCtx.recSrc.ephemeralLockResult))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                         if (WriteDefaultOnDelete)
@@ -122,6 +121,11 @@ namespace FASTER.core
                         }
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        goto LatchRelease;
+                    }
+                    if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
+                    {
+                        status = OperationStatus.RETRY_LATER;
                         goto LatchRelease;
                     }
                     if (deleteInfo.Action == DeleteAction.CancelOperation)
@@ -237,7 +241,6 @@ namespace FASTER.core
 
             DeleteInfo deleteInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = newLogicalAddress,
@@ -255,10 +258,10 @@ namespace FASTER.core
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             deleteInfo.RecordInfo = newRecordInfo;
-            bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
+            bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
-                CompleteUpdate(ref key, ref stackCtx, ref srcRecordInfo);
+                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.

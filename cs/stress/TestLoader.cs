@@ -219,7 +219,7 @@ namespace FASTER.stress
                 Console.WriteLine(message);
         }
 
-        internal void MaybeLock<TKey>(ILockableContext<TKey> luContext, int keyCount, TKey[] keys, bool isRmw, bool isAsyncTest)
+        internal void MaybeLock<TKey>(ILockableContext<TKey> luContext, int keyCount, FixedLengthLockableKeyStruct<TKey>[] keys, bool isRmw, bool isAsyncTest)
         {
             if (!UseLocks)
                 return;
@@ -229,22 +229,22 @@ namespace FASTER.stress
                 uContext.BeginUnsafe();
             try
             {
-                for (var ii = 0; ii < keyCount; ++ii)
-                {
-                    if (isRmw && ii == 0)
-                        luContext.Lock(ref keys[ii], LockType.Exclusive);
-                    else
-                        luContext.Lock(ref keys[ii], LockType.Shared);
-                }
+                luContext.BeginLockable();
+
+                // For RMW, simulate "putting the result" into keys[0]
+                if (isRmw)
+                    keys[0].LockType = LockType.Exclusive;
+                luContext.Lock(keys);
             } 
             finally
             {
+                luContext.EndLockable();
                 if (isAsyncTest)
                     uContext.EndUnsafe();
             }
         }
 
-        internal void MaybeUnlock<TKey>(ILockableContext<TKey> luContext, int keyCount, TKey[] keys, bool isRmw, bool isAsyncTest)
+        internal void MaybeUnlock<TKey>(ILockableContext<TKey> luContext, int keyCount, FixedLengthLockableKeyStruct<TKey>[] lockKeys, bool isRmw, bool isAsyncTest)
         {
             if (!UseLocks)
                 return;
@@ -254,16 +254,14 @@ namespace FASTER.stress
                 uContext.BeginUnsafe();
             try
             {
-                for (var ii = 0; ii < keyCount; ++ii)
-                {
-                    if (isRmw && ii == 0)
-                        luContext.Unlock(ref keys[ii], LockType.Exclusive);
-                    else
-                        luContext.Unlock(ref keys[ii], LockType.Shared);
-                }
+                luContext.BeginLockable();
+                luContext.Unlock(lockKeys);
             }
             finally
             {
+                // Undo the setting from RMW
+                lockKeys[0].LockType = LockType.Shared;
+                luContext.EndLockable();
                 if (isAsyncTest)
                     uContext.EndUnsafe();
             }
@@ -282,7 +280,7 @@ namespace FASTER.stress
             return result;
         }
 
-        internal void Test<TKey>(int tid, Random rng, int[] lockOrdinals, TKey[] lockKeys, Func<int, TKey> getOrdinalKey, IComparer<TKey> sortComparer, IValueTester<TKey> valueTester)
+        internal void Test<TKey>(int tid, Random rng, int[] lockOrdinals, FixedLengthLockableKeyStruct<TKey>[] lockKeys, Func<int, TKey> getOrdinalKey, IValueTester<TKey> valueTester)
         {
             this.Status(Verbose.Low, $"Thread {tid}/{Environment.CurrentManagedThreadId} starting Sync Test");
             for (var iter = 0; iter < this.Options.IterationCount; ++iter)
@@ -291,8 +289,8 @@ namespace FASTER.stress
                 {
                     var lockKeyCount = this.GetKeysToLock(rng, ii, lockOrdinals);
                     for (var jj = 0; jj < lockOrdinals.Length; ++jj)
-                        lockKeys[jj] = getOrdinalKey(lockOrdinals[jj]);
-                    Array.Sort(lockKeys, sortComparer);   // Sort to avoid deadlocks
+                        lockKeys[jj] = new(getOrdinalKey(lockOrdinals[jj]), LockType.Shared, valueTester.LockableContext);
+                    valueTester.LockableContext.SortLockCodes(lockKeys);   // Sort to avoid deadlocks
                     valueTester.TestRecord(lockOrdinals[0], lockKeyCount, lockKeys);
                 }
                 this.Status(iter > 0 && iter % 100 == 0 ? Verbose.Low : Verbose.High, $"Thread {tid}/{Environment.CurrentManagedThreadId} completed Sync iteration {iter}");
@@ -300,7 +298,7 @@ namespace FASTER.stress
             this.Status(Verbose.Low, $"Thread {tid}/{Environment.CurrentManagedThreadId} completed Sync Test");
         }
 
-        internal async Task TestAsync<TKey>(int tid, Random rng, int[] lockOrdinals, TKey[] lockKeys, Func<int, TKey> getOrdinalKey, IComparer<TKey> sortComparer, IValueTester<TKey> valueTester)
+        internal async Task TestAsync<TKey>(int tid, Random rng, int[] lockOrdinals, FixedLengthLockableKeyStruct<TKey>[] lockKeys, Func<int, TKey> getOrdinalKey, IValueTester<TKey> valueTester)
         {
             this.Status(Verbose.Low, $"Thread {tid}/{Environment.CurrentManagedThreadId} starting Async Test");
             await Task.Delay(50);  // Make sure the test doesn't start by executing synchronously for a while
@@ -310,8 +308,8 @@ namespace FASTER.stress
                 {
                     var lockKeyCount = this.GetKeysToLock(rng, ii, lockOrdinals);
                     for (var jj = 0; jj < lockOrdinals.Length; ++jj)
-                        lockKeys[jj] = getOrdinalKey(lockOrdinals[jj]);
-                    Array.Sort(lockKeys, sortComparer);   // Sort to avoid deadlocks
+                        lockKeys[jj] = new(getOrdinalKey(lockOrdinals[jj]), LockType.Shared, valueTester.LockableContext);
+                    valueTester.LockableContext.SortLockCodes(lockKeys);   // Sort to avoid deadlocks
                     await valueTester.TestRecordAsync(lockOrdinals[0], lockKeyCount, lockKeys);
                 }
                 this.Status(iter > 0 && iter % 100 == 0 ? Verbose.Low : Verbose.High, $"Thread {tid}/{Environment.CurrentManagedThreadId} completed Async iteration {iter}");

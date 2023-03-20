@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-#if false
 using System;
 using System.IO;
 using FASTER.core;
@@ -8,46 +7,23 @@ using NUnit.Framework;
 using FASTER.test.ReadCacheTests;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
-using FASTER.test.LockTable;
 
-namespace FASTER.test.EphemeralOnlyLock
+namespace FASTER.test.EphemeralLocking
 {
-    // Functions for the "Simple lock transaction" case, e.g.:
-    //  - Lock key1, key2, key3, keyResult
-    //  - Do some operation on value1, value2, value3 and write the result to valueResult
-    internal class EphemeralOnlyFunctions : SimpleFunctions<long, long>
+    // Functions for ephemeral locking--locking only for the duration of a concurrent IFunctions call.
+    internal class EphemeralLockingTestFunctions : SimpleFunctions<long, long>
     {
-        internal long recordAddress;
+        internal bool failInPlace;
 
-        public override void PostSingleDeleter(ref long key, ref DeleteInfo deleteInfo)
-        {
-            recordAddress = deleteInfo.Address;
-        }
+        public override bool ConcurrentWriter(ref long key, ref long input, ref long src, ref long dst, ref long output, ref UpsertInfo upsertInfo)
+            => !failInPlace && base.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
 
-        public override bool ConcurrentDeleter(ref long key, ref long value, ref DeleteInfo deleteInfo)
-        {
-            recordAddress = deleteInfo.Address;
-            return true;
-        }
-    }
-
-    internal class LockableUnsafeComparer : IFasterEqualityComparer<long>
-    {
-//        internal int maxSleepMs;
-//        readonly Random rng = new(101);
-
-        public bool Equals(ref long k1, ref long k2) => k1 == k2;
-
-        public long GetHashCode64(ref long k)
-        {
-//            if (maxSleepMs > 0)
-//                Thread.Sleep(rng.Next(maxSleepMs));
-            return Utility.GetHashCode(k);
-        }
+        public override bool InPlaceUpdater(ref long key, ref long input, ref long value, ref long output, ref RMWInfo rmwInfo)
+            => !failInPlace && base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
     }
 
     [TestFixture]
-    class EphemeralOnlyLockTests
+    class EphemeralLockingTests
     {
         const int numRecords = 1000;
         const int useNewKey = 1010;
@@ -55,11 +31,11 @@ namespace FASTER.test.EphemeralOnlyLock
 
         const int valueMult = 1_000_000;
 
-        EphemeralOnlyFunctions functions;
-        LockableUnsafeComparer comparer;
+        EphemeralLockingTestFunctions functions;
+        LongFasterEqualityComparer comparer;
 
         private FasterKV<long, long> fht;
-        private ClientSession<long, long, long, long, Empty, EphemeralOnlyFunctions> session;
+        private ClientSession<long, long, long, long, Empty, EphemeralLockingTestFunctions> session;
         private IDevice log;
 
         [SetUp]
@@ -68,9 +44,7 @@ namespace FASTER.test.EphemeralOnlyLock
         public void Setup(bool forRecovery)
         {
             if (!forRecovery)
-            {
                 DeleteDirectory(MethodTestDir, wait: true);
-            }
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false, recoverDevice: forRecovery);
 
             ReadCacheSettings readCacheSettings = default;
@@ -81,22 +55,21 @@ namespace FASTER.test.EphemeralOnlyLock
                 {
                     if (dest == ReadCopyDestination.ReadCache)
                         readCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
-                    break;
+                    continue;
                 }
                 if (arg is CheckpointType chktType)
                 {
                     checkpointSettings = new CheckpointSettings { CheckpointDir = MethodTestDir };
-                    break;
+                    continue;
                 }
             }
 
-            comparer = new LockableUnsafeComparer();
-            functions = new EphemeralOnlyFunctions();
+            comparer = new LongFasterEqualityComparer();
+            functions = new EphemeralLockingTestFunctions();
 
             fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
-                                            checkpointSettings: checkpointSettings, comparer: comparer,
-                                            lockingMode: LockingMode.EphemeralOnly);
-            session = fht.For(functions).NewSession<EphemeralOnlyFunctions>();
+                                            checkpointSettings: checkpointSettings, comparer: comparer, lockingMode: LockingMode.Ephemeral);
+            session = fht.For(functions).NewSession<EphemeralLockingTestFunctions>();
         }
 
         [TearDown]
@@ -112,9 +85,7 @@ namespace FASTER.test.EphemeralOnlyLock
             log = null;
 
             if (!forRecovery)
-            {
                 DeleteDirectory(MethodTestDir);
-            }
         }
 
         void Populate()
@@ -176,8 +147,6 @@ namespace FASTER.test.EphemeralOnlyLock
                 }
             }
         }
-
-        void GetBucket(ref HashEntryInfo hei) => OverflowBucketLockTableTests.PopulateHei(fht, ref hei);
 
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
@@ -312,7 +281,7 @@ namespace FASTER.test.EphemeralOnlyLock
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void StressEhpemeralLocks([Values(2, 8)] int numThreads)
+        public void StressEphemeralLocks([Values(2, 8)] int numThreads)
         {
             Populate();
 
@@ -326,7 +295,7 @@ namespace FASTER.test.EphemeralOnlyLock
             {
                 Random rng = new(tid + 101);
 
-                using var localSession = fht.For(new EphemeralOnlyFunctions()).NewSession<EphemeralOnlyFunctions>();
+                using var localSession = fht.For(new EphemeralLockingTestFunctions()).NewSession<EphemeralLockingTestFunctions>();
                 var basicContext = localSession.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
@@ -511,6 +480,37 @@ namespace FASTER.test.EphemeralOnlyLock
 
             AssertNoLocks();
         }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void FailInPlaceAndSealTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        {
+            Populate();
+
+            functions.failInPlace = true;
+
+            const int key = 42;
+            static int getValue(int key) => key + valueMult;
+
+            var status = updateOp switch
+            {
+                UpdateOp.Upsert => session.Upsert(key, getValue(key)),
+                UpdateOp.RMW => session.RMW(key, getValue(key)),
+                _ => new(StatusCode.Error)
+            };
+            Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+            if (updateOp == UpdateOp.RMW)
+                Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
+            else
+                Assert.IsTrue(status.Record.Created, status.ToString());
+
+            long output;
+            (status, output) = session.Read(key);
+            Assert.IsTrue(status.Found, status.ToString());
+            Assert.AreEqual(getValue(key), output);
+
+            AssertNoLocks();
+        }
     }
 }
-#endif

@@ -185,7 +185,6 @@ namespace FASTER.core
 
                 ReadInfo readInfo = new()
                 {
-                    SessionType = fasterSession.SessionType,
                     Version = fasterSession.Ctx.version,
                     Address = Constants.kInvalidAddress,    // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
                     RecordInfo = srcRecordInfo
@@ -221,7 +220,6 @@ namespace FASTER.core
 
             ReadInfo readInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
                 RecordInfo = srcRecordInfo
@@ -235,13 +233,13 @@ namespace FASTER.core
 
             try
             {
-                if (pendingContext.ResetModifiedBit && !srcRecordInfo.TryResetModifiedAtomic())
-                    return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo))
+                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo, out stackCtx.recSrc.ephemeralLockResult))
                     return OperationStatus.SUCCESS;
+                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
+                    return OperationStatus.RETRY_LATER;
                 if (readInfo.Action == ReadAction.CancelOperation)
                     return OperationStatus.CANCELED;
                 if (readInfo.Action == ReadAction.Expire)
@@ -266,7 +264,6 @@ namespace FASTER.core
 
             ReadInfo readInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
                 RecordInfo = srcRecordInfo
@@ -280,8 +277,6 @@ namespace FASTER.core
 
             try
             {
-                if (pendingContext.ResetModifiedBit && !srcRecordInfo.TryResetModifiedAtomic())
-                    return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
                 ref Value recordValue = ref stackCtx.recSrc.GetValue();
@@ -293,6 +288,10 @@ namespace FASTER.core
                                                      ref srcRecordInfo, fasterSession, reason: WriteReason.CopyToTail);
                     return OperationStatus.SUCCESS;
                 }
+                if (readInfo.Action == ReadAction.CancelOperation)
+                    return OperationStatus.CANCELED;
+                if (readInfo.Action == ReadAction.Expire)
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
                 return OperationStatus.NOTFOUND;
             }
             finally

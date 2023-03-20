@@ -198,8 +198,6 @@ namespace FASTER.test
 
         public enum ReadCacheMode { UseReadCache, NoReadCache }
 
-        public enum EphemeralLockingMode { UseEphemeralLocking, NoEphemeralLocking };
-
         public enum KeyContentionMode { Contention, NoContention };
 
         public enum BatchMode { Batch, NoBatch };

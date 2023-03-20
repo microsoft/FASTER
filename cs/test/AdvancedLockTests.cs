@@ -10,6 +10,8 @@ using static FASTER.test.TestUtils;
 using System.Threading.Tasks;
 using System.Diagnostics;
 
+#pragma warning disable IDE0060 // Remove unused parameter: used by Setup
+
 namespace FASTER.test.LockTests
 {
     [TestFixture]
@@ -99,8 +101,19 @@ namespace FASTER.test.LockTests
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
+
+            var lockingMode = LockingMode.None;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is LockingMode lm)
+                {
+                    lockingMode = lm;
+                    continue;
+                }
+            }
+
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, ReadCacheSettings = readCacheSettings },
-                comparer: new ChainComparer(mod), lockingMode: LockingMode.None);
+                comparer: new ChainComparer(mod), lockingMode: lockingMode);
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 
@@ -132,7 +145,7 @@ namespace FASTER.test.LockTests
         [Category(FasterKVTestCategory)]
         [Category(LockTestCategory)]
         //[Repeat(100)]
-        public async ValueTask SameKeyInsertAndCTTTest()
+        public async ValueTask SameKeyInsertAndCTTTest([Values(LockingMode.None, LockingMode.Ephemeral /* Standard will hang */)] LockingMode lockingMode)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -188,118 +201,47 @@ namespace FASTER.test.LockTests
             );
         }
 
-    [TestFixture]
-    class LockRecoveryTests
-    {
-        const int numKeys = 5000;
-
-        string checkpointDir;
-
-        private FasterKV<int, int> fht1;
-        private FasterKV<int, int> fht2;
-        private IDevice log;
-
-
-        [SetUp]
-        public void Setup()
+        [TestFixture]
+        class LockRecoveryTests
         {
-            DeleteDirectory(MethodTestDir, wait: true);
-            checkpointDir = MethodTestDir + $"/checkpoints";
-            log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
+            const int numKeys = 5000;
 
-            fht1 = new FasterKV<int, int>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
-                );
+            string checkpointDir;
 
-            fht2 = new FasterKV<int, int>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
-                );
-        }
+            private FasterKV<int, int> fht1;
+            private FasterKV<int, int> fht2;
+            private IDevice log;
 
-        [TearDown]
-        public void TearDown()
-        {
-            fht1?.Dispose();
-            fht1 = null;
-            fht2?.Dispose();
-            fht2 = null;
-            log?.Dispose();
-            log = null;
 
-            DeleteDirectory(MethodTestDir);
-        }
+            [SetUp]
+            public void Setup()
+            {
+                DeleteDirectory(MethodTestDir, wait: true);
+                checkpointDir = MethodTestDir + $"/checkpoints";
+                log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
 
-        [Test]
-        [Category(FasterKVTestCategory), Category(CheckpointRestoreCategory), Category(LockTestCategory)]
-        [Ignore("Should not hold LUC while calling sync checkpoint")]
-        public async ValueTask NoLocksAfterRestoreTest([Values] CheckpointType checkpointType, [Values] SyncMode syncMode, [Values] bool incremental)
-        {
-            if (incremental && checkpointType != CheckpointType.Snapshot)
-                Assert.Ignore();
-            const int lockKeyInterval = 10;
+                fht1 = new FasterKV<int, int>(128,
+                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
+                    );
 
-            static LockType getLockType(int key) => ((key / lockKeyInterval) & 0x1) == 0 ? LockType.Shared : LockType.Exclusive;
-            static int getValue(int key) => key + numKeys * 10;
-            Guid token;
+                fht2 = new FasterKV<int, int>(128,
+                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
+                    );
+            }
 
-                {   // Populate and Lock
-                    using var session = fht1.NewSession(new SimpleFunctions<int, int>());
-                    var luContext = session.LockableUnsafeContext;
-                    var firstKeyEnd = incremental ? numKeys / 2 : numKeys;
+            [TearDown]
+            public void TearDown()
+            {
+                fht1?.Dispose();
+                fht1 = null;
+                fht2?.Dispose();
+                fht2 = null;
+                log?.Dispose();
+                log = null;
 
-                    luContext.BeginUnsafe();
-                    for (int key = 0; key < firstKeyEnd; key++)
-                    {
-                        luContext.Upsert(key, getValue(key));
-                        if ((key % lockKeyInterval) == 0)
-                            luContext.Lock(key, getLockType(key));
-                    }
-                    luContext.EndUnsafe();
-
-                fht1.TryInitiateFullCheckpoint(out token, checkpointType);
-                await fht1.CompleteCheckpointAsync();
-
-                    if (incremental)
-                    {
-                        luContext.BeginUnsafe();
-                        for (int key = firstKeyEnd; key < numKeys; key++)
-                        {
-                            luContext.Upsert(key, getValue(key));
-                            if ((key % lockKeyInterval) == 0)
-                                luContext.Lock(key, getLockType(key));
-                        }
-                        luContext.EndUnsafe();
-
-                    var _result1 = fht1.TryInitiateHybridLogCheckpoint(out var _token1, checkpointType, tryIncremental: true);
-                    await fht1.CompleteCheckpointAsync();
-                }
-
-                    luContext.BeginUnsafe();
-                    for (int key = 0; key < numKeys; key += lockKeyInterval)
-                    {
-                        // This also verifies the locks are there--otherwise (in Debug) we'll AssertFail trying to unlock an unlocked record
-                        luContext.Unlock(key, getLockType(key));
-                    }
-                    luContext.EndUnsafe();
-                }
-
-                if (syncMode == SyncMode.Async)
-                    await fht2.RecoverAsync(token);
-                else
-                    fht2.Recover(token);
-
-                {   // Ensure there are no locks
-                    using var session = fht2.NewSession(new SimpleFunctions<int, int>());
-                    var luContext = session.LockableUnsafeContext;
-                    luContext.BeginUnsafe();
-                    for (int key = 0; key < numKeys; key++)
-                    {
-                        OverflowBucketLockTableTests.AssertLockCounts(fht2, ref key, false, 0);
-                    }
-                    luContext.EndUnsafe();
-                }
+                DeleteDirectory(MethodTestDir);
             }
         }
     }

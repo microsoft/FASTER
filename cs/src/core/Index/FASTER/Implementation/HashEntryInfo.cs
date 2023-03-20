@@ -102,18 +102,20 @@ namespace FASTER.core
 
         public override string ToString()
         {
+            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
+            var hashSign = hash < 0 ? "-" : string.Empty;
+            var absHash = this.hash >= 0 ? this.hash : -this.hash;
+            var hashStr = $"{hashSign}{absHash}";
+
             if (bucket == null)
-                return $"hash {this.hash} <no bucket>";
+                return $"hash {hashStr} <no bucket>";
 
             var isRC = "(rc)";
             var addrRC = this.IsReadCache ? isRC : string.Empty;
             var currAddrRC = this.IsCurrentReadCache ? isRC : string.Empty;
             var isNotCurr = this.Address == this.CurrentAddress ? string.Empty : "*";
 
-            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
-            var hashSign = hash < 0 ? "-" : string.Empty;
-            var absHash = this.hash >= 0 ? this.hash : -this.hash;
-            var result = $"addr {this.AbsoluteAddress}{addrRC}, currAddr {this.AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashSign}{absHash}, tag {this.tag}, slot {this.slot}, Bkt1 [";
+            var result = $"addr {this.AbsoluteAddress}{addrRC}, currAddr {this.AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashStr}, tag {this.tag}, slot {this.slot}, Bkt1 [";
 #if DEBUG
             result += $"code {LockCode}, ";
 #endif // DEBUG

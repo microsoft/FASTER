@@ -82,7 +82,7 @@ namespace FASTER.test.LockTests
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
-            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, comparer: new LocalComparer(), lockingMode: LockingMode.Standard);
+            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, comparer: new LocalComparer(), lockingMode: LockingMode.Ephemeral);
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 
@@ -109,14 +109,14 @@ namespace FASTER.test.LockTests
                 RecordInfo* ri = &recordInfo;
 
 #pragma warning disable IDE0200 // The lambdas cannot be simplified as it causes struct temporaries
-                XLockTest(numThreads, () => ri->TryLockExclusive(), () => { ri->UnlockExclusive(); return true; });
-                SLockTest(numThreads, () => ri->TryLockShared(), () => ri->TryUnlockShared());
-                XSLockTest(numThreads, () => ri->TryLockExclusive(), () => ri->UnlockExclusive(), () => ri->TryLockShared(), () => ri->TryUnlockShared());
+                XLockTest(numThreads, () => ri->TryLockExclusive(), () => ri->UnlockExclusive());
+                SLockTest(numThreads, () => ri->TryLockShared(), () => ri->UnlockShared());
+                XSLockTest(numThreads, () => ri->TryLockExclusive(), () => ri->UnlockExclusive(), () => ri->TryLockShared(), () => ri->UnlockShared());
 #pragma warning restore IDE0200
             }
         }
 
-        private void XLockTest(int numThreads, Func<bool> locker, Func<bool> unlocker)
+        private void XLockTest(int numThreads, Func<bool> locker, Action unlocker)
         {
             long lockTestValue = 0;
             const int numIters = 1000;
@@ -136,7 +136,7 @@ namespace FASTER.test.LockTests
                     var temp = lockTestValue;
                     Thread.Yield();
                     lockTestValue = temp + 1;
-                    Assert.IsTrue(unlocker());
+                    unlocker();
                 }
             }
         }
@@ -253,7 +253,7 @@ namespace FASTER.test.LockTests
 
         [Test]
         [Category("FasterKV")]
-        public unsafe void SealDeletedRecordTest([Values(UpdateOp.RMW, UpdateOp.Upsert)] UpdateOp updateOp, [Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode)
+        public unsafe void CollidingDeletedRecordTest([Values(UpdateOp.RMW, UpdateOp.Upsert)] UpdateOp updateOp, [Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode)
         {
             // Populate
             for (int key = 0; key < numRecords; key++)
@@ -300,7 +300,6 @@ namespace FASTER.test.LockTests
             Assert.IsFalse(status.IsPending);
 
             Assert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Update");
-            Assert.IsTrue(recordInfo.Sealed, "Sealed should be true after Update");
         }
 
         [Test]

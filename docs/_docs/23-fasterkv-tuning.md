@@ -58,7 +58,7 @@ is useful when reads are infrequent, but will be followed by an update, or subse
 causes any reads from disk to be copied to the tail of log. `CopyReadsToTail.FromReadOnly` causes any reads from either
 disk or the read-only region of memory to be copied to the tail of log. Latter is helpful when you do not want particularly
 hot items to "escape" to disk only to be immediately brought back to the tail of main memory. It is also useful when you
-use FASTER as a memory-only cache (with `NullDevice`) as in [this](https://github.com/microsoft/FASTER/tree/master/cs/samples/MemOnlyCache) sample.
+use FASTER as a memory-only cache (with `NullDevice`) as in [this](https://github.com/microsoft/FASTER/tree/master/cs/samples/ResizableCacheStore) sample.
 
 
 * `ReadCacheSettings`: This setting is used to enable a read cache, separately from the main FASTER log. If you need to frequently read 
@@ -116,8 +116,8 @@ correspond exactly to the total log memory utilization.
 
 One can accurately track the total memory used by FASTER, including heap objects, using a cache size 
 tracker that lets `IFunctions` notify it of record additions and deletions, and by subscribing to 
-evictions from the head of the in-memory log. Details are shown in the [MemOnlySample](https://github.com/microsoft/FASTER/tree/master/cs/samples/MemOnlyCache) 
-sample, where we show how to implement such a cache size [tracker](https://github.com/microsoft/FASTER/blob/master/cs/samples/MemOnlyCache/CacheSizeTracker.cs) 
+evictions from the head of the in-memory log. Details are shown in the [ResizableCacheStore](https://github.com/microsoft/FASTER/tree/master/cs/samples/ResizableCacheStore) 
+sample, where we show how to implement such a cache size [tracker](https://github.com/microsoft/FASTER/blob/master/cs/samples/ResizableCacheStore/CacheSizeTracker.cs) 
 to:
 1. Track FASTER's total memory usage (including the heap objects, log, hash table, and overflow buckets)  accurately.
 2. Set a target memory usage and tune `EmptyPageCount` to achieve this target memory utilization.

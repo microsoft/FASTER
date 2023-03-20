@@ -20,34 +20,6 @@ namespace FASTER.core
         void EndLockable();
 
         /// <summary>
-        /// Lock the key with the specified <paramref name="lockType"/>, waiting until it is acquired
-        /// </summary>
-        /// <param name="key">The key to lock</param>
-        /// <param name="lockType">The type of lock to take</param>
-        void Lock(ref TKey key, LockType lockType);
-
-        /// <summary>
-        /// Lock the key with the specified <paramref name="lockType"/>, waiting until it is acquired
-        /// </summary>
-        /// <param name="key">The key to lock</param>
-        /// <param name="lockType">The type of lock to take</param>
-        void Lock(TKey key, LockType lockType);
-
-        /// <summary>
-        /// Lock the key with the specified <paramref name="lockType"/>
-        /// </summary>
-        /// <param name="key">The key to lock</param>
-        /// <param name="lockType">The type of lock to release</param>
-        void Unlock(ref TKey key, LockType lockType);
-
-        /// <summary>
-        /// Unlock the key with the specified <paramref name="lockType"/>
-        /// </summary>
-        /// <param name="key">The key to lock</param>
-        /// <param name="lockType">The type of lock to release</param>
-        void Unlock(TKey key, LockType lockType);
-
-        /// <summary>
         /// If true, then keys must use one of the <see cref="GetLockCode(ref TKey, long)"/> overloads to obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
         /// </summary>
         /// <remarks>Whether this returns true depends on the <see cref="LockingMode"/> on <see cref="FasterKVSettings{Key, Value}"/>, or passed to the FasterKV constructor.</remarks>

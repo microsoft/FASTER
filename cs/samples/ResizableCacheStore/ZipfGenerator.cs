@@ -3,7 +3,7 @@
 
 using System;
 
-namespace MemOnlyCache
+namespace ResizableCacheStore
 {
     public class ZipfGenerator
     {

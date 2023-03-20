@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -69,7 +68,6 @@ namespace FASTER.core
                         return status;
                     }
 
-                    var expired = false;
                     try
                     {
                         // Wait until after locking to check this.
@@ -78,7 +76,6 @@ namespace FASTER.core
 
                         ReadInfo readInfo = new()
                         {
-                            SessionType = fasterSession.SessionType,
                             Version = fasterSession.Ctx.version,
                             Address = request.logicalAddress,
                             RecordInfo = srcRecordInfo
@@ -89,10 +86,15 @@ namespace FASTER.core
                         {
                             // If this succeeds, we obviously don't need to copy to tail or readcache, so return success.
                             if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref stackCtx.recSrc.GetValue(),
-                                    ref pendingContext.output, ref srcRecordInfo, ref readInfo))
+                                    ref pendingContext.output, ref srcRecordInfo, ref readInfo, out EphemeralLockResult lockResult))
                                 return OperationStatus.SUCCESS;
+                            if (lockResult == EphemeralLockResult.Failed)
+                            {
+                                HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, fasterSession, ref pendingContext);
+                                continue;
+                            }
                         }
-                        else 
+                        else
                             success = fasterSession.SingleReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref srcRecordInfo, ref readInfo);
 
                         if (!success)
@@ -131,13 +133,7 @@ namespace FASTER.core
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
                     if (!HandleImmediateRetryStatus(status, fasterSession, ref pendingContext))
-                    {
-                        // If no copy to tail was done.
-                        if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
-                            return expired ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired) : OperationStatus.SUCCESS;
                         return status;
-                    }
-
                 } // end while (true)
             }
 
@@ -425,7 +421,6 @@ namespace FASTER.core
 
             UpsertInfo upsertInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = newLogicalAddress,
@@ -446,6 +441,8 @@ namespace FASTER.core
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             bool success;
             OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
+            if (DoEphemeralLocking)
+                newRecordInfo.InitializeLockShared();                   // For PostSingleWriter
             if (stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress)
             {
                 // ReadCache entries, and main-log records when there are no readcache records, are CAS'd in as the first entry in the hash chain.
@@ -455,11 +452,11 @@ namespace FASTER.core
             {
                 // We are doing CopyToTail; we may have a source record from either main log (Compaction) or ReadCache.
                 Debug.Assert(reason == WriteReason.CopyToTail || reason == WriteReason.Compaction, "Expected WriteReason.CopyToTail or .Compaction");
-                success = SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx.recSrc, newLogicalAddress);
+                success = SpliceIntoHashChainAtReadCacheBoundary(ref key, ref stackCtx, newLogicalAddress);
             }
 
             if (success)
-                CompleteCopyToTail<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
             else
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
@@ -476,11 +473,6 @@ namespace FASTER.core
             pendingContext.logicalAddress = upsertInfo.Address;
             fasterSession.PostSingleWriter(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                            ref newRecordInfo, ref upsertInfo, reason);
-            if (pendingContext.ResetModifiedBit)
-            {
-                newRecordInfo.Modified = false;
-                pendingContext.recordInfo = newRecordInfo;
-            }
             stackCtx.ClearNewRecord();
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);
 #endregion
@@ -520,7 +512,6 @@ namespace FASTER.core
 
             UpsertInfo upsertInfo = new()
             {
-                SessionType = fasterSession.SessionType,
                 Version = fasterSession.Ctx.version,
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = Constants.kInvalidAddress,        // We do not expose readcache addresses
@@ -575,11 +566,6 @@ namespace FASTER.core
             pendingContext.logicalAddress = upsertInfo.Address;
             fasterSession.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                     ref newRecordInfo, ref upsertInfo, WriteReason.CopyToReadCache);
-            if (pendingContext.ResetModifiedBit)
-            {
-                newRecordInfo.Modified = false;
-                pendingContext.recordInfo = newRecordInfo;
-            }
             stackCtx.ClearNewRecord();
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
             #endregion

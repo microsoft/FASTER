@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace FASTER.core
 {
@@ -15,11 +13,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-
-            if (!this.LockTable.IsEnabled)
-                return true;
-
-            if (fasterSession.TryLockTransientExclusive(ref key, ref stackCtx))
+            if (!this.LockTable.IsEnabled || fasterSession.TryLockTransientExclusive(ref key, ref stackCtx))
                 return true;
             status = OperationStatus.RETRY_LATER;
             return false;
@@ -31,11 +25,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-
-            if (!this.LockTable.IsEnabled)
-                return true;
-
-            if (fasterSession.TryLockTransientShared(ref key, ref stackCtx))
+            if (!this.LockTable.IsEnabled || fasterSession.TryLockTransientShared(ref key, ref stackCtx))
                 return true;
             status = OperationStatus.RETRY_LATER;
             return false;
@@ -56,28 +46,6 @@ namespace FASTER.core
         {
             if (stackCtx.recSrc.HasTransientLock)
                 fasterSession.UnlockTransientExclusive(ref key, ref stackCtx);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CompleteUpdate<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            stackCtx.recSrc.CloseSourceRecordAfterCopy(ref srcRecordInfo);
-
-            // If we did not have a source lock and were splicing, it is possible that a readcache record was inserted.
-            if (UseReadCache && stackCtx.hei.IsReadCache && !stackCtx.recSrc.HasTransientLock && !fasterSession.IsManualLocking)
-                ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void CompleteCopyToTail<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            stackCtx.recSrc.CloseSourceRecordAfterCopy(ref srcRecordInfo);
-
-            // If we did not have a source lock and were splicing, it is possible that a readcache record was inserted.
-            if (UseReadCache && stackCtx.hei.IsReadCache && !stackCtx.recSrc.HasTransientLock && !fasterSession.IsManualLocking)
-                ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
         }
     }
 }

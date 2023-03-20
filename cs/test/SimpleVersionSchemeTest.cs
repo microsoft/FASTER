@@ -13,12 +13,12 @@ namespace FASTER.test
         [Category("FasterLog")]
         public void SimpleTest()
         {
-            var tested = new SimpleVersionScheme();
+            var tested = new EpochProtectedVersionScheme(new LightEpoch());
             var protectedVal = 0;
             var v = tested.Enter();
             
-            Assert.AreEqual(1, v);
-            tested.TryAdvanceVersion((_, _) => protectedVal = 1);
+            Assert.AreEqual(1, v.Version);
+            tested.TryAdvanceVersionWithCriticalSection((_, _) => protectedVal = 1);
             Thread.Sleep(10);
             // because of ongoing protection, nothing should happen yet
             tested.Leave();
@@ -27,7 +27,7 @@ namespace FASTER.test
             
             // Next thread sees new version
             v = tested.Enter();
-            Assert.AreEqual(v, 2);
+            Assert.AreEqual(v.Version, 2);
             tested.Leave();
         }
 
@@ -35,21 +35,21 @@ namespace FASTER.test
         [Category("FasterLog")]
         public void SingleThreadTest()
         {
-            var tested = new SimpleVersionScheme();
+            var tested = new EpochProtectedVersionScheme(new LightEpoch());
             var protectedVal = 0;
             
             var v = tested.Enter();
-            Assert.AreEqual(1, v);
+            Assert.AreEqual(1, v.Version);
             tested.Leave();
             
-            tested.TryAdvanceVersion((_, _) => protectedVal = 1);
+            tested.TryAdvanceVersionWithCriticalSection((_, _) => protectedVal = 1);
             Assert.AreEqual(1, protectedVal);
             
-            tested.TryAdvanceVersion((_, _) => protectedVal = 2, 4);
+            tested.TryAdvanceVersionWithCriticalSection((_, _) => protectedVal = 2, 4);
             Assert.AreEqual(2, protectedVal);
             
             v = tested.Enter();
-            Assert.AreEqual(4, v);
+            Assert.AreEqual(4, v.Version);
             tested.Leave();
         }
         
@@ -57,7 +57,7 @@ namespace FASTER.test
         [Category("FasterLog")]
         public void LargeConcurrentTest()
         {
-            var tested = new SimpleVersionScheme();
+            var tested = new EpochProtectedVersionScheme(new LightEpoch());
             var protectedVal = 1L;
             var termination = new ManualResetEventSlim();
 
@@ -71,7 +71,7 @@ namespace FASTER.test
                     while (!termination.IsSet)
                     {
                         var v = tested.Enter();
-                        Assert.AreEqual(v, Interlocked.Read(ref protectedVal));
+                        Assert.AreEqual(v.Version, Interlocked.Read(ref protectedVal));
                         tested.Leave();
                     }
                 });
@@ -81,7 +81,7 @@ namespace FASTER.test
 
             for (var i = 0; i < 1000; i++)
             {
-                tested.TryAdvanceVersion((vOld, vNew) =>
+                tested.TryAdvanceVersionWithCriticalSection((vOld, vNew) =>
                 {
                     Assert.AreEqual(vOld, Interlocked.Read(ref protectedVal));
                     // Flip sign to simulate critical section processing

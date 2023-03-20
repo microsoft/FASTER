@@ -53,10 +53,5 @@ namespace FASTER.core
         /// Copy reads from <see cref="IDevice" /> only (do not copy from read-only region), to read cache or tail.
         /// </summary>
         CopyFromDeviceOnly = 0x10,
-
-        /// <summary>
-        /// Reset the modified bit on Read() (even if it does CopyToTail).
-        /// </summary>
-        ResetModifiedBit = 0x20,
     }
 }

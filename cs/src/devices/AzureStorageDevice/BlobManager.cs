@@ -87,7 +87,7 @@ namespace FASTER.devices
             this.leaseBlobDirectory = leaseBlobDirectory;
             this.LeaseBlobName = leaseBlobName ?? LeaseBlobName;
             this.TraceHelper = new FasterTraceHelper(logger, logLevelLimit, performanceLogger);
-            this.StorageErrorHandler = errorHandler ?? new StorageErrorHandler(null, logLevelLimit, null, null);
+            this.StorageErrorHandler = errorHandler ?? new StorageErrorHandler(logger, logLevelLimit, null, null);
             this.shutDownOrTermination = errorHandler == null ?
                 new CancellationTokenSource() :
                 CancellationTokenSource.CreateLinkedTokenSource(errorHandler.Token);

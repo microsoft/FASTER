@@ -802,6 +802,15 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
+        public static void LogPathtooLong()
+        {
+            string testDir = new string('x', Native32.WIN32_MAX_PATH - 11);                 // As in LSD, -11 for ".<segment>"
+            using var log = Devices.CreateLogDevice($"{testDir}", deleteOnClose: true);     // Should succeed
+            Assert.Throws(typeof(FasterException), () => Devices.CreateLogDevice($"{testDir}y", deleteOnClose: true));
+        }
+
+        [Test]
+        [Category("FasterKV")]
         public static void UshortKeyByteValueTest()
         {
             using var log = Devices.CreateLogDevice($"{TestUtils.MethodTestDir}/hlog.log", deleteOnClose: false);
