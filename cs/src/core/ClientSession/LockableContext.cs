@@ -568,11 +568,7 @@ namespace FASTER.core
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out EphemeralLockResult lockResult)
             {
                 lockResult = EphemeralLockResult.Success;       // Ephemeral locking is not used with Lockable contexts
-                if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
-                    return true;
-                if (readInfo.Action == ReadAction.Expire)
-                    recordInfo.Tombstone = true;
-                return false;
+                return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
             }
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)

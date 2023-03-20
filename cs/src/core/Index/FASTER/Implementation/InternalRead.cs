@@ -243,11 +243,7 @@ namespace FASTER.core
                 if (readInfo.Action == ReadAction.CancelOperation)
                     return OperationStatus.CANCELED;
                 if (readInfo.Action == ReadAction.Expire)
-                {
-                    // Our IFasterSession.ConcurrentReader implementation has already set Tombstone if appropriate.
-                    this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
-                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
-                }
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
                 return OperationStatus.NOTFOUND;
             }
             finally
@@ -285,14 +281,13 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
                 ref Value recordValue = ref stackCtx.recSrc.GetValue();
 
-                if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo)
-                    || readInfo.Action == ReadAction.Expire)
+                if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo))
                 {
-                    if (pendingContext.CopyReadsToTailFromReadOnly || readInfo.Action == ReadAction.Expire) // Expire adds a tombstoned record to tail
+                    if (pendingContext.CopyReadsToTailFromReadOnly)
                     {
                         status = InternalTryCopyToTail(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
                                                         ref srcRecordInfo, untilLogicalAddress: stackCtx.recSrc.LatestLogicalAddress, fasterSession,
-                                                        reason: WriteReason.CopyToTail, expired: readInfo.Action == ReadAction.Expire);
+                                                        reason: WriteReason.CopyToTail);
                         // status != SUCCESS means no copy to tail was done
                         if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
                             return readInfo.Action == ReadAction.Expire
@@ -302,6 +297,10 @@ namespace FASTER.core
                     }
                     return OperationStatus.SUCCESS;
                 }
+                if (readInfo.Action == ReadAction.CancelOperation)
+                    return OperationStatus.CANCELED;
+                if (readInfo.Action == ReadAction.Expire)
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
                 return OperationStatus.NOTFOUND;
             }
             finally
