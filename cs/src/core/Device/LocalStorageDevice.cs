@@ -60,6 +60,7 @@ namespace FASTER.core
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
         public LocalStorageDevice(string filename,
+
                                   bool preallocateFile = false,
                                   bool deleteOnClose = false,
                                   bool disableFileBuffering = true,
@@ -67,6 +68,9 @@ namespace FASTER.core
                                   bool recoverDevice = false, bool useIoCompletionPort = false)
             : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort)
         {
+            // -11 to allow for ".<segment>"
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && filename.Length > Native32.WIN32_MAX_PATH - 11)
+                throw new FasterException($"Path {filename} is too long");
         }
 
         void _callback(uint errorCode, uint numBytes, NativeOverlapped* pOVERLAP)
@@ -400,8 +404,9 @@ namespace FASTER.core
                 fileShare = fileShare | Native32.FILE_SHARE_DELETE;
             }
 
+            string segmentFileName = GetSegmentName(fileName, segmentId);
             var logHandle = Native32.CreateFileW(
-                GetSegmentName(fileName, segmentId),
+                segmentFileName,
                 fileAccess, fileShare,
                 IntPtr.Zero, fileCreation,
                 fileFlags, IntPtr.Zero);
@@ -409,7 +414,10 @@ namespace FASTER.core
             if (logHandle.IsInvalid)
             {
                 var error = Marshal.GetLastWin32Error();
-                throw new IOException($"Error creating log file for {GetSegmentName(fileName, segmentId)}, error: {error}", Native32.MakeHRFromErrorCode(error));
+                var message = $"Error creating log file for {segmentFileName}, error: {error} 0x({Native32.MakeHRFromErrorCode(error)})";
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && error == Native32.ERROR_PATH_NOT_FOUND)
+                    message += $" (Path not found; name length = {segmentFileName.Length}, MAX_PATH = {Native32.WIN32_MAX_PATH}";
+                throw new IOException(message);
             }
 
             if (preallocateFile && segmentSize != -1)
@@ -428,7 +436,7 @@ namespace FASTER.core
                 }
                 catch (Exception e)
                 {
-                    throw new FasterException("Error binding log handle for " + GetSegmentName(fileName, segmentId) + ": " + e.ToString());
+                    throw new FasterException("Error binding log handle for " + segmentFileName + ": " + e.ToString());
                 }
             }
             return logHandle;

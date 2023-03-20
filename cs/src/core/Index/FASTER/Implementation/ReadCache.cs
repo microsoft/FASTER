@@ -99,7 +99,8 @@ namespace FASTER.core
         private bool SpliceIntoHashChainAtReadCacheBoundary(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long newLogicalAddress)
         {
             // Splice into the gap of the last readcache/first main log entries.
-            Debug.Assert(stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress, "LowestReadCacheLogicalAddress must be >= readcache.HeadAddress; caller should have called VerifyReadCacheSplicePoint");
+            Debug.Assert(stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.ClosedUntilAddress,
+                        $"{nameof(VerifyInMemoryAddresses)} should have ensured LowestReadCacheLogicalAddress ({stackCtx.recSrc.LowestReadCacheLogicalAddress}) >= readcache.ClosedUntilAddress ({readcache.ClosedUntilAddress})");
 
             // If the LockTable is enabled, then we either have an exclusive lock and thus cannot have a competing insert to the readcache, or we are doing a
             // Read() so we allow a momentary overlap of records because they're the same value (no update is being done). Otherwise, we must do a more expensive
