@@ -67,7 +67,6 @@ namespace FASTER.core
                         return status;
                     }
 
-                    var expired = false;
                     try
                     {
                         // Wait until after locking to check this.
@@ -99,18 +98,16 @@ namespace FASTER.core
 
                         if (!success)
                         {
+                            pendingContext.recordInfo = srcRecordInfo;
                             if (readInfo.Action == ReadAction.CancelOperation)
-                            {
-                                pendingContext.recordInfo = srcRecordInfo;
                                 return OperationStatus.CANCELED;
-                            }
-                            if (readInfo.Action != ReadAction.Expire)
-                                goto NotFound;
-                            expired = true;
+                            if (readInfo.Action == ReadAction.Expire)
+                                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                            goto NotFound;
                         }
 
                         // See if we are copying to read cache or tail of log. If we are copying to readcache but already found the record in the readcache, we're done.
-                        var copyToTail = expired || pendingContext.CopyReadsToTail;
+                        var copyToTail = pendingContext.CopyReadsToTail;
                         var copyToRC = !stackCtx.recSrc.HasInMemorySrc && UseReadCache && !pendingContext.DisableReadCacheUpdates;
                         if (copyToRC || copyToTail)
                         {
@@ -135,7 +132,7 @@ namespace FASTER.core
                     {
                         // If no copy to tail was done.
                         if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
-                            return expired ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired) : OperationStatus.SUCCESS;
+                            return OperationStatus.SUCCESS;
                         return status;
                     }
 
@@ -346,7 +343,6 @@ namespace FASTER.core
         /// </param>
         /// <param name="fasterSession"></param>
         /// <param name="reason">The reason for this operation.</param>
-        /// <param name="expired">If true, this is called to append an expired (Tombstoned) record</param>
         /// <returns>
         ///     <list type="bullet">
         ///     <item>RETRY_NOW: failed CAS, so no copy done. This routine deals entirely with new records, so will not encounter Sealed records</item>
@@ -357,7 +353,7 @@ namespace FASTER.core
         /// </returns>
         internal OperationStatus InternalTryCopyToTail<Input, Output, Context, FasterSession>(ref PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value recordValue, ref Output output, ref OperationStackContext<Key, Value> stackCtx,
-                                        ref RecordInfo srcRecordInfo, long untilLogicalAddress, FasterSession fasterSession, WriteReason reason, bool expired = false)
+                                        ref RecordInfo srcRecordInfo, long untilLogicalAddress, FasterSession fasterSession, WriteReason reason)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             #region Trace back for newly-inserted record in HybridLog
@@ -379,9 +375,7 @@ namespace FASTER.core
             #endregion
 
             #region Create new copy in mutable region
-            Value defaultValue = default;
-            ref Value value = ref (expired ? ref defaultValue : ref recordValue);
-            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
+            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref recordValue);
 
             UpsertInfo upsertInfo = new()
             {
@@ -391,7 +385,7 @@ namespace FASTER.core
                 KeyHash = stackCtx.hei.hash
             };
 
-            StatusCode advancedStatusCode = expired ? StatusCode.Expired : StatusCode.Found;
+            StatusCode advancedStatusCode = StatusCode.Found;
 
             // A 'ref' variable must be initialized; we'll assign it to the new record we allocate.
             RecordInfo dummyRecordInfo = default;
@@ -423,7 +417,6 @@ namespace FASTER.core
 
                 newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
 
-                newRecordInfo.Tombstone = expired;
                 upsertInfo.Address = newLogicalAddress;
                 advancedStatusCode |= StatusCode.CopiedRecord;
                 if (reason == WriteReason.CopyToReadCache)
@@ -433,7 +426,7 @@ namespace FASTER.core
             stackCtx.SetNewRecord(newLogicalAddress | readcacheNewAddressBit);
             upsertInfo.RecordInfo = newRecordInfo;
 
-            if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref localLog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+            if (!fasterSession.SingleWriter(ref key, ref input, ref recordValue, ref localLog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref newRecordInfo, ref upsertInfo, reason))
             {
                 // No SaveAlloc here, but TODO this record could be reused later.
@@ -486,7 +479,7 @@ namespace FASTER.core
                 if (!casSuccess)
                 {
                     // Let user dispose similar to a deleted record, and save for retry, *only* if CAS failed; otherwise we must preserve it in the chain.
-                    fasterSession.DisposeSingleWriter(ref localLog.GetKey(newPhysicalAddress), ref input, ref value, ref localLog.GetValue(newPhysicalAddress), ref output, ref newRecordInfo, ref upsertInfo, reason);
+                    fasterSession.DisposeSingleWriter(ref localLog.GetKey(newPhysicalAddress), ref input, ref recordValue, ref localLog.GetValue(newPhysicalAddress), ref output, ref newRecordInfo, ref upsertInfo, reason);
                     newRecordInfo.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
                     if (!copyToReadCache)
                         SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
@@ -497,7 +490,7 @@ namespace FASTER.core
             // Success.
             pendingContext.recordInfo = newRecordInfo;
             pendingContext.logicalAddress = upsertInfo.Address;
-            fasterSession.PostSingleWriter(ref key, ref input, ref value, ref localLog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+            fasterSession.PostSingleWriter(ref key, ref input, ref recordValue, ref localLog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                            ref output, ref newRecordInfo, ref upsertInfo, reason);
             stackCtx.ClearNewRecord();
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);

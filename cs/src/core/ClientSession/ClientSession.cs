@@ -1013,16 +1013,7 @@ namespace FASTER.core
                 lockResult = EphemeralLockResult.Success;
                 return _clientSession.fht.DoEphemeralLocking
                     ? ConcurrentReaderLockEphemeral(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo, out lockResult)
-                    : ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReaderNoLock(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
-            {
-                bool success = _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
-                if (!success && readInfo.Action == ReadAction.Expire)
-                    recordInfo.Tombstone = true;
-                return success;
+                    : _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
             }
 
             public bool ConcurrentReaderLockEphemeral(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out EphemeralLockResult lockResult)
@@ -1032,7 +1023,7 @@ namespace FASTER.core
                     return false;
                 try
                 {
-                    return ConcurrentReaderNoLock(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo);
+                    return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
                 }
                 finally
                 {

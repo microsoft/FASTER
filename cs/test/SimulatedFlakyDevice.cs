@@ -19,7 +19,7 @@ namespace FASTER.test
         private ErrorSimulationOptions options;
         private ThreadLocal<Random> random;
         private List<long> permanentlyFailedRangesStart, permanentlyFailedRangesEnd;
-        private SimpleVersionScheme versionScheme;
+        private EpochProtectedVersionScheme versionScheme;
 
         public SimulatedFlakyDevice(IDevice underlying, ErrorSimulationOptions options) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
         {
@@ -27,7 +27,7 @@ namespace FASTER.test
             this.options = options;
             permanentlyFailedRangesStart = new List<long>();
             permanentlyFailedRangesEnd = new List<long>();
-            versionScheme = new SimpleVersionScheme();
+            versionScheme = new EpochProtectedVersionScheme(new LightEpoch());
             random = new ThreadLocal<Random>(() => new Random());
         }
 
@@ -73,7 +73,7 @@ namespace FASTER.test
             else if (random.Value.NextDouble() < options.writePermanentErrorRate)
             {
                 callback(42, numBytesToWrite, context);
-                versionScheme.TryAdvanceVersion((_, _) =>
+                versionScheme.TryAdvanceVersionWithCriticalSection((_, _) =>
                 {
                     var index = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
                     if (index >= 0)
@@ -129,7 +129,7 @@ namespace FASTER.test
             {
                 callback(42, readLength, context);
 
-                versionScheme.TryAdvanceVersion((_, _) =>
+                versionScheme.TryAdvanceVersionWithCriticalSection((_, _) =>
                 {
                     var index = permanentlyFailedRangesStart.BinarySearch(logicalSrcStart);
                     if (index >= 0)
