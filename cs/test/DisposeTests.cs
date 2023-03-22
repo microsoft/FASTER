@@ -595,9 +595,9 @@ namespace FASTER.test.Dispose
                 session.CompletePending(wait: true);
             }
 
-            ReadOptions readOptions = default;
+            ReadOptions readOptions = new() { CopyFrom = ReadCopyFrom.Device };
             if (copyDest == ReadCopyDestination.Tail)
-                readOptions.ReadFlags = ReadFlags.CopyReadsToTail;
+                readOptions.CopyOptions.CopyTo = ReadCopyTo.MainLog;
             var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());
             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -661,9 +661,9 @@ namespace FASTER.test.Dispose
             {
                 MyOutput output = new();
                 MyInput input = new();
-                ReadOptions readOptions = default;
+                ReadOptions readOptions = new() { CopyFrom = ReadCopyFrom.Device };
                 if (copyDest == ReadCopyDestination.Tail)
-                    readOptions.ReadFlags = ReadFlags.CopyReadsToTail;
+                    readOptions.CopyOptions.CopyTo = ReadCopyTo.MainLog;
 
                 using var session = fht.NewSession(functions);
                 if (functions.isSUT)

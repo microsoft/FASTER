@@ -45,7 +45,7 @@ namespace FASTER.test.SingleWriter
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             functions = new SingleWriterTestFunctions();
-            LogSettings logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadFlags = ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly };
+            LogSettings logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog) };
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCopyDestination dest)
@@ -53,7 +53,7 @@ namespace FASTER.test.SingleWriter
                     if (dest == ReadCopyDestination.ReadCache)
                     {
                         logSettings.ReadCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
-                        logSettings.ReadFlags = ReadFlags.Default;
+                        logSettings.ReadCopyOptions = default;
                     }
                     break;
                 }
@@ -107,7 +107,7 @@ namespace FASTER.test.SingleWriter
             key = 64;
             expectedReason = WriteReason.CopyToTail;
             input = (int)expectedReason;
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail };
+            ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
             status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending && !status.IsCompleted);
             session.CompletePendingWithOutputs(out var outputs, wait: true);

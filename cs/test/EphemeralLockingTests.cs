@@ -347,7 +347,7 @@ namespace FASTER.test.EphemeralLocking
 
             using var session = fht.NewSession(new SimpleFunctions<long, long>());
             long input = 0, output = 0, key = useExistingKey;
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail };
+            ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
 
             var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());

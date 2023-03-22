@@ -673,7 +673,6 @@ namespace FASTER.test.UnsafeContext
             }
         }
 
-        // Test the ReadAtAddress where ReadFlags = ReadFlags.none
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
@@ -692,7 +691,7 @@ namespace FASTER.test.UnsafeContext
 
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
-                ReadOptions readOptions = new() { StartAddress = fht.Log.BeginAddress };
+                ReadOptions readOptions = new() { StartAddress = fht.Log.BeginAddress, CopyOptions = ReadCopyOptions.None };
 
                 uContext.Upsert(ref key1, ref value, Empty.Default, 0);
                 var status = uContext.ReadAtAddress(ref input, ref output, ref readOptions, Empty.Default, 0);

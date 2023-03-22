@@ -922,7 +922,7 @@ namespace FASTER.test.LockableUnsafeContext
             using var session = fht.NewSession(new SimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             long input = 0, output = 0, key = 24;
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail};
+            ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
             BucketLockTracker blt = new();
 
             luContext.BeginUnsafe();

@@ -130,13 +130,9 @@ namespace FASTER.core
                         ref var value = ref iter1.GetValue();
 
                         if (recordInfo.Tombstone || cf.IsDeleted(ref key, ref value))
-                        {
                             tempKvSession.Delete(ref key, default, 0);
-                        }
                         else
-                        {
                             tempKvSession.Upsert(ref key, ref value, default, 0);
-                        }
                     }
                     // Ensure address is at record boundary
                     untilAddress = originalUntilAddress = iter1.NextAddress;
@@ -145,53 +141,51 @@ namespace FASTER.core
                 // Scan until SafeReadOnlyAddress
                 var scanUntil = hlog.SafeReadOnlyAddress;
                 if (untilAddress < scanUntil)
-                    LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
+                    ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempKvSession);
 
                 using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
                 while (iter3.GetNext(out var recordInfo))
                 {
-                    if (!recordInfo.Tombstone)
-                    {
-                        OperationStatus copyStatus = default;
-                        do
-                        {
-                            // Try to ensure we have checked all immutable records
-                            scanUntil = hlog.SafeReadOnlyAddress;
-                            if (untilAddress < scanUntil)
-                                LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
+                    if (recordInfo.Tombstone)
+                        continue;
 
-                            // If record is not the latest in tempKv's memory for this key, ignore it
-                            if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress).Found)
-                            {
-                                if (iter3.CurrentAddress != tempKeyAddress)
-                                    continue;
-                            }
-                            else
-                            {
-                                // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
+                    OperationStatus copyStatus = default;
+                    do
+                    {
+                        // Try to ensure we have checked all immutable records
+                        scanUntil = hlog.SafeReadOnlyAddress;
+                        if (untilAddress < scanUntil)
+                            ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempKvSession);
+
+                        // If record is not the latest in tempKv's memory for this key, ignore it
+                        if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress).Found)
+                        {
+                            if (iter3.CurrentAddress != tempKeyAddress)
                                 continue;
-                            }
-                            // As long as there's no record of the same key whose address is >= untilAddress (scan boundary),
-                            // we are safe to copy the old record to the tail. We don't know the actualAddress in the main kv.
-                            copyStatus = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1, actualAddress: Constants.kUnknownAddress);
-                        } while (copyStatus == OperationStatus.RECORD_ON_DISK);
-                    }
+                        }
+                        else
+                        {
+                            // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
+                            continue;
+                        }
+
+                        // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
+                        // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
+                        copyStatus = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1, actualAddress: Constants.kUnknownAddress);
+                    } while (copyStatus == OperationStatus.RECORD_ON_DISK);
                 }
             }
             Log.ShiftBeginAddress(originalUntilAddress, false);
             return originalUntilAddress;
         }
 
-        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
+        private void ScanImmutableTailToRemoveFromTempKv<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             using var iter = Log.Scan(untilAddress, scanUntil);
             while (iter.GetNext(out var _))
             {
-                ref var k = ref iter.GetKey();
-                ref var v = ref iter.GetValue();
-
-                tempKvSession.Delete(ref k, default, 0);
+                tempKvSession.Delete(ref iter.GetKey(), default, 0);
                 untilAddress = iter.NextAddress;
             }
         }

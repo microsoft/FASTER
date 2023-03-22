@@ -151,7 +151,7 @@ namespace ReadAddress
             var output = default(Value);
             var input = default(Value);
             var key = new Key(keyValue);
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.DisableReadCache};
+            ReadOptions readOptions = new() { CopyOptions = ReadCopyOptions.None };
             for (int lap = 9; /* tested in loop */; --lap)
             {
                 var status = session.Read(ref key, ref input, ref output, ref readOptions, out var recordMetadata, serialNo: maxLap + 1);
@@ -185,7 +185,7 @@ namespace ReadAddress
             var input = default(Value);
             var key = new Key(keyValue);
             RecordMetadata recordMetadata = default;
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.DisableReadCache };
+            ReadOptions readOptions = new() { CopyOptions = ReadCopyOptions.None };
             for (int lap = 9; /* tested in loop */; --lap)
             {
                 var readAsyncResult = await session.ReadAsync(ref key, ref input, ref readOptions, default, serialNo: maxLap + 1, cancellationToken: cancellationToken);

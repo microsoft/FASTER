@@ -75,7 +75,7 @@ namespace FASTER.core
             if (UseReadCache)
             {
                 // DisableReadCacheReads is used by readAtAddress, e.g. to backtrack to previous versions.
-                if (pendingContext.DisableReadCacheReads || pendingContext.NoKey)
+                if (pendingContext.NoKey)
                 {
                     SkipReadCache(ref stackCtx, out _);     // This may refresh, but we haven't examined HeadAddress yet
                     stackCtx.SetRecordSourceToHashEntry(hlog);
@@ -283,9 +283,13 @@ namespace FASTER.core
 
                 if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo))
                 {
-                    if (pendingContext.CopyReadsToTailFromReadOnly)
-                        return InternalTryCopyToTail(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
-                                                     ref srcRecordInfo, fasterSession, reason: WriteReason.CopyToTail);
+                    if (pendingContext.readCopyOptions.CopyFrom == ReadCopyFrom.AllImmutable)
+                    {
+                        if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
+                            return InternalTryCopyToTail(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx, ref srcRecordInfo, fasterSession, WriteReason.CopyToTail);
+                        else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache)
+                            return InternalTryCopyToReadCache(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx, fasterSession);
+                    }
                     return OperationStatus.SUCCESS;
                 }
                 if (readInfo.Action == ReadAction.CancelOperation)

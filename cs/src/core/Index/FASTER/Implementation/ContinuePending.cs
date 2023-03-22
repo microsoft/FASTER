@@ -35,7 +35,7 @@ namespace FASTER.core
             ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
             srcRecordInfo.ClearBitsForDiskImages();
 
-            if (request.logicalAddress >= hlog.BeginAddress)
+            if (request.logicalAddress >= hlog.BeginAddress && request.logicalAddress >= pendingContext.minAddress)
             {
                 SpinWaitUntilClosed(request.logicalAddress);
 
@@ -82,10 +82,10 @@ namespace FASTER.core
                         };
 
                         bool success = false;
-                        if (stackCtx.recSrc.HasMainLogSrc)
+                        if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                         {
-                            // If this succeeds, we obviously don't need to copy to tail or readcache, so return success.
-                            if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref stackCtx.recSrc.GetValue(),
+                            // If this succeeds, we don't need to copy to tail or readcache, so return success.
+                            if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref value,
                                     ref pendingContext.output, ref srcRecordInfo, ref readInfo, out EphemeralLockResult lockResult))
                                 return OperationStatus.SUCCESS;
                             if (lockResult == EphemeralLockResult.Failed)
@@ -95,7 +95,10 @@ namespace FASTER.core
                             }
                         }
                         else
+                        {
+                            // This may be in the immutable region, which means it may be an updated version of the record.
                             success = fasterSession.SingleReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref srcRecordInfo, ref readInfo);
+                        }
 
                         if (!success)
                         {
@@ -107,17 +110,15 @@ namespace FASTER.core
                             goto NotFound;
                         }
 
-                        // See if we are copying to read cache or tail of log.
-                        // If we are copying to readcache but already found the record in the readcache, we're done.
-                        if (pendingContext.CopyReadsToTail)
+                        // See if we are copying to read cache or tail of log. If we are copying to readcache but already found the record in the readcache, we're done.
+                        if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.None)
                         {
-                            status = InternalConditionalCopyToTail(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
-                                                                   ref stackCtx, ref srcRecordInfo, fasterSession, WriteReason.CopyToTail);
-                        }
-                        else if (!stackCtx.recSrc.HasInMemorySrc && UseReadCache && !pendingContext.DisableReadCacheUpdates)
-                        {
-                            status = InternalTryCopyToReadCache(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
-                                                                ref stackCtx, fasterSession);
+                            if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
+                                status = InternalTryCopyToTail(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
+                                                                       ref stackCtx, ref srcRecordInfo, fasterSession, WriteReason.CopyToTail);
+                            else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc)
+                                status = InternalTryCopyToReadCache(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
+                                                                    ref stackCtx, fasterSession);
                         }
                         else
                         {
@@ -157,6 +158,10 @@ namespace FASTER.core
         ///     <item>
         ///     <term>SUCCESS</term>
         ///     <term>The value has been successfully updated(or inserted).</term>
+        ///     </item>
+        ///     <item>
+        ///     <term>RECORD_ON_DISK</term>
+        ///     <term>We need to issue an IO to continue.</term>
         ///     </item>
         /// </list>
         /// </returns>
@@ -226,7 +231,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Continue a pending CONDITIONAL_* operation with the record retrieved from disk, checking whether a record for this key was
+        /// Continue a pending CONDITIONAL_INSERT operation with the record retrieved from disk, checking whether a record for this key was
         /// added since we went pending; in that case this operation must be adjusted to use current data.
         /// </summary>
         /// <param name="request">record read from the disk.</param>
@@ -242,14 +247,22 @@ namespace FASTER.core
         ///     <term>SUCCESS</term>
         ///     <term>The value has been successfully inserted, or was found above the specified address.</term>
         ///     </item>
+        ///     <item>
+        ///     <term>RECORD_ON_DISK</term>
+        ///     <term>We need to issue an IO to continue.</term>
+        ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingConditional<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
+        internal OperationStatus InternalContinuePendingConditionalInsert<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
                                                 ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             ref Key key = ref pendingContext.key.Get();
 
+            // If the record was found above minAddress, do nothing.
+            if (request.logicalAddress >= pendingContext.minAddress)
+                return OperationStatus.SUCCESS;
+            
             SpinWaitUntilClosed(request.logicalAddress);
 
             byte* recordPointer = request.record.GetValidPointer();
@@ -261,30 +274,15 @@ namespace FASTER.core
 
             do
             {
-                status = pendingContext.type switch
-                {
-                    OperationType.CONDITIONAL_CTT => InternalConditionalCTT(request, ref stackCtx, ref pendingContext, fasterSession),
-                    OperationType.CONDITIONAL_INSERT => InternalConditionalInsert(request, ref stackCtx, ref pendingContext, fasterSession),
-                    OperationType.CONDITIONAL_DELETE => InternalConditionalDelete(request, ref stackCtx, ref pendingContext, fasterSession),
-                    _ => throw new FasterException("Unexpected OperationType")
-                };
+                status = ConditionalInsert(request, ref stackCtx, ref pendingContext, fasterSession);
             } while (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext));
 
             return status;
         }
 
-        private OperationStatus InternalConditionalCTT<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request, ref OperationStackContext<Key, Value> stackCtx, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession) where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            // TODO: make sure the given address is less than read only, or in place updates will mess up the invariant
-            throw new NotImplementedException();
-        }
-
-        private OperationStatus InternalConditionalInsert<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request, ref OperationStackContext<Key, Value> stackCtx, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession) where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            throw new NotImplementedException();
-        }
-
-        private OperationStatus InternalConditionalDelete<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request, ref OperationStackContext<Key, Value> stackCtx, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession) where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        private OperationStatus ConditionalInsert<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request, ref OperationStackContext<Key, Value> stackCtx, 
+                ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             throw new NotImplementedException();
         }

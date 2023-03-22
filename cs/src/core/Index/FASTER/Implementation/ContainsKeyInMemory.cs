@@ -27,21 +27,8 @@ namespace FASTER.core
                 if (fromAddress < hlog.HeadAddress)
                     fromAddress = hlog.HeadAddress;
 
-                if (stackCtx.recSrc.LogicalAddress >= fromAddress)
+                if (TryFindRecordInMainLog(ref key, ref stackCtx, fromAddress))
                 {
-                    var physicalAddress = stackCtx.recSrc.SetPhysicalAddress();
-                    ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
-                    if (recordInfo.Invalid || !comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
-                    {
-                        logicalAddress = recordInfo.PreviousAddress;
-                        TraceBackForKeyMatch(ref key, logicalAddress, fromAddress, out logicalAddress, out _);
-                    }
-
-                    if (stackCtx.recSrc.LogicalAddress < fromAddress)
-                    {
-                        logicalAddress = 0;
-                        return new(StatusCode.NotFound);
-                    }
                     logicalAddress = stackCtx.recSrc.LogicalAddress;
                     return new(StatusCode.Found);
                 }

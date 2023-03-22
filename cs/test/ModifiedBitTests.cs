@@ -376,7 +376,7 @@ namespace FASTER.test.ModifiedBit
             var luContext = session.LockableUnsafeContext;
 
             int input = 0, output = 0, key = 200;
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail };
+            ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
 
             luContext.BeginUnsafe();
             luContext.BeginLockable();
