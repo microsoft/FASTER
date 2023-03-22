@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -28,7 +27,7 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRead<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
+        internal OperationStatus ContinuePendingRead<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
                                                         ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -114,10 +113,10 @@ namespace FASTER.core
                         if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.None)
                         {
                             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
-                                status = InternalTryCopyToTail(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
+                                status = TryCopyToTail(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
                                                                        ref stackCtx, ref srcRecordInfo, fasterSession, WriteReason.CopyToTail);
                             else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc)
-                                status = InternalTryCopyToReadCache(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
+                                status = TryCopyToReadCache(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
                                                                     ref stackCtx, fasterSession);
                         }
                         else
@@ -165,7 +164,7 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingRMW<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
+        internal OperationStatus ContinuePendingRMW<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
                                                 ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -253,7 +252,7 @@ namespace FASTER.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalContinuePendingConditionalInsert<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
+        internal OperationStatus ContinuePendingConditionalInsert<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request,
                                                 ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -270,303 +269,12 @@ namespace FASTER.core
             srcRecordInfo.ClearBitsForDiskImages();
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
-            OperationStatus status;
 
-            do
-            {
-                status = ConditionalInsert(request, ref stackCtx, ref pendingContext, fasterSession);
-            } while (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext));
+            if (TryFindRecordInMainLogOnly(ref key, ref stackCtx, pendingContext.minAddress))
+                return OperationStatus.SUCCESS;
 
-            return status;
-        }
-
-        private OperationStatus ConditionalInsert<Input, Output, Context, FasterSession>(AsyncIOContext<Key, Value> request, ref OperationStackContext<Key, Value> stackCtx, 
-                ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            throw new NotImplementedException();
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="FasterSession"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="value"></param>
-        /// <param name="output"></param>
-        /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
-        /// <param name="actualAddress">Actual address of existing key record</param>
-        /// <param name="fasterSession"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalCopyToTailForCompaction<Input, Output, Context, FasterSession>(
-                                            ref Key key, ref Input input, ref Value value, ref Output output,
-                                            long untilAddress, long actualAddress, FasterSession fasterSession)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            Debug.Assert(epoch.ThisInstanceProtected(), "This is currently only called from Compaction so the epoch should be protected");
-            OperationStatus status = default;
-            PendingContext<Input, Output, Context> pendingContext = default;
-            OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
-
-            do
-            {
-                // A 'ref' variable must be initialized. If we find a record for the key, we reassign the reference. We don't copy from this source, but we do lock it.
-                RecordInfo dummyRecordInfo = default;
-                ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
-
-                // We must check both the readcache as well as transfer if the current record is in the immutable region (Compaction
-                // allows copying up to SafeReadOnlyAddress). hei must be set in all cases, because ITCTT relies on it.
-                if (!FindTag(ref stackCtx.hei))
-                    Debug.Fail("Expected to FindTag in InternalCopyToTailForCompaction");
-                stackCtx.SetRecordSourceToHashEntry(hlog);
-
-                if (this.LockTable.IsEnabled && !fasterSession.TryLockTransientShared(ref key, ref stackCtx))
-                {
-                    HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, fasterSession, ref pendingContext);
-                    continue;
-                }
-
-                status = OperationStatus.SUCCESS;
-                if (actualAddress >= hlog.BeginAddress)
-                {
-                    // Lookup-based compaction knows the record address.
-                    if (actualAddress >= hlog.HeadAddress)
-                    {
-                        // Since this is for compaction, we don't need to TracebackForKeyMatch; ITCTT will catch the case where a future record was inserted for this key.
-                        stackCtx.recSrc.LogicalAddress = actualAddress;
-                        stackCtx.recSrc.SetPhysicalAddress();
-                        stackCtx.recSrc.HasMainLogSrc = true;
-                        srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                    }
-                    else
-                    {
-                        if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
-                            srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                    }
-                }
-                else
-                {
-                    // Scan compaction does not know the address, so we must traverse. This is similar to what ITCTT does, but we update untilAddress so it's not done twice.
-                    Debug.Assert(actualAddress == Constants.kUnknownAddress, "Unexpected address in compaction");
-
-                    if (TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress))
-                    {
-                        if (stackCtx.recSrc.LogicalAddress > untilAddress)   // Same check ITCTT does
-                            status = OperationStatus.NOTFOUND;
-                        else
-                        {
-                            untilAddress = stackCtx.recSrc.LatestLogicalAddress;
-                            srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                        }
-                    }
-                }
-
-                if (status == OperationStatus.SUCCESS)
-                {
-                    try
-                    {
-                        status = InternalTryCopyToTail(ref pendingContext, ref key, ref input, ref value, ref output,
-                                                       ref stackCtx, ref srcRecordInfo, fasterSession, WriteReason.Compaction);
-                    }
-                    finally
-                    {
-                        stackCtx.HandleNewRecordOnException(this);
-                        TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
-                    }
-                }
-            } while (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext));
-            return status;
-        }
-
-        /// <summary>
-        /// Copy a record from the immutable region of the log, from the disk, or from ConditionalCopyToTail to the tail of the log (or splice into the log/readcache boundary).
-        /// </summary>
-        /// <param name="pendingContext"></param>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="value"></param>
-        /// <param name="output"></param>
-        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
-        ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        /// <param name="srcRecordInfo">if <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value}.HasInMemorySrc"/>, the recordInfo to close, if transferring.</param>
-        /// <param name="fasterSession"></param>
-        /// <param name="reason">The reason for this operation.</param>
-        /// <returns>
-        ///     <list type="bullet">
-        ///     <item>RETRY_NOW: failed CAS, so no copy done. This routine deals entirely with new records, so will not encounter Sealed records</item>
-        ///     <item>SUCCESS: copy was done</item>
-        ///     </list>
-        /// </returns>
-        internal OperationStatus InternalTryCopyToTail<Input, Output, Context, FasterSession>(ref PendingContext<Input, Output, Context> pendingContext,
-                                        ref Key key, ref Input input, ref Value value, ref Output output, ref OperationStackContext<Key, Value> stackCtx,
-                                        ref RecordInfo srcRecordInfo, FasterSession fasterSession, WriteReason reason)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            #region Create new copy in mutable region
-            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
-
-            #region Allocate new record and call SingleWriter
-
-            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
-                return status;
-            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
-            stackCtx.SetNewRecord(newLogicalAddress);
-
-            UpsertInfo upsertInfo = new()
-            {
-                Version = fasterSession.Ctx.version,
-                SessionID = fasterSession.Ctx.sessionID,
-                Address = newLogicalAddress,
-                KeyHash = stackCtx.hei.hash,
-                RecordInfo = newRecordInfo
-            };
-
-            if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                            ref output, ref newRecordInfo, ref upsertInfo, reason))
-            {
-                // No SaveAlloc here as we won't retry, but TODO this record could be reused later.
-                stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-                return (upsertInfo.Action == UpsertAction.CancelOperation) ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
-            }
-
-            #endregion Allocate new record and call SingleWriter
-
-            // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
-            bool success;
-            OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
-            if (DoEphemeralLocking)
-                newRecordInfo.InitializeLockShared();                   // For PostSingleWriter
-            if (stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress)
-            {
-                // ReadCache entries, and main-log records when there are no readcache records, are CAS'd in as the first entry in the hash chain.
-                success = stackCtx.hei.TryCAS(newLogicalAddress);
-            }
-            else
-            {
-                // We are doing CopyToTail; we may have a source record from either main log (Compaction) or ReadCache.
-                Debug.Assert(reason == WriteReason.CopyToTail || reason == WriteReason.Compaction, "Expected WriteReason.CopyToTail or .Compaction");
-                success = SpliceIntoHashChainAtReadCacheBoundary(ref key, ref stackCtx, newLogicalAddress);
-            }
-
-            if (success)
-                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
-            else
-            {
-                stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-
-                // CAS failed, so let the user dispose similar to a deleted record, and save for retry.
-                fasterSession.DisposeSingleWriter(ref hlog.GetKey(newPhysicalAddress), ref input, ref value, ref hlog.GetValue(newPhysicalAddress),
-                                                    ref output, ref newRecordInfo, ref upsertInfo, reason);
-                SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
-                return failStatus;
-            }
-
-            // Success, and any read locks have been transferred.
-            pendingContext.recordInfo = newRecordInfo;
-            pendingContext.logicalAddress = upsertInfo.Address;
-            fasterSession.PostSingleWriter(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                           ref newRecordInfo, ref upsertInfo, reason);
-            stackCtx.ClearNewRecord();
-            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);
-#endregion
-        }
-
-        /// <summary>
-        /// Copy a record from the disk to the read cache.
-        /// </summary>
-        /// <param name="pendingContext"></param>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="recordValue"></param>
-        /// <param name="output"></param>
-        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
-        ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        /// <param name="fasterSession"></param>
-        /// <returns>
-        ///     <list type="bullet">
-        ///     <item>RETRY_NOW: failed CAS, so no copy done. This routine deals entirely with new records, so will not encounter Sealed records</item>
-        ///     <item>SUCCESS: copy was done</item>
-        ///     </list>
-        /// </returns>
-        internal OperationStatus InternalTryCopyToReadCache<Input, Output, Context, FasterSession>(ref PendingContext<Input, Output, Context> pendingContext,
-                                        ref Key key, ref Input input, ref Value recordValue, ref Output output, ref OperationStackContext<Key, Value> stackCtx,
-                                        FasterSession fasterSession)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            #region Create new copy in mutable region
-            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref recordValue);
-
-            #region Allocate new record and call SingleWriter
-            
-            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
-                return status;
-            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
-            stackCtx.SetNewRecord(newLogicalAddress | Constants.kReadCacheBitMask);
-
-            UpsertInfo upsertInfo = new()
-            {
-                Version = fasterSession.Ctx.version,
-                SessionID = fasterSession.Ctx.sessionID,
-                Address = Constants.kInvalidAddress,        // We do not expose readcache addresses
-                KeyHash = stackCtx.hei.hash,
-                RecordInfo = newRecordInfo
-            };
-
-            var advancedStatusCode = StatusCode.Found | StatusCode.CopiedRecordToReadCache;
-
-            if (!fasterSession.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                            ref output, ref newRecordInfo, ref upsertInfo, WriteReason.CopyToReadCache))
-            {
-                stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-                return (upsertInfo.Action == UpsertAction.CancelOperation) ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
-            }
-
-            #endregion Allocate new record and call SingleWriter
-
-            // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
-            // It is possible that we will successfully CAS but subsequently fail validation.
-            OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
-
-            // ReadCache entries, and main-log records when there are no readcache records, are CAS'd in as the first entry in the hash chain.
-            var success = stackCtx.hei.TryCAS(newLogicalAddress | Constants.kReadCacheBitMask);
-            var casSuccess = success;
-
-            if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != Constants.kInvalidAddress)
-            {
-                // If someone added a main-log entry for this key from an update or CTT while we were inserting the new readcache record, then the new
-                // readcache record is obsolete and must be Invalidated. (If LowestReadCacheLogicalAddress == kInvalidAddress, then the CAS would have
-                // failed in this case.) If this was the first readcache record in the chain, then once we CAS'd it in someone could have spliced into
-                // it, but then that splice will call ReadCacheCheckTailAfterSplice and invalidate it if it's the same key.
-                success = EnsureNoNewMainLogRecordWasSpliced(ref key, stackCtx.recSrc, stackCtx.hei.Address, ref failStatus);
-            }
-
-            if (!success)
-            {
-                stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-
-                if (!casSuccess)
-                {
-                    // Let user dispose similar to a deleted record, and save for retry, *only* if CAS failed; otherwise we must preserve it in the chain.
-                    fasterSession.DisposeSingleWriter(ref readcache.GetKey(newPhysicalAddress), ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress),
-                                                      ref output, ref newRecordInfo, ref upsertInfo, WriteReason.CopyToReadCache);
-                    newRecordInfo.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
-                }
-                return failStatus;
-            }
-
-            // Success, and any read locks have been transferred.
-            pendingContext.recordInfo = newRecordInfo;
-            pendingContext.logicalAddress = upsertInfo.Address;
-            fasterSession.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                    ref newRecordInfo, ref upsertInfo, WriteReason.CopyToReadCache);
-            stackCtx.ClearNewRecord();
-            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, advancedStatusCode);
-            #endregion
+            return ConditionalInsert(fasterSession, ref hlog.GetContextRecordKey(ref request), ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request),
+                                     ref pendingContext.output, pendingContext.minAddress, ref stackCtx, ref pendingContext, pendingContext.writeReason);
         }
     }
 }

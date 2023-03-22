@@ -182,9 +182,9 @@ namespace FASTER.core
 
             OperationStatus internalStatus = pendingContext.type switch
             {
-                OperationType.READ => InternalContinuePendingRead(request, ref pendingContext, fasterSession),
-                OperationType.RMW => InternalContinuePendingRMW(request, ref pendingContext, fasterSession),
-                OperationType.CONDITIONAL_INSERT => InternalContinuePendingConditionalInsert(request, ref pendingContext, fasterSession),
+                OperationType.READ => ContinuePendingRead(request, ref pendingContext, fasterSession),
+                OperationType.RMW => ContinuePendingRMW(request, ref pendingContext, fasterSession),
+                OperationType.CONDITIONAL_INSERT => ContinuePendingConditionalInsert(request, ref pendingContext, fasterSession),
                 _ => throw new FasterException("Unexpected OperationType")
             };
 

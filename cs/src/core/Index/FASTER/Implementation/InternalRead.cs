@@ -286,9 +286,9 @@ namespace FASTER.core
                     if (pendingContext.readCopyOptions.CopyFrom == ReadCopyFrom.AllImmutable)
                     {
                         if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
-                            return InternalTryCopyToTail(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx, ref srcRecordInfo, fasterSession, WriteReason.CopyToTail);
+                            return ConditionalInsert(fasterSession, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx, ref srcRecordInfo, WriteReason.CopyToTail);
                         else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache)
-                            return InternalTryCopyToReadCache(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx, fasterSession);
+                            return TryCopyToReadCache(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx, fasterSession);
                     }
                     return OperationStatus.SUCCESS;
                 }

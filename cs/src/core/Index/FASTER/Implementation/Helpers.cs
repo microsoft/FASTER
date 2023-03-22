@@ -106,9 +106,8 @@ namespace FASTER.core
             if (stackCtx.recSrc.HasReadCacheSrc)
                 srcRecordInfo.CloseAtomic();
 
-            // If we are not using the LockTable, then we ElideAndReinsertReadCacheChain ensured no conflict between the readcache
-            // and the newly-inserted record. Otherwise we spliced it in directly, in which case a competing readcache record may
-            // have been inserted; if so, invalidate it.
+            // If we are not using the LockTable, then ElideAndReinsertReadCacheChain ensured no conflict between the readcache and the newly-inserted
+            // record. Otherwise we spliced it in directly, in which case a competing readcache record may have been inserted; if so, invalidate it.
             if (UseReadCache && LockTable.IsEnabled)
                 ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
         }

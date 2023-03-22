@@ -34,6 +34,7 @@ namespace FASTER.core
             return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minLog);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress)
         {
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
@@ -43,6 +44,18 @@ namespace FASTER.core
                 TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minAddress);
             }
             return stackCtx.recSrc.HasInMemorySrc;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryFindRecordInMainLogOnly(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress)
+        {
+            FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
+            stackCtx.SetRecordSourceToHashEntry(hlog);
+
+            if (UseReadCache)
+                SkipReadCache(ref stackCtx, out _); // At this point we have no dependency on source addresses so we don't care if it Refreshed
+
+            return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
