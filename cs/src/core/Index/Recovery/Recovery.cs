@@ -144,6 +144,7 @@ namespace FASTER.core
         {
             GetClosestHybridLogCheckpointInfo(-1, out hlogToken, out var recoveredHlcInfo, out var _);
             GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out indexToken, out var _);
+            recoveredHlcInfo.Dispose();
         }
 
         /// <summary>
@@ -152,10 +153,11 @@ namespace FASTER.core
         /// <returns></returns>
         public long GetLatestCheckpointVersion()
         {
-            GetClosestHybridLogCheckpointInfo(-1, out var hlogToken, out var _, out var _);
+            GetClosestHybridLogCheckpointInfo(-1, out var hlogToken, out var hlcInfo, out var _);
+            hlcInfo.Dispose();
             if (hlogToken == default)
                 return -1;
-            HybridLogCheckpointInfo current = new();
+            using var current = new HybridLogCheckpointInfo();
             current.Recover(hlogToken, checkpointManager, hlog.LogPageSizeBits,
                 out var _, false);
             return current.info.nextVersion;
@@ -168,7 +170,7 @@ namespace FASTER.core
         /// <returns></returns>
         public long GetSnapshotFileSizes(Guid token)
         {
-            HybridLogCheckpointInfo current = new();
+            using var current = new HybridLogCheckpointInfo();
             current.Recover(token, checkpointManager, hlog.LogPageSizeBits,
                 out var _, false);
             return current.info.finalLogicalAddress;
