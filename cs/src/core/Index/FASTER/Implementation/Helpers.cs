@@ -18,11 +18,10 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static ref RecordInfo WriteTentativeInfo(ref Key key, AllocatorBase<Key, Value> log, long newPhysicalAddress, bool inNewVersion, bool tombstone, long previousAddress)
+        static ref RecordInfo WriteNewRecordInfo(ref Key key, AllocatorBase<Key, Value> log, long newPhysicalAddress, bool inNewVersion, bool tombstone, long previousAddress)
         {
             ref RecordInfo recordInfo = ref log.GetInfo(newPhysicalAddress);
-            RecordInfo.WriteInfo(ref recordInfo, inNewVersion, tombstone, previousAddress);
-            recordInfo.Tentative = true;
+            recordInfo.WriteInfo(inNewVersion, tombstone, previousAddress);
             log.Serialize(ref key, newPhysicalAddress);
             return ref recordInfo;
         }
@@ -44,10 +43,10 @@ namespace FASTER.core
         /// <param name="logicalAddress">The logical address of the traced record for the key</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CheckEntryVersionNew(long logicalAddress)
+        private bool IsRecordVersionNew(long logicalAddress)
         {
             HashBucketEntry entry = new() { word = logicalAddress };
-            return CheckBucketVersionNew(ref entry);
+            return IsEntryVersionNew(ref entry);
         }
 
         /// <summary>
@@ -57,9 +56,9 @@ namespace FASTER.core
         /// <param name="entry">the last entry of a bucket</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CheckBucketVersionNew(ref HashBucketEntry entry)
+        private bool IsEntryVersionNew(ref HashBucketEntry entry)
         {
-            // A version shift can only in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
+            // A version shift can only happen in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
             if (entry.Address < _hybridLogCheckpoint.info.startLogicalAddress) 
                 return false;
 
@@ -67,12 +66,10 @@ namespace FASTER.core
             if (UseReadCache && entry.ReadCache) 
                 return false;
 
-            // Check if record has the new version bit set
-            var _addr = hlog.GetPhysicalAddress(entry.Address);
-            if (entry.Address >= hlog.HeadAddress)
-                return hlog.GetInfo(_addr).InNewVersion;
-            else
+            // If the record is in memory, check if it has the new version bit set
+            if (entry.Address < hlog.HeadAddress)
                 return false;
+            return hlog.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
         }
 
         internal enum LatchOperation : byte
@@ -82,91 +79,56 @@ namespace FASTER.core
             Exclusive
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static bool IsRecordValid(RecordInfo recordInfo, out OperationStatus status)
-        {
-            if (recordInfo.Valid)
-            {
-                status = OperationStatus.SUCCESS;
-                return true;
-            }
-
-            Debug.Assert(!recordInfo.Tentative, "Tentative bit should have been removed when record was invalidated");
-            status = OperationStatus.RETRY_LATER;
-            return false;
-        }
-
         internal void SetRecordInvalid(long logicalAddress)
         {
-            // This is called on exception recovery for a tentative record.
+            // This is called on exception recovery for a newly-inserted record.
             var localLog = IsReadCache(logicalAddress) ? readcache : hlog;
             ref var recordInfo = ref localLog.GetInfo(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress)));
-            Debug.Assert(recordInfo.Tentative, "Expected tentative record in SetRecordInvalid");
             recordInfo.SetInvalid();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CASRecordIntoChain(ref OperationStackContext<Key, Value> stackCtx, long newLogicalAddress)
+        private bool CASRecordIntoChain(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long newLogicalAddress, ref RecordInfo newRecordInfo)
         {
+            // If Ephemeral locking, we consider this insertion to the mutable portion of the log as a "concurrent" operation, and
+            // we don't want other threads accessing this record until we complete Post* (which unlock if doing Ephemeral locking).
+            if (DoEphemeralLocking)
+                newRecordInfo.InitializeLockExclusive();
+
             return stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
-                : SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx.recSrc, newLogicalAddress);
+                : SpliceIntoHashChainAtReadCacheBoundary(ref key, ref stackCtx, newLogicalAddress);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void PostInsertAtTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
+        {
+            if (stackCtx.recSrc.HasReadCacheSrc)
+                srcRecordInfo.CloseAtomic();
+
+            // If we are not using the LockTable, then we ElideAndReinsertReadCacheChain ensured no conflict between the readcache
+            // and the newly-inserted record. Otherwise we spliced it in directly, in which case a competing readcache record may
+            // have been inserted; if so, invalidate it.
+            if (UseReadCache && LockTable.IsEnabled)
+                ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
         }
 
         // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.
         // This refreshes the HashEntryInfo, so the caller needs to recheck to confirm the BlockAllocated address is still > hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool VerifyInMemoryAddresses(ref OperationStackContext<Key, Value> stackCtx, long skipReadCacheStartAddress = Constants.kInvalidAddress)
+        private bool VerifyInMemoryAddresses(ref OperationStackContext<Key, Value> stackCtx)
         {
-            // If we have an in-memory source that is pending eviction, return false and the caller will RETRY.
-            if (stackCtx.recSrc.InMemorySourceIsBelowHeadAddress())
+            // If we have an in-memory source that fell below HeadAddress, return false and the caller will RETRY_LATER.
+            if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.Log.HeadAddress)
                 return false;
 
-            // If we're not using readcache or the splice point is still above readcache.HeadAddress, we're good.
-            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress)
+            // If we're not using readcache or we don't have a splice point or it is still above readcache.HeadAddress, we're good.
+            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcache.HeadAddress)
                 return true;
 
-            // Make sure skipReadCacheStartAddress is a readcache address (it likely is not only in the case where there are no readcache records).
-            // This also ensures the comparison to readcache.HeadAddress below works correctly.
-            if ((skipReadCacheStartAddress & Constants.kReadCacheBitMask) == 0)
-                skipReadCacheStartAddress = Constants.kInvalidAddress;
-            else
-                skipReadCacheStartAddress &= ~Constants.kReadCacheBitMask;
-
-            // The splice-point readcache record was evicted, so re-get it.
-            while (true)
-            {
-                stackCtx.hei.SetToCurrent();
-                stackCtx.recSrc.LatestLogicalAddress = stackCtx.hei.Address;
-                if (!stackCtx.hei.IsReadCache)
-                {
-                    stackCtx.recSrc.LowestReadCacheLogicalAddress = Constants.kInvalidAddress;
-                    stackCtx.recSrc.LowestReadCachePhysicalAddress = 0;
-                    Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "ReadCacheSrc should not be evicted before SpinWaitUntilAddressIsClosed is called");
-                    return true;
-                }
-
-                // Skip from the start address if it's valid, but do not overwrite the Has*Src information in recSrc.
-                // We stripped the readcache bit from it above, so add it back here (if it's valid).
-                if (skipReadCacheStartAddress < readcache.HeadAddress)
-                    skipReadCacheStartAddress = Constants.kInvalidAddress;
-                else
-                    stackCtx.recSrc.LatestLogicalAddress = skipReadCacheStartAddress | Constants.kReadCacheBitMask;
-
-                if (UseReadCache && SkipReadCache(ref stackCtx.recSrc.LatestLogicalAddress, out stackCtx.recSrc.LowestReadCacheLogicalAddress, out stackCtx.recSrc.LowestReadCachePhysicalAddress))
-                {
-                    Debug.Assert(stackCtx.hei.IsReadCache || stackCtx.hei.Address == stackCtx.recSrc.LatestLogicalAddress, "For non-readcache chains, recSrc.LatestLogicalAddress should == hei.Address");
-                    return true;
-                }
-
-                // A false return from SkipReadCache means we traversed to where recSrc.LatestLogicalAddress is still in
-                // the readcache but is < readcache.HeadAddress, so wait until it is evicted.
-                SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LatestLogicalAddress, readcache);
-
-                // If we have an in-memory source that is pending eviction, return false and the caller will RETRY.
-                if (stackCtx.recSrc.InMemorySourceIsBelowHeadAddress())
-                    return false;
-            }
+            // If the splice point went below readcache.HeadAddress, we would have to wait for the chain to be fixed up by eviction,
+            // so just return RETRY_LATER and restart the operation.
+            return false;
         }
     }
 }

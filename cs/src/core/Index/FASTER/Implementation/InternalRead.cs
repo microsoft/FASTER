@@ -20,7 +20,6 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="fasterSession">Callback functions.</param>
-        /// <param name="sessionCtx">Session context</param>
         /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
@@ -43,35 +42,23 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRead<Input, Output, Context, FasterSession>(
-                                    ref Key key,
-                                    ref Input input,
-                                    ref Output output,
-                                    long startAddress,
-                                    ref Context userContext,
-                                    ref PendingContext<Input, Output, Context> pendingContext,
-                                    FasterSession fasterSession,
-                                    FasterExecutionContext<Input, Output, Context> sessionCtx,
-                                    long lsn)
+        internal OperationStatus InternalRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
+                                    long startAddress, ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext,
+                                    FasterSession fasterSession, long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
-            if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(stackCtx.hei.hash, sessionCtx, fasterSession);
+            if (fasterSession.Ctx.phase != Phase.REST)
+                HeavyEnter(stackCtx.hei.hash, fasterSession.Ctx, fasterSession);
 
             #region Trace back for record in readcache and in-memory HybridLog
-
-            // This tracks the address pointed to by the hash bucket; it may or may not be in the readcache, in-memory, on-disk, or < BeginAddress (in which
-            // case we return NOTFOUND and this value is not used). InternalContinuePendingRead can stop comparing keys immediately above this address.
-            long prevHighestKeyHashAddress = Constants.kInvalidAddress;
 
             var useStartAddress = startAddress != Constants.kInvalidAddress && !pendingContext.HasMinAddress;
             if (!useStartAddress)
             {
                 if (!FindTag(ref stackCtx.hei) || (!stackCtx.hei.IsReadCache && stackCtx.hei.Address < pendingContext.minAddress))
                     return OperationStatus.NOTFOUND;
-                prevHighestKeyHashAddress = stackCtx.hei.Address;
             }
             else
             {
@@ -87,14 +74,13 @@ namespace FASTER.core
             OperationStatus status;
             if (UseReadCache)
             {
-                // TODO doc: DisableReadCacheReads is used by readAtAddress, e.g. to backtrack to previous versions.
-                //       Verify this can be done outside the locking scheme (maybe skip ephemeral locking entirely for readAtAddress)
+                // DisableReadCacheReads is used by readAtAddress, e.g. to backtrack to previous versions.
                 if (pendingContext.DisableReadCacheReads || pendingContext.NoKey)
                 {
-                    SkipReadCache(ref stackCtx.hei, ref stackCtx.recSrc.LogicalAddress);
+                    SkipReadCache(ref stackCtx, out _);     // This may refresh, but we haven't examined HeadAddress yet
                     stackCtx.SetRecordSourceToHashEntry(hlog);
                 }
-                else if (ReadFromCache(ref key, ref input, ref output, ref stackCtx, ref pendingContext, fasterSession, sessionCtx, out status)
+                else if (ReadFromCache(ref key, ref input, ref output, ref stackCtx, ref pendingContext, fasterSession, out status)
                     || status != OperationStatus.SUCCESS)
                 {
                     return status;
@@ -104,73 +90,57 @@ namespace FASTER.core
             // Traceback for key match
             if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
-                stackCtx.recSrc.PhysicalAddress = hlog.GetPhysicalAddress(stackCtx.recSrc.LogicalAddress);
+                stackCtx.recSrc.SetPhysicalAddress();
                 if (!pendingContext.NoKey)
                 {
                     var minAddress = pendingContext.minAddress > hlog.HeadAddress ? pendingContext.minAddress : hlog.HeadAddress;
                     TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minAddress);
                 }
                 else
-                    key = ref hlog.GetKey(stackCtx.recSrc.PhysicalAddress);  // We do not have the key in the call and must use the key from the record.
+                    key = ref stackCtx.recSrc.GetKey();     // We do not have the key in the call and must use the key from the record.
             }
             #endregion
 
-            if (sessionCtx.phase == Phase.PREPARE && CheckBucketVersionNew(ref stackCtx.hei.entry))
-            {
+            // These track the latest main-log address in the tag chain; InternalContinuePendingRead uses them to check for new inserts.
+            pendingContext.InitialEntryAddress = stackCtx.hei.Address;
+            pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+
+            // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
+            if (fasterSession.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                 return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
-            }
 
             #region Normal processing
 
-            // Mutable region (even fuzzy region is included here)
             if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress)
             {
-                return ReadFromMutableRegion(ref key, ref input, ref output, ref stackCtx, ref pendingContext, fasterSession, sessionCtx);
+                // Mutable region (even fuzzy region is included here)
+                return ReadFromMutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession);
             }
-
-            // Immutable region
             else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
-                status = ReadFromImmutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession, sessionCtx);
+                // Immutable region
+                status = ReadFromImmutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession);
                 if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly
                     goto CreatePendingContext;
                 return status;
             }
+            else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
+            {
+                // On-Disk Region
+                Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
 
-            // On-Disk Region
+                // Note: we do not lock here; we wait until reading from disk, then lock in the InternalContinuePendingRead chain.
+                if (hlog.IsNullDevice)
+                    return OperationStatus.NOTFOUND;
+
+                status = OperationStatus.RECORD_ON_DISK;
+                goto CreatePendingContext;
+            }
             else
             {
-                SpinWaitUntilAddressIsClosed(stackCtx.recSrc.LogicalAddress, hlog);
-
-                if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
-                {
-                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, stackCtx.hei.hash), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
-
-                    // Note: we do not lock here; we wait until reading from disk, then lock in the InternalContinuePendingRead chain.
-                    if (hlog.IsNullDevice)
-                        return OperationStatus.NOTFOUND;
-
-                    status = OperationStatus.RECORD_ON_DISK;
-                    if (sessionCtx.phase == Phase.PREPARE)
-                    {
-                        if (!useStartAddress)
-                        {
-                            // Failure to latch indicates CPR_SHIFT, but don't hold on to shared latch during IO
-                            if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
-                                HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
-                            else
-                                return OperationStatus.CPR_SHIFT_DETECTED;
-                        }
-                    }
-
-                    goto CreatePendingContext;
-                }
-                else
-                {
-                    // No record found
-                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, stackCtx.hei.hash), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
-                    return OperationStatus.NOTFOUND;
-                }
+                // No record found
+                Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
+                return OperationStatus.NOTFOUND;
             }
 
         #endregion
@@ -189,148 +159,135 @@ namespace FASTER.core
                     heapConvertible.ConvertToHeap();
 
                 pendingContext.userContext = userContext;
-                pendingContext.PrevLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                pendingContext.version = sessionCtx.version;
+                pendingContext.version = fasterSession.Ctx.version;
                 pendingContext.serialNum = lsn;
-                pendingContext.PrevHighestKeyHashAddress = prevHighestKeyHashAddress;
             }
             #endregion
 
             return status;
         }
 
-        private bool ReadFromCache<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
-                                    ref OperationStackContext<Key, Value> stackCtx,
-                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
-                                    FasterExecutionContext<Input, Output, Context> sessionCtx, out OperationStatus status)
+        private bool ReadFromCache<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref OperationStackContext<Key, Value> stackCtx,
+                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession, out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-            if (FindInReadCache(ref key, ref stackCtx, untilAddress: Constants.kInvalidAddress, alwaysFindLatestLA: false))
+            if (FindInReadCache(ref key, ref stackCtx, minAddress: Constants.kInvalidAddress, alwaysFindLatestLA: false))
             {
                 // Note: When session is in PREPARE phase, a read-cache record cannot be new-version. This is because a new-version record
                 // insertion would have invalidated the read-cache entry, and before the new-version record can go to disk become eligible
                 // to enter the read-cache, the PREPARE phase for that session will be over due to an epoch refresh.
 
                 // This is not called when looking up by address, so we can set pendingContext.recordInfo.
-                ref RecordInfo srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+                ref RecordInfo srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                 pendingContext.recordInfo = srcRecordInfo;
 
                 ReadInfo readInfo = new()
                 {
-                    SessionType = fasterSession.SessionType,
-                    Version = sessionCtx.version,
+                    Version = fasterSession.Ctx.version,
                     Address = Constants.kInvalidAddress,    // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
                     RecordInfo = srcRecordInfo
                 };
 
-                if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+                if (!TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
                     return false;
 
                 try
                 {
-                    if (fasterSession.SingleReader(ref key, ref input, ref stackCtx.recSrc.GetSrcValue(), ref output, ref srcRecordInfo, ref readInfo))
+                    if (fasterSession.SingleReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo))
                         return true;
                     status = readInfo.Action == ReadAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
                     return false;
                 }
                 finally
                 {
-                    EphemeralSUnlock(fasterSession, sessionCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                    TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
                 }
             }
             return false;
         }
 
         private OperationStatus ReadFromMutableRegion<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
-                                    ref OperationStackContext<Key, Value> stackCtx,
-                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
-                                    FasterExecutionContext<Input, Output, Context> sessionCtx)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            // We don't copy from this source, but we do lock it.
-            ref var srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-            pendingContext.recordInfo = srcRecordInfo;
-            pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-
-            ReadInfo readInfo = new()
-            {
-                SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
-                Address = stackCtx.recSrc.LogicalAddress,
-                RecordInfo = srcRecordInfo
-            };
-
-            if (!TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out var status))
-                return status;
-
-            try
-            {
-                if (pendingContext.ResetModifiedBit && !srcRecordInfo.TryResetModifiedAtomic())
-                    return OperationStatus.RETRY_LATER;
-                if (srcRecordInfo.Tombstone)
-                    return OperationStatus.NOTFOUND;
-
-                if (fasterSession.ConcurrentReader(ref key, ref input, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref output, ref srcRecordInfo, ref readInfo))
-                    return OperationStatus.SUCCESS;
-                if (readInfo.Action == ReadAction.CancelOperation)
-                    return OperationStatus.CANCELED;
-                if (readInfo.Action == ReadAction.Expire)
-                {
-                    // Our IFasterSession.ConcurrentReader implementation has already set Tombstone if appropriate.
-                    this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
-                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
-                }
-                return OperationStatus.NOTFOUND;
-            }
-            finally
-            {
-                EphemeralSUnlock(fasterSession, sessionCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
-            }
-        }
-
-        private OperationStatus ReadFromImmutableRegion<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
                                     bool useStartAddress, ref OperationStackContext<Key, Value> stackCtx,
-                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
-                                    FasterExecutionContext<Input, Output, Context> sessionCtx)
+                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // We don't copy from this source, but we do lock it.
-            ref var srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
+            ref var srcRecordInfo = ref stackCtx.recSrc.GetInfo();
             pendingContext.recordInfo = srcRecordInfo;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
             ReadInfo readInfo = new()
             {
-                SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
+                Version = fasterSession.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
                 RecordInfo = srcRecordInfo
             };
 
             // If we are starting from a specified address in the immutable region, we may have a Sealed record from a previous RCW.
-            // For this case, do not try to lock, EphemeralSUnlock will see that we do not have a lock so will not try to update it.
+            // For this case, do not try to lock, TransientSUnlock will see that we do not have a lock so will not try to update it.
             OperationStatus status = OperationStatus.SUCCESS;
-            if (!useStartAddress && !TryEphemeralSLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
+            if (!useStartAddress && !TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
                 return status;
 
             try
             {
-                if (pendingContext.ResetModifiedBit && !srcRecordInfo.TryResetModifiedAtomic())
-                    return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
-                ref Value recordValue = ref stackCtx.recSrc.GetSrcValue();
 
-                if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo)
-                    || readInfo.Action == ReadAction.Expire)
+                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo, out stackCtx.recSrc.ephemeralLockResult))
+                    return OperationStatus.SUCCESS;
+                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
+                    return OperationStatus.RETRY_LATER;
+                if (readInfo.Action == ReadAction.CancelOperation)
+                    return OperationStatus.CANCELED;
+                if (readInfo.Action == ReadAction.Expire)
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                return OperationStatus.NOTFOUND;
+            }
+            finally
+            {
+                TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+            }
+        }
+
+        private OperationStatus ReadFromImmutableRegion<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
+                                    bool useStartAddress, ref OperationStackContext<Key, Value> stackCtx,
+                                    ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            // We don't copy from this source, but we do lock it.
+            ref var srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+            pendingContext.recordInfo = srcRecordInfo;
+            pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+
+            ReadInfo readInfo = new()
+            {
+                Version = fasterSession.Ctx.version,
+                Address = stackCtx.recSrc.LogicalAddress,
+                RecordInfo = srcRecordInfo
+            };
+
+            // If we are starting from a specified address in the immutable region, we may have a Sealed record from a previous RCW.
+            // For this case, do not try to lock, TransientSUnlock will see that we do not have a lock so will not try to update it.
+            OperationStatus status = OperationStatus.SUCCESS;
+            if (!useStartAddress && !TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
+                return status;
+
+            try
+            {
+                if (srcRecordInfo.Tombstone)
+                    return OperationStatus.NOTFOUND;
+                ref Value recordValue = ref stackCtx.recSrc.GetValue();
+
+                if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo))
                 {
-                    if (pendingContext.CopyReadsToTailFromReadOnly || readInfo.Action == ReadAction.Expire) // Expire adds a tombstoned record to tail
+                    if (pendingContext.CopyReadsToTailFromReadOnly)
                     {
-                        status = InternalTryCopyToTail(sessionCtx, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
+                        status = InternalTryCopyToTail(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
                                                         ref srcRecordInfo, untilLogicalAddress: stackCtx.recSrc.LatestLogicalAddress, fasterSession,
-                                                        reason: WriteReason.CopyToTail, expired: readInfo.Action == ReadAction.Expire);
+                                                        reason: WriteReason.CopyToTail);
                         // status != SUCCESS means no copy to tail was done
                         if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
                             return readInfo.Action == ReadAction.Expire
@@ -340,14 +297,20 @@ namespace FASTER.core
                     }
                     return OperationStatus.SUCCESS;
                 }
+                if (readInfo.Action == ReadAction.CancelOperation)
+                    return OperationStatus.CANCELED;
+                if (readInfo.Action == ReadAction.Expire)
+                    return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
                 return OperationStatus.NOTFOUND;
             }
             finally
             {
                 // Unlock the record. If doing CopyReadsToTailFromReadOnly, then we have already copied the locks to the new record;
                 // this unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
-                EphemeralSUnlock(fasterSession, sessionCtx, ref pendingContext, ref key, ref stackCtx, ref srcRecordInfo);
+                stackCtx.HandleNewRecordOnException(this);
+                TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
             }
         }
+
     }
 }

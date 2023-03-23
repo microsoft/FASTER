@@ -42,16 +42,14 @@ namespace FASTER.core
             if (logicalAddress >= hlog.HeadAddress)
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
-                if (!recordInfo.IsIntermediate(out OperationStatus status))
+                if (reset)
                 {
-                    if (!reset)
-                        status = OperationStatus.SUCCESS;
-                    else if (!recordInfo.TryResetModifiedAtomic())
+                    if (!recordInfo.TryResetModifiedAtomic())
                         return OperationStatus.RETRY_LATER;
                 }
-                if (!reset && !recordInfo.Tombstone)
+                else if (!recordInfo.Tombstone)
                     modifiedInfo = recordInfo;
-                return status;
+                return OperationStatus.SUCCESS;
             }
 
             // If the record does not exist we return unmodified; if it is on the disk we return modified

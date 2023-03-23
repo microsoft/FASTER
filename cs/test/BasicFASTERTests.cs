@@ -60,17 +60,8 @@ namespace FASTER.test
 
         private (Status status, OutputStruct output) CompletePendingResult()
         {
-            session.CompletePendingWithOutputs(out var completedOutputs);
+            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             return TestUtils.GetSinglePendingResult(completedOutputs);
-        }
-
-        private static (Status status, OutputStruct output) CompletePendingResult(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty> completedOutputs)
-        {
-            Assert.IsTrue(completedOutputs.Next());
-            var result = (completedOutputs.Current.Status, completedOutputs.Current.Output);
-            Assert.IsFalse(completedOutputs.Next());
-            completedOutputs.Dispose();
-            return result;
         }
 
         [Test]
@@ -807,6 +798,15 @@ namespace FASTER.test
             s.RMW(ref key, ref input);
             s.Read(ref key, ref output);
             Assert.AreEqual(10, output);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public static void LogPathtooLong()
+        {
+            string testDir = new string('x', Native32.WIN32_MAX_PATH - 11);                 // As in LSD, -11 for ".<segment>"
+            using var log = Devices.CreateLogDevice($"{testDir}", deleteOnClose: true);     // Should succeed
+            Assert.Throws(typeof(FasterException), () => Devices.CreateLogDevice($"{testDir}y", deleteOnClose: true));
         }
 
         [Test]

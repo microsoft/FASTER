@@ -32,22 +32,24 @@ namespace FASTER.stress
                 this.luContext = session.LockableUnsafeContext;
         }
 
+        internal ILockableContext<TKey> LockableContext => luContext;
+
         internal ClientSession<TKey, TValue, TInput, TOutput, Empty, IFunctions<TKey, TValue, TInput, TOutput, Empty>> FkvSession => this.session;
 
         internal bool IsLUC => !this.luContext.IsNull;
 
         #region Read
 
-        internal void Read(int keyOrdinal, int keyCount, TKey[] keys)
+        internal void Read(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] lockKeys)
         {
             if (this.IsLUC)
-                ReadLUC(keyOrdinal, keyCount, keys);
+                ReadLUC(keyOrdinal, keyCount, lockKeys);
             else
-                this.Read(keyOrdinal, keys[0]);
+                this.Read(keyOrdinal, lockKeys[0].Key);
         }
 
-        internal Task ReadAsync(int keyOrdinal, int keyCount, TKey[] keys)
-            => this.IsLUC ? this.ReadLUCAsync(keyOrdinal, keyCount, keys) : this.ReadAsync(keyOrdinal, keys[0]);
+        internal Task ReadAsync(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] keys)
+            => this.IsLUC ? this.ReadLUCAsync(keyOrdinal, keyCount, keys) : this.ReadAsync(keyOrdinal, keys[0].Key);
 
         private void Read(int keyOrdinal, TKey key)
         {
@@ -77,14 +79,14 @@ namespace FASTER.stress
             disposer(output);
         }
 
-        private void ReadLUC(int keyOrdinal, int keyCount, TKey[] keys)
+        private void ReadLUC(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] lockKeys)
         {
             try
             {
                 luContext.BeginUnsafe();   // Retain epoch control through lock, the operation, and unlock
-                testLoader.MaybeLock(luContext, keyCount, keys, isRmw: false, isAsyncTest: false);
+                testLoader.MaybeLock(luContext, keyCount, lockKeys, isRmw: false, isAsyncTest: false);
                 TOutput output = default;
-                var status = luContext.Read(ref keys[0], ref output);
+                var status = luContext.Read(ref lockKeys[0].Key, ref output);
                 if (status.IsPending)
                 {
                     luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -100,19 +102,19 @@ namespace FASTER.stress
             }
             finally
             {
-                testLoader.MaybeUnlock(luContext, keyCount, keys, isRmw: false, isAsyncTest: false);
+                testLoader.MaybeUnlock(luContext, keyCount, lockKeys, isRmw: false, isAsyncTest: false);
                 luContext.EndUnsafe();
             }
         }
 
-        private async Task ReadLUCAsync(int keyOrdinal, int keyCount, TKey[] keys)
+        private async Task ReadLUCAsync(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] lockKeys)
         {
             try
             {
-                testLoader.MaybeLock(luContext, keyCount, keys, isRmw: false, isAsyncTest: true);
+                testLoader.MaybeLock(luContext, keyCount, lockKeys, isRmw: false, isAsyncTest: true);
 
                 // Do not resume epoch for Async operations
-                var (status, output) = (await luContext.ReadAsync(ref keys[0])).Complete();
+                var (status, output) = (await luContext.ReadAsync(ref lockKeys[0].Key)).Complete();
                 if (status.Found)
                     Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
                 else
@@ -121,22 +123,22 @@ namespace FASTER.stress
             }
             finally
             {
-                testLoader.MaybeUnlock(luContext, keyCount, keys, isRmw: false, isAsyncTest: true);
+                testLoader.MaybeUnlock(luContext, keyCount, lockKeys, isRmw: false, isAsyncTest: true);
             }
         }
         #endregion Read
 
         #region RMW
-        internal void RMW(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
+        internal void RMW(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] lockKeys, TInput input)
         {
             if (this.IsLUC)
-                this.RMWLUC(keyOrdinal, keyCount, keys, input);
+                this.RMWLUC(keyOrdinal, keyCount, lockKeys, input);
             else
-                this.RMW(keyOrdinal, keys[0], input);
+                this.RMW(keyOrdinal, lockKeys[0].Key, input);
         }
 
-        internal Task RMWAsync(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
-            => this.IsLUC ? this.RMWLUCAsync(keyOrdinal, keyCount, keys, input) : this.RMWAsync(keyOrdinal, keys[0], input);
+        internal Task RMWAsync(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] keys, TInput input)
+            => this.IsLUC ? this.RMWLUCAsync(keyOrdinal, keyCount, keys, input) : this.RMWAsync(keyOrdinal, keys[0].Key, input);
 
         private void RMW(int keyOrdinal, TKey key, TInput input)
         {
@@ -145,7 +147,7 @@ namespace FASTER.stress
             if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                (status, output) = TestLoader.GetSinglePendingResult(completedOutputs, out var recordMetadata);
+                (status, output) = TestLoader.GetSinglePendingResult(completedOutputs);
                 Assert.AreEqual(status.Found, status.Record.CopyUpdated | status.Record.InPlaceUpdated, $"keyOrdinal {keyOrdinal}: {status}");
             }
             if (status.Found)
@@ -165,14 +167,14 @@ namespace FASTER.stress
             disposer(output);
         }
 
-        private void RMWLUC(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
+        private void RMWLUC(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] lockKeys, TInput input)
         {
             try
             {
                 luContext.BeginUnsafe();   // Retain epoch control through lock, the operation, and unlock
-                testLoader.MaybeLock(luContext, keyCount, keys, isRmw: true, isAsyncTest: false);
+                testLoader.MaybeLock(luContext, keyCount, lockKeys, isRmw: true, isAsyncTest: false);
                 TOutput output = default;
-                var status = luContext.RMW(ref keys[0], ref input, ref output);
+                var status = luContext.RMW(ref lockKeys[0].Key, ref input, ref output);
                 if (status.IsPending)
                 {
                     luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -187,19 +189,19 @@ namespace FASTER.stress
             }
             finally
             {
-                testLoader.MaybeUnlock(luContext, keyCount, keys, isRmw: true, isAsyncTest: false);
+                testLoader.MaybeUnlock(luContext, keyCount, lockKeys, isRmw: true, isAsyncTest: false);
                 luContext.EndUnsafe();
             }
         }
 
-        private async Task RMWLUCAsync(int keyOrdinal, int keyCount, TKey[] keys, TInput input)
+        private async Task RMWLUCAsync(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] lockKeys, TInput input)
         {
             try
             {
-                testLoader.MaybeLock(luContext, keyCount, keys, isRmw: true, isAsyncTest: true);
+                testLoader.MaybeLock(luContext, keyCount, lockKeys, isRmw: true, isAsyncTest: true);
 
                 // Do not resume epoch for Async operations
-                var (status, output) = (await luContext.RMWAsync(ref keys[0], ref input)).Complete();
+                var (status, output) = (await luContext.RMWAsync(ref lockKeys[0].Key, ref input)).Complete();
                 if (status.Found)
                     Assert.AreEqual(keyOrdinal, GetResultKeyOrdinal(output));
                 else
@@ -208,21 +210,21 @@ namespace FASTER.stress
             }
             finally
             {
-                testLoader.MaybeUnlock(luContext, keyCount, keys, isRmw: true, isAsyncTest: true);
+                testLoader.MaybeUnlock(luContext, keyCount, lockKeys, isRmw: true, isAsyncTest: true);
             }
         }
         #endregion RMW
 
         #region Upsert
-        internal void Upsert(TKey[] keys, TValue value)
+        internal void Upsert(FixedLengthLockableKeyStruct<TKey>[] lockKeys, TValue value)
         {
             if (this.IsLUC)
-                this.UpsertLUC(ref keys[0], ref value);
+                this.UpsertLUC(ref lockKeys[0].Key, ref value);
             else
-                this.Upsert(ref keys[0], ref value);
+                this.Upsert(ref lockKeys[0].Key, ref value);
         }
 
-        internal Task UpsertAsync(TKey[] keys, TValue value) => this.IsLUC ? this.UpsertLUCAsync(keys[0], value) : this.UpsertAsync(keys[0], value);
+        internal Task UpsertAsync(FixedLengthLockableKeyStruct<TKey>[] lockKeys, TValue value) => this.IsLUC ? this.UpsertLUCAsync(lockKeys[0].Key, value) : this.UpsertAsync(lockKeys[0].Key, value);
 
         internal void Upsert(ref TKey key, ref TValue value)
         {
@@ -251,15 +253,15 @@ namespace FASTER.stress
         #endregion Upsert
 
         #region Delete
-        internal void Delete(TKey[] keys)
+        internal void Delete(FixedLengthLockableKeyStruct<TKey>[] lockKeys)
         {
             if (this.IsLUC)
-                this.DeleteLUC(keys[0]);
+                this.DeleteLUC(lockKeys[0].Key);
             else
-                this.Delete(keys[0]);
+                this.Delete(lockKeys[0].Key);
         }
 
-        internal Task DeleteAsync(TKey[] keys) => this.IsLUC ? this.DeleteLUCAsync(keys[0]) : this.DeleteAsync(keys[0]);
+        internal Task DeleteAsync(FixedLengthLockableKeyStruct<TKey>[] keys) => this.IsLUC ? this.DeleteLUCAsync(keys[0].Key) : this.DeleteAsync(keys[0].Key);
 
         private void Delete(TKey key)
         {

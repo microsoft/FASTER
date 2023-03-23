@@ -141,12 +141,14 @@ namespace FASTER.core
         public long SafeReadOnlyAddress;
 
         /// <summary>
-        /// Head address
+        /// The lowest in-memory address in the log. While we hold the epoch this may be changed by other threads as part of ShiftHeadAddress,
+        /// but as long as an address was >= HeadAddress while we held the epoch, it cannot be actually evicted until we release the epoch.
         /// </summary>
         public long HeadAddress;
 
         /// <summary>
-        ///  Safe head address
+        /// The lowest reliable in-memory address. This is set by OnPagesClosed as the highest address of the range it is starting to close;
+        /// thus it leads <see cref="ClosedUntilAddress"/>. As long as we hold the epoch, records above this address will not be evicted.
         /// </summary>
         public long SafeHeadAddress;
 
@@ -156,12 +158,13 @@ namespace FASTER.core
         public long FlushedUntilAddress;
 
         /// <summary>
-        /// Flushed until address
+        /// The highest address that has been closed by <see cref="OnPagesClosed"/>. It will catch up to <see cref="SafeHeadAddress"/>
+        /// when a region is closed.
         /// </summary>
         public long ClosedUntilAddress;
 
         /// <summary>
-        /// Begin address
+        /// The lowest valid address in the log
         /// </summary>
         public long BeginAddress;
 
@@ -250,11 +253,6 @@ namespace FASTER.core
         /// Observer for records getting evicted from memory (page closed)
         /// </summary>
         internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
-
-        /// <summary>
-        /// Observer for locked records getting evicted from memory (page closed)
-        /// </summary>
-        internal IObserver<IFasterScanIterator<Key, Value>> OnLockEvictionObserver;
 
         /// <summary>
         /// The "event" to be waited on for flush completion by the initiator of an operation
@@ -574,8 +572,7 @@ namespace FASTER.core
 
                                 // Clean up temporary bits when applying the delta log
                                 ref var destInfo = ref GetInfo(destination);
-                                destInfo.ClearLocks();
-                                destInfo.Unseal();
+                                destInfo.ClearBitsForDiskImages();
                             }
                             physicalAddress += size;
                         }
@@ -1377,8 +1374,6 @@ namespace FASTER.core
                     long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
                     long end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
-                    if (OnLockEvictionObserver is not null)
-                        MemoryPageScan(start, end, OnLockEvictionObserver);
                     if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
 
@@ -1948,7 +1943,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError("AsyncGetFromDiskCallback error: {errorCode}", errorCode);
+                logger?.LogError($"AsyncGetFromDiskCallback error: {errorCode}");
             }
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;

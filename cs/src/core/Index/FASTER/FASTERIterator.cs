@@ -116,13 +116,8 @@ namespace FASTER.core
                         ref var key = ref iter1.GetKey();
                         ref var value = ref iter1.GetValue();
 
-                        var bucket = default(HashBucket*);
-                        var firstBucket = default(HashBucket*);
-                        var slot = default(int);
-                        var entry = default(HashBucketEntry);
-                        var hash = fht.Comparer.GetHashCode64(ref key);
-                        var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-                        if (fht.FindTag(hash, tag, ref firstBucket, ref bucket, ref slot, ref entry) && entry.Address == iter1.CurrentAddress)
+                        HashEntryInfo hei = new(fht.Comparer.GetHashCode64(ref key));
+                        if (fht.FindTag(ref hei) && hei.entry.Address == iter1.CurrentAddress)
                         {
                             if (recordInfo.PreviousAddress >= fht.Log.BeginAddress)
                             {

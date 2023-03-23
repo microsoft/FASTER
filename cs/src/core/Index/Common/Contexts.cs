@@ -77,7 +77,7 @@ namespace FASTER.core
         /// <summary>
         /// Allocation failed, due to a need to flush pages. Clients do not see this status directly; they see <see cref="Status.IsPending"/>.
         /// <list type="bullet">
-        ///   <item>For Sync operations we retry this as part of <see cref="FasterKV{Key, Value}.HandleImmediateRetryStatus{Input, Output, Context, FasterSession}(OperationStatus, FasterKV{Key, Value}.FasterExecutionContext{Input, Output, Context}, FasterKV{Key, Value}.FasterExecutionContext{Input, Output, Context}, FasterSession, ref FasterKV{Key, Value}.PendingContext{Input, Output, Context})"/>.</item>
+        ///   <item>For Sync operations we retry this as part of <see cref="FasterKV{Key, Value}.HandleImmediateRetryStatus{Input, Output, Context, FasterSession}(OperationStatus, FasterSession, ref FasterKV{Key, Value}.PendingContext{Input, Output, Context})"/>.</item>
         ///   <item>For Async operations we retry this as part of the ".Complete(...)" or ".CompleteAsync(...)" operation on the appropriate "*AsyncResult{}" object.</item>
         /// </list>
         /// </summary>
@@ -199,12 +199,11 @@ namespace FASTER.core
                 Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
                 Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
                 Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
-                Debug.Assert((ushort)ReadFlags.ResetModifiedBit >> 1 == kResetModifiedBit);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static ushort GetOperationFlags(ReadFlags readFlags) 
-                => (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly | ReadFlags.ResetModifiedBit)) >> 1);
+                => (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey)
@@ -248,8 +247,6 @@ namespace FASTER.core
 
             internal bool CopyFromDeviceOnly => (operationFlags & kCopyFromDeviceOnly) != 0;
 
-            internal bool ResetModifiedBit => (operationFlags & kResetModifiedBit) != 0;
-
             internal bool HasMinAddress => this.minAddress != Constants.kInvalidAddress;
 
             internal bool IsAsync
@@ -258,16 +255,16 @@ namespace FASTER.core
                 set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
             }
 
-            internal long PrevHighestKeyHashAddress
+            internal long InitialEntryAddress
             {
                 get => recordInfo.PreviousAddress;
                 set => recordInfo.PreviousAddress = value;
             }
 
-            internal long PrevLatestLogicalAddress
+            internal long InitialLatestLogicalAddress
             {
-                get => entry.word;
-                set => entry.word = value;
+                get => entry.Address;
+                set => entry.Address = value;
             }
 
             public void Dispose()

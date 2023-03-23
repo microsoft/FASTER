@@ -37,7 +37,7 @@ namespace FASTER.server
             if (!Directory.Exists(opts.CheckpointDir))
                 Directory.CreateDirectory(opts.CheckpointDir);
 
-            store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings, disableEphemeralLocking: false, loggerFactory: loggerFactory);
+            store = new FasterKV<SpanByte, SpanByte>(indexSize, logSettings, checkpointSettings, lockingMode: LockingMode.Standard, loggerFactory: loggerFactory);
 
             if (!opts.DisablePubSub)
             {

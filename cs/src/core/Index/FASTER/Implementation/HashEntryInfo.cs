@@ -3,6 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using System.Threading;
+using static FASTER.core.Utility;
 
 namespace FASTER.core
 {
@@ -26,6 +27,10 @@ namespace FASTER.core
 
         /// <summary>The hash tag for this key</summary>
         internal ushort tag;
+
+#if DEBUG
+        internal long LockCode;
+#endif // DEBUG
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal HashEntryInfo(long hash)
@@ -61,9 +66,9 @@ namespace FASTER.core
         internal bool IsReadCache => entry.ReadCache;
 
         /// <summary>
-        /// Whether the original address for this hash entry (at the time of FindTag, etc.) is a readcache address.
+        /// Whether the current address for this hash entry (possibly modified after FindTag, etc.) is a readcache address.
         /// </summary>
-        internal bool IsCurrentReadCache => (this.bucket->bucket_entries[this.slot] & Constants.kReadCacheBitMask) != 0;
+        internal bool IsCurrentReadCache => IsReadCache(this.bucket->bucket_entries[this.slot]);
 
         /// <summary>
         /// Set members to the current entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
@@ -97,42 +102,25 @@ namespace FASTER.core
 
         public override string ToString()
         {
+            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
+            var hashSign = hash < 0 ? "-" : string.Empty;
+            var absHash = this.hash >= 0 ? this.hash : -this.hash;
+            var hashStr = $"{hashSign}{absHash}";
+
             if (bucket == null)
-                return $"hash {this.hash} <no bucket>";
+                return $"hash {hashStr} <no bucket>";
 
             var isRC = "(rc)";
             var addrRC = this.IsReadCache ? isRC : string.Empty;
             var currAddrRC = this.IsCurrentReadCache ? isRC : string.Empty;
             var isNotCurr = this.Address == this.CurrentAddress ? string.Empty : "*";
 
-            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
-            var hashSign = hash < 0 ? "-" : string.Empty;
-            var absHash = this.hash >= 0 ? this.hash : -this.hash;
-            return $"addr {this.AbsoluteAddress}{addrRC}, currAddr {this.AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashSign}{absHash}, tag {this.tag}, slot {this.slot}";
-        }
-    }
-
-    public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
-    {
-        // Wrappers to call and populate.
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe bool FindTag(ref HashEntryInfo hei)
-        {
-            hei.firstBucket = default;
-            hei.bucket = default;
-            hei.slot = default;
-            hei.entry = default;
-            return FindTag(hei.hash, hei.tag, ref hei.firstBucket, ref hei.bucket, ref hei.slot, ref hei.entry);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void FindOrCreateTag(ref HashEntryInfo hei)
-        {
-            hei.firstBucket = default;
-            hei.bucket = default;
-            hei.slot = default;
-            hei.entry = default;
-            FindOrCreateTag(hei.hash, hei.tag, ref hei.firstBucket, ref hei.bucket, ref hei.slot, ref hei.entry, hlog.BeginAddress);
+            var result = $"addr {this.AbsoluteAddress}{addrRC}, currAddr {this.AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashStr}, tag {this.tag}, slot {this.slot}, Bkt1 [";
+#if DEBUG
+            result += $"code {LockCode}, ";
+#endif // DEBUG
+            result += $"{HashBucket.ToString(firstBucket)}]";
+            return result;
         }
     }
 }

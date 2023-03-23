@@ -12,7 +12,7 @@ namespace FASTER.stress
         readonly IValueTester<long> valueTester;
         readonly Random rng;
         readonly int[] lockOrdinals;
-        readonly long[] lockKeys;
+        readonly FixedLengthLockableKeyStruct<long>[] lockKeys;
 
         internal LongKeyTester(int tid, TestLoader testLoader)
         {
@@ -27,7 +27,7 @@ namespace FASTER.stress
             };
             rng = new Random(tid * testLoader.Options.RandomSeed);
             lockOrdinals = new int[testLoader.LockKeyArraySize];
-            lockKeys = new long[testLoader.LockKeyArraySize];
+            lockKeys = new FixedLengthLockableKeyStruct<long>[testLoader.LockKeyArraySize];
         }
 
         public long GetAverageRecordSize() => sizeof(long) + valueTester.GetAverageSize();
@@ -65,15 +65,9 @@ namespace FASTER.stress
             }
         }
 
-        class SpanByteSortComparer : IComparer<long>
-        {
-            public int Compare(long x, long y) => x.CompareTo(y);
-        }
-        readonly SpanByteSortComparer sortComparer = new();
+        public void Test() => testLoader.Test(tid, rng, lockOrdinals, lockKeys, ordinal => ordinal, valueTester);
 
-        public void Test() => testLoader.Test(tid, rng, lockOrdinals, lockKeys, ordinal => ordinal, sortComparer, valueTester);
-
-        public Task TestAsync() => testLoader.TestAsync(tid, rng, lockOrdinals, lockKeys, ordinal => ordinal, sortComparer, valueTester);
+        public Task TestAsync() => testLoader.TestAsync(tid, rng, lockOrdinals, lockKeys, ordinal => ordinal, valueTester);
 
         public void Dispose() { }
     }

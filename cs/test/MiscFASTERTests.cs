@@ -126,7 +126,7 @@ namespace FASTER.test
                 var status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
-                // ConcurrentWriter returns false, so we create a new record (and leave the old one sealed).
+                // ConcurrentWriter returns false, so we create a new record.
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
                 status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata2);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
@@ -136,15 +136,13 @@ namespace FASTER.test
                 var recordCount = 0;
                 using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
                 {
-                    // We seal before copying and leave it sealed after copying, so we only get one record.
+                    // We should get both the old and the new records.
                     while (iterator.GetNext(out var info))
-                    {
                         recordCount++;
-                    }
                 }
 
                 Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
-                Assert.AreEqual(1, recordCount);
+                Assert.AreEqual(2, recordCount);
             }
             finally
             {

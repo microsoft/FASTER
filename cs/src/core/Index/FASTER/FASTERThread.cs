@@ -61,19 +61,17 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh<Input, Output, Context, FasterSession>(FasterExecutionContext<Input, Output, Context> ctx, FasterSession fasterSession)
-            where FasterSession : IFasterSession
+        internal void InternalRefresh<Input, Output, Context, FasterSession>(FasterSession fasterSession)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             epoch.ProtectAndDrain();
 
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref systemState);
-            if (ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && ctx.version == newPhaseInfo.Version)
-            {
+            if (fasterSession.Ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && fasterSession.Ctx.version == newPhaseInfo.Version)
                 return;
-            }
 
-            ThreadStateMachineStep(ctx, fasterSession, default);
+            ThreadStateMachineStep(fasterSession.Ctx, fasterSession, default);
         }
 
         internal static void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)
@@ -112,20 +110,18 @@ namespace FASTER.core
             }
         }
 
-        internal bool InternalCompletePending<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> ctx,
-            FasterSession fasterSession,
-            bool wait = false, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
+        internal bool InternalCompletePending<Input, Output, Context, FasterSession>(FasterSession fasterSession, bool wait = false, 
+                                                                                     CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             while (true)
             {
-                InternalCompletePendingRequests(ctx, ctx, fasterSession, completedOutputs);
-                if (wait) ctx.WaitPending(epoch);
+                InternalCompletePendingRequests(fasterSession, completedOutputs);
+                if (wait) fasterSession.Ctx.WaitPending(epoch);
 
-                if (ctx.HasNoPendingRequests) return true;
+                if (fasterSession.Ctx.HasNoPendingRequests) return true;
 
-                InternalRefresh(ctx, fasterSession);
+                InternalRefresh<Input, Output, Context, FasterSession>(fasterSession);
 
                 if (!wait) return false;
                 Thread.Yield();
@@ -135,34 +131,29 @@ namespace FASTER.core
         internal bool InRestPhase() => systemState.Phase == Phase.REST;
 
         #region Complete Pending Requests
-        internal void InternalCompletePendingRequests<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
-            FasterSession fasterSession, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
+        internal void InternalCompletePendingRequests<Input, Output, Context, FasterSession>(FasterSession fasterSession, 
+                                                                                             CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             hlog.TryComplete();
 
-            if (opCtx.readyResponses.Count == 0) return;
+            if (fasterSession.Ctx.readyResponses.Count == 0) return;
 
-            while (opCtx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
+            while (fasterSession.Ctx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
             {
-                InternalCompletePendingRequest(opCtx, currentCtx, fasterSession, request, completedOutputs);
+                InternalCompletePendingRequest(fasterSession, request, completedOutputs);
             }
         }
 
-        internal void InternalCompletePendingRequest<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
-            FasterSession fasterSession,
-            AsyncIOContext<Key, Value> request, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
+        internal void InternalCompletePendingRequest<Input, Output, Context, FasterSession>(FasterSession fasterSession, AsyncIOContext<Key, Value> request,
+                                                                                            CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (opCtx.ioPendingRequests.TryGetValue(request.id, out var pendingContext))
+            if (fasterSession.Ctx.ioPendingRequests.TryGetValue(request.id, out var pendingContext))
             {
                 // Remove from pending dictionary
-                opCtx.ioPendingRequests.Remove(request.id);
-                var status = InternalCompletePendingRequestFromContext(opCtx, currentCtx, fasterSession, request, ref pendingContext, out _);
+                fasterSession.Ctx.ioPendingRequests.Remove(request.id);
+                var status = InternalCompletePendingRequestFromContext(fasterSession, request, ref pendingContext, out _);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
@@ -176,12 +167,8 @@ namespace FASTER.core
         /// <summary>
         /// Caller is expected to dispose pendingContext after this method completes
         /// </summary>
-        internal Status InternalCompletePendingRequestFromContext<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
-            FasterSession fasterSession,
-            AsyncIOContext<Key, Value> request,
-            ref PendingContext<Input, Output, Context> pendingContext, out AsyncIOContext<Key, Value> newRequest)
+        internal Status InternalCompletePendingRequestFromContext<Input, Output, Context, FasterSession>(FasterSession fasterSession, AsyncIOContext<Key, Value> request,
+                                                                    ref PendingContext<Input, Output, Context> pendingContext, out AsyncIOContext<Key, Value> newRequest)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
@@ -194,10 +181,10 @@ namespace FASTER.core
             ref Key key = ref pendingContext.key.Get();
 
             OperationStatus internalStatus = pendingContext.type == OperationType.READ
-                ? InternalContinuePendingRead(opCtx, request, ref pendingContext, fasterSession, currentCtx)
-                : InternalContinuePendingRMW(opCtx, request, ref pendingContext, fasterSession, currentCtx);
+                ? InternalContinuePendingRead(request, ref pendingContext, fasterSession)
+                : InternalContinuePendingRMW(request, ref pendingContext, fasterSession);
 
-            var status = HandleOperationStatus(opCtx, ref pendingContext, internalStatus, out newRequest);
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pendingContext, internalStatus, out newRequest);
 
             // If done, callback user code
             if (status.IsCompletedSuccessfully)

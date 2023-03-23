@@ -198,8 +198,6 @@ namespace FASTER.test
 
         public enum ReadCacheMode { UseReadCache, NoReadCache }
 
-        public enum EphemeralLockingMode { UseEphemeralLocking, NoEphemeralLocking };
-
         public enum KeyContentionMode { Contention, NoContention };
 
         public enum BatchMode { Batch, NoBatch };
@@ -236,17 +234,12 @@ namespace FASTER.test
             }
         }
 
-        internal unsafe static bool FindKey<Key, Value>(this FasterKV<Key, Value> fht, ref Key key, out HashBucketEntry entry)
+        internal static unsafe bool FindHashBucketEntryForKey<Key, Value>(this FasterKV<Key, Value> fht, ref Key key, out HashBucketEntry entry)
         {
-            var bucket = default(HashBucket*);
-            var firstBucket = default(HashBucket*);
-            int slot = default;
-            entry = default;
-
-            var hash = fht.Comparer.GetHashCode64(ref key);
-            var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-
-            return fht.FindTag(hash, tag, ref firstBucket, ref bucket, ref slot, ref entry);
+            HashEntryInfo hei = new(fht.Comparer.GetHashCode64(ref key));
+            var success = fht.FindTag(ref hei);
+            entry = hei.entry;
+            return success;
         }
     }
 }

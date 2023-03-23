@@ -11,24 +11,23 @@ namespace FASTER.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SynchronizeEpoch<Input, Output, Context, FasterSession>(
-            FasterExecutionContext<Input, Output, Context> opCtx,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
+            FasterExecutionContext<Input, Output, Context> sessionCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
             FasterSession fasterSession)
-            where FasterSession : IFasterSession
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var version = opCtx.version;
-            Debug.Assert(currentCtx.version == version);
-            Debug.Assert(currentCtx.phase == Phase.PREPARE);
-            InternalRefresh(currentCtx, fasterSession);
-            Debug.Assert(currentCtx.version > version);
+            var version = sessionCtx.version;
+            Debug.Assert(sessionCtx.version == version);
+            Debug.Assert(sessionCtx.phase == Phase.PREPARE);
+            InternalRefresh<Input, Output, Context, FasterSession>(fasterSession);
+            Debug.Assert(sessionCtx.version > version);
 
-            pendingContext.version = currentCtx.version;
+            pendingContext.version = sessionCtx.version;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void HeavyEnter<Input, Output, Context, FasterSession>(long hash, FasterExecutionContext<Input, Output, Context> ctx, FasterSession session)
-            where FasterSession : IFasterSession
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (ctx.phase == Phase.PREPARE_GROW)
             {
@@ -36,7 +35,7 @@ namespace FASTER.core
                 // Could instead do a "heavy operation" here
                 while (systemState.Phase != Phase.IN_PROGRESS_GROW)
                     Thread.SpinWait(100);
-                InternalRefresh(ctx, session);
+                InternalRefresh<Input, Output, Context, FasterSession>(session);
             }
             if (ctx.phase == Phase.IN_PROGRESS_GROW)
             {
@@ -50,14 +49,14 @@ namespace FASTER.core
             // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.
             while (address >= this.hlog.ClosedUntilAddress)
             {
-                Debug.Assert(address < hlog.HeadAddress);
+                Debug.Assert(address < hlog.HeadAddress, "expected address < hlog.HeadAddress");
                 epoch.ProtectAndDrain();
                 Thread.Yield();
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SpinWaitUntilRecordIsClosed(ref Key key, long keyHash, long logicalAddress, AllocatorBase<Key, Value> log)
+        void SpinWaitUntilRecordIsClosed(long logicalAddress, AllocatorBase<Key, Value> log)
         {
             Debug.Assert(logicalAddress < log.HeadAddress, "SpinWaitUntilRecordIsClosed should not be called for addresses above HeadAddress");
 
@@ -82,24 +81,6 @@ namespace FASTER.core
                     break;
 
                 // Note: We cannot jump out here if the Lock Table contains the key, because it may be an older version of the record.
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SpinWaitUntilAddressIsClosed(long logicalAddress, AllocatorBase<Key, Value> log)
-        {
-            Debug.Assert(logicalAddress < log.HeadAddress, "SpinWaitUntilAddressIsClosed should not be called for addresses above HeadAddress");
-
-            // This is nearly identical to SpinWaitUntilRecordIsClosed (see comments there), but here we are called during chain traversal
-            // (e.g. ReadCacheEvict) and thus do not want to short-circuit if the key is found (the address may be for a colliding key).
-            while (true)
-            {
-                epoch.ProtectAndDrain();
-                Thread.Yield();
-
-                // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.
-                if (logicalAddress < log.ClosedUntilAddress)
-                    break;
             }
         }
     }
