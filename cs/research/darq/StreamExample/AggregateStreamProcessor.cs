@@ -36,7 +36,7 @@ namespace SimpleStream.searchlist
                     string message;
                     unsafe
                     {
-                        fixed (byte* b = m.GetMessageBody)
+                        fixed (byte* b = m.GetMessageBody())
                         {
                             var messageSize = *(int*)b;
                             message = new string((sbyte*)b, sizeof(int), messageSize);

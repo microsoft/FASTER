@@ -8,16 +8,20 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
+    /// <summary>
+    /// Iterator for scanning a DARQ
+    /// </summary>
     public class DarqScanIterator : IDisposable
     {
-        public FasterLogScanIterator iterator;
+        private FasterLogScanIterator iterator;
         private long replayEnd;
         private Queue<(long, long, byte[])> stateMessagesToReplay;
         private Dictionary<long, long> replayMessages;
         private bool disposed = false;
         private byte[] reusedReadBuffer;
         private GCHandle? handle = null;
-        public DarqScanIterator(FasterLog log, long replayEnd, bool speculative, bool replay = true)
+        
+        internal DarqScanIterator(FasterLog log, long replayEnd, bool speculative, bool replay = true)
         {
             iterator = log.Scan(0, long.MaxValue, scanUncommitted: speculative);
             stateMessagesToReplay = new Queue<(long, long, byte[])>();
@@ -27,6 +31,7 @@ namespace FASTER.libdpr
                 ScanOnRecovery();
         }
 
+        /// <inheritdoc/>>
         public void Dispose()
         {
             disposed = true;
@@ -81,6 +86,16 @@ namespace FASTER.libdpr
             iterator.Reset();
         }
 
+        /// <summary>
+        /// Scan the next entry in DARQ. If successful, must be followed by a UnsafeRelease call to release any
+        /// resources held in-place for unsafe consumption.
+        /// </summary>
+        /// <param name="entry"> pointer to the start of next entry body</param>
+        /// <param name="entryLength">length of the next entry</param>
+        /// <param name="currentAddress">address of the entry on DARQ (lsn)</param>
+        /// <param name="nextAddress"> lower bound of the address of the next entry on DARQ</param>
+        /// <param name="type"> type of entry </param>
+        /// <returns>whether a next entry is available at this moment</returns>
         public unsafe bool UnsafeGetNext(out byte* entry, out int entryLength, out long currentAddress,
             out long nextAddress, out DarqMessageType type)
         {
@@ -124,7 +139,7 @@ namespace FASTER.libdpr
                             iterator.UnsafeRelease();
                             continue;
                         default:
-                            throw new NotImplementedException();
+                            throw new FasterException("Unexpected entry type");
                     }
                 }
 
@@ -135,6 +150,9 @@ namespace FASTER.libdpr
             }
         }
 
+        /// <summary>
+        /// Releases resources held from a previous successful UnsafeGetNext call 
+        /// </summary>
         public void UnsafeRelease()
         {
             if (handle.HasValue)
@@ -146,6 +164,11 @@ namespace FASTER.libdpr
                 iterator.UnsafeRelease();
         }
 
+        /// <summary>
+        /// Wait until the next entry is available or when no more entries will be available
+        /// </summary>
+        /// <param name="token">cancellation token</param>
+        /// <returns> task for the availability of next entry </returns>
         public ValueTask<bool> WaitAsync(CancellationToken token = default)
         {
             return iterator.WaitAsync(token);

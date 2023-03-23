@@ -3,7 +3,7 @@ using System.Threading;
 
 namespace FASTER.libdpr
 {
-    public class DeduplicationVector : IStateObjectAttachment
+    internal class DeduplicationVector : IStateObjectAttachment
     {
         private const int MAX_SIZE = 32;
         private long[] dvc = new long[MAX_SIZE];

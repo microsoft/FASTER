@@ -16,7 +16,7 @@ namespace SimpleStream.searchlist
             string message;
             unsafe
             {
-                fixed (byte* b = inMessage.GetMessageBody)
+                fixed (byte* b = inMessage.GetMessageBody())
                 {
                     var messageSize = *(int*)b;
                     message = new string((sbyte*)b, sizeof(int), messageSize);
@@ -42,7 +42,7 @@ namespace SimpleStream.searchlist
             Debug.Assert(selfMessage.GetMessageType() == DarqMessageType.SELF);
             unsafe
             {
-                fixed (byte* b = selfMessage.GetMessageBody)
+                fixed (byte* b = selfMessage.GetMessageBody())
                 {
                     var messageSize = *(int*)b;
                     var message = new string((sbyte*)b, sizeof(int), messageSize);
@@ -54,9 +54,9 @@ namespace SimpleStream.searchlist
             }
         }
 
-        public void Checkpoint(StepRequestBuilder stepBuilder)
+        public void Checkpoint(long lsn, StepRequestBuilder stepBuilder)
         {
-            stepBuilder.StartCheckpoint();
+            stepBuilder.StartCheckpoint(lsn);
             foreach (var entry in aggregateState)
                 stepBuilder.AddSelfMessage($"{entry.Key} : {entry.Value}");
         }
@@ -92,13 +92,13 @@ namespace SimpleStream.searchlist
                 {
                     var builder = new StepRequestBuilder(reusableRequest, input);
                     if (state.Update(m, builder))
-                        builder.AddOutMessage(output, m.GetMessageBody);
+                        builder.AddOutMessage(output, m.GetMessageBody());
                     builder.MarkMessageConsumed(m.GetLsn());
                     
                     uncheckpointedSize++;
                     if (++uncheckpointedSize >= checkpointThreshold)
                     {
-                        state.Checkpoint(builder);
+                        state.Checkpoint(m.GetNextLsn(), builder);
                         uncheckpointedSize = 0;
                     }
                     

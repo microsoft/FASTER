@@ -87,22 +87,23 @@ namespace FASTER.client
         private unsafe void SendMessage(DarqMessage m)
         {
             Debug.Assert(m.GetMessageType() == DarqMessageType.OUT);
-            fixed (byte* h = m.GetMessageBody)
+            var body = m.GetMessageBody();
+            fixed (byte* h = body)
             {
                 var dest = *(WorkerId*) h;
-                var body = new ReadOnlySpan<byte>(h + sizeof(WorkerId),
-                    m.GetMessageBody.Length - sizeof(WorkerId));
+                var toSend = new ReadOnlySpan<byte>(h + sizeof(WorkerId),
+                    body.Length - sizeof(WorkerId));
                 var completionTrackerLocal = completionTracker;
                 var lsn = m.GetLsn();
                 if (++numBatched < batchSize)
                 {
-                    producerClient.EnqueueMessageWithCallback(dest, body, darq.Me().guid, lsn,
+                    producerClient.EnqueueMessageWithCallback(dest, toSend, darq.Me().guid, lsn,
                         _ => { completionTrackerLocal.RemoveEntry(lsn); }, forceFlush: false);
                 }
                 else
                 {
                     numBatched = 0;
-                    producerClient.EnqueueMessageWithCallback(dest, body, darq.Me().guid, lsn,
+                    producerClient.EnqueueMessageWithCallback(dest, toSend, darq.Me().guid, lsn,
                         _ => { completionTrackerLocal.RemoveEntry(lsn); }, forceFlush: true);
                 }
             }
@@ -136,11 +137,12 @@ namespace FASTER.client
                 }
                 case DarqMessageType.COMPLETION:
                 {
+                    var body = m.GetMessageBody();
                     unsafe
                     {
-                        fixed (byte* h = m.GetMessageBody)
+                        fixed (byte* h = body)
                         {
-                            for (var completed = (long*) h; completed < h + m.GetMessageBody.Length; completed++)
+                            for (var completed = (long*) h; completed < h + body.Length; completed++)
                                 completionTracker.RemoveEntry(*completed);
                         }
                     }

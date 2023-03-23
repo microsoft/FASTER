@@ -26,7 +26,7 @@ namespace SimpleStream.searchlist
                     SearchListJson searchListItem;
                     unsafe
                     {
-                        fixed (byte* b = m.GetMessageBody)
+                        fixed (byte* b = m.GetMessageBody())
                         {
                             var jsonSize = *(int*)b;
                             var json = new string((sbyte*)b, sizeof(int), jsonSize);

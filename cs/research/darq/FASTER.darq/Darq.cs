@@ -6,11 +6,31 @@ using FASTER.libdpr;
 
 namespace FASTER.darq
 {
+    /// <summary>
+    /// Status of a step 
+    /// </summary>
     public enum StepStatus
     {
+        /// <summary>
+        /// Step is not yet completed
+        /// </summary>
         INCOMPLETE,
+
+        /// <summary>
+        /// Step is successfully completed
+        /// </summary>
         SUCCESS,
+
+        /// <summary>
+        ///  Step cannot be completed because it is either ill-formed or because it is trying to consume
+        ///  consumed messages
+        /// </summary>
         INVALID,
+
+        /// <summary>
+        /// The step cannot be completed because it originated from a processor that is no longer allowed to
+        /// update DARQ state (possibly due to another, newer processor taking over)
+        /// </summary>
         REINCARNATED
     }
 
@@ -51,6 +71,9 @@ namespace FASTER.darq
         }
     }
 
+    /// <summary>
+    /// Underlying state object for DARQ
+    /// </summary>
     public class DarqStateObject : IStateObject, IDisposable
     {
         internal DarqSettings settings;
@@ -58,6 +81,10 @@ namespace FASTER.darq
         internal ConcurrentDictionary<long, byte> incompleteMessages = new();
         private FasterLogSettings logSetting;
 
+        /// <summary>
+        ///  Constructs a new DarqStateObject using the given parameters
+        /// </summary>
+        /// <param name="settings">parameters for the DarqStateObject</param>
         public DarqStateObject(DarqSettings settings)
         {
             this.settings = settings;
@@ -82,8 +109,9 @@ namespace FASTER.darq
                 SegmentSize = settings.SegmentSize,
                 LogCommitManager = settings.LogCommitManager,
                 LogCommitDir = settings.LogCommitDir,
-                // DARQ should never do anything through a code path that needs to materialize into external mem buffer
-                GetMemory = _ => throw new NotImplementedException(),
+                GetMemory = _ =>
+                    throw new FasterException(
+                        "DARQ should never do anything through a code path that needs to materialize into external mem buffer"),
                 LogChecksum = settings.LogChecksum,
                 MutableFraction = settings.MutableFraction,
                 ReadOnlyMode = false,
@@ -98,6 +126,7 @@ namespace FASTER.darq
             log = new FasterLog(logSetting);
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
             if (settings.DeleteOnClose)
@@ -107,11 +136,13 @@ namespace FASTER.darq
             settings.LogCommitManager.Dispose();
         }
 
+        /// <inheritdoc/>
         public void PruneVersion(long version)
         {
             settings.LogCommitManager.RemoveCommit(version);
         }
 
+        /// <inheritdoc/>
         public IEnumerable<(byte[], int)> GetUnprunedVersions()
         {
             var commits = settings.LogCommitManager.ListCommits().ToList();
@@ -126,12 +157,14 @@ namespace FASTER.darq
             });
         }
 
+        /// <inheritdoc/>
         public void PerformCheckpoint(long version, ReadOnlySpan<byte> metadata, Action onPersist)
         {
             var commitCookie = metadata.ToArray();
             log.CommitStrongly(out var tail, out _, false, commitCookie, version, onPersist);
         }
 
+        /// <inheritdoc/>
         public void RestoreCheckpoint(long version, out ReadOnlySpan<byte> metadata)
         {
             Console.WriteLine($"Restoring checkpoint {version}");
@@ -174,6 +207,9 @@ namespace FASTER.darq
         }
     }
 
+    /// <summary>
+    /// DARQ data structure 
+    /// </summary>
     public class Darq : DprWorker<DarqStateObject>, IDisposable
     {
         private readonly DeduplicationVector dvc;
@@ -182,6 +218,11 @@ namespace FASTER.darq
 
         private ThreadLocalObjectPool<StepRequestHandle> stepRequestPool;
 
+        /// <summary>
+        /// Initialize DARQ with the given identity and parameters
+        /// </summary>
+        /// <param name="me">unique identity for this DARQ</param>
+        /// <param name="darqSettings">parameters for DARQ</param>
         public Darq(WorkerId me, DarqSettings darqSettings) : base(me,
             new DarqStateObject(darqSettings), darqSettings.DprFinder)
         {
@@ -196,10 +237,17 @@ namespace FASTER.darq
             stepRequestPool = new ThreadLocalObjectPool<StepRequestHandle>(() => new StepRequestHandle());
         }
 
+        /// <summary>
+        /// Return the tail address that this DARQ will need to replay to upon failure recovery
+        /// </summary>
         public long ReplayEnd => largestSteppedLsn.value;
-        
+
+        /// <summary>
+        /// Whether this DARQ is configured to be speculative
+        /// </summary>
         public bool Speculative => dprFinder != null;
-        
+
+        /// <inheritdoc/>
         public void Dispose()
         {
             StateObject().Dispose();
@@ -210,21 +258,36 @@ namespace FASTER.darq
             StateObject().incompleteMessages.TryAdd(addr, 0);
         }
 
-        public unsafe bool EnqueueInputBatch(IReadOnlySpanBatch entries, WorkerId inputId, long inputLsn)
+        /// <summary>
+        /// Enqueue given entries into DARQ, optionally deduplicated using the supplied producer ID and sequence number. 
+        /// </summary>
+        /// <param name="entries">
+        /// Entries to enqueue. must already be well-formed on a byte level with message types, etc.
+        /// </param>
+        /// <param name="producerId"> Unique id of the producer for deduplication, or -1 if not required</param>
+        /// <param name="sequenceNum">
+        /// sequence number for deduplication. DARQ will only accept enqueue requests with monotonically increasing
+        /// sequence numbers from the same producer
+        /// </param>
+        /// <returns> whether enqueue is successful </returns>
+        public bool EnqueueInputBatch(IReadOnlySpanBatch entries, WorkerId producerId, long sequenceNum)
         {
-            for (var i = 0; i < entries.TotalEntries(); i++)
+#if DEBUG
+            unsafe
             {
-                fixed (byte* h = entries.Get(i))
+                for (var i = 0; i < entries.TotalEntries(); i++)
                 {
-                    Debug.Assert((DarqMessageType)(*h) == DarqMessageType.IN);
+                    fixed (byte* h = entries.Get(i))
+                    {
+                        Debug.Assert((DarqMessageType)(*h) == DarqMessageType.IN);
+                    }
                 }
             }
-
+#endif
             // Check that we are not executing duplicates and update dvc accordingly
-            if (inputId.guid != -1 && !dvc.Process(inputId, inputLsn))
+            if (producerId.guid != -1 && !dvc.Process(producerId, sequenceNum))
                 return false;
 
-            // TODO(Tianyu): Need to resolve unsafe scan race
             StateObject().log.Enqueue(entries, EnqueueCallback);
             return true;
         }
@@ -282,39 +345,60 @@ namespace FASTER.darq
                     }
                 }
             }
-
-            // TODO(Tianyu): Need to resolve unsafe scan race
             StateObject().log.Enqueue(stepRequestHandle.stepMessages, StepCallback);
-
             stepRequestHandle.done.Set();
             stepRequestHandle.status = StepStatus.SUCCESS;
         }
 
+        /// <summary>
+        /// Step the DARQ with given incarnation number and step content
+        /// </summary>
+        /// <param name="incarnation"> incarnation number of the originating processor </param>
+        /// <param name="stepMessages">
+        /// Step content. must already be well-formed on a byte level with message
+        /// types, etc. with the last entry being a completion record
+        /// </param>
+        /// <returns>step result</returns>
         public StepStatus Step(long incarnation, IReadOnlySpanBatch stepMessages)
         {
             var request = stepRequestPool.Checkout();
             request.Reset(incarnation, stepMessages);
             stepQueue.EnqueueAndTryWork(request, false);
-            if (request.status == StepStatus.INCOMPLETE)
+            while (request.status == StepStatus.INCOMPLETE)
                 request.done.Wait();
             var result = request.status;
             stepRequestPool.Return(request);
             return result;
         }
 
+        /// <summary>
+        /// Truncate DARQ until the given lsn
+        /// </summary>
+        /// <param name="lsn">truncation point</param>
         public void TruncateUntil(long lsn)
         {
             StateObject().log.TruncateUntil(lsn);
         }
 
+        /// <summary>
+        /// Registers a new processor the submit steps to this DARQ.
+        /// </summary>
+        /// <returns>the unique incarnation number assigned to this processor</returns>
         public long RegisterNewProcessor()
         {
-            var tcs = new TaskCompletionSource<long>();            
+            var tcs = new TaskCompletionSource<long>();
             // TODO(Tianyu): Can this deadlock against itself?
-            versionScheme.GetUnderlyingEpoch().BumpCurrentEpoch(() => tcs.SetResult(Interlocked.Increment(ref incarnation.value)));
+            versionScheme.GetUnderlyingEpoch()
+                .BumpCurrentEpoch(() => tcs.SetResult(Interlocked.Increment(ref incarnation.value)));
             return tcs.Task.GetAwaiter().GetResult();
         }
 
-        public DarqScanIterator StartScan(bool speculative) => new DarqScanIterator(StateObject().log, largestSteppedLsn.value, speculative);
+        /// <summary>
+        /// Scans the DARQ with an iterator 
+        /// </summary>
+        /// <param name="speculative">whether to speculatively scan </param>
+        /// <returns></returns>
+        public DarqScanIterator StartScan(bool speculative) =>
+            new DarqScanIterator(StateObject().log, largestSteppedLsn.value, speculative);
     }
 }
