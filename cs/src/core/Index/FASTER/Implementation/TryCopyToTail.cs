@@ -78,7 +78,7 @@ namespace FASTER.core
             }
 
             if (success)
-                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
+                PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo, pendingContext.InitialEntryAddress);
             else
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);

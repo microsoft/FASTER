@@ -672,40 +672,5 @@ namespace FASTER.test.UnsafeContext
                 uContext.EndUnsafe();
             }
         }
-
-        [Test]
-        [Category("FasterKV")]
-        [Category("Smoke")]
-        public void ReadAtAddressReadFlagsNone()
-        {
-            // Just functional test of ReadFlag so one device is enough
-            deviceType = DeviceType.MLSD;
-
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
-            uContext.BeginUnsafe();
-
-            try
-            {
-                InputStruct input = default;
-                OutputStruct output = default;
-
-                var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
-                var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
-                ReadOptions readOptions = new() { StartAddress = fht.Log.BeginAddress, CopyOptions = ReadCopyOptions.None };
-
-                uContext.Upsert(ref key1, ref value, Empty.Default, 0);
-                var status = uContext.ReadAtAddress(ref input, ref output, ref readOptions, Empty.Default, 0);
-                AssertCompleted(new(StatusCode.Found), status);
-
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
-                Assert.AreEqual(key1.kfield1, 13);
-                Assert.AreEqual(key1.kfield2, 14);
-            }
-            finally
-            {
-                uContext.EndUnsafe();
-            }
-        }
-    }
+   }
 }

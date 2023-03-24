@@ -204,6 +204,8 @@ namespace FASTER.test
 
         public enum UpdateOp { Upsert, RMW, Delete }
 
+        public enum HashModulo { NoMod = 0, Hundred = 100, Thousand = 1000 }
+
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 

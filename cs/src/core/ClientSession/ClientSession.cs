@@ -862,12 +862,12 @@ namespace FASTER.core
         /// <param name="desiredValue"></param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus CompactionCopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long untilAddress)
+        internal Status CompactionCopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long untilAddress)
         {
             UnsafeResumeThread();
             try
             {
-                return fht.CompactionConditionalInsert<Input, Output, Context, InternalFasterSession>(FasterSession, ref key, ref input, ref desiredValue, ref output, untilAddress);
+                return fht.CompactionConditionalCopyToTail<Input, Output, Context, InternalFasterSession>(FasterSession, ref key, ref input, ref desiredValue, ref output, untilAddress);
             }
             finally
             {

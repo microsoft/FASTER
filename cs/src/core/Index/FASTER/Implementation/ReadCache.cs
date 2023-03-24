@@ -269,13 +269,13 @@ namespace FASTER.core
         // Note: The caller will do no epoch-refreshing operations after re-verifying the readcache chain following record allocation, so it is not
         // possible for the chain to be disrupted and the new insertion lost, even if readcache.HeadAddress is raised above hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCheckTailAfterSplice(ref Key key, ref HashEntryInfo hei)
+        private void ReadCacheCheckTailAfterSplice(ref Key key, ref HashEntryInfo hei, long highestReadCacheAddressChecked)
         {
             Debug.Assert(UseReadCache, "Should not call ReadCacheCheckTailAfterSplice if !UseReadCache");
 
             // We already searched from hei.Address down; so now we search from hei.CurrentAddress down to just above hei.Address.
-            HashBucketEntry entry = new() { word = hei.CurrentAddress | (hei.IsCurrentReadCache ? Constants.kReadCacheBitMask : 0)};
-            HashBucketEntry untilEntry = new() { word = hei.Address | (hei.IsReadCache ? Constants.kReadCacheBitMask : 0) };
+            HashBucketEntry entry = new() { word = hei.CurrentAddress };
+            HashBucketEntry untilEntry = new() { word = highestReadCacheAddressChecked };
 
             // Traverse for the key above untilAddress (which may not be in the readcache if there were no readcache records when it was retrieved).
             while (entry.ReadCache && (entry.Address > untilEntry.Address || !untilEntry.ReadCache))

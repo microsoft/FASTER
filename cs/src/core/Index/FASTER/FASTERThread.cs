@@ -184,7 +184,7 @@ namespace FASTER.core
             {
                 OperationType.READ => ContinuePendingRead(request, ref pendingContext, fasterSession),
                 OperationType.RMW => ContinuePendingRMW(request, ref pendingContext, fasterSession),
-                OperationType.CONDITIONAL_INSERT => ContinuePendingConditionalInsert(request, ref pendingContext, fasterSession),
+                OperationType.CONDITIONAL_INSERT => ContinuePendingConditionalCopyToTail(request, ref pendingContext, fasterSession),
                 _ => throw new FasterException("Unexpected OperationType")
             };
 

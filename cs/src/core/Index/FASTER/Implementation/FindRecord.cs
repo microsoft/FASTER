@@ -47,15 +47,30 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryFindRecordInMainLogOnly(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress)
+        internal bool TryFindRecordInMainLogMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out bool needIO)
         {
-            FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
+            // minAddress is inclusive
+            if (!FindTag(ref stackCtx.hei))
+                return needIO = false;
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
-            if (UseReadCache)
-                SkipReadCache(ref stackCtx, out _); // At this point we have no dependency on source addresses so we don't care if it Refreshed
+            if (!stackCtx.hei.IsReadCache)
+            {
+                if (stackCtx.hei.Address < minAddress)
+                    return needIO = false;
+                if (stackCtx.hei.Address < hlog.HeadAddress)
+                {
+                    needIO = stackCtx.hei.Address >= hlog.BeginAddress;
+                    return false;
+                }
+            }
 
-            return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress);
+            if (UseReadCache)
+                SkipReadCache(ref stackCtx, out _); // Where this is called, we have no dependency on source addresses so we don't care if it Refreshed
+
+            var result = TryFindRecordInMainLog(ref key, ref stackCtx, minAddress < hlog.HeadAddress ? hlog.HeadAddress : minAddress);
+            needIO = stackCtx.recSrc.LogicalAddress < hlog.HeadAddress && stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress;
+            return result;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

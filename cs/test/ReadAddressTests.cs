@@ -439,7 +439,7 @@ namespace FASTER.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, LockingMode.Standard)]
         [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, LockingMode.Ephemeral)]
         [Category("FasterKV"), Category("Read")]
-        public async Task ReadAtAddressAsyncReadFlagsNoneTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] LockingMode lockingMode)
+        public async Task ReadAtAddressAsyncCopyOptionsNoReadCacheTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] LockingMode lockingMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
@@ -475,53 +475,6 @@ namespace FASTER.test.readaddress
                         Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
                     }
 
-                    readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
-                }
-            }
-        }
-
-        // Test is similar to others but tests the Overload where ReadFlag.SkipReadCache is set
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, LockingMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, LockingMode.Standard)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, LockingMode.Ephemeral)]
-        [Category("FasterKV"), Category("Read")]
-        public async Task ReadAtAddressAsyncReadFlagsSkipCacheTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] LockingMode lockingMode)
-        {
-            var useReadCache = urc == UseReadCache.ReadCache;
-            var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, lockingMode);
-            await testStore.Populate(useRMW, useAsync: true);
-            using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
-
-            // Two iterations to ensure no issues due to read-caching or copying to tail.
-            for (int iteration = 0; iteration < 2; ++iteration)
-            {
-                var input = default(Value);
-                var key = new Key(defaultKeyToScan);
-                RecordMetadata recordMetadata = default;
-                ReadOptions readOptions = default;
-
-                for (int lap = maxLap - 1; /* tested in loop */; --lap)
-                {
-                    readOptions.CopyOptions = session.functions.readCopyOptions;
-                    var readAsyncResult = await session.ReadAsync(ref key, ref input, ref readOptions, default, serialNo: maxLap + 1);
-                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
-
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
-                        break;
-
-                    if (readOptions.StartAddress >= testStore.fkv.Log.BeginAddress)
-                    {
-                        var saveOutput = output;
-                        var saveRecordMetadata = recordMetadata;
-
-                        readOptions.CopyOptions = ReadCopyOptions.None;
-                        readAsyncResult = await session.ReadAtAddressAsync(ref input, ref readOptions, default, maxLap + 1);
-                        (status, output) = readAsyncResult.Complete(out recordMetadata);
-
-                        Assert.AreEqual(saveOutput, output);
-                        Assert.AreEqual(saveRecordMetadata.RecordInfo, recordMetadata.RecordInfo);
-                    }
                     readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
                 }
             }
@@ -611,16 +564,16 @@ namespace FASTER.test.readaddress
             await testStore.Flush();
         }
 
-        internal struct ReadFlagsMerge
+        internal struct ReadCopyOptionsMerge
         {
             internal ReadCopyOptions Fkv, Session, Read, Expected;
         }
 
         [Test]
         [Category("FasterKV"), Category("Read")]
-        public void ReadFlagsMergeTest()
+        public void ReadCopyOptionssMergeTest()
         {
-            ReadFlagsMerge[] merges = new ReadFlagsMerge[]
+            ReadCopyOptionsMerge[] merges = new ReadCopyOptionsMerge[]
             {
                 new()
                 {

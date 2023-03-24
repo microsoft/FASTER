@@ -52,8 +52,8 @@ namespace FASTER.core
 
                     if (!recordInfo.Tombstone && !cf.IsDeleted(ref key, ref value))
                     {
-                        var copyStatus = fhtSession.CompactionCopyToTail(ref key, ref input, ref value, ref output, iter1.NextAddress);
-                        if (copyStatus == OperationStatus.RECORD_ON_DISK && ++numPending > 256)
+                        var status = fhtSession.CompactionCopyToTail(ref key, ref input, ref value, ref output, iter1.NextAddress);
+                        if (status.IsPending && ++numPending > 256)
                         {
                             fhtSession.CompletePending(wait: true);
                             numPending = 0;
@@ -142,8 +142,8 @@ namespace FASTER.core
 
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
                     // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
-                    var copyStatus = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1);
-                    if (copyStatus == OperationStatus.RECORD_ON_DISK && ++numPending > 256)
+                    var status = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1);
+                    if (status.IsPending && ++numPending > 256)
                     {
                         fhtSession.CompletePending(wait: true);
                         numPending = 0;

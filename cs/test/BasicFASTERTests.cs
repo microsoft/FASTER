@@ -578,8 +578,6 @@ namespace FASTER.test
             Assert.AreEqual(key1.kfield2, 14);
         }
 
-        // Test the ReadAtAddress where ReadFlags = ReadFlags.SkipReadCache
-
         class SkipReadCacheFunctions : Functions
         {
             internal long expectedReadAddress;
@@ -611,7 +609,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadAtAddressReadFlagsSkipReadCache()
+        public void ReadAtAddressIgnoreReadCache()
         {
             // Another ReadFlag functional test so one device is enough
             deviceType = TestUtils.DeviceType.MLSD;
@@ -674,7 +672,7 @@ namespace FASTER.test
 
             // Put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            readOptions.CopyOptions = ReadCopyOptions.None;
+            readOptions.CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.ReadCache);
             status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending);
             VerifyResult();

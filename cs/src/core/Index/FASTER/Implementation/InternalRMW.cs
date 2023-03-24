@@ -467,7 +467,7 @@ namespace FASTER.core
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
-                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
+                PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 // If IU, status will be NOTFOUND; return that.
                 if (!doingCU)

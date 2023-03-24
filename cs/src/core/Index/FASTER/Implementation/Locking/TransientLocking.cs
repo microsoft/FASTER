@@ -32,8 +32,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void TransientSUnlock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, 
-                ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
+        private void TransientSUnlock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (stackCtx.recSrc.HasTransientLock)

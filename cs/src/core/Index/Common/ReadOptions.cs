@@ -100,5 +100,8 @@ namespace FASTER.core
         /// Options for automatically copying immutable records on Read().
         /// </summary>
         public ReadCopyOptions CopyOptions;
+
+        /// <inheritdoc/>
+        public override string ToString() => $"startAddr: {StartAddress}, stopAddr {StopAddress}, copy {{{CopyOptions}}}";
     }
 }

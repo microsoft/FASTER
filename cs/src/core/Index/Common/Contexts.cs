@@ -160,7 +160,7 @@ namespace FASTER.core
 
             internal RecordInfo recordInfo;
             internal long minAddress;
-            internal WriteReason writeReason;   // for ConditionalInsert
+            internal WriteReason writeReason;   // for ConditionalCopyToTail
 
             // For flushing head pages on tail allocation.
             internal CompletionEvent flushEvent;
