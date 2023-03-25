@@ -985,63 +985,103 @@ inline void HashIndex<D, HID>::ClearTentativeEntries() {
 }
 
 template <class D, class HID>
-inline void HashIndex<D, HID>::DumpDistribution() {
+inline void HashIndex<D, HID>::DumpDistribution() const {
+  const uint16_t kNumBucketsHistBuckets = 8;
+  const uint16_t kNumEntriesHistBuckets = 16;
+
   // stat variables
-  uint64_t total_record_count = 0;
-  uint64_t histogram[16] = { 0 };
+  uint64_t total_entries = 0;
+  uint64_t total_used_entries = 0;
+  // Histogram of (even partially full) buckets per
+  uint64_t num_buckets_hist[kNumBucketsHistBuckets] = { 0 };
+  // Histogram of bucket entries per bucket
+  uint64_t num_entries_hist[kNumEntriesHistBuckets] = { 0 };
+  uint64_t total_bytes = 0;
 
   uint8_t version = this->resize_info.version;
   for(uint64_t bucket_idx = 0; bucket_idx < table_[version].size(); ++bucket_idx) {
     const hash_bucket_t* bucket = &table_[version].bucket(bucket_idx);
-    uint64_t count = 0;
+
+    uint16_t buckets_count = 0;
+    uint16_t entries_count = 0;
 
     while(true) {
+      ++buckets_count;
       for(uint32_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
         hash_bucket_entry_t entry{ bucket->entries[entry_idx].load() };
         if(!entry.unused()) {
-          ++count;
-          ++total_record_count;
+          ++entries_count;
+          ++total_used_entries;
         }
+        ++total_entries;
       }
+
+      total_bytes += sizeof(hash_bucket_t);
       if (!GetNextBucket(bucket, version)) {
         // No more buckets in the chain.
         break;
       }
     }
-    if(count < 15) {
-      ++histogram[count];
-    } else {
-      ++histogram[15];
-    }
+
+    buckets_count = std::min<uint16_t>(buckets_count, kNumBucketsHistBuckets - 1U);
+    ++num_buckets_hist[buckets_count];
+
+    entries_count = std::min<uint16_t>(entries_count, kNumEntriesHistBuckets - 1U);
+    ++num_entries_hist[entries_count];
   }
 
-  fprintf(stderr, "# of hash buckets: %" PRIu64 "\n", table_[version].size());
-  fprintf(stderr, "Total record count: %" PRIu64 "\n", total_record_count);
-  fprintf(stderr, "Histogram:\n");
-  for(uint8_t idx = 0; idx < 15; ++idx) {
-    fprintf(stderr, "%2u : %" PRIu64 "\n", idx, histogram[idx]);
+  uint64_t total_buckets_in_hist = 0;
+  for (uint8_t idx = 0; idx < kNumBucketsHistBuckets; ++idx) {
+    total_buckets_in_hist += num_buckets_hist[idx];
   }
+  uint64_t total_entries_in_hist = 0;
+  for (uint8_t idx = 0; idx < kNumEntriesHistBuckets; ++idx) {
+    total_entries_in_hist += num_entries_hist[idx];
+  }
+
+  fprintf(stderr, "\n==== DUMP DISTRIBUTION ====\n");
+  fprintf(stderr, "Number of hash buckets : %" PRIu64 "\n", table_[version].size());
+  fprintf(stderr, "Total used entries     : %" PRIu64 "\n", total_used_entries);
+  fprintf(stderr, "Percent of used entries: %.2lf%%\n", static_cast<double>(total_used_entries) / total_entries * 100.0);
+  fprintf(stderr, "Total in-mem GiB       : %.2lf GB\n",
+        static_cast<double>(total_bytes) / (1024UL * 1024UL * 1024UL));
+  // Buckets Histogram
+  fprintf(stderr, "# Buckets Histogram:\n");
+  for(uint8_t idx = 0; idx < kNumBucketsHistBuckets - 1; ++idx) {
+    fprintf(stderr, "%2u : [%8lu] {%6.2lf%%}\n", idx, num_buckets_hist[idx],
+      (total_buckets_in_hist > 0) ? static_cast<double>(num_buckets_hist[idx]) / total_buckets_in_hist * 100.0 : 0.0);
+  }
+  fprintf(stderr, "%2u+: [%8lu] {%6.2lf%%}\n", kNumBucketsHistBuckets - 1, num_buckets_hist[kNumBucketsHistBuckets - 1],
+      (total_buckets_in_hist > 0) ? static_cast<double>(num_buckets_hist[kNumBucketsHistBuckets - 1]) / total_buckets_in_hist * 100.0 : 0.0);
+  // Bucket Entries Histogram
+  fprintf(stderr, "\n# Bucket Entries Histogram:\n");
+  for(uint8_t idx = 0; idx < kNumEntriesHistBuckets - 1; ++idx) {
+    fprintf(stderr, "%2u : [%8lu] {%6.2lf%%}\n", idx, num_entries_hist[idx],
+      (total_buckets_in_hist > 0) ? static_cast<double>(num_entries_hist[idx]) / total_buckets_in_hist * 100.0 : 0.0);
+  }
+  fprintf(stderr, "%2u+: [%8lu] {%6.2lf%%}\n", kNumEntriesHistBuckets - 1, num_entries_hist[kNumEntriesHistBuckets - 1],
+      (total_buckets_in_hist > 0) ? static_cast<double>(num_entries_hist[kNumEntriesHistBuckets - 1]) / total_buckets_in_hist * 100.0 : 0.0);
 }
 
 #ifdef STATISTICS
 template <class D, class HID>
 inline void HashIndex<D, HID>::PrintStats() const {
   // FindEntry
-  printf("FindEntry Calls\t: %lu\n", find_entry_calls_.load());
+  fprintf(stderr, "FindEntry Calls\t: %lu\n", find_entry_calls_.load());
   if (find_entry_calls_.load() > 0) {
-    printf("Status::Ok (%%)\t: %.2lf\n",
+    fprintf(stderr, "Status::Ok (%%)\t: %.2lf\n",
       (static_cast<double>(find_entry_success_count_.load()) / find_entry_calls_.load()) * 100.0);
   }
   // FindOrCreateEntry
-  printf("FindOrCreateEntry Calls\t: %lu\n", find_or_create_entry_calls_.load());
+  fprintf(stderr, "FindOrCreateEntry Calls\t: %lu\n", find_or_create_entry_calls_.load());
   // TryUpdateEntry
-  printf("TryUpdateEntry Calls\t: %lu\n", try_update_entry_calls_.load());
+  fprintf(stderr, "TryUpdateEntry Calls\t: %lu\n", try_update_entry_calls_.load());
   if (try_update_entry_calls_.load() > 0) {
-    printf("Status::Ok (%%)\t: %.2lf\n",
+    fprintf(stderr, "Status::Ok (%%)\t: %.2lf\n",
       (static_cast<double>(try_update_entry_success_count_.load()) / try_update_entry_calls_.load()) * 100.0);
   }
   // UpdateEntry
-  printf("UpdateEntry Calls\t: %lu\n\n", update_entry_calls_.load());
+  fprintf(stderr, "UpdateEntry Calls\t: %lu\n\n", update_entry_calls_.load());
 
   DumpDistribution();
 }
