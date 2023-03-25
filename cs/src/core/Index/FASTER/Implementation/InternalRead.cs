@@ -303,6 +303,5 @@ namespace FASTER.core
                 TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
             }
         }
-
     }
 }

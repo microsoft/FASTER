@@ -105,10 +105,10 @@ namespace FASTER.core
         internal void InitializeLockExclusive() => this.word |= kExclusiveLockBitMask;
 
         /// <summary>
-        /// Unlock RecordInfo that was previously locked for exclusive access, via <see cref="TryLockExclusive"/>, and which is a source that has become Sealed.
+        /// Unlock RecordInfo that was previously locked for exclusive access, via <see cref="TryLockExclusive"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockExclusiveAndSeal()
+        public void UnlockExclusive()
         {
             Debug.Assert(!IsLockedShared, "Trying to X unlock an S locked record");
             Debug.Assert(IsLockedExclusive, "Trying to X unlock an unlocked record");
