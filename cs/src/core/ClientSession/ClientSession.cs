@@ -663,10 +663,8 @@ namespace FASTER.core
             var result = fht.InternalCompletePending(fasterSession, wait, requestedOutputs);
             if (spinWaitForCommit)
             {
-                if (wait != true)
-                {
+                if (!wait)
                     throw new FasterException("Can spin-wait for commit (checkpoint completion) only if wait is true");
-                }
                 do
                 {
                     fht.InternalCompletePending(fasterSession, wait, requestedOutputs);

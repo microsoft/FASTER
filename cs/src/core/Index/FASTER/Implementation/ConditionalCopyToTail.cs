@@ -21,7 +21,7 @@ namespace FASTER.core
             while (true)
             {
                 // ConditionalCopyToTail is different in regard to locking from the usual procedures, in that if we find a source record we don't lock--we exit with success.
-                // So we only do LockTable-based locking and only when we are about to insert.
+                // So we only do LockTable-based locking and only when we are about to insert at the tail.
                 if (TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
                 {
                     try
@@ -38,11 +38,11 @@ namespace FASTER.core
                 if (!HandleImmediateRetryStatus(status, fasterSession, ref pendingContext))
                     return status;
 
-                // Failed TryCopyToTail, so probably failed CAS due to another record insertion. Re-traverse from the tail to the highest point we just searched
+                // Failed TryCopyToTail, probably a failed CAS due to another record insertion. Re-traverse from the tail to the highest point we just searched
                 // (which may have gone below HeadAddress). +1 to LatestLogicalAddress because we have examined that already.
                 var minAddress = stackCtx.recSrc.LatestLogicalAddress + 1;
                 stackCtx = new(stackCtx.hei.hash);
-                if (TryFindRecordInMainLogMemory(ref key, ref stackCtx, minAddress, out bool needIO))
+                if (TryFindRecordInMainLogForConditionalCopyToTail(ref key, ref stackCtx, minAddress, out bool needIO))
                     return OperationStatus.SUCCESS;
 
                 // Issue IO if necessary, else loop back up and retry the insert.
@@ -61,7 +61,7 @@ namespace FASTER.core
             PendingContext<Input, Output, Context> pendingContext = new();
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
-            if (TryFindRecordInMainLogMemory(ref key, ref stackCtx, minAddress, out bool needIO))
+            if (TryFindRecordInMainLogForConditionalCopyToTail(ref key, ref stackCtx, minAddress, out bool needIO))
                 return Status.CreateFound();
 
             Context userContext = default;

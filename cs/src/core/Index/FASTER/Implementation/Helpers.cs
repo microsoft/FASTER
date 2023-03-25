@@ -108,7 +108,7 @@ namespace FASTER.core
         private void PostCopyToTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, long highestReadCacheAddressChecked)
         {
             if (stackCtx.recSrc.HasReadCacheSrc)
-                srcRecordInfo.CloseAtomic();
+                srcRecordInfo.SetInvalidAtomic();
 
             // If we are not using the LockTable, then ElideAndReinsertReadCacheChain ensured no conflict between the readcache and the newly-inserted
             // record. Otherwise we spliced it in directly, in which case a competing readcache record may have been inserted; if so, invalidate it.

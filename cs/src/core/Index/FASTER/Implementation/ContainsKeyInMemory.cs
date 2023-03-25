@@ -27,7 +27,7 @@ namespace FASTER.core
                 if (fromAddress < hlog.HeadAddress)
                     fromAddress = hlog.HeadAddress;
 
-                if (TryFindRecordInMainLog(ref key, ref stackCtx, fromAddress))
+                if (TryFindRecordInMainLog(ref key, ref stackCtx, fromAddress) && !stackCtx.recSrc.GetInfo().Tombstone)
                 {
                     logicalAddress = stackCtx.recSrc.LogicalAddress;
                     return new(StatusCode.Found);

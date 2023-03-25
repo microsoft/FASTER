@@ -62,7 +62,7 @@ namespace FASTER.core
 
                 // Update the leading LatestLogicalAddress to recordInfo.PreviousAddress, and if that is a main log record, break out.
                 stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress & ~Constants.kReadCacheBitMask;
-                if (!recordInfo.PreviousAddressIsReadCache)
+                if (!IsReadCache(recordInfo.PreviousAddress))
                     goto InMainLog;
             }
 
@@ -117,47 +117,47 @@ namespace FASTER.core
         {
             // We are not doing LockTable-based locking, so the only place non-ReadCacheEvict codes updates the chain membership is at the HashBucketEntry;
             // no thread will try to splice at the readcache/log boundary. hei.Address is the highest readcache address.
-            HashBucketEntry entry = new() { word = stackCtx.hei.Address };
-            long highestRcAddress = entry.Address, lowestRcAddress = highestRcAddress;
+            long highestRcAddress = stackCtx.hei.Address, lowestRcAddress = highestRcAddress;
+            Debug.Assert(IsReadCache(highestRcAddress), "Expected highestRcAddress to be .ReadCache");
 
             // First detach the chain by CAS'ing in the new log record (whose .PreviousAddress = recSrc.LatestLogicalAddress).
             if (!stackCtx.hei.TryCAS(newLogicalAddress))
                 return false;
-            if (entry.AbsoluteAddress < readcache.HeadAddress)
+            if (AbsoluteAddress(highestRcAddress) < readcache.HeadAddress)
                 goto Success;
 
-            // Traverse from the old address at hash entry to the lowestReadCacheLogicalAddress, invalidating any record matching the key.
-            for (bool found = false; entry.ReadCache && entry.AbsoluteAddress >= readcache.HeadAddress; /* incremented in loop */)
+            // Traverse from highestRcAddress to the splice point, invalidating any record matching the key.
+            for (bool found = false; /* tested in loop */; /* incremented in loop */)
             {
-                lowestRcAddress = entry.Address;
-                var physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
+                var physicalAddress = readcache.GetPhysicalAddress(AbsoluteAddress(lowestRcAddress));
                 ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
                 if (!found && !recordInfo.Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
                 {
                     found = true;
                     recordInfo.SetInvalidAtomic();      // Atomic needed due to other threads (e.g. ReadCacheEvict) possibly being in this chain before we detached it.
                 }
-                entry.word = recordInfo.PreviousAddress;
-            }
 
-            if (AbsoluteAddress(highestRcAddress) >= readcache.HeadAddress)
-            {
-                // Splice the new recordInfo into the local chain. Used atomic due to other threads (e.g. ReadCacheEvict) possibly being in this
-                // before we detached it, and setting the record to Invalid (no other thread will be updating anything else in the chain, though).
-                ref RecordInfo rcri = ref readcache.GetInfo(readcache.GetPhysicalAddress(AbsoluteAddress(lowestRcAddress)));
-                while (!rcri.TryUpdateAddress(rcri.PreviousAddress, newLogicalAddress))
-                    Thread.Yield();
-
-                // Now try to CAS the chain into the HashBucketEntry. If it fails, give up; we lose those readcache records.
-                // Trying to handle conflicts would require evaluating whether other threads had inserted keys in our chain, and it's too rare to worry about.
-                if (stackCtx.hei.TryCAS(highestRcAddress))
+                // See if we're at the last entry in the readcache prefix.
+                if (!IsReadCache(recordInfo.PreviousAddress) || AbsoluteAddress(recordInfo.PreviousAddress) < readcache.HeadAddress)
                 {
-                    // If we go below readcache.HeadAddress ReadCacheEvict may race past us, so make sure the lowest address is still in range.
-                    while (lowestRcAddress < readcache.HeadAddress)
-                        lowestRcAddress = ReadCacheEvictChain(readcache.HeadAddress, ref stackCtx.hei);
+                    // Splice the new recordInfo into the local chain. Use atomic due to other threads (e.g. ReadCacheEvict) possibly being in this
+                    // before we detached it, and setting the record to Invalid (no other thread will be updating anything else in the chain, though).
+                    while (!recordInfo.TryUpdateAddress(recordInfo.PreviousAddress, newLogicalAddress))
+                        Thread.Yield();
+
+                    // Now try to CAS the chain into the HashBucketEntry. If it fails, give up; we lose those readcache records.
+                    // Trying to handle conflicts would require evaluating whether other threads had inserted keys in our chain, and it's too rare to worry about.
+                    if (stackCtx.hei.TryCAS(highestRcAddress))
+                    {
+                        // If we go below readcache.HeadAddress ReadCacheEvict may race past us, so make sure the lowest address is still in range.
+                        while (lowestRcAddress < readcache.HeadAddress)
+                            lowestRcAddress = ReadCacheEvictChain(readcache.HeadAddress, ref stackCtx.hei);
+                    }
+                    goto Success;
                 }
+                lowestRcAddress = recordInfo.PreviousAddress;
             }
-        
+
         Success:
             stackCtx.UpdateRecordSourceToCurrentHashEntry(hlog);
             return true;
@@ -194,7 +194,7 @@ namespace FASTER.core
                 stackCtx.recSrc.LowestReadCachePhysicalAddress = readcache.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
                 RecordInfo recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
-                if (!recordInfo.PreviousAddressIsReadCache)
+                if (!IsReadCache(recordInfo.PreviousAddress))
                 {
                     stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
                     stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
@@ -232,18 +232,18 @@ namespace FASTER.core
 
         // Called after a readcache insert, to make sure there was no race with another session that added a main-log record at the same time.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool EnsureNoNewMainLogRecordWasSpliced(ref Key key, RecordSource<Key, Value> recSrc, long untilLogicalAddress, ref OperationStatus failStatus)
+        private bool EnsureNoNewMainLogRecordWasSpliced(ref Key key, RecordSource<Key, Value> recSrc, long highestSearchedAddress, ref OperationStatus failStatus)
         {
             bool success = true;
             ref RecordInfo lowest_rcri = ref readcache.GetInfo(recSrc.LowestReadCachePhysicalAddress);
-            Debug.Assert(!lowest_rcri.PreviousAddressIsReadCache, "lowest-rcri.PreviousAddress should be a main-log address");
-            if (lowest_rcri.PreviousAddress > untilLogicalAddress)
+            Debug.Assert(!IsReadCache(lowest_rcri.PreviousAddress), "lowest-rcri.PreviousAddress should be a main-log address");
+            if (lowest_rcri.PreviousAddress > highestSearchedAddress)
             {
                 // Someone added a new record in the splice region. It won't be readcache; that would've been added at tail. See if it's our key.
-                var minAddress = untilLogicalAddress > hlog.HeadAddress ? untilLogicalAddress : hlog.HeadAddress;
+                var minAddress = highestSearchedAddress > hlog.HeadAddress ? highestSearchedAddress : hlog.HeadAddress;
                 if (TraceBackForKeyMatch(ref key, lowest_rcri.PreviousAddress, minAddress + 1, out long prevAddress, out _))
                     success = false;
-                else if (prevAddress > untilLogicalAddress && prevAddress < hlog.HeadAddress)
+                else if (prevAddress > highestSearchedAddress && prevAddress < hlog.HeadAddress)
                 {
                     // One or more records were inserted and escaped to disk during the time of this Read/PENDING operation, untilLogicalAddress
                     // is below hlog.HeadAddress, and there are one or more inserted records between them:
@@ -327,7 +327,7 @@ namespace FASTER.core
                 //  2. Call FindTag on that key in the main fkv to get the start of the hash chain.
                 //  3. Walk the hash chain's readcache entries, removing records in the "to be removed" range.
                 //     Do not remove Invalid records outside this range; that leads to race conditions.
-                Debug.Assert(!rcRecordInfo.PreviousAddressIsReadCache || rcRecordInfo.AbsolutePreviousAddress < rcLogicalAddress, "Invalid record ordering in readcache");
+                Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || AbsoluteAddress(rcRecordInfo.PreviousAddress) < rcLogicalAddress, "Invalid record ordering in readcache");
 
                 // Find the hash index entry for the key in the FKV's hash table.
                 ref Key key = ref readcache.GetKey(rcPhysicalAddress);

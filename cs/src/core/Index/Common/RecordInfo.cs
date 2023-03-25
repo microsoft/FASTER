@@ -12,7 +12,7 @@ using static FASTER.core.Utility;
 namespace FASTER.core
 {
     // RecordInfo layout (64 bits total):
-    // [Unused3][Modified][InNewVersion][Filler][Dirty][Unused2][Unused1][Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    // [Unused1][Modified][InNewVersion][Filler][Dirty][Unused2][Sealed][Valid][Tombstone][X][SSSSSS] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     //     where X = exclusive lock, S = shared lock, R = readcache, A = address
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
@@ -233,9 +233,6 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CloseAtomic() => SetInvalidAtomic();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryUpdateAddress(long expectedPrevAddress, long newPrevAddress)
         {
             var expected_word = word;
@@ -349,9 +346,6 @@ namespace FASTER.core
             }
         }
 
-        public bool PreviousAddressIsReadCache => (this.word & Constants.kReadCacheBitMask) != 0;
-        public long AbsolutePreviousAddress => AbsoluteAddress(this.PreviousAddress);
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLength() => kTotalSizeInBytes;
 
@@ -369,10 +363,10 @@ namespace FASTER.core
 
         public override string ToString()
         {
-            var paRC = this.PreviousAddressIsReadCache ? "(rc)" : string.Empty;
+            var paRC = IsReadCache(this.PreviousAddress) ? "(rc)" : string.Empty;
             var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";
             static string bstr(bool value) => value ? "T" : "F";
-            return $"prev {this.AbsolutePreviousAddress}{paRC}, locks {locks}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(this.IsSealed)},"
+            return $"prev {AbsoluteAddress(this.PreviousAddress)}{paRC}, locks {locks}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(this.IsSealed)},"
                  + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
         }
     }

@@ -162,7 +162,7 @@ namespace FASTER.core
                 this.ReadCopyOptions.CopyTo = ReadCopyTo.None;
 
             if (this.ReadCopyOptions.CopyFrom == ReadCopyFrom.Inherit)
-                this.ReadCopyOptions.CopyFrom = ReadCopyFrom.None;
+                this.ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
 
             UpdateVarLen(ref variableLengthStructSettings);
             IVariableLengthStruct<Key> keyLen = null;

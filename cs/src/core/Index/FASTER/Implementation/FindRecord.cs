@@ -47,7 +47,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryFindRecordInMainLogMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out bool needIO)
+        internal bool TryFindRecordInMainLogForConditionalCopyToTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out bool needIO)
         {
             // minAddress is inclusive
             if (!FindTag(ref stackCtx.hei))
@@ -68,9 +68,12 @@ namespace FASTER.core
             if (UseReadCache)
                 SkipReadCache(ref stackCtx, out _); // Where this is called, we have no dependency on source addresses so we don't care if it Refreshed
 
-            var result = TryFindRecordInMainLog(ref key, ref stackCtx, minAddress < hlog.HeadAddress ? hlog.HeadAddress : minAddress);
-            needIO = stackCtx.recSrc.LogicalAddress < hlog.HeadAddress && stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress;
-            return result;
+            needIO = false;
+            if (TryFindRecordInMainLog(ref key, ref stackCtx, minAddress < hlog.HeadAddress ? hlog.HeadAddress : minAddress))
+                return true;
+            
+            needIO = stackCtx.recSrc.LogicalAddress >= minAddress && stackCtx.recSrc.LogicalAddress < hlog.HeadAddress && stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress;
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -115,9 +115,9 @@ namespace FASTER.core
                             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
                                 status = ConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
                                                                ref pendingContext.userContext, pendingContext.serialNum, ref stackCtx, WriteReason.CopyToTail);
-                            else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc)
-                                status = TryCopyToReadCache(ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
-                                                                    ref stackCtx, fasterSession);
+                            else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
+                                    && TryCopyToReadCache(fasterSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref stackCtx))
+                                status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
                         }
                         else
                         {
@@ -260,19 +260,19 @@ namespace FASTER.core
             if (request.logicalAddress >= pendingContext.minAddress)
                 return OperationStatus.SUCCESS;
 
-            // Prepare to copy to tail. Use data from pendingContext, not request; we're only here if the key was not found, and thus the request was not populated.
+            // Prepare to copy to tail. Use data from pendingContext, not request; we're only made it to this line if the key was not found, and thus the request was not populated.
             ref Key key = ref pendingContext.key.Get();
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
- 
+
             // See if the record was added above the highest address we checked before issuing the IO.
             var minAddress = pendingContext.InitialLatestLogicalAddress + 1;
-            if (TryFindRecordInMainLogMemory(ref key, ref stackCtx, minAddress, out bool needIO))
+            if (TryFindRecordInMainLogForConditionalCopyToTail(ref key, ref stackCtx, minAddress, out bool needIO))
                 return OperationStatus.SUCCESS;
 
             // HeadAddress may have risen above minAddress; if so, we need IO.
             if (needIO)
                 return PrepareIOForConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
-                                                  ref pendingContext.output, ref pendingContext.userContext, pendingContext.serialNum, ref stackCtx, minAddress, WriteReason.Compaction);
+                                                    ref pendingContext.output, ref pendingContext.userContext, pendingContext.serialNum, ref stackCtx, minAddress, WriteReason.Compaction);
 
             // No IO needed. 
             return ConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),

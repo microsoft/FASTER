@@ -128,17 +128,9 @@ namespace FASTER.core
                     if (untilAddress < scanUntil)
                         ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempKvSession);
 
-                    // If record is not the latest in tempKv's memory for this key, ignore it
-                    if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress).Found)
-                    {
-                        if (iter3.CurrentAddress != tempKeyAddress)
-                            continue;
-                    }
-                    else
-                    {
-                        // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
+                    // If record is not the latest in tempKv's memory for this key, ignore it (will not be returned if deleted)
+                    if (!tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
                         continue;
-                    }
 
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
                     // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
