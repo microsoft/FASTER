@@ -42,16 +42,21 @@ class FasterIndex : public IHashIndex<D> {
   typedef typename HID::key_hash_t key_hash_t;
   typedef typename HID::hash_bucket_t hash_bucket_t;
   typedef typename HID::hash_bucket_entry_t hash_bucket_entry_t;
+  typedef typename HID::hash_bucket_chunk_entry_t hash_bucket_chunk_entry_t;
+
+  typedef FasterIndexReadContext read_context_t;
+  typedef FasterIndexRmwContext rmw_context_t;
+  typedef HashIndexChunkEntry hash_index_chunk_t;
 
   typedef HashIndex<D, HID> hash_index_t;
-  typedef FasterKv<HashIndexChunkKey, HashIndexChunkEntry, disk_t, hash_index_t, hash_index_t> store_t;
+  typedef FasterKv<HashIndexChunkKey, hash_index_chunk_t, disk_t, hash_index_t, hash_index_t> store_t;
 
   typedef GcStateFasterIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
 
   // 256k rows x 8 entries each = 2M entries
   // 16MB in-mem index (w/o overflow) [2M x 8 bytes each]
-  const uint64_t kHashIndexNumEntries = 256 * 1024;
+  const uint64_t kDefaultHashIndexNumEntries = 256 * 1024;
   // ~4M rows x 8 entries each = ~32M entries
   // 256 MB in-mem index (w/o overflow) [32M x 8 bytes each]
   //const uint64_t kHashIndexNumEntries = 4 * 1024 * 1024;
@@ -80,12 +85,15 @@ class FasterIndex : public IHashIndex<D> {
     assert(table_size_ == 0);
     table_size_ = new_size;
 
-    if(table_size_ != kHashIndexNumEntries) {
+    if(table_size_ != kDefaultHashIndexNumEntries) {
       log_warn("FasterIndex # entries (%lu) is different than default (%lu)",
-                table_size_, kHashIndexNumEntries);
+                table_size_, kDefaultHashIndexNumEntries);
     }
+    log_info("FasterIndex: %lu MB in-memory [~%lu MB IPU]",
+              kInMemSize / (1 << 20UL),
+              static_cast<uint64_t>(kInMemSize * dMutableFraction) / (1 << 20UL));
     store_ = std::make_unique<store_t>(table_size_, kInMemSize,
-                                      index_root_path_, dMutablePercentage);
+                                      index_root_path_, dMutableFraction);
   }
   void SetRefreshCallback(void* faster, RefreshCallback callback) {
     store_->SetRefreshCallback(faster, callback);
@@ -270,8 +278,8 @@ inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context
 
   // TODO: avoid incrementing io_id for every request if possible
   uint64_t io_id = exec_context.io_id++;
-  FasterIndexReadContext context{ OperationType::Read, pending_context, io_id,
-                                  &exec_context.index_io_responses, key, pos };
+  read_context_t context{ OperationType::Read, pending_context, io_id,
+                          &exec_context.index_io_responses, key, pos };
 #ifdef STATISTICS
   context.set_hash_index((void*)this);
 #endif
@@ -383,12 +391,12 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
   // FIXME: avoid incrementing io_id for every request if possible
   uint64_t io_id = exec_context.io_id++;
 
-  // TODO: check usefullness of tentative flag here
-  hash_bucket_entry_t desired_entry{ new_address, pos.tag, false };
-  //fprintf(stderr, "DESIRED = %llu\n", HashBucketEntry{desired_entry}.control_);
-  FasterIndexRmwContext context{ OperationType::RMW, pending_context, io_id,
-                                &exec_context.index_io_responses,
-                                key, pos, force_update, expected_entry, desired_entry };
+  // TODO: check usefulness of tentative flag here
+  hash_bucket_chunk_entry_t desired_entry{ new_address, pos.tag, false };
+  //printf("[%u] DESIRED = {%llu, %u}\n", Thread::id(), desired_entry.address().control(), desired_entry.tag());
+  rmw_context_t context{ OperationType::RMW, pending_context, io_id,
+                        &exec_context.index_io_responses,
+                        key, pos, force_update, expected_entry, desired_entry };
 #ifdef STATISTICS
   context.set_hash_index((void*)this);
 #endif
@@ -454,7 +462,7 @@ void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, S
   index_io_context.result = context->result;
 
   if (context->op_type == OperationType::RMW) {
-    index_io_context.record_address = static_cast<FasterIndexRmwContext*>(ctxt)->record_address();
+    index_io_context.record_address = static_cast<rmw_context_t*>(ctxt)->record_address();
     // NOTE: record address can be Address::kInvalidAddress if FindOrCreateEntry was called
   }
 
@@ -478,7 +486,7 @@ template <class D, class HID>
 template <class RC>
 bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
   if (read_cache != nullptr) {
-    throw std::runtime_error{ "FasterIndex should *not* store read-cach'ed entries" };
+    throw std::runtime_error{ "FasterIndex should *not* store read-cached entries" };
   }
 
   uint64_t chunk = gc_state_->next_chunk++;

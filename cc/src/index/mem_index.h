@@ -32,6 +32,7 @@ class ColdLogHashIndexDefinition {
   typedef ColdLogIndexKeyHash key_hash_t;
   typedef ColdLogIndexHashBucket hash_bucket_t;
   typedef ColdLogIndexHashBucketEntry hash_bucket_entry_t;
+  typedef ColdLogIndexHashBucketEntry hash_bucket_chunk_entry_t;
 };
 
 // Forward Declarations
