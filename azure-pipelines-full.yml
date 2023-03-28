@@ -41,7 +41,7 @@ jobs:
 
   - task: NodeTool@0
     inputs:
-       versionSpec: 13.x
+       versionSpec: 14.x
 
   - script : npm install -g azurite
     displayName: Install Azurite
