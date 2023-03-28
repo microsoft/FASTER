@@ -28,7 +28,7 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         internal async ValueTask CompletePendingAsync<Input, Output, Context, FasterSession>(FasterSession fasterSession,
-                                      CancellationToken token, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
+                                      CancellationToken token, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool orderedResponses)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             while (true)
@@ -36,7 +36,7 @@ namespace FASTER.core
                 fasterSession.UnsafeResumeThread();
                 try
                 {
-                    InternalCompletePendingRequests(fasterSession, completedOutputs);
+                    InternalCompletePendingRequests(fasterSession, completedOutputs, orderedResponses);
                 }
                 finally
                 {
