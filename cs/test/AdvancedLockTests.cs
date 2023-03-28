@@ -5,7 +5,6 @@ using FASTER.core;
 using NUnit.Framework;
 using System;
 using System.Threading;
-using FASTER.test.LockTable;
 using static FASTER.test.TestUtils;
 using System.Threading.Tasks;
 using System.Diagnostics;
@@ -17,7 +16,7 @@ namespace FASTER.test.LockTests
     [TestFixture]
     internal class AdvancedLockTests
     {
-        const int numKeys = 1000;
+        const int numKeys = 500;
         const int valueAdd = 1000000;
         const int mod = 100;
 
@@ -145,7 +144,8 @@ namespace FASTER.test.LockTests
         [Category(FasterKVTestCategory)]
         [Category(LockTestCategory)]
         //[Repeat(100)]
-        public async ValueTask SameKeyInsertAndCTTTest([Values(LockingMode.None, LockingMode.Ephemeral /* Standard will hang */)] LockingMode lockingMode)
+        public async ValueTask SameKeyInsertAndCTTTest([Values(LockingMode.None, LockingMode.Ephemeral /* Standard will hang */)] LockingMode lockingMode, 
+                                                       [Values(ReadCopyTo.ReadCache, ReadCopyTo.MainLog)] ReadCopyTo readCopyTo)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -171,9 +171,9 @@ namespace FASTER.test.LockTests
                     var sleepFlag = (iter % 5 == 0) ? LockFunctionFlags.None : LockFunctionFlags.SleepAfterEventOperation;
                     functions.readCacheInput = new() { flags = LockFunctionFlags.SetEvent | sleepFlag, sleepRangeMs = 10 };
                     int output = 0;
-                    ReadOptions readOptions = default;
+                    ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.Device, readCopyTo) };
 
-                    // This will copy to ReadCache, and the test is trying to cause a race with the above Upsert.
+                    // This will copy to ReadCache or MainLog tail, and the test is trying to cause a race with the above Upsert.
                     var status = readSession.Read(ref key, ref functions.readCacheInput, ref output, ref readOptions, out _);
 
                     // If the Upsert completed before the Read started, we may Read() the Upserted value.

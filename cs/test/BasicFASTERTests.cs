@@ -551,11 +551,10 @@ namespace FASTER.test
             Assert.AreEqual(key1.kfield2, 14);
         }
 
-        // Test the ReadAtAddress where ReadFlags = ReadFlags.none
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadAtAddressReadFlagsNone()
+        public void ReadAtAddressDefaultOptions()
         {
             // Just functional test of ReadFlag so one device is enough
             deviceType = TestUtils.DeviceType.MLSD;
@@ -578,8 +577,6 @@ namespace FASTER.test
             Assert.AreEqual(key1.kfield1, 13);
             Assert.AreEqual(key1.kfield2, 14);
         }
-
-        // Test the ReadAtAddress where ReadFlags = ReadFlags.SkipReadCache
 
         class SkipReadCacheFunctions : Functions
         {
@@ -612,7 +609,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadAtAddressReadFlagsSkipReadCache()
+        public void ReadAtAddressIgnoreReadCache()
         {
             // Another ReadFlag functional test so one device is enough
             deviceType = TestUtils.DeviceType.MLSD;
@@ -667,7 +664,7 @@ namespace FASTER.test
 
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            ReadOptions readOptions = new() { StartAddress = readAtAddress, ReadFlags = ReadFlags.DisableReadCacheUpdates };
+            ReadOptions readOptions = new() { StartAddress = readAtAddress, CopyOptions = ReadCopyOptions.None };
             status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
             VerifyResult();
 
@@ -675,7 +672,7 @@ namespace FASTER.test
 
             // Put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            readOptions.ReadFlags = ReadFlags.None;
+            readOptions.CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.ReadCache);
             status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending);
             VerifyResult();

@@ -75,7 +75,7 @@ namespace FASTER.core
             if (UseReadCache)
             {
                 // DisableReadCacheReads is used by readAtAddress, e.g. to backtrack to previous versions.
-                if (pendingContext.DisableReadCacheReads || pendingContext.NoKey)
+                if (pendingContext.NoKey)
                 {
                     SkipReadCache(ref stackCtx, out _);     // This may refresh, but we haven't examined HeadAddress yet
                     stackCtx.SetRecordSourceToHashEntry(hlog);
@@ -101,7 +101,7 @@ namespace FASTER.core
             }
             #endregion
 
-            // These track the latest main-log address in the tag chain; InternalContinuePendingRead uses them to check for new inserts.
+            // Track the latest searched-below addresses. They are the same if there are no readcache records.
             pendingContext.InitialEntryAddress = stackCtx.hei.Address;
             pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
 
@@ -119,7 +119,7 @@ namespace FASTER.core
             else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
             {
                 // Immutable region
-                status = ReadFromImmutableRegion(ref key, ref input, ref output, useStartAddress, ref stackCtx, ref pendingContext, fasterSession);
+                status = ReadFromImmutableRegion(ref key, ref input, ref output, ref userContext, lsn, useStartAddress, ref stackCtx, ref pendingContext, fasterSession);
                 if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly
                     goto CreatePendingContext;
                 return status;
@@ -202,7 +202,7 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                    TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
                 }
             }
             return false;
@@ -248,12 +248,12 @@ namespace FASTER.core
             }
             finally
             {
-                TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
             }
         }
 
         private OperationStatus ReadFromImmutableRegion<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
-                                    bool useStartAddress, ref OperationStackContext<Key, Value> stackCtx,
+                                    ref Context userContext, long lsn, bool useStartAddress, ref OperationStackContext<Key, Value> stackCtx,
                                     ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -283,19 +283,13 @@ namespace FASTER.core
 
                 if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo))
                 {
-                    if (pendingContext.CopyReadsToTailFromReadOnly)
-                    {
-                        status = InternalTryCopyToTail(ref pendingContext, ref key, ref input, ref recordValue, ref output, ref stackCtx,
-                                                        ref srcRecordInfo, untilLogicalAddress: stackCtx.recSrc.LatestLogicalAddress, fasterSession,
-                                                        reason: WriteReason.CopyToTail);
-                        // status != SUCCESS means no copy to tail was done
-                        if (status == OperationStatus.NOTFOUND || status == OperationStatus.RECORD_ON_DISK)
-                            return readInfo.Action == ReadAction.Expire
-                                ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired)
-                                : OperationStatus.SUCCESS;
-                        return status;
-                    }
-                    return OperationStatus.SUCCESS;
+                    if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable)
+                        return OperationStatus.SUCCESS;
+                    if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
+                        return ConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref userContext, lsn, ref stackCtx, WriteReason.CopyToTail);
+                    if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache
+                            && TryCopyToReadCache(fasterSession, ref pendingContext, ref key, ref input, ref recordValue, ref stackCtx))
+                        return OperationStatus.SUCCESS | OperationStatus.COPIED_RECORD_TO_READ_CACHE;
                 }
                 if (readInfo.Action == ReadAction.CancelOperation)
                     return OperationStatus.CANCELED;
@@ -305,12 +299,9 @@ namespace FASTER.core
             }
             finally
             {
-                // Unlock the record. If doing CopyReadsToTailFromReadOnly, then we have already copied the locks to the new record;
-                // this unlocks the source (old) record; the new record may already be operated on by other threads, which is fine.
                 stackCtx.HandleNewRecordOnException(this);
-                TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
             }
         }
-
     }
 }

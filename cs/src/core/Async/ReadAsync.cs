@@ -105,9 +105,7 @@ namespace FASTER.core
         internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
             ref Key key, ref Input input, ref ReadOptions readOptions, Context context, long serialNo, CancellationToken token, bool noKey = false)
         {
-            var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
-            var operationFlags = PendingContext<Input, Output, Context>.GetOperationFlags(MergeReadFlags(fasterSession.Ctx.ReadFlags, readOptions.ReadFlags), noKey);
-            pcontext.SetOperationFlags(operationFlags, readOptions.StopAddress);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions, ref readOptions, isAsync: true, noKey: true);
             var diskRequest = default(AsyncIOContext<Key, Value>);
 
             fasterSession.UnsafeResumeThread();

@@ -663,10 +663,8 @@ namespace FASTER.core
             var result = fht.InternalCompletePending(fasterSession, wait, requestedOutputs);
             if (spinWaitForCommit)
             {
-                if (wait != true)
-                {
+                if (!wait)
                     throw new FasterException("Can spin-wait for commit (checkpoint completion) only if wait is true");
-                }
                 do
                 {
                     fht.InternalCompletePending(fasterSession, wait, requestedOutputs);
@@ -861,14 +859,13 @@ namespace FASTER.core
         /// <param name="output"></param>
         /// <param name="desiredValue"></param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
-        /// <param name="actualAddress">Actual address of existing key record</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus CompactionCopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long untilAddress, long actualAddress)
+        internal Status CompactionCopyToTail(ref Key key, ref Input input, ref Value desiredValue, ref Output output, long untilAddress)
         {
             UnsafeResumeThread();
             try
             {
-                return fht.InternalCopyToTailForCompaction<Input, Output, Context, InternalFasterSession>(ref key, ref input, ref desiredValue, ref output, untilAddress, actualAddress, FasterSession);
+                return fht.CompactionConditionalCopyToTail<Input, Output, Context, InternalFasterSession>(FasterSession, ref key, ref input, ref desiredValue, ref output, untilAddress);
             }
             finally
             {

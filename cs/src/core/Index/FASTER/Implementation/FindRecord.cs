@@ -34,6 +34,7 @@ namespace FASTER.core
             return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minLog);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress)
         {
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
@@ -43,6 +44,36 @@ namespace FASTER.core
                 TraceBackForKeyMatch(ref key, ref stackCtx.recSrc, minAddress);
             }
             return stackCtx.recSrc.HasInMemorySrc;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryFindRecordInMainLogForConditionalCopyToTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out bool needIO)
+        {
+            // minAddress is inclusive
+            if (!FindTag(ref stackCtx.hei))
+                return needIO = false;
+            stackCtx.SetRecordSourceToHashEntry(hlog);
+
+            if (!stackCtx.hei.IsReadCache)
+            {
+                if (stackCtx.hei.Address < minAddress)
+                    return needIO = false;
+                if (stackCtx.hei.Address < hlog.HeadAddress)
+                {
+                    needIO = stackCtx.hei.Address >= hlog.BeginAddress;
+                    return false;
+                }
+            }
+
+            if (UseReadCache)
+                SkipReadCache(ref stackCtx, out _); // Where this is called, we have no dependency on source addresses so we don't care if it Refreshed
+
+            needIO = false;
+            if (TryFindRecordInMainLog(ref key, ref stackCtx, minAddress < hlog.HeadAddress ? hlog.HeadAddress : minAddress))
+                return true;
+            
+            needIO = stackCtx.recSrc.LogicalAddress >= minAddress && stackCtx.recSrc.LogicalAddress < hlog.HeadAddress && stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress;
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

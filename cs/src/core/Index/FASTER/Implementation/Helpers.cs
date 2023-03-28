@@ -101,16 +101,20 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostInsertAtTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
+        private void PostCopyToTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo) 
+            => PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo, stackCtx.hei.Address);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void PostCopyToTail(ref Key key, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, long highestReadCacheAddressChecked)
         {
             if (stackCtx.recSrc.HasReadCacheSrc)
-                srcRecordInfo.CloseAtomic();
+                srcRecordInfo.SetInvalidAtomic();
 
-            // If we are not using the LockTable, then we ElideAndReinsertReadCacheChain ensured no conflict between the readcache
-            // and the newly-inserted record. Otherwise we spliced it in directly, in which case a competing readcache record may
-            // have been inserted; if so, invalidate it.
+            // If we are not using the LockTable, then ElideAndReinsertReadCacheChain ensured no conflict between the readcache and the newly-inserted
+            // record. Otherwise we spliced it in directly, in which case a competing readcache record may have been inserted; if so, invalidate it.
+            // highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.
             if (UseReadCache && LockTable.IsEnabled)
-                ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei);
+                ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei, highestReadCacheAddressChecked);
         }
 
         // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.

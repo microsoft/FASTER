@@ -59,7 +59,7 @@ namespace FASTER.core
         /// <summary>
         /// Control Read operations. These flags may be overridden by flags specified on session.NewSession or on the individual Read() operations
         /// </summary>
-        public ReadFlags ReadFlags;
+        public ReadCopyOptions ReadCopyOptions;
 
         /// <summary>
         /// Whether to preallocate the entire log (pages) in memory
@@ -196,6 +196,7 @@ namespace FASTER.core
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
             retStr += $"; mutable fraction: {MutableFraction}; locking mode: {this.LockingMode}";
             retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
+            retStr += $"; read copy options: {ReadCopyOptions}";
             if (ReadCacheEnabled)
                 retStr += $"; rc memory: {Utility.PrettySize(ReadCacheMemorySize)}; rc page: {Utility.PrettySize(ReadCachePageSize)}";
             return retStr;
@@ -206,8 +207,8 @@ namespace FASTER.core
             long adjustedSize = Utility.PreviousPowerOf2(IndexSize);
             if (adjustedSize < 512)
                 throw new FasterException($"{nameof(IndexSize)} should be at least of size 8 cache line (512 bytes)");
-            if (IndexSize != adjustedSize)
-                logger?.LogInformation($"Warning: using lower value {adjustedSize} instead of specified {IndexSize} for {nameof(IndexSize)}");
+            if (IndexSize != adjustedSize)  // Don't use string interpolation when logging messages because it makes it impossible to group by the message template.
+                logger?.LogInformation("Warning: using lower value {0} instead of specified {1} for {2}", adjustedSize, IndexSize, nameof(IndexSize));
             return adjustedSize / 64;
         }
 
@@ -215,7 +216,7 @@ namespace FASTER.core
         {
             return new LogSettings
             {
-                ReadFlags = ReadFlags,
+                ReadCopyOptions = ReadCopyOptions,
                 LogDevice = LogDevice,
                 ObjectLogDevice = ObjectLogDevice,
                 MemorySizeBits = Utility.NumBitsPreviousPowerOf2(MemorySize),

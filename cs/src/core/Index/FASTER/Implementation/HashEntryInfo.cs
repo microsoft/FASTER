@@ -58,7 +58,7 @@ namespace FASTER.core
         /// <summary>
         /// Return whether the <see cref="HashBucketEntry"/> has been updated
         /// </summary>
-        internal bool IsNotCurrent => this.CurrentAddress != this.Address;
+        internal bool IsCurrent => this.CurrentAddress == this.Address;
 
         /// <summary>
         /// Whether the original address for this hash entry (at the time of FindTag, etc.) is a readcache address.
@@ -68,7 +68,7 @@ namespace FASTER.core
         /// <summary>
         /// Whether the current address for this hash entry (possibly modified after FindTag, etc.) is a readcache address.
         /// </summary>
-        internal bool IsCurrentReadCache => IsReadCache(this.bucket->bucket_entries[this.slot]);
+        internal bool IsCurrentReadCache => IsReadCache(this.CurrentAddress);
 
         /// <summary>
         /// Set members to the current entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)

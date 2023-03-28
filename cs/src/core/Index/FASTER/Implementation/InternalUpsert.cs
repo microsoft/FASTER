@@ -173,9 +173,12 @@ namespace FASTER.core
             Debug.Assert(latchDestination == LatchDestination.CreatePendingContext, $"Upsert CreatePendingContext encountered latchDest == {latchDestination}");
             {
                 pendingContext.type = OperationType.UPSERT;
-                if (pendingContext.key == default) pendingContext.key = hlog.GetKeyContainer(ref key);
-                if (pendingContext.input == default) pendingContext.input = fasterSession.GetHeapContainer(ref input);
-                if (pendingContext.value == default) pendingContext.value = hlog.GetValueContainer(ref value);
+                if (pendingContext.key == default) 
+                    pendingContext.key = hlog.GetKeyContainer(ref key);
+                if (pendingContext.input == default) 
+                    pendingContext.input = fasterSession.GetHeapContainer(ref input);
+                if (pendingContext.value == default) 
+                    pendingContext.value = hlog.GetValueContainer(ref value);
 
                 pendingContext.output = output;
                 if (pendingContext.output is IHeapConvertible heapConvertible)
@@ -340,7 +343,7 @@ namespace FASTER.core
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
-                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
+                PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
                 if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal)

@@ -60,9 +60,9 @@ namespace FASTER.core
         public double MutableFraction = 0.9;
 
         /// <summary>
-        /// Control Read operations. These flags may be overridden by flags specified on session.NewSession or on the individual Read() operations
+        /// Control Read copy operations. These values may be overridden by flags specified on session.NewSession or on the individual Read() operations
         /// </summary>
-        public ReadFlags ReadFlags;
+        public ReadCopyOptions ReadCopyOptions;
 
         /// <summary>
         /// Settings for optional read cache

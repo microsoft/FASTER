@@ -342,7 +342,7 @@ namespace ResizableCacheStore
             {
                 LogDevice = log, ObjectLogDevice = objectLog,
                 MutableFraction = 0.9, // 10% of memory log is "read-only region"
-                ReadFlags = UseReadCTT ? ReadFlags.CopyReadsToTail : ReadFlags.None, // whether reads in read-only region are copied to tail
+                ReadCopyOptions = UseReadCTT ? new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) : ReadCopyOptions.None, // whether reads in read-only region are copied to tail
                 PageSizeBits = PageSizeBits,
                 MemorySizeBits = MemorySizeBits
             };

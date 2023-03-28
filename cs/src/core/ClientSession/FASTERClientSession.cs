@@ -34,13 +34,13 @@ namespace FASTER.core
             /// <param name="functions">Callback functions</param>
             /// <param name="sessionName">Name of session (optional)</param>
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-            /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+            /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
             public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(Functions functions, string sessionName = null,
-                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
-                return _fasterKV.NewSession<Input, Output, Context, Functions>(functions, sessionName, sessionVariableLengthStructSettings, readFlags);
+                return _fasterKV.NewSession<Input, Output, Context, Functions>(functions, sessionName, sessionVariableLengthStructSettings, readCopyOptions);
             }
 
             /// <summary>
@@ -50,13 +50,13 @@ namespace FASTER.core
             /// <param name="sessionName">Name of previous session to resume</param>
             /// <param name="commitPoint">Prior commit point of durability for session</param>
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-            /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+            /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
             public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(Functions functions, string sessionName, out CommitPoint commitPoint,
-                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
-                return _fasterKV.ResumeSession<Input, Output, Context, Functions>(functions, sessionName, out commitPoint, sessionVariableLengthStructSettings, readFlags);
+                return _fasterKV.ResumeSession<Input, Output, Context, Functions>(functions, sessionName, out commitPoint, sessionVariableLengthStructSettings, readCopyOptions);
             }
 
             /// <summary>
@@ -64,16 +64,16 @@ namespace FASTER.core
             /// </summary>
             /// <param name="sessionName">Name of session (optional)</param>
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-            /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+            /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
             public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(string sessionName = null, 
-                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
                 if (_functions == null)
                     throw new FasterException("Functions not provided for session");
 
-                return _fasterKV.NewSession<Input, Output, Context, Functions>((Functions)_functions, sessionName, sessionVariableLengthStructSettings, readFlags);
+                return _fasterKV.NewSession<Input, Output, Context, Functions>((Functions)_functions, sessionName, sessionVariableLengthStructSettings, readCopyOptions);
             }
 
             /// <summary>
@@ -83,16 +83,16 @@ namespace FASTER.core
             /// <param name="sessionName">Name of previous session to resume</param>
             /// <param name="commitPoint">Prior commit point of durability for session</param>
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-            /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+            /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
             public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(string sessionName, out CommitPoint commitPoint,
-                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
                 if (_functions == null)
                     throw new FasterException("Functions not provided for session");
 
-                return _fasterKV.ResumeSession<Input, Output, Context, Functions>((Functions)_functions, sessionName, out commitPoint, sessionVariableLengthStructSettings, readFlags);
+                return _fasterKV.ResumeSession<Input, Output, Context, Functions>((Functions)_functions, sessionName, out commitPoint, sessionVariableLengthStructSettings, readCopyOptions);
             }
 
             /// <summary>
@@ -102,16 +102,16 @@ namespace FASTER.core
             /// <param name="sessionID">ID of previous session to resume</param>
             /// <param name="commitPoint">Prior commit point of durability for session</param>
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-            /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+            /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
             public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(int sessionID, out CommitPoint commitPoint,
-                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                    SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
                 if (_functions == null)
                     throw new FasterException("Functions not provided for session");
 
-                return _fasterKV.ResumeSession<Input, Output, Context, Functions>((Functions)_functions, sessionID, out commitPoint, sessionVariableLengthStructSettings, readFlags);
+                return _fasterKV.ResumeSession<Input, Output, Context, Functions>((Functions)_functions, sessionID, out commitPoint, sessionVariableLengthStructSettings, readCopyOptions);
             }
         }
 
@@ -134,12 +134,12 @@ namespace FASTER.core
         /// <param name="functions">Callback functions</param>
         /// <param name="sessionName">Name of session (auto-generated if not provided)</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-        /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+        /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
         public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> NewSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, string sessionName = null,
-                SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
         {
-            return NewSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionName, sessionVariableLengthStructSettings, readFlags);
+            return NewSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionName, sessionVariableLengthStructSettings, readCopyOptions);
         }
 
         /// <summary>
@@ -148,16 +148,16 @@ namespace FASTER.core
         /// <param name="functions">Callback functions</param>
         /// <param name="sessionName">Name of session (optional)</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-        /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+        /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
         internal ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionName = null,
-                SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             => InternalNewSession<Input, Output, Context, Functions, ClientSession<Key, Value, Input, Output, Context, Functions>>(functions, sessionName,
-                            ctx => new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, sessionVariableLengthStructSettings), readFlags);
+                            ctx => new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, sessionVariableLengthStructSettings), readCopyOptions);
 
         private TSession InternalNewSession<Input, Output, Context, Functions, TSession>(Functions functions, string sessionName,
-                                                                            Func<FasterExecutionContext<Input, Output, Context>, TSession> sessionCreator, ReadFlags readFlags)
+                                                                            Func<FasterExecutionContext<Input, Output, Context>, TSession> sessionCreator, ReadCopyOptions readCopyOptions)
             where TSession : IClientSession
         {
             if (functions == null)
@@ -172,11 +172,11 @@ namespace FASTER.core
             int sessionID = Interlocked.Increment(ref maxSessionID);
             var ctx = new FasterExecutionContext<Input, Output, Context>();
             InitContext(ctx, sessionID, sessionName);
-            ctx.ReadFlags = MergeReadFlags(ReadFlags, readFlags);
+            ctx.MergeReadCopyOptions(this.ReadCopyOptions, readCopyOptions);
             var prevCtx = new FasterExecutionContext<Input, Output, Context>();
             InitContext(prevCtx, sessionID, sessionName);
             prevCtx.version--;
-            prevCtx.ReadFlags = ctx.ReadFlags;
+            prevCtx.ReadCopyOptions = ctx.ReadCopyOptions;
 
             ctx.prevCtx = prevCtx;
 
@@ -197,12 +197,12 @@ namespace FASTER.core
         /// <param name="sessionName">Name of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-        /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+        /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
         public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, string sessionName,
-                out CommitPoint commitPoint, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                out CommitPoint commitPoint, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
         {
-            return ResumeSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionName, out commitPoint, sessionVariableLengthStructSettings, readFlags);
+            return ResumeSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionName, out commitPoint, sessionVariableLengthStructSettings, readCopyOptions);
         }
 
         /// <summary>
@@ -213,17 +213,17 @@ namespace FASTER.core
         /// <param name="sessionName">Name of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-        /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+        /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
         internal ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionName, out CommitPoint commitPoint,
-                SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             if (_recoveredSessionNameMap == null || !_recoveredSessionNameMap.TryRemove(sessionName, out int sessionID))
                 throw new FasterException($"Unable to find session named {sessionName} to recover");
 
             return InternalResumeSession<Input, Output, Context, Functions, ClientSession<Key, Value, Input, Output, Context, Functions>>(functions, sessionID, out commitPoint,
-                        ctx => new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, sessionVariableLengthStructSettings), readFlags);
+                        ctx => new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, sessionVariableLengthStructSettings), readCopyOptions);
         }
 
         /// <summary>
@@ -234,12 +234,12 @@ namespace FASTER.core
         /// <param name="sessionID">ID of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-        /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+        /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
         public ClientSession<Key, Value, Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>> ResumeSession<Input, Output, Context>(IFunctions<Key, Value, Input, Output, Context> functions, int sessionID,
-                out CommitPoint commitPoint, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                out CommitPoint commitPoint, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
         {
-            return ResumeSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionID, out commitPoint, sessionVariableLengthStructSettings, readFlags);
+            return ResumeSession<Input, Output, Context, IFunctions<Key, Value, Input, Output, Context>>(functions, sessionID, out commitPoint, sessionVariableLengthStructSettings, readCopyOptions);
         }
 
         /// <summary>
@@ -250,18 +250,18 @@ namespace FASTER.core
         /// <param name="sessionID">ID of previous session to resume</param>
         /// <param name="commitPoint">Prior commit point of durability for session</param>
         /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
-        /// <param name="readFlags">ReadFlags for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
+        /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
         internal ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, int sessionID, out CommitPoint commitPoint,
-                SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadFlags readFlags = ReadFlags.Default)
+                SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             return InternalResumeSession<Input, Output, Context, Functions, ClientSession<Key, Value, Input, Output, Context, Functions>>(functions, sessionID, out commitPoint,
-                        ctx => new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, sessionVariableLengthStructSettings), readFlags);
+                        ctx => new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions, sessionVariableLengthStructSettings), readCopyOptions);
         }
 
         private TSession InternalResumeSession<Input, Output, Context, Functions, TSession>(Functions functions, int sessionID, out CommitPoint commitPoint,
-                                                                                            Func<FasterExecutionContext<Input, Output, Context>, TSession> sessionCreator, ReadFlags readFlags)
+                                                                                            Func<FasterExecutionContext<Input, Output, Context>, TSession> sessionCreator, ReadCopyOptions readCopyOptions)
              where TSession : IClientSession
         {
             if (functions == null)
@@ -271,7 +271,7 @@ namespace FASTER.core
             (sessionName, commitPoint) = InternalContinue<Input, Output, Context>(sessionID, out var ctx);
             if (commitPoint.UntilSerialNo == -1)
                 throw new Exception($"Unable to find session {sessionID} to recover");
-            ctx.ReadFlags = MergeReadFlags(ReadFlags, readFlags);
+            ctx.MergeReadCopyOptions(this.ReadCopyOptions, readCopyOptions);
 
             var session = sessionCreator(ctx);
 

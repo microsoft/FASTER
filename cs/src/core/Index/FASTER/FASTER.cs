@@ -26,7 +26,7 @@ namespace FASTER.core
         internal readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
-        private readonly ReadFlags ReadFlags;
+        private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete;
 
@@ -153,11 +153,18 @@ namespace FASTER.core
             if (checkpointSettings.CheckpointManager is null)
                 disposeCheckpointManager = true;
 
-            this.ReadFlags = logSettings.ReadFlags;
             UseReadCache = logSettings.ReadCacheSettings is not null;
 
-            UpdateVarLen(ref variableLengthStructSettings);
+            this.ReadCopyOptions = logSettings.ReadCopyOptions;
+            if (this.ReadCopyOptions.CopyTo == ReadCopyTo.Inherit)
+                this.ReadCopyOptions.CopyTo = UseReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.None;
+            else if (this.ReadCopyOptions.CopyTo == ReadCopyTo.ReadCache && !UseReadCache)
+                this.ReadCopyOptions.CopyTo = ReadCopyTo.None;
 
+            if (this.ReadCopyOptions.CopyFrom == ReadCopyFrom.Inherit)
+                this.ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
+
+            UpdateVarLen(ref variableLengthStructSettings);
             IVariableLengthStruct<Key> keyLen = null;
 
             if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength is null) ||
@@ -212,7 +219,7 @@ namespace FASTER.core
                 {
                     readcache = new BlittableAllocator<Key, Value>(
                         new LogSettings
-                        {
+                       {
                             LogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
@@ -567,21 +574,11 @@ namespace FASTER.core
             }
         }
 
-        internal static ReadFlags MergeReadFlags(ReadFlags upper, ReadFlags lower)
-        {
-            // If lower is None, start with Default, else start with "upper without None"
-            ReadFlags flags = ((lower & ReadFlags.None) == 0) ? (upper & ~ReadFlags.None) : ReadFlags.Default;
-            // Add in "lower without None"
-            flags |= (lower & ~ReadFlags.None);
-            return flags;
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(fasterSession.Ctx.ReadFlags);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
             do 
                 internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, serialNo);
@@ -599,8 +596,7 @@ namespace FASTER.core
                 FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(MergeReadFlags(fasterSession.Ctx.ReadFlags, readOptions.ReadFlags), ref readOptions);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
             do
                 internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
@@ -618,8 +614,7 @@ namespace FASTER.core
         internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(ref Input input, ref Output output, ref ReadOptions readOptions, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(MergeReadFlags(fasterSession.Ctx.ReadFlags, readOptions.ReadFlags), ref readOptions, noKey: true);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
             Key key = default;
             OperationStatus internalStatus;
             do

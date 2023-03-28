@@ -19,7 +19,8 @@ namespace FASTER.core
         READ,
         RMW,
         UPSERT,
-        DELETE
+        DELETE,
+        CONDITIONAL_INSERT,
     }
 
     [Flags]
@@ -149,10 +150,17 @@ namespace FASTER.core
             internal long serialNum;
             internal HashBucketEntry entry;
 
+            // operationFlags values
             internal ushort operationFlags;
+            internal const ushort kNoOpFlags = 0;
+            internal const ushort kNoKey = 0x0001;
+            internal const ushort kIsAsync = 0x0002;
+
+            internal ReadCopyOptions readCopyOptions;
+
             internal RecordInfo recordInfo;
             internal long minAddress;
-            internal LockOperation lockOperation;
+            internal WriteReason writeReason;   // for ConditionalCopyToTail
 
             // For flushing head pages on tail allocation.
             internal CompletionEvent flushEvent;
@@ -160,22 +168,22 @@ namespace FASTER.core
             // For RMW if an allocation caused the source record for a copy to go from readonly to below HeadAddress, or for any operation with CAS failure.
             internal long retryNewLogicalAddress;
 
-            // BEGIN Must be kept in sync with corresponding ReadFlags enum values
-            internal const ushort kDisableReadCacheUpdates = 0x0001;
-            internal const ushort kDisableReadCacheReads = 0x0002;
-            internal const ushort kCopyReadsToTail = 0x0004;
-            internal const ushort kCopyFromDeviceOnly = 0x0008;
-            internal const ushort kResetModifiedBit = 0x0010;
-            // END  Must be kept in sync with corresponding ReadFlags enum values
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions, bool isAsync = false, bool noKey = false)
+            {
+                // The async flag is often set when the PendingContext is created, so preserve that.
+                this.operationFlags = (ushort)((noKey ? kNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
+                this.readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
+                this.minAddress = readOptions.StopAddress;
+            }
 
-            internal const ushort kNoKey = 0x0100;
-            internal const ushort kIsAsync = 0x0200;
-
-            // Flags for various operations passed at multiple levels, e.g. through RETRY_NOW.
-            internal const ushort kUnused1 = 0x1000;
-            internal const ushort kUnused2 = 0x2000;
-            internal const ushort kUnused3 = 0x4000;
-            internal const ushort kHasExpiration = 0x8000;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal PendingContext(ReadCopyOptions readCopyOptions, bool isAsync = false, bool noKey = false)
+            {
+                // The async flag is often set when the PendingContext is created, so preserve that.
+                this.operationFlags = (ushort)((noKey ? kNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
+                this.readCopyOptions = readCopyOptions;
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -193,59 +201,11 @@ namespace FASTER.core
                 return tempInputContainer;
             }
 
-            static PendingContext()
-            {
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheUpdates >> 1 == kDisableReadCacheUpdates);
-                Debug.Assert((ushort)ReadFlags.DisableReadCacheReads >> 1 == kDisableReadCacheReads);
-                Debug.Assert((ushort)ReadFlags.CopyReadsToTail >> 1 == kCopyReadsToTail);
-                Debug.Assert((ushort)ReadFlags.CopyFromDeviceOnly >> 1 == kCopyFromDeviceOnly);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static ushort GetOperationFlags(ReadFlags readFlags) 
-                => (ushort)((int)(readFlags & (ReadFlags.DisableReadCacheUpdates | ReadFlags.DisableReadCacheReads | ReadFlags.CopyReadsToTail | ReadFlags.CopyFromDeviceOnly)) >> 1);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static ushort GetOperationFlags(ReadFlags readFlags, bool noKey)
-            {
-                ushort flags = GetOperationFlags(readFlags);
-                if (noKey)
-                    flags |= kNoKey;
-                return flags;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions) => this.SetOperationFlags(GetOperationFlags(readFlags), readOptions.StopAddress);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, ref ReadOptions readOptions, bool noKey) => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), readOptions.StopAddress);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags) => this.operationFlags = GetOperationFlags(readFlags);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ushort flags, long stopAddress)
-            {
-                // The async flag is often set when the PendingContext is created, so preserve that.
-                this.operationFlags = (ushort)(flags | (this.operationFlags & kIsAsync));
-                this.minAddress = stopAddress;
-            }
-
             internal bool NoKey
             {
                 get => (operationFlags & kNoKey) != 0;
                 set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
             }
-
-            internal bool DisableReadCacheUpdates => (operationFlags & kDisableReadCacheUpdates) != 0;
-
-            internal bool DisableReadCacheReads => (operationFlags & kDisableReadCacheReads) != 0;
-
-            internal bool CopyReadsToTail => (operationFlags & kCopyReadsToTail) != 0;
-
-            internal bool CopyReadsToTailFromReadOnly => (operationFlags & (kCopyReadsToTail | kCopyFromDeviceOnly)) == kCopyReadsToTail;
-
-            internal bool CopyFromDeviceOnly => (operationFlags & kCopyFromDeviceOnly) != 0;
 
             internal bool HasMinAddress => this.minAddress != Constants.kInvalidAddress;
 
@@ -283,8 +243,8 @@ namespace FASTER.core
             internal int sessionID;
             internal string sessionName;
 
-            // Control Read operations. These flags override flags specified at the FasterKV level, but may be overridden on the individual Read() operations
-            internal ReadFlags ReadFlags;
+            // Control automatic Read copy operations. These flags override flags specified at the FasterKV level, but may be overridden on the individual Read() operations
+            internal ReadCopyOptions ReadCopyOptions;
 
             internal long version;
             internal long serialNum;
@@ -301,14 +261,10 @@ namespace FASTER.core
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 
-            public bool HasNoPendingRequests
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get
-                {
-                    return SyncIoPendingCount == 0;
-                }
-            }
+            internal void MergeReadCopyOptions(ReadCopyOptions storeCopyOptions, ReadCopyOptions copyOptions)
+                => this.ReadCopyOptions = ReadCopyOptions.Merge(storeCopyOptions, copyOptions);
+
+            public bool HasNoPendingRequests => SyncIoPendingCount == 0;
 
             public void WaitPending(LightEpoch epoch)
             {

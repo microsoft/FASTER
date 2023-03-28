@@ -180,9 +180,13 @@ namespace FASTER.core
                 pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
             ref Key key = ref pendingContext.key.Get();
 
-            OperationStatus internalStatus = pendingContext.type == OperationType.READ
-                ? InternalContinuePendingRead(request, ref pendingContext, fasterSession)
-                : InternalContinuePendingRMW(request, ref pendingContext, fasterSession);
+            OperationStatus internalStatus = pendingContext.type switch
+            {
+                OperationType.READ => ContinuePendingRead(request, ref pendingContext, fasterSession),
+                OperationType.RMW => ContinuePendingRMW(request, ref pendingContext, fasterSession),
+                OperationType.CONDITIONAL_INSERT => ContinuePendingConditionalCopyToTail(request, ref pendingContext, fasterSession),
+                _ => throw new FasterException("Unexpected OperationType")
+            };
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pendingContext, internalStatus, out newRequest);
 

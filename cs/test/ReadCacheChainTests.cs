@@ -436,7 +436,7 @@ namespace FASTER.test.ReadCacheTests
 
             using var session = fht.NewSession(new SimpleFunctions<long, long>());
             long input = 0, output = 0, key = lowChainKey - mod; // key must be in evicted region for this test
-            ReadOptions readOptions = new() { ReadFlags = ReadFlags.CopyReadsToTail };
+            ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
 
             var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());
@@ -632,9 +632,9 @@ namespace FASTER.test.ReadCacheTests
 
         struct LongComparerModulo : IFasterEqualityComparer<long>
         {
-            readonly ModuloRange modRange;
+            readonly HashModulo modRange;
 
-            internal LongComparerModulo(ModuloRange mod) => this.modRange = mod;
+            internal LongComparerModulo(HashModulo mod) => this.modRange = mod;
 
             public bool Equals(ref long k1, ref long k2) => k1 == k2;
 
@@ -642,7 +642,7 @@ namespace FASTER.test.ReadCacheTests
             public long GetHashCode64(ref long k)
             {
                 long value = Utility.GetHashCode(k);
-                return this.modRange != ModuloRange.None ? value % (long)modRange : value;
+                return this.modRange != HashModulo.NoMod ? value % (long)modRange : value;
             }
         }
 
@@ -666,10 +666,10 @@ namespace FASTER.test.ReadCacheTests
             ReadCacheSettings readCacheSettings = new() { MemorySizeBits = 15, PageSizeBits = 9 };
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
 
-            ModuloRange modRange = ModuloRange.None;
+            HashModulo modRange = HashModulo.NoMod;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is ModuloRange cr)
+                if (arg is HashModulo cr)
                 {
                     modRange = cr;
                     continue;
@@ -728,8 +728,6 @@ namespace FASTER.test.ReadCacheTests
             }
         }
 
-        public enum ModuloRange { Hundred = 100, Thousand = 1000, None = int.MaxValue }
-
         unsafe void PopulateAndEvict()
         {
             using var session = fht.NewSession(new SimpleFunctions<long, long, Empty>());
@@ -751,7 +749,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(StressTestCategory)]
         //[Repeat(300)]
 #pragma warning disable IDE0060 // Remove unused parameter (modRange is used by Setup())
-        public void LongRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
+        public void LongRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
                                           [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
 #if WINDOWS
                                               [Values(DeviceType.LSD
@@ -848,9 +846,9 @@ namespace FASTER.test.ReadCacheTests
 
         struct SpanByteComparerModulo : IFasterEqualityComparer<SpanByte>
         {
-            readonly ModuloRange modRange;
+            readonly HashModulo modRange;
 
-            internal SpanByteComparerModulo(ModuloRange mod) => this.modRange = mod;
+            internal SpanByteComparerModulo(HashModulo mod) => this.modRange = mod;
 
             public bool Equals(ref SpanByte k1, ref SpanByte k2) => SpanByteComparer.StaticEquals(ref k1, ref k2);
 
@@ -858,7 +856,7 @@ namespace FASTER.test.ReadCacheTests
             public long GetHashCode64(ref SpanByte k)
             {
                 var value = SpanByteComparer.StaticGetHashCode64(ref k);
-                return this.modRange != ModuloRange.None ? value % (long)modRange : value;
+                return this.modRange != HashModulo.NoMod ? value % (long)modRange : value;
             }
         }
 
@@ -882,10 +880,10 @@ namespace FASTER.test.ReadCacheTests
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
             var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
 
-            ModuloRange modRange = ModuloRange.None;
+            HashModulo modRange = HashModulo.NoMod;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is ModuloRange cr)
+                if (arg is HashModulo cr)
                 {
                     modRange = cr;
                     continue;
@@ -949,8 +947,6 @@ namespace FASTER.test.ReadCacheTests
             }
         }
 
-        public enum ModuloRange { Hundred = 100, Thousand = 1000, None = int.MaxValue }
-
         unsafe void PopulateAndEvict()
         {
             using var session = fht.NewSession(new SpanByteFunctions<Empty>());
@@ -980,7 +976,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
         //[Repeat(300)]
-        public void SpanByteRcMultiThreadTest([Values] ModuloRange modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
+        public void SpanByteRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
                                               [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
 #if WINDOWS
                                               [Values(DeviceType.LSD

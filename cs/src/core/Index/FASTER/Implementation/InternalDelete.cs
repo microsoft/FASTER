@@ -261,7 +261,7 @@ namespace FASTER.core
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
-                PostInsertAtTail(ref key, ref stackCtx, ref srcRecordInfo);
+                PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
