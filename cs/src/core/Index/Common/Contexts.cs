@@ -64,8 +64,8 @@ namespace FASTER.core
         RETRY_LATER,
 
         /// <summary>
-        /// I/O has been enqueued and the caller must go through <see cref="IFasterContext{Key, Value, Input, Output, Context}.CompletePending(bool, bool)"/> or
-        /// <see cref="IFasterContext{Key, Value, Input, Output, Context}.CompletePendingWithOutputs(out CompletedOutputIterator{Key, Value, Input, Output, Context}, bool, bool)"/>,
+        /// I/O has been enqueued and the caller must go through <see cref="IFasterContext{Key, Value, Input, Output, Context}.CompletePending(bool, bool, bool)"/> or
+        /// <see cref="IFasterContext{Key, Value, Input, Output, Context}.CompletePendingWithOutputs(out CompletedOutputIterator{Key, Value, Input, Output, Context}, bool, bool, bool)"/>,
         /// or one of the Async forms.
         /// </summary>
         RECORD_ON_DISK,
@@ -238,6 +238,14 @@ namespace FASTER.core
             }
         }
 
+        internal class AsyncIoContextComparer : IComparer<AsyncIOContext<Key, Value>>
+        {
+            public int Compare(AsyncIOContext<Key, Value> x, AsyncIOContext<Key, Value> y)
+            {
+                return x.id.CompareTo(y.id);
+            }
+        }
+
         internal sealed class FasterExecutionContext<Input, Output, Context>
         {
             internal int sessionID;
@@ -255,6 +263,12 @@ namespace FASTER.core
             public Dictionary<long, PendingContext<Input, Output, Context>> ioPendingRequests;
             public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
+#if NET5_0_OR_GREATER
+            public PriorityQueue<AsyncIOContext<Key, Value>, long> orderedResponses;
+#else
+            public SortedSet<AsyncIOContext<Key, Value>> orderedResponses;
+            public static readonly AsyncIoContextComparer asyncIoContextComparer = new();
+#endif
             public List<long> excludedSerialNos;
             public int asyncPendingCount;
             public ISynchronizationStateMachine threadStateMachine;

@@ -17,8 +17,9 @@ namespace FASTER.core
         /// </summary>
         /// <param name="wait">Wait for all pending operations on session to complete</param>
         /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <param name="orderedResponses">Whether responses are process in the order of IO issue</param>
         /// <returns>True if all pending operations have completed, false otherwise</returns>
-        bool CompletePending(bool wait = false, bool spinWaitForCommit = false);
+        bool CompletePending(bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false);
 
         /// <summary>
         /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
@@ -27,22 +28,23 @@ namespace FASTER.core
         /// <param name="completedOutputs">Outputs completed by this operation</param>
         /// <param name="wait">Wait for all pending operations on session to complete</param>
         /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
+        /// <param name="orderedResponses">Whether responses are process in the order of IO issue</param>
         /// <returns>True if all pending operations have completed, false otherwise</returns>
-        bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
+        bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false);
 
         /// <summary>
         /// Complete all pending synchronous FASTER operations.
         /// Async operations must be completed individually.
         /// </summary>
         /// <returns></returns>
-        ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default);
+        ValueTask CompletePendingAsync(bool waitForCommit = false, bool orderedResponses = false, CancellationToken token = default);
 
         /// <summary>
         /// Complete all pending synchronous FASTER operations, returning outputs for the completed operations.
         /// Async operations must be completed individually.
         /// </summary>
         /// <returns>Outputs completed by this operation</returns>
-        ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default);
+        ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, bool orderedResponses = false, CancellationToken token = default);
 
         /// <summary>
         /// Read operation
