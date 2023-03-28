@@ -41,26 +41,26 @@ namespace FASTER.core
         #region IFasterContext
 
         /// <inheritdoc/>
-        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false)
+        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit, orderedResponses);
+            return this.clientSession.UnsafeCompletePending(this.FasterSession, false, wait, spinWaitForCommit);
         }
 
         /// <inheritdoc/>
-        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false)
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return this.clientSession.UnsafeCompletePendingWithOutputs(this.FasterSession, out completedOutputs, wait, spinWaitForCommit, orderedResponses);
+            return this.clientSession.UnsafeCompletePendingWithOutputs(this.FasterSession, out completedOutputs, wait, spinWaitForCommit);
         }
 
         /// <inheritdoc/>
-        public ValueTask CompletePendingAsync(bool waitForCommit = false, bool orderedResponses = false, CancellationToken token = default)
-            => this.clientSession.CompletePendingAsync(waitForCommit, orderedResponses, token);
+        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+            => this.clientSession.CompletePendingAsync(waitForCommit, token);
 
         /// <inheritdoc/>
-        public ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, bool orderedResponses = false, CancellationToken token = default)
-            => this.clientSession.CompletePendingWithOutputsAsync(waitForCommit, orderedResponses, token);
+        public ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+            => this.clientSession.CompletePendingWithOutputsAsync(waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

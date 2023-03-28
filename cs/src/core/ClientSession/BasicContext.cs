@@ -36,20 +36,20 @@ namespace FASTER.core
         #region IFasterContext
 
         /// <inheritdoc/>
-        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false)
-            => clientSession.CompletePending(wait, spinWaitForCommit, orderedResponses);
+        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
+            => clientSession.CompletePending(wait, spinWaitForCommit);
 
         /// <inheritdoc/>
-        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false)
-            => clientSession.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit, orderedResponses);
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+            => clientSession.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
-        public ValueTask CompletePendingAsync(bool waitForCommit = false, bool orderedResponses = false, CancellationToken token = default)
-            => clientSession.CompletePendingAsync(waitForCommit, orderedResponses, token);
+        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+            => clientSession.CompletePendingAsync(waitForCommit, token);
 
         /// <inheritdoc/>
-        public ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, bool orderedResponses = false, CancellationToken token = default)
-            => clientSession.CompletePendingWithOutputsAsync(waitForCommit, orderedResponses, token);
+        public ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+            => clientSession.CompletePendingWithOutputsAsync(waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

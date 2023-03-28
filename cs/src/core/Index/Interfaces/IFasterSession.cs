@@ -81,7 +81,7 @@ namespace FASTER.core
         void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
         #endregion 
 
-        bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false);
+        bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 
         public FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> Ctx { get; }
 

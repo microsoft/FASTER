@@ -111,13 +111,12 @@ namespace FASTER.core
         }
 
         internal bool InternalCompletePending<Input, Output, Context, FasterSession>(FasterSession fasterSession, bool wait = false, 
-                                                                                     CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null,
-                                                                                     bool orderedResponses = false)
+                                                                                     CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             while (true)
             {
-                InternalCompletePendingRequests(fasterSession, completedOutputs, orderedResponses);
+                InternalCompletePendingRequests(fasterSession, completedOutputs);
                 if (wait) fasterSession.Ctx.WaitPending(epoch);
 
                 if (fasterSession.Ctx.HasNoPendingRequests) return true;
@@ -133,62 +132,16 @@ namespace FASTER.core
 
         #region Complete Pending Requests
         internal void InternalCompletePendingRequests<Input, Output, Context, FasterSession>(FasterSession fasterSession, 
-                                                                                             CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs,
-                                                                                             bool orderedResponses)
+                                                                                             CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             hlog.TryComplete();
 
             if (fasterSession.Ctx.readyResponses.Count == 0) return;
 
-            if (orderedResponses)
+            while (fasterSession.Ctx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
             {
-                long firstId = fasterSession.Ctx.totalPending - fasterSession.Ctx.ioPendingRequests.Count;
-
-                while (fasterSession.Ctx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
-                {
-                    if (request.id == firstId)
-                    {
-                        InternalCompletePendingRequest(fasterSession, request, completedOutputs);
-                        firstId++;
-                    }
-                    else
-                    {
-#if NET5_0_OR_GREATER
-                        if (fasterSession.Ctx.orderedResponses == null)
-                            fasterSession.Ctx.orderedResponses = new PriorityQueue<AsyncIOContext<Key, Value>, long>();
-                        fasterSession.Ctx.orderedResponses.Enqueue(request, request.id);
-                        while (fasterSession.Ctx.orderedResponses != null && 
-                            fasterSession.Ctx.orderedResponses.TryPeek(out request, out _) && 
-                            request.id == firstId)
-                        {
-                            var success = fasterSession.Ctx.orderedResponses.TryDequeue(out _, out _);
-                            Debug.Assert(success);
-                            InternalCompletePendingRequest(fasterSession, request, completedOutputs);
-                            firstId++;
-                        }
-#else
-                        if (fasterSession.Ctx.orderedResponses == null)
-                            fasterSession.Ctx.orderedResponses = new SortedSet<AsyncIOContext<Key, Value>>(FasterExecutionContext<Input, Output, Context>.asyncIoContextComparer);
-                        fasterSession.Ctx.orderedResponses.Add(request);
-                        while (fasterSession.Ctx.orderedResponses != null &&
-                            fasterSession.Ctx.orderedResponses.Min.id == firstId)
-                        {
-                            var success = fasterSession.Ctx.orderedResponses.Remove(fasterSession.Ctx.orderedResponses.Min);
-                            Debug.Assert(success);
-                            InternalCompletePendingRequest(fasterSession, request, completedOutputs);
-                            firstId++;
-                        }
-#endif
-                    }
-                }
-            }
-            else
-            {
-                while (fasterSession.Ctx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
-                {
-                    InternalCompletePendingRequest(fasterSession, request, completedOutputs);
-                }
+                InternalCompletePendingRequest(fasterSession, request, completedOutputs);
             }
         }
 
@@ -268,6 +221,6 @@ namespace FASTER.core
             request.Dispose();
             return status;
         }
-#endregion
+        #endregion
     }
 }

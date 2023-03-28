@@ -610,14 +610,14 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false)
-            => CompletePending(false, wait, spinWaitForCommit, orderedResponses);
+        public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
+            => CompletePending(false, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
-        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false)
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             InitializeCompletedOutputs();
-            var result = CompletePending(true, wait, spinWaitForCommit, orderedResponses);
+            var result = CompletePending(true, wait, spinWaitForCommit);
             completedOutputs = this.completedOutputs;
             return result;
         }
@@ -626,11 +626,11 @@ namespace FASTER.core
         /// Synchronously complete outstanding pending synchronous operations, returning outputs for the completed operations.
         /// Assumes epoch protection is managed by user. Async operations must be completed individually.
         /// </summary>
-        internal bool UnsafeCompletePendingWithOutputs<FasterSession>(FasterSession fasterSession, out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false)
+        internal bool UnsafeCompletePendingWithOutputs<FasterSession>(FasterSession fasterSession, out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             InitializeCompletedOutputs();
-            var result = UnsafeCompletePending(fasterSession, true, wait, spinWaitForCommit, orderedResponses);
+            var result = UnsafeCompletePending(fasterSession, true, wait, spinWaitForCommit);
             completedOutputs = this.completedOutputs;
             return result;
         }
@@ -643,12 +643,12 @@ namespace FASTER.core
                 this.completedOutputs.Dispose();
         }
 
-        internal bool CompletePending(bool getOutputs, bool wait, bool spinWaitForCommit, bool orderedResponses)
+        internal bool CompletePending(bool getOutputs, bool wait, bool spinWaitForCommit)
         {
             UnsafeResumeThread();
             try
             {
-                return UnsafeCompletePending(FasterSession, getOutputs, wait, spinWaitForCommit, orderedResponses);
+                return UnsafeCompletePending(FasterSession, getOutputs, wait, spinWaitForCommit);
             }
             finally
             {
@@ -656,21 +656,21 @@ namespace FASTER.core
             }
         }
 
-        internal bool UnsafeCompletePending<FasterSession>(FasterSession fasterSession, bool getOutputs, bool wait, bool spinWaitForCommit, bool orderedResponses)
+        internal bool UnsafeCompletePending<FasterSession>(FasterSession fasterSession, bool getOutputs, bool wait, bool spinWaitForCommit)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var requestedOutputs = getOutputs ? this.completedOutputs : default;
-            var result = fht.InternalCompletePending(fasterSession, wait, requestedOutputs, orderedResponses);
+            var result = fht.InternalCompletePending(fasterSession, wait, requestedOutputs);
             if (spinWaitForCommit)
             {
                 if (!wait)
                     throw new FasterException("Can spin-wait for commit (checkpoint completion) only if wait is true");
                 do
                 {
-                    fht.InternalCompletePending(fasterSession, wait, requestedOutputs, orderedResponses);
+                    fht.InternalCompletePending(fasterSession, wait, requestedOutputs);
                     if (fht.InRestPhase())
                     {
-                        fht.InternalCompletePending(fasterSession, wait, requestedOutputs, orderedResponses);
+                        fht.InternalCompletePending(fasterSession, wait, requestedOutputs);
                         return true;
                     }
                 } while (wait);
@@ -679,18 +679,18 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public ValueTask CompletePendingAsync(bool waitForCommit = false, bool orderedResponses = false, CancellationToken token = default)
-            => CompletePendingAsync(false, waitForCommit, orderedResponses, token);
+        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+            => CompletePendingAsync(false, waitForCommit, token);
 
         /// <inheritdoc/>
-        public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, bool orderedResponses = false, CancellationToken token = default)
+        public async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
         {
             InitializeCompletedOutputs();
-            await CompletePendingAsync(true, waitForCommit, orderedResponses, token).ConfigureAwait(false);
+            await CompletePendingAsync(true, waitForCommit, token).ConfigureAwait(false);
             return this.completedOutputs;
         }
 
-        private async ValueTask CompletePendingAsync(bool getOutputs, bool waitForCommit = false, bool orderedResponses = false, CancellationToken token = default)
+        private async ValueTask CompletePendingAsync(bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
 
@@ -698,7 +698,7 @@ namespace FASTER.core
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
             // Complete all pending operations on session
-            await fht.CompletePendingAsync(this.FasterSession, token, getOutputs ? this.completedOutputs : null, orderedResponses).ConfigureAwait(false);
+            await fht.CompletePendingAsync(this.FasterSession, token, getOutputs ? this.completedOutputs : null).ConfigureAwait(false);
 
             // Wait for commit if necessary
             if (waitForCommit)
@@ -1381,8 +1381,8 @@ namespace FASTER.core
 
             public void UnsafeSuspendThread() => _clientSession.UnsafeSuspendThread();
 
-            public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false, bool orderedResponses = false)
-                => _clientSession.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit, orderedResponses);
+            public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+                => _clientSession.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
 
             public FasterKV<Key, Value>.FasterExecutionContext<Input, Output, Context> Ctx => this._clientSession.ctx;
             #endregion Internal utilities
