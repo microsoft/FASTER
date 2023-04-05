@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using Microsoft.Extensions.Logging;
-using System;
 using System.Diagnostics;
 using System.Threading;
 
@@ -19,7 +18,7 @@ namespace FASTER.core
 
         private Key currentKey;
         private Value currentValue;
-        private long currentPhysicalAddress;        
+        private long framePhysicalAddress;
 
         /// <summary>
         /// Constructor
@@ -28,7 +27,7 @@ namespace FASTER.core
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
-        /// <param name="epoch"></param>
+        /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
         public BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
@@ -36,37 +35,29 @@ namespace FASTER.core
         {
             this.hlog = hlog;
             this.forceInMemory = forceInMemory;
-
             if (frameSize > 0)
                 frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
         }
 
         /// <summary>
-        /// Gets reference to current key
+        /// Get a reference to the current key
         /// </summary>
-        /// <returns></returns>
-        public ref Key GetKey()
-        {
-            if (currentPhysicalAddress != 0)
-                return ref hlog.GetKey(currentPhysicalAddress);
-            return ref currentKey;
-        }
+        public ref Key GetKey() => ref framePhysicalAddress != 0 ? ref hlog.GetKey(framePhysicalAddress) : ref currentKey;
 
         /// <summary>
-        /// Gets reference to current value
+        /// Get a reference to the current value
         /// </summary>
-        /// <returns></returns>
-        public ref Value GetValue()
+        public ref Value GetValue() => ref framePhysicalAddress != 0 ? ref hlog.GetValue(framePhysicalAddress) : ref currentValue;
+
+        internal ref RecordInfo GetInfo()
         {
-            if (currentPhysicalAddress != 0)
-                return ref hlog.GetValue(currentPhysicalAddress);
-            return ref currentValue;
+            Debug.Assert(framePhysicalAddress == 0, "Should only be calling GetInfo() for locking, which should be in memory (i.e. should not have a frame)");
+            return ref hlog.GetInfo(hlog.GetPhysicalAddress(this.currentAddress));
         }
 
         /// <summary>
         /// Get next record
         /// </summary>
-        /// <param name="recordInfo"></param>
         /// <returns>True if record found, false if end of scan</returns>
         public bool GetNext(out RecordInfo recordInfo)
         {
@@ -75,12 +66,8 @@ namespace FASTER.core
             while (true)
             {
                 currentAddress = nextAddress;
-
-                // Check for boundary conditions
                 if (currentAddress >= endAddress)
-                {
                     return false;
-                }
 
                 epoch?.Resume();
                 var headAddress = hlog.HeadAddress;
@@ -106,12 +93,14 @@ namespace FASTER.core
                 long physicalAddress;
                 if (currentAddress >= headAddress || forceInMemory)
                 {
+                    // physicalAddress is in memory; set framePhysicalAddress to 0 so we'll set currentKey and currentValue from physicalAddress below
                     physicalAddress = hlog.GetPhysicalAddress(currentAddress);
-                    currentPhysicalAddress = 0;
+                    framePhysicalAddress = 0;
                 }
                 else
                 {
-                    currentPhysicalAddress = physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
+                    // physicalAddress is not in memory, so we'll GetKey and GetValue will use framePhysicalAddress
+                    framePhysicalAddress = physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
                 }
 
                 // Check if record fits on page, if not skip to next page
@@ -133,8 +122,10 @@ namespace FASTER.core
                 }
 
                 recordInfo = info;
-                if (currentPhysicalAddress == 0)
+                if (framePhysicalAddress == 0)
                 {
+                    // Copy the blittable values to data members; we have no ref into the log after the epoch.Suspend().
+                    // Do the copy only for log data, not frame, because this could be a large structure.
                     currentKey = hlog.GetKey(physicalAddress);
                     currentValue = hlog.GetValue(physicalAddress);
                 }
@@ -146,10 +137,6 @@ namespace FASTER.core
         /// <summary>
         /// Get next record in iterator
         /// </summary>
-        /// <param name="recordInfo"></param>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
         public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
         {
             if (GetNext(out recordInfo))
@@ -161,7 +148,6 @@ namespace FASTER.core
 
             key = default;
             value = default;
-
             return false;
         }
 
@@ -195,9 +181,7 @@ namespace FASTER.core
             }
 
             if (errorCode == 0)
-            {
                 result.handle?.Signal();
-            }
 
             Interlocked.MemoryBarrier();
         }

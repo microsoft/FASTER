@@ -517,6 +517,11 @@ namespace FASTER.core
             => DeleteAsync(ref key, userContext, serialNo, token);
 
         /// <inheritdoc/>
+        public bool Scan<TScanFunctions>(long beginAddress, long endAddress, TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => clientSession.Scan(beginAddress, endAddress, scanFunctions, scanBufferingMode);
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResetModified(ref Key key)
             => clientSession.ResetModified(ref key);
@@ -555,9 +560,8 @@ namespace FASTER.core
                 _clientSession = clientSession;
             }
 
-            public bool DisableTransientLocking => true;       // We only lock in Lock/Unlock, explicitly; these are longer-duration locks.
-
             public bool IsManualLocking => true;
+            public FasterKV<Key, Value> Store => _clientSession.fht;
 
             #region IFunctions - Reads
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -699,7 +703,7 @@ namespace FASTER.core
             #region Transient locking
             public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                Debug.Assert(_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
+                Debug.Assert(Store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
                             + $" XLocked {_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
                             + $" Slocked {_clientSession.fht.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
@@ -708,7 +712,7 @@ namespace FASTER.core
 
             public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                Debug.Assert(_clientSession.fht.LockTable.IsLocked(ref key, ref stackCtx.hei),
+                Debug.Assert(Store.LockTable.IsLocked(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock):"
                             + $" XLocked {_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
                             + $" Slocked {_clientSession.fht.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
@@ -717,7 +721,7 @@ namespace FASTER.core
 
             public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                Debug.Assert(_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
+                Debug.Assert(Store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
                             $"Attempting to unlock a non-XLocked key in a Lockable context (requesting XLock):"
                             + $" XLocked {_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
                             + $" Slocked {_clientSession.fht.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
@@ -725,7 +729,7 @@ namespace FASTER.core
 
             public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                Debug.Assert(_clientSession.fht.LockTable.IsLockedShared(ref key, ref stackCtx.hei),
+                Debug.Assert(Store.LockTable.IsLockedShared(ref key, ref stackCtx.hei),
                             $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
                             + $" XLocked {_clientSession.fht.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
                             + $" Slocked {_clientSession.fht.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");

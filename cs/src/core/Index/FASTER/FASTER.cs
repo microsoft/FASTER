@@ -14,8 +14,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value> : FasterBase,
-        IFasterKV<Key, Value>
+    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         internal readonly AllocatorBase<Key, Value> hlog;
         internal readonly AllocatorBase<Key, Value> readcache;

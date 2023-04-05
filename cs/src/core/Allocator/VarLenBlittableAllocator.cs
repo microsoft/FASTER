@@ -4,7 +4,6 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -476,15 +475,51 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Iterator interface for scanning FASTER log
+        /// Iterator interface for pull-scanning FASTER log
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
+        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode) 
+            => new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+
+        /// <summary>
+        /// Implementation for push-scanning FASTER log
+        /// </summary>
+        internal override bool Scan<Input, Output, Context, FasterSession, TScanFunctions>(FasterSession fasterSession, long beginAddress, long endAddress, TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch, logger:logger);
+            using VariableLengthBlittableScanIterator<Key, Value> iter = new(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+
+            if (!scanFunctions.OnStart(beginAddress, endAddress))
+                return false;
+
+            long numRecords = 1;
+            bool stop = true;
+            for ( ; !stop && iter.BeginGetNext(out var recordInfo, out _, out _); ++numRecords)
+            {
+                OperationStackContext<Key, Value> stackCtx = default;
+                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.Failed;
+                try
+                { 
+                    if (iter.CurrentAddress >= this.ReadOnlyAddress)
+                    {
+                        fasterSession.Store.LockForScan<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, ref iter.GetKey(), ref iter.GetInfo());
+                        stop = !scanFunctions.ConcurrentReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
+                    }
+                    else
+                        stop = !scanFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
+                }
+                catch (Exception ex)
+                {
+                    scanFunctions.OnException(ex, numRecords);
+                    throw;
+                }
+                finally
+                {
+                    fasterSession.Store.UnlockForScan<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, ref iter.GetKey(), ref iter.GetInfo());
+                    iter.EndGetNext();
+                }
+            }
+
+            scanFunctions.OnStop(!stop, numRecords);
+            return true;
         }
 
         /// <inheritdoc />

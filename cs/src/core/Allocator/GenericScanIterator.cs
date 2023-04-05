@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Threading;
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
@@ -41,19 +40,13 @@ namespace FASTER.core
         /// Gets reference to current key
         /// </summary>
         /// <returns></returns>
-        public ref Key GetKey()
-        {
-            return ref currentKey;
-        }
+        public ref Key GetKey() => ref currentKey;
 
         /// <summary>
         /// Gets reference to current value
         /// </summary>
         /// <returns></returns>
-        public ref Value GetValue()
-        {
-            return ref currentValue;
-        }
+        public ref Value GetValue() => ref currentValue;
 
         /// <summary>
         /// Get next record in iterator
@@ -69,12 +62,8 @@ namespace FASTER.core
             while (true)
             {
                 currentAddress = nextAddress;
-
-                // Check for boundary conditions
                 if (currentAddress >= endAddress)
-                {
                     return false;
-                }
 
                 epoch?.Resume();
                 var headAddress = hlog.HeadAddress;
@@ -92,7 +81,6 @@ namespace FASTER.core
                 }
 
                 var currentPage = currentAddress >> hlog.LogPageSizeBits;
-
                 var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
                 if (currentAddress < headAddress)
@@ -119,6 +107,8 @@ namespace FASTER.core
                         continue;
                     }
 
+                    // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
+                    // These are pointer-sized shallow copies.
                     recordInfo = hlog.values[page][offset].info;
                     currentKey = hlog.values[page][offset].key;
                     currentValue = hlog.values[page][offset].value;
@@ -134,6 +124,7 @@ namespace FASTER.core
                     continue;
                 }
 
+                // Copy the object values from the frame to data members.
                 recordInfo = frame.GetInfo(currentFrame, offset);
                 currentKey = frame.GetKey(currentFrame, offset);
                 currentValue = frame.GetValue(currentFrame, offset);
@@ -160,7 +151,6 @@ namespace FASTER.core
 
             key = default;
             value = default;
-
             return false;
         }
 

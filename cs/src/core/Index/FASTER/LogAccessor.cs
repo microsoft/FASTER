@@ -253,14 +253,9 @@ namespace FASTER.core
         /// <summary>
         /// Scan the log given address range, returns all records with address less than endAddress
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
         /// <returns></returns>
-        public IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
-        {
-            return allocator.Scan(beginAddress, endAddress, scanBufferingMode);
-        }
+        public IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering) 
+            => allocator.Scan(beginAddress, endAddress, scanBufferingMode);
 
         /// <summary>
         /// Flush log until current tail (records are still retained in memory)

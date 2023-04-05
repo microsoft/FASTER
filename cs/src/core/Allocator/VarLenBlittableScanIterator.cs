@@ -28,7 +28,7 @@ namespace FASTER.core
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
-        /// <param name="epoch"></param>
+        /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
         public VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
@@ -43,42 +43,56 @@ namespace FASTER.core
         /// <summary>
         /// Gets reference to current key
         /// </summary>
-        /// <returns></returns>
-        public ref Key GetKey()
-        {
-            return ref hlog.GetKey(currentPhysicalAddress);
-        }
+        public ref Key GetKey() => ref hlog.GetKey(currentPhysicalAddress);
 
         /// <summary>
         /// Gets reference to current value
         /// </summary>
-        /// <returns></returns>
-        public ref Value GetValue()
+        public ref Value GetValue() => ref hlog.GetValue(currentPhysicalAddress);
+
+        internal ref RecordInfo GetInfo()
         {
-            return ref hlog.GetValue(currentPhysicalAddress);
+            Debug.Assert(currentPhysicalAddress == hlog.GetPhysicalAddress(this.currentAddress), "Should only be calling GetInfo() for locking, which should be in-memory");
+            return ref hlog.GetInfo(currentPhysicalAddress);
         }
 
         /// <summary>
         /// Get next record in iterator
         /// </summary>
-        /// <param name="recordInfo"></param>
-        /// <returns></returns>
+        /// <returns>True if record found, false if end of scan</returns>
         public unsafe bool GetNext(out RecordInfo recordInfo)
+        {
+            if (!BeginGetNext(out recordInfo, out long headAddress, out int recordSize))
+                return false;
+
+            // We will return control to the caller, which means releasing epoch protection.
+            if (currentAddress >= headAddress || forceInMemory)
+            {
+                // Copy the entire record into bufferPool memory, so we do not have a ref to log data outside epoch protection.
+                memory?.Return();
+                memory = hlog.bufferPool.Get(recordSize);
+                Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.aligned_pointer, recordSize, recordSize);
+                currentPhysicalAddress = (long)memory.aligned_pointer;
+            }
+
+            return EndGetNext();
+        }
+
+        internal bool BeginGetNext(out RecordInfo recordInfo, out long headAddress, out int recordSize)
         {
             recordInfo = default;
 
             while (true)
             {
                 currentAddress = nextAddress;
-
-                // Check for boundary conditions
                 if (currentAddress >= endAddress)
                 {
+                    headAddress = recordSize = 0;
                     return false;
                 }
 
                 epoch?.Resume();
-                var headAddress = hlog.HeadAddress;
+                headAddress = hlog.HeadAddress;
 
                 if (currentAddress < hlog.BeginAddress && !forceInMemory)
                 {
@@ -105,7 +119,7 @@ namespace FASTER.core
                     physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
 
                 // Check if record fits on page, if not skip to next page
-                var recordSize = hlog.GetRecordSize(physicalAddress).Item2;
+                recordSize = hlog.GetRecordSize(physicalAddress).Item2;
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
                     nextAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
@@ -121,32 +135,27 @@ namespace FASTER.core
                     epoch?.Suspend();
                     continue;
                 }
-                
+
                 currentPhysicalAddress = physicalAddress;
                 recordInfo = info;
-                if (currentAddress >= headAddress || forceInMemory)
-                {
-                    memory?.Return();
-                    memory = hlog.bufferPool.Get(recordSize);
-                    Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.aligned_pointer, recordSize, recordSize);
-                    currentPhysicalAddress = (long)memory.aligned_pointer;
-                }
-                epoch?.Suspend();
+
+                // epoch is still held; must call EndGetNext
                 return true;
             }
+        }
+
+        internal bool EndGetNext()
+        {
+            epoch?.Suspend();
+            return true;
         }
 
         /// <summary>
         /// Get next record in iterator
         /// </summary>
-        /// <param name="recordInfo"></param>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
         /// <returns></returns>
         public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
-        {
-            throw new NotSupportedException("Use GetNext(out RecordInfo) to retrieve references to key/value");
-        }
+            => throw new NotSupportedException("Use GetNext(out RecordInfo) to retrieve references to key/value");
 
         /// <summary>
         /// Dispose iterator
@@ -159,7 +168,7 @@ namespace FASTER.core
             frame?.Dispose();
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null) 
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             => hlog.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
@@ -180,9 +189,7 @@ namespace FASTER.core
             }
 
             if (errorCode == 0)
-            {
                 result.handle?.Signal();
-            }
 
             Interlocked.MemoryBarrier();
         }

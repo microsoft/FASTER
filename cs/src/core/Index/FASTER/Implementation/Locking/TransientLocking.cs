@@ -20,7 +20,15 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryTransientSLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
+        private void TransientXUnlock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            if (stackCtx.recSrc.HasTransientLock)
+                fasterSession.UnlockTransientExclusive(ref key, ref stackCtx);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryTransientSLock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
                                     out OperationStatus status)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -32,7 +40,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void TransientSUnlock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        internal void TransientSUnlock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (stackCtx.recSrc.HasTransientLock)
@@ -40,11 +48,33 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void TransientXUnlock<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        internal void LockForScan<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            if (fasterSession.Store.DoTransientLocking)
+            {
+                stackCtx = new(comparer.GetHashCode64(ref key));
+                fasterSession.Store.FindTag(ref stackCtx.hei);
+                stackCtx.SetRecordSourceToHashEntry(this);
+                while (!fasterSession.Store.TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
+                    fasterSession.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession);
+            }
+            else if (fasterSession.Store.DoEphemeralLocking)
+            {
+                while (!recordInfo.TryLockShared())
+                    fasterSession.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(OperationStatus.RETRY_LATER, fasterSession);
+                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.Success;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void UnlockForScan<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (stackCtx.recSrc.HasTransientLock)
-                fasterSession.UnlockTransientExclusive(ref key, ref stackCtx);
+                fasterSession.Store.TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
+            else if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Success)
+                recordInfo.UnlockShared();
         }
     }
 }

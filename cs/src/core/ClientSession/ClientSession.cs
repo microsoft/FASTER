@@ -545,6 +545,14 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => DeleteAsync(ref key, userContext, serialNo, token);
 
+        /// <summary>
+        /// Scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool Scan<TScanFunctions>(long beginAddress, long endAddress, TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => fht.hlog.Scan<Input, Output, Context, InternalFasterSession, TScanFunctions>(FasterSession, beginAddress, endAddress, scanFunctions, scanBufferingMode);
+
         /// <inheritdoc/>
         public void Refresh()
         {
@@ -905,13 +913,11 @@ namespace FASTER.core
         {
             if (untilAddress == -1)
                 untilAddress = fht.Log.TailAddress;
-
             return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress, loggerFactory: loggerFactory);
         }
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// Call SuspendThread before any async op
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnsafeResumeThread()
@@ -999,6 +1005,7 @@ namespace FASTER.core
             }
 
             public bool IsManualLocking => false;
+            public FasterKV<Key, Value> Store => _clientSession.fht;
 
             #region IFunctions - Reads
             public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
@@ -1330,35 +1337,35 @@ namespace FASTER.core
             #region Transient locking
             public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DoTransientLocking)
+                if (!Store.DoTransientLocking)
                     return true;
-                if (!_clientSession.fht.LockTable.TryLockTransientExclusive(ref key, ref stackCtx.hei))
+                if (!Store.LockTable.TryLockTransientExclusive(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasTransientLock = true;
             }
 
             public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DoTransientLocking)
+                if (!Store.DoTransientLocking)
                     return true;
-                if (!_clientSession.fht.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
+                if (!Store.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasTransientLock = true;
             }
 
             public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DoTransientLocking)
+                if (!Store.DoTransientLocking)
                     return;
-                _clientSession.fht.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
+                Store.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.HasTransientLock = false;
             }
 
             public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DoTransientLocking)
+                if (!Store.DoTransientLocking)
                     return;
-                _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);
+                Store.LockTable.UnlockShared(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.HasTransientLock = false;
             }
             #endregion Transient locking

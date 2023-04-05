@@ -122,9 +122,11 @@ namespace FASTER.core
         {
             while (!disposed)
             {
+                // TryConsumeNext returns false if we have to wait for the next record.
                 while (!TryConsumeNext(consumer))
                 {
-                    if (!await WaitAsync(token).ConfigureAwait(false)) return;
+                    if (!await WaitAsync(token).ConfigureAwait(false)) 
+                        return;
                 }
             }
         }
@@ -143,28 +145,24 @@ namespace FASTER.core
                     return new ValueTask<bool>(false);
                 if (NextAddress < fasterLog.CommittedUntilAddress)
                     return new ValueTask<bool>(true);
-
                 return SlowWaitAsync(this, token);
             }
-            else
-            {
-                if (NextAddress < fasterLog.SafeTailAddress)
-                    return new ValueTask<bool>(true);
 
-                return SlowWaitUncommittedAsync(this, token);
-            }
+            if (NextAddress < fasterLog.SafeTailAddress)
+                return new ValueTask<bool>(true);
+            return SlowWaitUncommittedAsync(this, token);
         }
 
         private static async ValueTask<bool> SlowWaitAsync(FasterLogScanIterator @this, CancellationToken token)
         {
             while (true)
             {
-                if (@this.disposed)
+                if (@this.disposed || @this.Ended) 
                     return false;
-                if (@this.Ended) return false;
                 var commitTask = @this.fasterLog.CommitTask;
                 if (@this.NextAddress < @this.fasterLog.CommittedUntilAddress)
                     return true;
+
                 // Ignore commit exceptions, except when the token is signaled
                 try
                 {
@@ -188,7 +186,7 @@ namespace FASTER.core
                 {
                     var newTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
                     tcs = Interlocked.CompareExchange(ref @this.fasterLog.refreshUncommittedTcs, newTcs, null);
-                    if (tcs == null) tcs = newTcs;
+                    tcs ??= newTcs; // successful CAS so update the local var
                 }
 
                 if (@this.NextAddress < @this.fasterLog.SafeTailAddress)
@@ -677,11 +675,8 @@ namespace FASTER.core
                 if (disposed)
                     return false;
 
-
                 if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? fasterLog.SafeTailAddress : fasterLog.CommittedUntilAddress)))
-                {
                     return false;
-                }
 
                 if (currentAddress < _headAddress)
                 {
@@ -705,8 +700,8 @@ namespace FASTER.core
 
                 // Get and check entry length
                 entryLength = fasterLog.GetLength((byte*)physicalAddress);
-                // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check
-                // whether that is the case
+
+                // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check whether that is the case
                 if (entryLength == 0)
                 {
                     // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
@@ -734,9 +729,7 @@ namespace FASTER.core
                 {
                     currentAddress += headerSize;
                     if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
-                    {
                         throw new FasterException("Invalid length of record found: " + entryLength + " at address " + currentAddress);
-                    }
                     continue;
                 }
 
@@ -747,9 +740,7 @@ namespace FASTER.core
                     {
                         currentAddress += headerSize;
                         if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
-                        {
                             throw new FasterException("Invalid checksum found during scan, skipping");
-                        }
                         continue;
                     }
                 }

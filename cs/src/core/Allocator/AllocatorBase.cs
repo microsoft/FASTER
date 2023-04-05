@@ -767,13 +767,19 @@ namespace FASTER.core
         public abstract long[] GetSegmentOffsets();
 
         /// <summary>
-        /// Pull-based scan interface for HLOG
+        /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
         /// <returns></returns>
         public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
+
+        /// <summary>
+        /// Push-based scan interface for HLOG; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        internal abstract bool Scan<Input, Output, Context, FasterSession, TScanFunctions>(FasterSession fasterSession, long beginAddress, long endAddress, TScanFunctions scanFunctions,
+                ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>;
 
         /// <summary>
         /// Scan page guaranteed to be in memory
