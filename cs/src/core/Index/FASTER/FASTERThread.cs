@@ -71,6 +71,21 @@ namespace FASTER.core
             if (fasterSession.Ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && fasterSession.Ctx.version == newPhaseInfo.Version)
                 return;
 
+            if (CheckpointVersionSwitchBarrier)
+            {
+                // In PREPARE phase, wait for threads to get to the next version
+                while (systemState.Phase == Phase.PREPARE)
+                {
+                    epoch.Suspend();
+
+                    // Outside epoch protection, wait for PREPARE to complete
+                    while (systemState.Phase == Phase.PREPARE)
+                        Thread.Yield();
+
+                    epoch.Resume();
+                }
+            }
+
             ThreadStateMachineStep(fasterSession.Ctx, fasterSession, default);
         }
 

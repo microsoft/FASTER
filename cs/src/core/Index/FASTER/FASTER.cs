@@ -66,6 +66,7 @@ namespace FASTER.core
 
         internal readonly bool DoTransientLocking;  // uses LockTable
         internal readonly bool DoEphemeralLocking;  // uses RecordInfo
+        readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
         internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
         internal void IncrementNumLockingSessions()
@@ -135,6 +136,7 @@ namespace FASTER.core
 
             this.DoTransientLocking = lockingMode == LockingMode.Standard;
             this.DoEphemeralLocking = lockingMode == LockingMode.Ephemeral;
+            this.CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
