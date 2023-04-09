@@ -136,11 +136,11 @@ namespace FASTER.core
 
             this.DoTransientLocking = lockingMode == LockingMode.Standard;
             this.DoEphemeralLocking = lockingMode == LockingMode.Ephemeral;
-            this.CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
 
+            this.CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
             this.ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
