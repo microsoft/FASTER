@@ -211,6 +211,37 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Initialize new log instance with specific begin address and (optional) last commit number
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="lastCommitNum"></param>
+        public void Initialize(long beginAddress, long lastCommitNum = 0)
+        {
+            Debug.Assert(!readOnlyMode);
+
+            if (beginAddress == 0)
+                beginAddress = Constants.kFirstValidAddress;
+
+            try
+            {
+                allocator.RestoreHybridLog(beginAddress, beginAddress, beginAddress, beginAddress);
+            }
+            catch
+            {
+                if (!tolerateDeviceFailure) throw;
+            }
+
+            CommittedUntilAddress = beginAddress;
+            CommittedBeginAddress = beginAddress;
+            SafeTailAddress = beginAddress;
+
+            commitNum = lastCommitNum;
+            this.beginAddress = beginAddress;
+
+            if (lastCommitNum > 0) logCommitManager.OnRecovery(lastCommitNum);
+        }
+
+        /// <summary>
         /// Recover FasterLog to the specific commit number, or latest if -1
         /// </summary>
         /// <param name="requestedCommitNum">Requested commit number</param>
@@ -2168,7 +2199,7 @@ namespace FASTER.core
 
             iterators = CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
-            commitNum = info.CommitNum;
+            commitNum = persistedCommitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
