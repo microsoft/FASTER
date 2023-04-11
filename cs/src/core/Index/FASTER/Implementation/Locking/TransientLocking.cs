@@ -55,7 +55,7 @@ namespace FASTER.core
             {
                 stackCtx = new(comparer.GetHashCode64(ref key));
                 fasterSession.Store.FindTag(ref stackCtx.hei);
-                stackCtx.SetRecordSourceToHashEntry(this);
+                stackCtx.SetRecordSourceToHashEntry(this.hlog);
                 while (!fasterSession.Store.TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
                     fasterSession.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession);
             }

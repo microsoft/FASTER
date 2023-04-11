@@ -4,6 +4,9 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Runtime.CompilerServices;
+#if !NET5_0_OR_GREATER
+using System.Runtime.InteropServices;
+#endif
 using System.Threading;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
