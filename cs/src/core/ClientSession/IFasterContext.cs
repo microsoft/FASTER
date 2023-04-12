@@ -514,7 +514,7 @@ namespace FASTER.core
         /// Scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool Scan<TScanFunctions>(long beginAddress, long endAddress, TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+        public bool Scan<TScanFunctions>(long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>;
 
         /// <summary>
