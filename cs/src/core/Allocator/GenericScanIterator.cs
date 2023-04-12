@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
+using System.Diagnostics;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -9,7 +11,7 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class GenericScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>
+    public sealed class GenericScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>, IPushScanIterator
     {
         private readonly GenericAllocator<Key, Value> hlog;
         private readonly GenericFrame<Key, Value> frame;
@@ -17,6 +19,8 @@ namespace FASTER.core
 
         private Key currentKey;
         private Value currentValue;
+
+        private long currentPage = -1, currentOffset = -1, currentFrame = -1;
 
         /// <summary>
         /// Constructor
@@ -48,16 +52,30 @@ namespace FASTER.core
         /// <returns></returns>
         public ref Value GetValue() => ref currentValue;
 
+        ref RecordInfo IPushScanIterator.GetLockableInfo()
+        {
+            Debug.Assert(currentFrame < 0, "GetLockableInfo() should be in-memory (i.e.should not have a frame)");
+            Debug.Assert(epoch.ThisInstanceProtected(), "GetLockableInfo() should be called with the epoch held");
+            return ref hlog.values[currentPage][currentOffset].info;
+        }
+
+        /// <summary>
+        /// Get next record in iterator
+        /// </summary>
+        /// <returns>True if record found, false if end of scan</returns>
+        public unsafe bool GetNext(out RecordInfo recordInfo) => ((IPushScanIterator)this).BeginGetNext(out recordInfo) && ((IPushScanIterator)this).EndGetNext();
+
         /// <summary>
         /// Get next record in iterator
         /// </summary>
         /// <param name="recordInfo"></param>
         /// <returns></returns>
-        public bool GetNext(out RecordInfo recordInfo)
+        bool IPushScanIterator.BeginGetNext(out RecordInfo recordInfo)
         {
             recordInfo = default;
             currentKey = default;
             currentValue = default;
+            currentPage = currentOffset = currentFrame = -1;
 
             while (true)
             {
@@ -80,8 +98,8 @@ namespace FASTER.core
                     throw new FasterException("Iterator address is less than log HeadAddress in memory-scan mode");
                 }
 
-                var currentPage = currentAddress >> hlog.LogPageSizeBits;
-                var offset = (currentAddress & hlog.PageSizeMask) / recordSize;
+                currentPage = currentAddress >> hlog.LogPageSizeBits;
+                currentOffset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
                 if (currentAddress < headAddress)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, endAddress);
@@ -99,38 +117,48 @@ namespace FASTER.core
                 if (currentAddress >= headAddress)
                 {
                     // Read record from cached page memory
-                    var page = currentPage % hlog.BufferSize;
+                    currentPage %= hlog.BufferSize;
+                    currentFrame = -1;      // Frame is not used in this case.
 
-                    if (hlog.values[page][offset].info.SkipOnScan)
+                    if (hlog.values[currentPage][currentOffset].info.SkipOnScan)
                     {
                         epoch?.Suspend();
                         continue;
                     }
 
-                    // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
-                    // These are pointer-sized shallow copies.
-                    recordInfo = hlog.values[page][offset].info;
-                    currentKey = hlog.values[page][offset].key;
-                    currentValue = hlog.values[page][offset].value;
-                    epoch?.Suspend();
+                    // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend()
+                    // (except for GetLockableInfo which we know is safe). These are pointer-sized shallow copies.
+                    recordInfo = hlog.values[currentPage][currentOffset].info;
+                    currentKey = hlog.values[currentPage][currentOffset].key;
+                    currentValue = hlog.values[currentPage][currentOffset].value;
+
+                    // Success; defer epoch?.Suspend(); to EndGetNext
                     return true;
                 }
 
-                var currentFrame = currentPage % frameSize;
+                currentFrame = currentPage % frameSize;
 
-                if (frame.GetInfo(currentFrame, offset).SkipOnScan)
+                if (frame.GetInfo(currentFrame, currentOffset).SkipOnScan)
                 {
                     epoch?.Suspend();
                     continue;
                 }
 
                 // Copy the object values from the frame to data members.
-                recordInfo = frame.GetInfo(currentFrame, offset);
-                currentKey = frame.GetKey(currentFrame, offset);
-                currentValue = frame.GetValue(currentFrame, offset);
-                epoch?.Suspend();
+                recordInfo = frame.GetInfo(currentFrame, currentOffset);
+                currentKey = frame.GetKey(currentFrame, currentOffset);
+                currentValue = frame.GetValue(currentFrame, currentOffset);
+                currentPage = currentOffset = -1; // We should no longer use these except for GetLockableInfo()
+                
+                // Success; defer epoch?.Suspend(); to EndGetNext
                 return true;
             }
+        }
+
+        bool IPushScanIterator.EndGetNext()
+        {
+            epoch?.Suspend();
+            return true;
         }
 
         /// <summary>

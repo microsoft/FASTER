@@ -11,7 +11,7 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class VariableLengthBlittableScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>
+    public sealed class VariableLengthBlittableScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>, IPushScanIterator
     {
         private readonly VariableLengthBlittableAllocator<Key, Value> hlog;
         private readonly BlittableFrame frame;
@@ -50,9 +50,11 @@ namespace FASTER.core
         /// </summary>
         public ref Value GetValue() => ref hlog.GetValue(currentPhysicalAddress);
 
-        internal ref RecordInfo GetInfo()
+        ref RecordInfo IPushScanIterator.GetLockableInfo()
         {
-            Debug.Assert(currentPhysicalAddress == hlog.GetPhysicalAddress(this.currentAddress), "Should only be calling GetInfo() for locking, which should be in-memory");
+            // hlog.HeadAddress may have been incremented so use ClosedUntilAddress to avoid a false negative assert (not worth raising the temp headAddress out of BeginGetNext just for this).
+            Debug.Assert(currentPhysicalAddress >= hlog.ClosedUntilAddress, "GetLockableInfo() should be in-memory");
+            Debug.Assert(epoch.ThisInstanceProtected(), "GetLockableInfo() should be called with the epoch held");
             return ref hlog.GetInfo(currentPhysicalAddress);
         }
 
@@ -75,8 +77,10 @@ namespace FASTER.core
                 currentPhysicalAddress = (long)memory.aligned_pointer;
             }
 
-            return EndGetNext();
+            return ((IPushScanIterator)this).EndGetNext();
         }
+
+        bool IPushScanIterator.BeginGetNext(out RecordInfo recordInfo) => BeginGetNext(out recordInfo, out _, out _);
 
         internal bool BeginGetNext(out RecordInfo recordInfo, out long headAddress, out int recordSize)
         {
@@ -139,12 +143,12 @@ namespace FASTER.core
                 currentPhysicalAddress = physicalAddress;
                 recordInfo = info;
 
-                // epoch is still held; must call EndGetNext
+                // Success; defer epoch?.Suspend(); to EndGetNext
                 return true;
             }
         }
 
-        internal bool EndGetNext()
+        bool IPushScanIterator.EndGetNext()
         {
             epoch?.Suspend();
             return true;

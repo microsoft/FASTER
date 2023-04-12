@@ -44,4 +44,11 @@ namespace FASTER.core
         /// <param name="numberOfRecords">The number of records returned, including the current one, before the exception.</param>
         void OnException(Exception exception, long numberOfRecords);
     }
+
+    internal interface IPushScanIterator
+    {
+        bool BeginGetNext(out RecordInfo recordInfo);
+        ref RecordInfo GetLockableInfo();
+        bool EndGetNext();
+    }
 }

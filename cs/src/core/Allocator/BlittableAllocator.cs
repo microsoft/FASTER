@@ -366,39 +366,16 @@ namespace FASTER.core
         internal override bool Scan<Input, Output, Context, FasterSession, TScanFunctions>(FasterSession fasterSession, long beginAddress, long endAddress, TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
             using BlittableScanIterator<Key, Value> iter = new(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            return PushScanImpl<Input, Output, Context, FasterSession, TScanFunctions, BlittableScanIterator<Key, Value>>(fasterSession, beginAddress, endAddress, scanFunctions, iter);
+        }
 
-            if (!scanFunctions.OnStart(beginAddress, endAddress))
-                return false;
-
-            long numRecords = 1;
-            bool stop = true;
-            for (; !stop && iter.GetNext(out var recordInfo, out _, out _); ++numRecords)
-            {
-                OperationStackContext<Key, Value> stackCtx = default;
-                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.Failed;
-                try
-                {
-                    if (iter.CurrentAddress >= this.ReadOnlyAddress)
-                    {
-                        fasterSession.Store.LockForScan<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, ref iter.GetKey(), ref iter.GetInfo());
-                        stop = !scanFunctions.ConcurrentReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
-                    }
-                    else
-                        stop = !scanFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
-                }
-                catch (Exception ex)
-                {
-                    scanFunctions.OnException(ex, numRecords);
-                    throw;
-                }
-                finally
-                {
-                    fasterSession.Store.UnlockForScan<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, ref iter.GetKey(), ref iter.GetInfo());
-                }
-            }
-
-            scanFunctions.OnStop(!stop, numRecords);
-            return true;
+        /// <summary>
+        /// Implementation for push-scanning FASTER log, called from LogAccessor
+        /// </summary>
+        internal override bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
+        {
+            using BlittableScanIterator<Key, Value> iter = new(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            return PushScanImpl(store, beginAddress, endAddress, scanFunctions, iter);
         }
 
         /// <inheritdoc />

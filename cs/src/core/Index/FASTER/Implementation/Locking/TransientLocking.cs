@@ -68,11 +68,40 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void LockForScan(ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
+        {
+            if (this.DoTransientLocking)
+            {
+                stackCtx = new(comparer.GetHashCode64(ref key));
+                this.FindTag(ref stackCtx.hei);
+                stackCtx.SetRecordSourceToHashEntry(this.hlog);
+
+                while (!this.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
+                    this.epoch.ProtectAndDrain();
+            }
+            else if (this.DoEphemeralLocking)
+            {
+                while (!recordInfo.TryLockShared())
+                    this.epoch.ProtectAndDrain();
+                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.Success;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnlockForScan<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (stackCtx.recSrc.HasTransientLock)
                 fasterSession.Store.TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
+            else if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Success)
+                recordInfo.UnlockShared();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void UnlockForScan(ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
+        {
+            if (stackCtx.recSrc.HasTransientLock)
+                this.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei);
             else if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Success)
                 recordInfo.UnlockShared();
         }

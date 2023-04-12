@@ -253,9 +253,17 @@ namespace FASTER.core
         /// <summary>
         /// Scan the log given address range, returns all records with address less than endAddress
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Scan iterator instance</returns>
         public IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering) 
             => allocator.Scan(beginAddress, endAddress, scanBufferingMode);
+
+        /// <summary>
+        /// Scan the log given address range, returns all records with address less than endAddress
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool Scan<TScanFunctions>(long beginAddress, long endAddress, TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => allocator.Scan(fht, beginAddress, endAddress, scanFunctions, scanBufferingMode);
 
         /// <summary>
         /// Flush log until current tail (records are still retained in memory)
