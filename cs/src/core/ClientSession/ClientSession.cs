@@ -545,14 +545,6 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => DeleteAsync(ref key, userContext, serialNo, token);
 
-        /// <summary>
-        /// Scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
-        /// </summary>
-        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool Scan<TScanFunctions>(long beginAddress, long endAddress, TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
-            where TScanFunctions : IScanIteratorFunctions<Key, Value>
-            => fht.hlog.Scan<Input, Output, Context, InternalFasterSession, TScanFunctions>(FasterSession, beginAddress, endAddress, scanFunctions, scanBufferingMode);
-
         /// <inheritdoc/>
         public void Refresh()
         {

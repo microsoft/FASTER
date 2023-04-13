@@ -320,11 +320,6 @@ namespace FASTER.core
             => DeleteAsync(ref key, userContext, serialNo, token);
 
         /// <inheritdoc/>
-        public bool Scan<TScanFunctions>(long beginAddress, long endAddress, TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
-            where TScanFunctions : IScanIteratorFunctions<Key, Value>
-            => clientSession.Scan(beginAddress, endAddress, scanFunctions, scanBufferingMode);
-
-        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResetModified(ref Key key)
             => clientSession.UnsafeResetModified(ref key);
