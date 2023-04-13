@@ -9,9 +9,9 @@ using static FASTER.test.TestUtils;
 namespace FASTER.test
 {
     [TestFixture]
-    internal class BlittableIterationTests
+    internal class VarLenBlittableIterationTests
     {
-        private FasterKV<KeyStruct, ValueStruct> fht;
+        private FasterKV<Key, VLValue> fht;
         private IDevice log;
         private string path;
 
@@ -21,7 +21,7 @@ namespace FASTER.test
             path = MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(path, wait:true);
+            DeleteDirectory(path, wait: true);
         }
 
         [TearDown]
@@ -34,20 +34,20 @@ namespace FASTER.test
             DeleteDirectory(path);
         }
 
-        internal struct BlittablePushIterationTestFunctions : IScanIteratorFunctions<KeyStruct, ValueStruct>
+        internal struct VarLenBlittablePushIterationTestFunctions : IScanIteratorFunctions<Key, VLValue>
         {
             internal int keyMultToValue;
             internal long numRecords;
 
             public bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress) 
+            public bool ConcurrentReader(ref Key key, ref VLValue value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
                 => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, nextAddress);
 
-            public bool SingleReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
+            public bool SingleReader(ref Key key, ref VLValue value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
             {
                 if (keyMultToValue > 0)
-                    Assert.AreEqual(key.kfield1 * keyMultToValue, value.vfield1);
+                    Assert.AreEqual(key.key * keyMultToValue, value.field1);
 
                 ++numRecords;
                 return true;
@@ -61,15 +61,15 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void BlittableIterationBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
+        public void VarLenBlittableIterationBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
-            string filename = path + "BlittableIterationTest1" + deviceType.ToString() + ".log";
+            string filename = path + "VarLenBlittableIterationTest1" + deviceType.ToString() + ".log";
             log = CreateTestDevice(deviceType, filename);
-            fht = new FasterKV<KeyStruct, ValueStruct>
+            fht = new FasterKV<Key, VLValue>
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
 
-            using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
-            BlittablePushIterationTestFunctions scanIteratorFunctions = new();
+            using var session = fht.NewSession(new VLFunctions());
+            VarLenBlittablePushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 500;
             var start = fht.Log.TailAddress;
@@ -91,56 +91,58 @@ namespace FASTER.test
                 Assert.AreEqual(expectedRecs, scanIteratorFunctions.numRecords);
             }
 
+            // Note: We always set value.length to 2, which includes both VLValue members; we are not exercising the "Variable Length" aspect here.
+
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 0);
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = i, length = 2 };
+                session.Upsert(ref key1, ref value);
             }
 
             iterateAndVerify(1, totalRecords);
 
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = 2 * i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0);
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = 2 * i, length = 2 };
+                session.Upsert(ref key1, ref value);
             }
 
             iterateAndVerify(2, totalRecords);
 
-            for (int i = totalRecords/2; i < totalRecords; i++)
+            for (int i = totalRecords / 2; i < totalRecords; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0);
-            }
-
-            iterateAndVerify(0, totalRecords);
-
-            for (int i = 0; i < totalRecords; i+=2)
-            {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0);
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = i, length = 2 };
+                session.Upsert(ref key1, ref value);
             }
 
             iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Delete(ref key1, 0);
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = i, length = 2 };
+                session.Upsert(ref key1, ref value);
+            }
+
+            iterateAndVerify(0, totalRecords);
+
+            for (int i = 0; i < totalRecords; i += 2)
+            {
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = i, length = 2 };
+                session.Delete(ref key1);
             }
 
             iterateAndVerify(0, totalRecords / 2);
 
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = 3 * i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0);
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = 3 * i, length = 2 };
+                session.Upsert(ref key1, ref value);
             }
 
             iterateAndVerify(3, totalRecords);

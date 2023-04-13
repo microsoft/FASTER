@@ -225,7 +225,8 @@ namespace FASTER.core
                         }
                         finally
                         {
-                            fht.UnlockForScan(ref stackCtx, ref iter1.GetKey(), ref pushScanIterator.GetLockableInfo());
+                            if (stackCtx.recSrc.HasLock)
+                                fht.UnlockForScan(ref stackCtx, ref iter1.GetKey(), ref pushScanIterator.GetLockableInfo());
                             pushScanIterator.EndGetNext();
                         }
                     }

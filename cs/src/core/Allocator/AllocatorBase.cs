@@ -867,7 +867,8 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
+                    if (stackCtx.recSrc.HasLock)
+                        store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
                     iter.EndGetNext();
                 }
             }

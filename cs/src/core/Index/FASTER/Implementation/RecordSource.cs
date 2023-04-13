@@ -79,6 +79,8 @@ namespace FASTER.core
 
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
 
+        internal bool HasLock => HasTransientLock || ephemeralLockResult == EphemeralLockResult.Success;
+
         /// <summary>
         /// Initialize to the latest logical address from the caller.
         /// </summary>
