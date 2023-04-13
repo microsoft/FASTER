@@ -23,7 +23,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fht"></param>
         /// <param name="allocator"></param>
-        public LogAccessor(FasterKV<Key, Value> fht, AllocatorBase<Key, Value> allocator)
+        internal LogAccessor(FasterKV<Key, Value> fht, AllocatorBase<Key, Value> allocator)
         {
             this.fht = fht;
             this.allocator = allocator;

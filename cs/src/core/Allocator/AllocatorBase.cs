@@ -41,7 +41,7 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public abstract partial class AllocatorBase<Key, Value> : IDisposable
+    internal abstract partial class AllocatorBase<Key, Value> : IDisposable
     {
         /// <summary>
         /// Epoch information

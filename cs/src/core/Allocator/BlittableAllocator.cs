@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
-    public unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
+    internal unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         // Circular buffer definition
         private readonly byte[][] values;

@@ -22,7 +22,7 @@ namespace FASTER.core
         public Value value;
     }
 
-    public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
+    internal unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         // Circular buffer definition
         internal Record<Key, Value>[][] values;
