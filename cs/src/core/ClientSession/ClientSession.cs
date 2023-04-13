@@ -897,16 +897,21 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Iterator for all (distinct) live key-values stored in FASTER
+        /// Pull iterator for all (distinct) live key-values stored in FASTER
         /// </summary>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>FASTER iterator</returns>
-        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1)
-        {
-            if (untilAddress == -1)
-                untilAddress = fht.Log.TailAddress;
-            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress, loggerFactory: loggerFactory);
-        }
+        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1) => fht.Iterate<Input, Output, Context, Functions>(functions, untilAddress);
+
+        /// <summary>
+        /// Push iteration of all (distinct) live key-values stored in FASTER
+        /// </summary>
+        /// <param name="scanFunctions">Functions receiving pushed records</param>
+        /// <param name="untilAddress">Report records until this address (tail by default)</param>
+        /// <returns>True if Iteration completed; false if Iteration ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool Iterate<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1) 
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => fht.Iterate<Input, Output, Context, Functions, TScanFunctions>(functions, ref scanFunctions, untilAddress);
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.

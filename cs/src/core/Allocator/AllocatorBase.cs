@@ -769,30 +769,30 @@ namespace FASTER.core
         /// <summary>
         /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Pull Scan iterator instance</returns>
         public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
 
         /// <summary>
         /// Push-based scan interface for HLOG, called from a session; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        internal abstract bool Scan<Input, Output, Context, FasterSession, TScanFunctions>(FasterSession fasterSession, long beginAddress, long endAddress, TScanFunctions scanFunctions,
+        internal abstract bool Scan<Input, Output, Context, FasterSession, TScanFunctions>(FasterSession fasterSession, long beginAddress, long endAddress, ref TScanFunctions scanFunctions,
                 ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
             where TScanFunctions : IScanIteratorFunctions<Key, Value>;
 
         /// <summary>
-        /// Push-based scan interface for HLOG, called from a session; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
+        /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        internal abstract bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, TScanFunctions scanFunctions,
+        internal abstract bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions,
                 ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>;
 
         /// <summary>
         /// Implementation for push-scanning FASTER log from a session
         /// </summary>
-        internal bool PushScanImpl<Input, Output, Context, FasterSession, TScanFunctions, TScanIterator>(FasterSession fasterSession, long beginAddress, long endAddress, TScanFunctions scanFunctions, TScanIterator iter)
+        internal bool PushScanImpl<Input, Output, Context, FasterSession, TScanFunctions, TScanIterator>(FasterSession fasterSession, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
             where TScanFunctions : IScanIteratorFunctions<Key, Value>
             where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator
@@ -808,13 +808,14 @@ namespace FASTER.core
                 stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.Failed;
                 try
                 {
+                    ref var key = ref iter.GetKey();
                     if (iter.CurrentAddress >= this.ReadOnlyAddress)
                     {
-                        fasterSession.Store.LockForScan<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
-                        stop = !scanFunctions.ConcurrentReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
+                        fasterSession.Store.LockForScan<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, ref key, ref iter.GetLockableInfo());
+                        stop = !scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
                     }
                     else
-                        stop = !scanFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
+                        stop = !scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
                 }
                 catch (Exception ex)
                 {
@@ -835,7 +836,7 @@ namespace FASTER.core
         /// <summary>
         /// Implementation for push-scanning FASTER log from the LogAccessor
         /// </summary>
-        internal bool PushScanImpl<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, long beginAddress, long endAddress, TScanFunctions scanFunctions, TScanIterator iter)
+        internal bool PushScanImpl<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>
             where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator
         {
@@ -843,20 +844,21 @@ namespace FASTER.core
                 return false;
 
             long numRecords = 1;
-            bool stop = true;
+            bool stop = false;
             for (; !stop && iter.BeginGetNext(out var recordInfo); ++numRecords)
             {
                 OperationStackContext<Key, Value> stackCtx = default;
                 stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.Failed;
                 try
                 {
+                    ref var key = ref iter.GetKey();
                     if (iter.CurrentAddress >= this.ReadOnlyAddress)
                     {
-                        store.LockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
-                        stop = !scanFunctions.ConcurrentReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
+                        store.LockForScan(ref stackCtx, ref key, ref iter.GetLockableInfo());
+                        stop = !scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
                     }
                     else
-                        stop = !scanFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
+                        stop = !scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
                 }
                 catch (Exception ex)
                 {
@@ -865,7 +867,8 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
+                    if (stackCtx.recSrc.HasLock)
+                        store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
                     iter.EndGetNext();
                 }
             }

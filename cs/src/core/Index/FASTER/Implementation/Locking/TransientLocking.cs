@@ -51,6 +51,8 @@ namespace FASTER.core
         internal void LockForScan<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.None;
+            stackCtx.recSrc.HasTransientLock = false;
             if (fasterSession.Store.DoTransientLocking)
             {
                 stackCtx = new(comparer.GetHashCode64(ref key));
@@ -58,6 +60,7 @@ namespace FASTER.core
                 stackCtx.SetRecordSourceToHashEntry(this.hlog);
                 while (!fasterSession.Store.TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
                     fasterSession.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession);
+                stackCtx.recSrc.HasTransientLock = true;
             }
             else if (fasterSession.Store.DoEphemeralLocking)
             {
@@ -70,6 +73,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void LockForScan(ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
         {
+            stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.None;
+            stackCtx.recSrc.HasTransientLock = false;
             if (this.DoTransientLocking)
             {
                 stackCtx = new(comparer.GetHashCode64(ref key));
@@ -78,6 +83,8 @@ namespace FASTER.core
 
                 while (!this.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
                     this.epoch.ProtectAndDrain();
+
+                stackCtx.recSrc.HasTransientLock = true;
             }
             else if (this.DoEphemeralLocking)
             {
@@ -94,16 +101,25 @@ namespace FASTER.core
             if (stackCtx.recSrc.HasTransientLock)
                 fasterSession.Store.TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
             else if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Success)
+            { 
                 recordInfo.UnlockShared();
+                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.None;
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnlockForScan(ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
         {
             if (stackCtx.recSrc.HasTransientLock)
-                this.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei);
+            {
+                this.LockTable.UnlockShared(ref key, ref stackCtx.hei);
+                stackCtx.recSrc.HasTransientLock = false;
+            }
             else if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Success)
+            { 
                 recordInfo.UnlockShared();
+                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.None;
+            }
         }
     }
 }

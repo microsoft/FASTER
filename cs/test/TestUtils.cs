@@ -206,6 +206,8 @@ namespace FASTER.test
 
         public enum HashModulo { NoMod = 0, Hundred = 100, Thousand = 1000 }
 
+        public enum ScanIteratorType { Pull, Push };
+
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 

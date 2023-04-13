@@ -4,6 +4,8 @@
 using System;
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.BlittableIterationTests;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -17,8 +19,8 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BlittableFASTERScanTests.log", deleteOnClose: true);
+            DeleteDirectory(MethodTestDir, wait:true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/BlittableFASTERScanTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
         }
@@ -30,20 +32,46 @@ namespace FASTER.test
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
+        }
+
+        internal struct BlittablePushScanTestFunctions : IScanIteratorFunctions<KeyStruct, ValueStruct>
+        {
+            internal int keyMultToValue;
+            internal long numRecords;
+
+            public bool OnStart(long beginAddress, long endAddress) => true;
+
+            public bool ConcurrentReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, nextAddress);
+
+            public bool SingleReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
+            {
+                Assert.AreEqual(numRecords, key.kfield1);
+                Assert.AreEqual(numRecords + 1, key.kfield2);
+                Assert.AreEqual(numRecords, value.vfield1);
+                Assert.AreEqual(numRecords + 1, value.vfield2);
+
+                ++numRecords;
+                return true;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+
+            public void OnStop(bool completed, long numberOfRecords) { }
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
 
-        public void BlittableDiskWriteScan()
+        public void BlittableDiskWriteScan([Values] ScanIteratorType scanIteratorType)
         {
             using var session = fht.For(new Functions()).NewSession<Functions>();
 
-            var s = fht.Log.Subscribe(new LogObserver());
-
+            using var s = fht.Log.Subscribe(new LogObserver());
             var start = fht.Log.TailAddress;
+
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
@@ -52,33 +80,25 @@ namespace FASTER.test
             }
             fht.Log.FlushAndEvict(true);
 
-            var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering);
-
-            int val = 0;
-            while (iter.GetNext(out _, out KeyStruct key, out ValueStruct value))
+            BlittablePushScanTestFunctions scanIteratorFunctions = new();
+            void scanAndVerify(ScanBufferingMode sbm)
             {
-                Assert.AreEqual(val, key.kfield1);
-                Assert.AreEqual(val + 1, key.kfield2);
-                Assert.AreEqual(val, value.vfield1);
-                Assert.AreEqual(val + 1, value.vfield2);
-                val++;
+                scanIteratorFunctions.numRecords = 0;
+
+                if (scanIteratorType == ScanIteratorType.Pull)
+                {
+                    using var iter = fht.Log.Scan(start, fht.Log.TailAddress, sbm);
+                    while (iter.GetNext(out var recordInfo))
+                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, default);
+                }
+                else
+                    Assert.IsTrue(fht.Log.Scan(ref scanIteratorFunctions, start, fht.Log.TailAddress, sbm), "Failed to complete push iteration");
+
+                Assert.AreEqual(totalRecords, scanIteratorFunctions.numRecords);
             }
-            Assert.AreEqual(val, totalRecords);
 
-            iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering);
-
-            val = 0;
-            while (iter.GetNext(out RecordInfo recordInfo, out KeyStruct key, out ValueStruct value))
-            {
-                Assert.AreEqual(val, key.kfield1);
-                Assert.AreEqual(val + 1, key.kfield2);
-                Assert.AreEqual(val, value.vfield1);
-                Assert.AreEqual(val + 1, value.vfield2);
-                val++;
-            }
-            Assert.AreEqual(val, totalRecords);
-
-            s.Dispose();
+            scanAndVerify(ScanBufferingMode.SinglePageBuffering);
+            scanAndVerify(ScanBufferingMode.DoublePageBuffering);
         }
 
         class LogObserver : IObserver<IFasterScanIterator<KeyStruct, ValueStruct>>

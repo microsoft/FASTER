@@ -3,6 +3,8 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using System;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -16,9 +18,10 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericIterationTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericIterationTests.obj.log", deleteOnClose: true);
+            DeleteDirectory(MethodTestDir, wait: true);
+
+            log ??= Devices.CreateLogDevice(MethodTestDir + "/GenericIterationTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(MethodTestDir + "/GenericIterationTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue>
                 (128,
@@ -40,19 +43,60 @@ namespace FASTER.test
             objlog?.Dispose();
             objlog = null;
 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
+        }
+
+        internal struct GenericPushIterationTestFunctions : IScanIteratorFunctions<MyKey, MyValue>
+        {
+            internal int keyMultToValue;
+            internal long numRecords;
+
+            public bool OnStart(long beginAddress, long endAddress) => true;
+
+            public bool ConcurrentReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, nextAddress);
+
+            public bool SingleReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
+            {
+                if (keyMultToValue > 0)
+                    Assert.AreEqual(key.key * keyMultToValue, value.value);
+
+                ++numRecords;
+                return true;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+
+            public void OnStop(bool completed, long numberOfRecords) { }
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
 
-        public void IterationBasicTest()
+        public void GenericIterationBasicTest([Values] ScanIteratorType scanIteratorType)
         {
-            using var session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
+            GenericPushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 2000;
             var start = fht.Log.TailAddress;
+
+            void iterateAndVerify(int keyMultToValue, int expectedRecs)
+            {
+                scanIteratorFunctions.keyMultToValue = keyMultToValue;
+                scanIteratorFunctions.numRecords = 0;
+
+                if (scanIteratorType == ScanIteratorType.Pull)
+                {
+                    using var iter = session.Iterate();
+                    while (iter.GetNext(out var recordInfo))
+                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, default);
+                }
+                else
+                    Assert.IsTrue(session.Iterate(ref scanIteratorFunctions), "Failed to complete push iteration");
+
+                Assert.AreEqual(expectedRecs, scanIteratorFunctions.numRecords);
+            }
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -61,16 +105,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0);
             }
 
-            int count = 0;
-            var iter = session.Iterate();
-            while (iter.GetNext(out var recordInfo))
-            {
-                count++;
-                Assert.AreEqual(iter.GetKey().key, iter.GetValue().value);
-            }
-            iter.Dispose();
-
-            Assert.AreEqual(totalRecords, count);
+            iterateAndVerify(1, totalRecords);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -79,16 +114,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0);
             }
 
-            count = 0;
-            iter = session.Iterate();
-            while (iter.GetNext(out var recordInfo))
-            {
-                count++;
-                Assert.AreEqual(iter.GetKey().key * 2, iter.GetValue().value);
-            }
-            iter.Dispose();
-
-            Assert.AreEqual(totalRecords, count);
+            iterateAndVerify(2, totalRecords);
 
             for (int i = totalRecords / 2; i < totalRecords; i++)
             {
@@ -97,15 +123,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0);
             }
 
-            count = 0;
-            iter = session.Iterate();
-            while (iter.GetNext(out var recordInfo))
-            {
-                count++;
-            }
-            iter.Dispose();
-
-            Assert.AreEqual(totalRecords, count);
+            iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
@@ -114,15 +132,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0);
             }
 
-            count = 0;
-            iter = session.Iterate();
-            while (iter.GetNext(out var recordInfo))
-            {
-                count++;
-            }
-            iter.Dispose();
-
-            Assert.AreEqual(totalRecords, count);
+            iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
@@ -131,15 +141,7 @@ namespace FASTER.test
                 session.Delete(ref key1, 0);
             }
 
-            count = 0;
-            iter = session.Iterate();
-            while (iter.GetNext(out var recordInfo))
-            {
-                count++;
-            }
-            iter.Dispose();
-
-            Assert.AreEqual(totalRecords / 2, count);
+            iterateAndVerify(0, totalRecords / 2);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -148,16 +150,7 @@ namespace FASTER.test
                 session.Upsert(ref key1, ref value, 0);
             }
 
-            count = 0;
-            iter = session.Iterate();
-            while (iter.GetNext(out var recordInfo))
-            {
-                count++;
-                Assert.AreEqual(iter.GetKey().key * 3, iter.GetValue().value);
-            }
-            iter.Dispose();
-
-            Assert.AreEqual(totalRecords, count);
+            iterateAndVerify(3, totalRecords);
         }
     }
 }
