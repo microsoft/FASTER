@@ -364,9 +364,23 @@ namespace FASTER.core
                 }
             }
         }
+        
+        void Reset()
+        {
+            Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
+            overflowBucketsAllocator.Dispose();
+            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
+        }
 
         private long InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo)
         {
+            if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
+            {
+                logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first");
+                Reset();
+                hlog.Reset();
+            }
+            
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 RecoverFuzzyIndex(recoveredICInfo);
 

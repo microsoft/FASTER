@@ -58,6 +58,19 @@ namespace FASTER.core
             }
         }
 
+        public override void Reset()
+        {
+            for (int i = 0; i < BufferSize; i++)
+            {
+                if (values[i] != null)
+                {
+                    Array.Clear(values[i], 0, values[i].Length);
+                }
+            }
+            Initialize();
+            base.Reset();
+        }
+
         public override void Initialize()
         {
             Initialize(Constants.kFirstValidAddress);

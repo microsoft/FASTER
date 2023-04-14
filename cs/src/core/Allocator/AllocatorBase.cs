@@ -877,6 +877,18 @@ namespace FASTER.core
         /// </summary>
         internal abstract int OverflowPageCount { get; }
 
+
+        /// <summary>
+        /// Reset the hybrid log
+        /// </summary>
+        public virtual void Reset()
+        {
+            this.FlushEvent.Initialize();
+            Array.Clear(PageStatusIndicator, 0, BufferSize);
+            for (int i = 0; i < BufferSize; i++)
+                PendingFlush[i].list.Clear();
+        }
+
         /// <summary>
         /// Initialize allocator
         /// </summary>
