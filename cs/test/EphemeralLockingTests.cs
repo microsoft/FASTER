@@ -124,27 +124,39 @@ namespace FASTER.test.EphemeralLocking
                 this.fht.Log.FlushAndEvict(wait: true);
         }
 
+        struct EnsureNoLock_ScanIteratorFunctions : IScanIteratorFunctions<long, long>
+        {
+            internal long count;
+
+            public bool OnStart(long beginAddress, long endAddress) => true;
+
+            public bool ConcurrentReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress) 
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, nextAddress);
+
+            public bool SingleReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
+            {
+                ++count;
+                Assert.False(recordMetadata.RecordInfo.IsLocked, $"Unexpected Locked record for key {key}: {(recordMetadata.RecordInfo.IsLockedShared ? "S" : "")} {(recordMetadata.RecordInfo.IsLockedExclusive ? "X" : "")}");
+                return true;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+
+            public void OnStop(bool completed, long numberOfRecords) { }
+        }
+
         void AssertNoLocks()
         {
-            long count = 0;
-            using (var iter = this.fht.Log.Scan(this.fht.Log.BeginAddress, this.fht.Log.TailAddress))
-            {
-                while (iter.GetNext(out var recordInfo, out var key, out var value))
-                {
-                    ++count;
-                    Assert.False(recordInfo.IsLocked, $"Unexpected Locked record for key {key}: {(recordInfo.IsLockedShared ? "S" : "")} {(recordInfo.IsLockedExclusive ? "X" : "")}");
-                }
-                // We delete some records so just make sure the test executed.
-                Assert.Greater(count, 0);
-            }
+            EnsureNoLock_ScanIteratorFunctions scanFunctions = new();
+            Assert.IsTrue(this.fht.Log.Scan(ref scanFunctions, this.fht.Log.BeginAddress, this.fht.Log.TailAddress), "Main log scan did not complete");
+
+            // We delete some records so just make sure the test executed.
+            Assert.Greater(scanFunctions.count, 0);
 
             if (this.fht.UseReadCache)
             {
-                using var iter = this.fht.ReadCache.Scan(this.fht.readcache.BeginAddress, this.fht.readcache.GetTailAddress());
-                while (iter.GetNext(out var recordInfo, out var key, out var value))
-                {
-                    Assert.False(recordInfo.IsLocked, $"Unexpected Locked record for key {key}: {(recordInfo.IsLockedShared ? "S" : "")} {(recordInfo.IsLockedExclusive ? "X" : "")}");
-                }
+                scanFunctions.count = 0;
+                Assert.IsTrue(this.fht.ReadCache.Scan(ref scanFunctions, this.fht.readcache.BeginAddress, this.fht.readcache.GetTailAddress()), "Readcache scan did not complete");
             }
         }
 
@@ -211,8 +223,8 @@ namespace FASTER.test.EphemeralLocking
             session.ctx.phase = phase;
             long dummyInOut = 0;
             status = useRMW
-                ? session.RMW(ref resultKey, ref expectedResult, ref resultValue, out RecordMetadata recordMetadata)
-                : session.Upsert(ref resultKey, ref dummyInOut, ref expectedResult, ref resultValue, out recordMetadata);
+                ? session.RMW(ref resultKey, ref expectedResult, ref resultValue, out _)
+                : session.Upsert(ref resultKey, ref dummyInOut, ref expectedResult, ref resultValue, out _);
             if (flushMode == FlushMode.OnDisk)
             {
                 if (status.IsPending)
@@ -247,6 +259,7 @@ namespace FASTER.test.EphemeralLocking
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "readCopyDestination is used by Setup")]
         public void InMemoryDeleteTest([Values] ReadCopyDestination readCopyDestination,
                                        [Values(FlushMode.NoFlush, FlushMode.ReadOnly)] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {

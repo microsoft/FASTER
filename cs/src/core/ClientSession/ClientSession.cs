@@ -901,7 +901,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>FASTER iterator</returns>
-        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1) => fht.Iterate<Input, Output, Context, Functions>(functions, untilAddress);
+        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1) 
+            => fht.Iterate<Input, Output, Context, Functions>(functions, untilAddress);
 
         /// <summary>
         /// Push iteration of all (distinct) live key-values stored in FASTER

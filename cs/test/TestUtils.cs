@@ -208,6 +208,8 @@ namespace FASTER.test
 
         public enum ScanIteratorType { Pull, Push };
 
+        public enum ScanMode { Scan, Iterate };
+
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 

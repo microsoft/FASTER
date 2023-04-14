@@ -22,7 +22,7 @@ namespace FASTER.test
             DeleteDirectory(MethodTestDir, wait:true);
             log = Devices.CreateLogDevice(MethodTestDir + "/BlittableFASTERScanTests.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 }, lockingMode: LockingMode.None);
         }
 
         [TearDown]
@@ -37,7 +37,6 @@ namespace FASTER.test
 
         internal struct BlittablePushScanTestFunctions : IScanIteratorFunctions<KeyStruct, ValueStruct>
         {
-            internal int keyMultToValue;
             internal long numRecords;
 
             public bool OnStart(long beginAddress, long endAddress) => true;

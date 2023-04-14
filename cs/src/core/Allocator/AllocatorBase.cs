@@ -644,7 +644,6 @@ namespace FASTER.core
         private unsafe void VerifyPage(long page)
         {
             var startLogicalAddress = GetStartLogicalAddress(page);
-            var endLogicalAddress = GetStartLogicalAddress(page + 1);
             var physicalAddress = GetPhysicalAddress(startLogicalAddress);
 
             long untilLogicalAddressInPage = GetPageSize();
@@ -773,65 +772,12 @@ namespace FASTER.core
         public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
 
         /// <summary>
-        /// Push-based scan interface for HLOG, called from a session; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
-        /// </summary>
-        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        internal abstract bool Scan<Input, Output, Context, FasterSession, TScanFunctions>(FasterSession fasterSession, long beginAddress, long endAddress, ref TScanFunctions scanFunctions,
-                ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-            where TScanFunctions : IScanIteratorFunctions<Key, Value>;
-
-        /// <summary>
         /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         internal abstract bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions,
                 ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>;
-
-        /// <summary>
-        /// Implementation for push-scanning FASTER log from a session
-        /// </summary>
-        internal bool PushScanImpl<Input, Output, Context, FasterSession, TScanFunctions, TScanIterator>(FasterSession fasterSession, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-            where TScanFunctions : IScanIteratorFunctions<Key, Value>
-            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator
-        {
-            if (!scanFunctions.OnStart(beginAddress, endAddress))
-                return false;
-
-            long numRecords = 1;
-            bool stop = true;
-            for (; !stop && iter.BeginGetNext(out var recordInfo); ++numRecords)
-            {
-                OperationStackContext<Key, Value> stackCtx = default;
-                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.Failed;
-                try
-                {
-                    ref var key = ref iter.GetKey();
-                    if (iter.CurrentAddress >= this.ReadOnlyAddress)
-                    {
-                        fasterSession.Store.LockForScan<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, ref key, ref iter.GetLockableInfo());
-                        stop = !scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
-                    }
-                    else
-                        stop = !scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
-                }
-                catch (Exception ex)
-                {
-                    scanFunctions.OnException(ex, numRecords);
-                    throw;
-                }
-                finally
-                {
-                    fasterSession.Store.UnlockForScan<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
-                    iter.EndGetNext();
-                }
-            }
-
-            scanFunctions.OnStop(!stop, numRecords);
-            return true;
-        }
 
         /// <summary>
         /// Implementation for push-scanning FASTER log from the LogAccessor
@@ -858,7 +804,9 @@ namespace FASTER.core
                         stop = !scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
                     }
                     else
+                    { 
                         stop = !scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -874,7 +822,7 @@ namespace FASTER.core
             }
 
             scanFunctions.OnStop(!stop, numRecords);
-            return true;
+            return !stop;
         }
 
         /// <summary>
@@ -971,7 +919,7 @@ namespace FASTER.core
             if (PageSize < sectorSize)
                 throw new FasterException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
 
-            AlignedPageSizeBytes = ((PageSize + (sectorSize - 1)) & ~(sectorSize - 1));
+            AlignedPageSizeBytes = (PageSize + (sectorSize - 1)) & ~(sectorSize - 1);
         }
 
         /// <summary>
@@ -987,8 +935,7 @@ namespace FASTER.core
         {
             Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
 
-            if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, sectorSize);
+            bufferPool ??= new SectorAlignedBufferPool(1, sectorSize);
 
             if (BufferSize > 0)
             {
@@ -1130,7 +1077,7 @@ namespace FASTER.core
         /// <returns></returns>
         public long GetPage(long logicalAddress)
         {
-            return (logicalAddress >> LogPageSizeBits);
+            return logicalAddress >> LogPageSizeBits;
         }
 
         /// <summary>
@@ -1431,7 +1378,7 @@ namespace FASTER.core
         private void OnPagesClosed(long newSafeHeadAddress)
         {
             Debug.Assert(newSafeHeadAddress > 0);
-            if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
+            if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out _))
             {
                 // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
                 for (; ; Thread.Yield())
@@ -1527,7 +1474,7 @@ namespace FASTER.core
         {
             long currentReadOnlyAddress = ReadOnlyAddress;
             long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
-            long desiredReadOnlyAddress = (pageAlignedTailAddress - ReadOnlyLagAddress);
+            long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyLagAddress;
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out long oldReadOnlyAddress))
             {
                 // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
@@ -1648,7 +1595,7 @@ namespace FASTER.core
             TailPageOffset.Offset = (int)offsetInPage;
 
             // Allocate current page if necessary
-            var pageIndex = (TailPageOffset.Page % BufferSize);
+            var pageIndex = TailPageOffset.Page % BufferSize;
             if (!IsAllocated(pageIndex))
                 AllocatePage(pageIndex);
 
@@ -1819,7 +1766,7 @@ namespace FASTER.core
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
                 uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+                long adjustedUntilAddress = AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask);
 
                 if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
                 {

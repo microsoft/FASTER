@@ -361,15 +361,6 @@ namespace FASTER.core
             => new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
 
         /// <summary>
-        /// Implementation for push-scanning FASTER log
-        /// </summary>
-        internal override bool Scan<Input, Output, Context, FasterSession, TScanFunctions>(FasterSession fasterSession, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
-        {
-            using BlittableScanIterator<Key, Value> iter = new(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
-            return PushScanImpl<Input, Output, Context, FasterSession, TScanFunctions, BlittableScanIterator<Key, Value>>(fasterSession, beginAddress, endAddress, ref scanFunctions, iter);
-        }
-
-        /// <summary>
         /// Implementation for push-scanning FASTER log, called from LogAccessor
         /// </summary>
         internal override bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)

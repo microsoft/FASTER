@@ -65,6 +65,7 @@ namespace FASTER.core
 
         internal readonly bool DoTransientLocking;  // uses LockTable
         internal readonly bool DoEphemeralLocking;  // uses RecordInfo
+        internal bool IsLocking => DoTransientLocking || DoEphemeralLocking;
         internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
         internal void IncrementNumLockingSessions()
