@@ -376,11 +376,13 @@ namespace FASTER.core
         {
             if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
             {
-                logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first");
+                logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
+                // Reset the hash index
                 Reset();
+                // Reset the hybrid log
                 hlog.Reset();
             }
-            
+
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 RecoverFuzzyIndex(recoveredICInfo);
 
@@ -415,6 +417,15 @@ namespace FASTER.core
 
         private async ValueTask<long> InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
         {
+            if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
+            {
+                logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
+                // Reset the hash index
+                Reset();
+                // Reset the hybrid log
+                hlog.Reset();
+            }
+
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 await RecoverFuzzyIndexAsync(recoveredICInfo, cancellationToken).ConfigureAwait(false);
 
