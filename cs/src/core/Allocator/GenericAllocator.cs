@@ -89,16 +89,19 @@ namespace FASTER.core
 
         public override void Reset()
         {
-            for (int i = 0; i < BufferSize; i++)
+            base.Reset();
+            for (int index = 0; index < BufferSize; index++)
             {
-                if (values[i] != null)
+                if (values[index] != default)
                 {
-                    Array.Clear(values[i], 0, values[i].Length);
+                    overflowPagePool.TryAdd(values[index % BufferSize]);
+                    values[index % BufferSize] = default;
+                    Interlocked.Decrement(ref AllocatedPageCount);
                 }
             }
+
             Array.Clear(segmentOffsets, 0, segmentOffsets.Length);
             Initialize();
-            base.Reset();
         }
 
         public override void Initialize()

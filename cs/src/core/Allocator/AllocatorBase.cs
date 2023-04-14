@@ -879,10 +879,38 @@ namespace FASTER.core
 
 
         /// <summary>
-        /// Reset the hybrid log
+        /// Reset the hybrid log. WARNING: assumes that threads have drained out at this point.
         /// </summary>
         public virtual void Reset()
         {
+            var newBeginAddress = GetTailAddress();
+
+            // Shift read-only addresses to tail without flushing
+            Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out _);
+            Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out _);
+
+            // Shift head address to tail
+            if (Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out _))
+            {
+                // Close addresses
+                OnPagesClosed(newBeginAddress);
+
+                // Wait for pages to get closed
+                while (ClosedUntilAddress < newBeginAddress)
+                {
+                    Thread.Yield();
+                    if (epoch.ThisInstanceProtected())
+                        epoch.ProtectAndDrain();
+                }
+            }
+
+            // Update begin address to tail
+            if (Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out _))
+            {
+                // Truncate until tail
+                TruncateUntilAddress(newBeginAddress);
+            }
+
             this.FlushEvent.Initialize();
             Array.Clear(PageStatusIndicator, 0, BufferSize);
             for (int i = 0; i < BufferSize; i++)

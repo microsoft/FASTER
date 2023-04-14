@@ -365,11 +365,18 @@ namespace FASTER.core
             }
         }
         
-        void Reset()
+        /// <summary>
+        /// Reset the store to an empty state. WARNING: call only when store is quiesced.
+        /// </summary>
+        public void Reset()
         {
+            // Reset the hash index
             Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
             overflowBucketsAllocator.Dispose();
             overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
+
+            // Reset the hybrid log
+            hlog.Reset();
         }
 
         private long InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo)
@@ -377,10 +384,7 @@ namespace FASTER.core
             if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
             {
                 logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
-                // Reset the hash index
                 Reset();
-                // Reset the hybrid log
-                hlog.Reset();
             }
 
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
@@ -420,10 +424,7 @@ namespace FASTER.core
             if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
             {
                 logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
-                // Reset the hash index
                 Reset();
-                // Reset the hybrid log
-                hlog.Reset();
             }
 
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))

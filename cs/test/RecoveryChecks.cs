@@ -294,7 +294,7 @@ namespace FASTER.test.recovery
         {
             using var fht1 = new FasterKV<long, long>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 11 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 

@@ -60,15 +60,28 @@ namespace FASTER.core
 
         public override void Reset()
         {
-            for (int i = 0; i < BufferSize; i++)
+            base.Reset();
+            for (int index = 0; index < BufferSize; index++)
             {
-                if (values[i] != null)
+                if (values[index] != null)
                 {
-                    Array.Clear(values[i], 0, values[i].Length);
+                    overflowPagePool.TryAdd(new PageUnit
+                    {
+#if !NET5_0_OR_GREATER
+                        handle = handles[index],
+#endif
+                        pointer = pointers[index],
+                        value = values[index]
+                    });
+                    values[index] = null;
+                    pointers[index] = 0;
+#if !NET5_0_OR_GREATER
+                    handles[index] = default;
+#endif
+                    Interlocked.Decrement(ref AllocatedPageCount);
                 }
             }
             Initialize();
-            base.Reset();
         }
 
         public override void Initialize()
