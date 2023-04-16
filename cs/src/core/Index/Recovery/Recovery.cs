@@ -368,7 +368,7 @@ namespace FASTER.core
         /// <summary>
         /// Reset the store to an empty state. WARNING: call only when store is quiesced.
         /// </summary>
-        public void Reset()
+        void Reset(long diskBeginAddress, long diskFlushedUntilAddress)
         {
             // Reset the hash index
             Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
@@ -376,7 +376,7 @@ namespace FASTER.core
             overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
 
             // Reset the hybrid log
-            hlog.Reset();
+            hlog.Reset(diskBeginAddress, diskFlushedUntilAddress);
         }
 
         private long InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo)
@@ -384,7 +384,9 @@ namespace FASTER.core
             if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
             {
                 logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
-                Reset();
+                var flushedUntilAddress =
+                    recoveredHLCInfo.info.useSnapshotFile == 0 ? recoveredHLCInfo.info.finalLogicalAddress : recoveredHLCInfo.info.flushedLogicalAddress;
+                Reset(recoveredHLCInfo.info.beginAddress, flushedUntilAddress);
             }
 
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
@@ -424,7 +426,9 @@ namespace FASTER.core
             if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
             {
                 logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
-                Reset();
+                var flushedUntilAddress =
+                    recoveredHLCInfo.info.useSnapshotFile == 0 ? recoveredHLCInfo.info.finalLogicalAddress : recoveredHLCInfo.info.flushedLogicalAddress;
+                Reset(recoveredHLCInfo.info.beginAddress, flushedUntilAddress);
             }
 
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))

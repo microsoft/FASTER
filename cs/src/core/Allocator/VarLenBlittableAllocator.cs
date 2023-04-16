@@ -75,9 +75,9 @@ namespace FASTER.core
 
         internal override int OverflowPageCount => overflowPagePool.Count;
 
-        public override void Reset()
+        public override void Reset(long diskBeginAddress, long diskFlushedUntilAddress)
         {
-            base.Reset();
+            base.Reset(diskBeginAddress, diskFlushedUntilAddress);
             for (int index = 0; index < BufferSize; index++)
             {
                 if (values[index] != null)

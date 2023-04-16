@@ -87,9 +87,9 @@ namespace FASTER.core
 
         internal override int OverflowPageCount => overflowPagePool.Count;
 
-        public override void Reset()
+        public override void Reset(long diskBeginAddress, long diskFlushedUntilAddress)
         {
-            base.Reset();
+            base.Reset(diskBeginAddress, diskFlushedUntilAddress);
             for (int index = 0; index < BufferSize; index++)
             {
                 if (values[index] != default)
@@ -282,6 +282,18 @@ namespace FASTER.core
         {
             base.TruncateUntilAddress(toAddress);
             objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
+        }
+
+        protected override void TruncateUntilAddressBlocking(long toAddress)
+        {
+            base.TruncateUntilAddressBlocking(toAddress);
+            objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
+        }
+
+        protected override void RemoveSegment(int segment)
+        {
+            base.RemoveSegment(segment);
+            objectLogDevice.RemoveSegment(segment);
         }
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)

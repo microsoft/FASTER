@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -167,6 +168,11 @@ namespace FASTER.core
         /// The lowest valid address in the log
         /// </summary>
         public long BeginAddress;
+        
+        /// <summary>
+        /// The lowest valid address on disk - updated when truncating log
+        /// </summary>
+        public long PersistedBeginAddress;
 
         /// <summary>
         /// Address until which we are currently closing. Used to coordinate linear closing of pages.
@@ -881,8 +887,10 @@ namespace FASTER.core
         /// <summary>
         /// Reset the hybrid log. WARNING: assumes that threads have drained out at this point.
         /// </summary>
-        public virtual void Reset()
+        public virtual void Reset(long diskBeginAddress, long diskFlushedUntilAddress)
         {
+            // First gracefully handle in-memory data and addresses
+
             var newBeginAddress = GetTailAddress();
 
             // Shift read-only addresses to tail without flushing
@@ -905,12 +913,33 @@ namespace FASTER.core
             }
 
             // Update begin address to tail
-            if (Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out _))
-            {
-                // Truncate until tail
-                TruncateUntilAddress(newBeginAddress);
-            }
+            Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out _);
+            
+            // Next, verify and set up disk segments
 
+            // Delete disk segments until specified disk begin address
+
+            long firstSegment = (int)(diskBeginAddress >> LogSegmentSizeBits);
+            if (firstSegment < device.StartSegment)
+                throw new FasterException($"Unable to reset to begin segment {firstSegment}, earliest available segment on disk is {device.StartSegment}");
+
+            // Delete disk segments after specified disk flushed until address
+            int tailStartSegment = (int)(diskFlushedUntilAddress >> LogSegmentSizeBits);
+            if ((diskFlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) > 0)
+                tailStartSegment++;
+
+            logger?.LogInformation("Setting disk to segment range [{firstSegment}--{tailStartSegment})", firstSegment, tailStartSegment);
+
+            int tailEndSegment = (int)(FlushedUntilAddress >> LogSegmentSizeBits);
+
+            logger?.LogInformation("Deleting disk segments until (not including) {firstSegment}", firstSegment);
+            TruncateUntilAddressBlocking(firstSegment << LogSegmentSizeBits);
+
+            for (int s = tailStartSegment; s <= tailEndSegment; s++)
+            {
+                logger?.LogInformation("Removing disk segment {s}", s);
+                RemoveSegment(s);
+            }
             this.FlushEvent.Initialize();
             Array.Clear(PageStatusIndicator, 0, BufferSize);
             for (int i = 0; i < BufferSize; i++)
@@ -1334,7 +1363,26 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         protected virtual void TruncateUntilAddress(long toAddress)
         {
+            PersistedBeginAddress = toAddress;
             Task.Run(() => device.TruncateUntilAddress(toAddress));
+        }
+
+        /// <summary>
+        /// Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices
+        /// </summary>
+        /// <param name="toAddress"></param>
+        protected virtual void TruncateUntilAddressBlocking(long toAddress)
+        {
+            device.TruncateUntilAddress(toAddress);
+        }
+
+        /// <summary>
+        /// Remove disk segment
+        /// </summary>
+        /// <param name="segment"></param>
+        protected virtual void RemoveSegment(int segment)
+        {
+            device.RemoveSegment(segment);
         }
 
         internal virtual bool TryComplete()
