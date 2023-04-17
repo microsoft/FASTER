@@ -3,7 +3,6 @@
 
 using Microsoft.Extensions.Logging;
 using System;
-using System.Diagnostics;
 using System.IO;
 
 namespace FASTER.core
@@ -23,9 +22,9 @@ namespace FASTER.core
         public long IndexSize = 1L << 26;
 
         /// <summary>
-        /// Whether non-Lockable FASTER contexts take read and write locks on records internally as part of operations
+        /// How FASTER should do record locking
         /// </summary>
-        public bool DisableEphemeralLocking = false;
+        public LockingMode LockingMode;
 
         /// <summary>
         /// Device used for main hybrid log
@@ -60,7 +59,7 @@ namespace FASTER.core
         /// <summary>
         /// Control Read operations. These flags may be overridden by flags specified on session.NewSession or on the individual Read() operations
         /// </summary>
-        public ReadFlags ReadFlags;
+        public ReadCopyOptions ReadCopyOptions;
 
         /// <summary>
         /// Whether to preallocate the entire log (pages) in memory
@@ -139,11 +138,6 @@ namespace FASTER.core
         /// Whether we should throttle the disk IO for checkpoints (one write at a time, wait between each write) and issue IO from separate task (-1 = throttling disabled)
         /// </summary>
         public int ThrottleCheckpointFlushDelayMs = -1;
-        
-        /// <summary>
-        /// Number of buckets in the lock table.
-        /// </summary>
-        public int LockTableSize = Constants.kDefaultLockTableSize;
 
         /// <summary>
         /// Create default configuration settings for FasterKV. You need to create and specify LogDevice 
@@ -200,8 +194,9 @@ namespace FASTER.core
             var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
-            retStr += $"; mutable fraction: {MutableFraction}; supports locking: {(DisableEphemeralLocking ? "no" : "yes")}";
+            retStr += $"; mutable fraction: {MutableFraction}; locking mode: {this.LockingMode}";
             retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
+            retStr += $"; read copy options: {ReadCopyOptions}";
             if (ReadCacheEnabled)
                 retStr += $"; rc memory: {Utility.PrettySize(ReadCacheMemorySize)}; rc page: {Utility.PrettySize(ReadCachePageSize)}";
             return retStr;
@@ -212,8 +207,8 @@ namespace FASTER.core
             long adjustedSize = Utility.PreviousPowerOf2(IndexSize);
             if (adjustedSize < 512)
                 throw new FasterException($"{nameof(IndexSize)} should be at least of size 8 cache line (512 bytes)");
-            if (IndexSize != adjustedSize)
-                logger?.LogInformation($"Warning: using lower value {adjustedSize} instead of specified {IndexSize} for {nameof(IndexSize)}");
+            if (IndexSize != adjustedSize)  // Don't use string interpolation when logging messages because it makes it impossible to group by the message template.
+                logger?.LogInformation("Warning: using lower value {0} instead of specified {1} for {2}", adjustedSize, IndexSize, nameof(IndexSize));
             return adjustedSize / 64;
         }
 
@@ -221,7 +216,7 @@ namespace FASTER.core
         {
             return new LogSettings
             {
-                ReadFlags = ReadFlags,
+                ReadCopyOptions = ReadCopyOptions,
                 LogDevice = LogDevice,
                 ObjectLogDevice = ObjectLogDevice,
                 MemorySizeBits = Utility.NumBitsPreviousPowerOf2(MemorySize),

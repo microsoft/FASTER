@@ -41,13 +41,8 @@ namespace FASTER.core
             switch (current.Phase)
             {
                 case Phase.PREPARE:
-                    if (ctx != null)
-                    {
-                        if (!ctx.markers[EpochPhaseIdx.Prepare])
-                        {
-                            ctx.markers[EpochPhaseIdx.Prepare] = true;
-                        }
-                    }
+                    if (ctx is not null)
+                        ctx.markers[EpochPhaseIdx.Prepare] = true;
 
                     faster.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
                     if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && faster.hlog.NumActiveLockingSessions == 0)

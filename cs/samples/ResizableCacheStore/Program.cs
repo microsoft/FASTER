@@ -10,7 +10,7 @@ using System.Threading;
 #pragma warning disable IDE0079 // Remove unnecessary suppression
 #pragma warning disable CS0162 // Unreachable code detected
 
-namespace MemOnlyCache
+namespace ResizableCacheStore
 {
     class Program
     {
@@ -85,7 +85,7 @@ namespace MemOnlyCache
         const string UseUniformArg = "-u";
 
         /// <summary>
-        /// If true, create a log file in the {tempdir}\MemOnlyCacheSample
+        /// If true, create a log file in the {tempdir}\ResizableCacheStoreSample
         /// </summary>
         static bool UseLogFile = false;
         const string UseLogFileArg = "-l";
@@ -97,13 +97,13 @@ namespace MemOnlyCache
         const string QuietArg = "-q";
 
         /// <summary>
-        /// Uniform random distribution (true) or Zipf distribution (false) of requests
+        /// Copy to tail on read
         /// </summary>
         static bool UseReadCTT = true;
         const string NoReadCTTArg = "--noreadctt";
 
         /// <summary>
-        /// Uniform random distribution (true) or Zipf distribution (false) of requests
+        /// Copy to read cache on read
         /// </summary>
         static bool UseReadCache = false;
         const string UseReadCacheArg = "--readcache";
@@ -225,6 +225,11 @@ namespace MemOnlyCache
                         MaxKeySize = int.Parse(val);
                         continue;
                     }
+                    if (arg == MaxValueSizeArg)
+                    {
+                        MaxValueSize = int.Parse(val);
+                        continue;
+                    }
                     if (arg == MemorySizeBitsArg)
                     {
                         MemorySizeBits = int.Parse(val);
@@ -303,7 +308,7 @@ namespace MemOnlyCache
             return true;
         }
 
-        static string GetLogPath() => Path.GetTempPath() + "MemOnlyCacheSample\\";
+        static string GetLogPath() => Path.GetTempPath() + "ResizableCacheStoreSample\\";
 
         static void Main(string[] args)
         {
@@ -337,7 +342,7 @@ namespace MemOnlyCache
             {
                 LogDevice = log, ObjectLogDevice = objectLog,
                 MutableFraction = 0.9, // 10% of memory log is "read-only region"
-                ReadFlags = UseReadCTT ? ReadFlags.CopyReadsToTail : ReadFlags.None, // whether reads in read-only region are copied to tail
+                ReadCopyOptions = UseReadCTT ? new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) : ReadCopyOptions.None, // whether reads in read-only region are copied to tail
                 PageSizeBits = PageSizeBits,
                 MemorySizeBits = MemorySizeBits
             };
@@ -415,9 +420,11 @@ namespace MemOnlyCache
                 var ts = TimeSpan.FromSeconds(currentTimeMs / 1000);
                 var totalElapsed = ts.ToString();
 
-                Console.WriteLine("Throughput: {0,8:0.00}K ops/sec; Hit rate: {1:N2}; Memory footprint: {2,12:N2}KB, elapsed: {3:c}", 
-                                (currentReads - _lastReads) / (double)(currentElapsed), statusFound / (double)(statusFound + statusNotFound),
-                                sizeTracker.TotalSizeBytes / 1024.0, totalElapsed);
+                Console.WriteLine("Throughput: {0,8:0.00}K ops/sec; Hit rate: {1:N2}; elapsed: {2:c}", 
+                                (currentReads - _lastReads) / (double)(currentElapsed),
+                                statusFound / (double)(statusFound + statusNotFound),
+                                totalElapsed);
+                sizeTracker.PrintStats();
 
                 Interlocked.Exchange(ref statusFound, 0);
                 Interlocked.Exchange(ref statusNotFound, 0);

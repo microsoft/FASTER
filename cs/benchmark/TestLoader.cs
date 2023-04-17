@@ -28,7 +28,7 @@ namespace FASTER.benchmark
         internal KeySpanByte[] txn_span_keys = default;
 
         internal readonly BenchmarkType BenchmarkType;
-        internal readonly LockImpl LockImpl;
+        internal readonly LockingMode LockingMode;
         internal readonly long InitCount;
         internal readonly long TxnCount;
         internal readonly int MaxKey;
@@ -60,11 +60,19 @@ namespace FASTER.benchmark
             if (!verifyOption(Options.NumaStyle >= 0 && Options.NumaStyle <= 1, "NumaStyle"))
                 return;
 
-            this.LockImpl = (LockImpl)Options.LockImpl;
-            if (!verifyOption(Enum.IsDefined(typeof(LockImpl), this.LockImpl), "Lock Implementation"))
+            this.LockingMode = Options.LockingMode switch
+            {
+                0 => LockingMode.None,
+                1 => LockingMode.Standard,
+                _ => throw new InvalidOperationException($"Unknown Locking mode int: {Options.LockingMode}")
+            };
+            if (!verifyOption(Enum.IsDefined(typeof(LockingMode), this.LockingMode), "LockingMode"))
                 return;
 
             if (!verifyOption(Options.IterationCount > 0, "Iteration Count"))
+                return;
+
+            if (!verifyOption(Options.HashPacking > 0, "Iteration Count"))
                 return;
 
             if (!verifyOption(Options.ReadPercent >= -1 && Options.ReadPercent <= 100, "Read Percent"))

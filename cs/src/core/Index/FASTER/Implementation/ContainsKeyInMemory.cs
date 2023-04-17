@@ -9,42 +9,27 @@ namespace FASTER.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status InternalContainsKeyInMemory<Input, Output, Context, FasterSession>(
-            ref Key key,
-            FasterExecutionContext<Input, Output, Context> sessionCtx,
-            FasterSession fasterSession, out long logicalAddress, long fromAddress = -1)
-            where FasterSession : IFasterSession
+            ref Key key, FasterSession fasterSession, out long logicalAddress, long fromAddress = -1)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (fromAddress < hlog.HeadAddress)
-                fromAddress = hlog.HeadAddress;
+            OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
-            long physicalAddress;
-            HashEntryInfo hei = new (comparer.GetHashCode64(ref key));
+            if (fasterSession.Ctx.phase != Phase.REST)
+                HeavyEnter(stackCtx.hei.hash, fasterSession.Ctx, fasterSession);
 
-            if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(hei.hash, sessionCtx, fasterSession);
-
-            if (FindTag(ref hei))
+            if (FindTag(ref stackCtx.hei))
             {
-                logicalAddress = hei.Address;
+                stackCtx.SetRecordSourceToHashEntry(hlog);
 
                 if (UseReadCache)
-                    SkipReadCache(ref hei, ref logicalAddress);
+                    SkipReadCache(ref stackCtx, out _);
 
-                if (logicalAddress >= fromAddress)
+                if (fromAddress < hlog.HeadAddress)
+                    fromAddress = hlog.HeadAddress;
+
+                if (TryFindRecordInMainLog(ref key, ref stackCtx, fromAddress) && !stackCtx.recSrc.GetInfo().Tombstone)
                 {
-                    physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                    ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
-                    if (recordInfo.Invalid || !comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
-                    {
-                        logicalAddress = recordInfo.PreviousAddress;
-                        TraceBackForKeyMatch(ref key, logicalAddress, fromAddress, out logicalAddress, out _);
-                    }
-
-                    if (logicalAddress < fromAddress)
-                    {
-                        logicalAddress = 0;
-                        return new(StatusCode.NotFound);
-                    }
+                    logicalAddress = stackCtx.recSrc.LogicalAddress;
                     return new(StatusCode.Found);
                 }
                 logicalAddress = 0;

@@ -26,7 +26,7 @@ namespace FASTER.core
         internal readonly IFasterEqualityComparer<Key> comparer;
 
         internal readonly bool UseReadCache;
-        private readonly ReadFlags ReadFlags;
+        private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;
         private readonly bool WriteDefaultOnDelete;
 
@@ -64,8 +64,9 @@ namespace FASTER.core
         ConcurrentDictionary<string, int> _recoveredSessionNameMap;
         int maxSessionID;
 
-        internal readonly bool DisableEphemeralLocking;
-        internal readonly LockTable<Key> LockTable;
+        internal readonly bool DoTransientLocking;  // uses LockTable
+        internal readonly bool DoEphemeralLocking;  // uses RecordInfo
+        internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
         internal void IncrementNumLockingSessions()
         {
@@ -85,7 +86,7 @@ namespace FASTER.core
                 fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(),
                 fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
                 fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
-                fasterKVSettings.TryRecoverLatest, fasterKVSettings.DisableEphemeralLocking, null, fasterKVSettings.logger, fasterKVSettings.LockTableSize)
+                fasterKVSettings.TryRecoverLatest, fasterKVSettings.LockingMode, null, fasterKVSettings.logger)
         { }
 
         /// <summary>
@@ -98,18 +99,19 @@ namespace FASTER.core
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="disableEphemeralLocking">Whether FASTER takes ephemeral read and write locks on records</param>
+        /// <param name="lockingMode">How FASTER should do record locking</param>
         /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="FasterKVSettings{Key, Value}"/>).</param>
         /// <param name="logger">Logger to use.</param>
         /// <param name="lockTableSize">Number of buckets in the lock table</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, bool disableEphemeralLocking = false,
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, LockingMode lockingMode = LockingMode.Standard,
             ILoggerFactory loggerFactory = null, ILogger logger = null, int lockTableSize = Constants.kDefaultLockTableSize)
         {
             this.loggerFactory = loggerFactory;
             this.logger = logger ?? this.loggerFactory?.CreateLogger("FasterKV Constructor");
+
             if (comparer != null)
                 this.comparer = comparer;
             else
@@ -131,7 +133,8 @@ namespace FASTER.core
                 }
             }
 
-            this.DisableEphemeralLocking = disableEphemeralLocking;
+            this.DoTransientLocking = lockingMode == LockingMode.Standard;
+            this.DoEphemeralLocking = lockingMode == LockingMode.Ephemeral;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
@@ -150,11 +153,18 @@ namespace FASTER.core
             if (checkpointSettings.CheckpointManager is null)
                 disposeCheckpointManager = true;
 
-            this.ReadFlags = logSettings.ReadFlags;
             UseReadCache = logSettings.ReadCacheSettings is not null;
 
-            UpdateVarLen(ref variableLengthStructSettings);
+            this.ReadCopyOptions = logSettings.ReadCopyOptions;
+            if (this.ReadCopyOptions.CopyTo == ReadCopyTo.Inherit)
+                this.ReadCopyOptions.CopyTo = UseReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.None;
+            else if (this.ReadCopyOptions.CopyTo == ReadCopyTo.ReadCache && !UseReadCache)
+                this.ReadCopyOptions.CopyTo = ReadCopyTo.None;
 
+            if (this.ReadCopyOptions.CopyFrom == ReadCopyFrom.Inherit)
+                this.ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
+
+            UpdateVarLen(ref variableLengthStructSettings);
             IVariableLengthStruct<Key> keyLen = null;
 
             if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength is null) ||
@@ -209,7 +219,7 @@ namespace FASTER.core
                 {
                     readcache = new BlittableAllocator<Key, Value>(
                         new LogSettings
-                        {
+                       {
                             LogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
@@ -222,12 +232,11 @@ namespace FASTER.core
             }
 
             hlog.Initialize();
-            hlog.OnLockEvictionObserver = new LockEvictionObserver<Key, Value>(this);
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.LockTable = new LockTable<Key>(lockTableSize, this.comparer, keyLen);
+            this.LockTable = new OverflowBucketLockTable<Key, Value>(lockingMode == LockingMode.Standard ? this : null);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
@@ -565,159 +574,138 @@ namespace FASTER.core
             }
         }
 
-        internal static ReadFlags MergeReadFlags(ReadFlags upper, ReadFlags lower)
-        {
-            // If lower is None, start with Default, else start with "upper without None"
-            ReadFlags flags = ((lower & ReadFlags.None) == 0) ? (upper & ~ReadFlags.None) : ReadFlags.Default;
-            // Add in "lower without None"
-            flags |= (lower & ~ReadFlags.None);
-            return flags;
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
-                FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(sessionCtx.ReadFlags);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
             do 
-                internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
+                internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context,
-                FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
+                FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(MergeReadFlags(sessionCtx.ReadFlags, readOptions.ReadFlags), ref readOptions);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
             do
-                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
+                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress) : default;
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(ref Input input, ref Output output, ref ReadOptions readOptions, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(ref Input input, ref Output output, ref ReadOptions readOptions, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(MergeReadFlags(sessionCtx.ReadFlags, readOptions.ReadFlags), ref readOptions, noKey: true);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
             Key key = default;
             OperationStatus internalStatus;
             do
-                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
+                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output,
-            Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
+                internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
-            Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
+                                                                            Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
+                internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress) : default;
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context> 
-            => ContextRMW(ref key, ref input, ref output, out _, context, fasterSession, serialNo, sessionCtx);
+            => ContextRMW(ref key, ref input, ref output, out _, context, fasterSession, serialNo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, out RecordMetadata recordMetadata, 
-            Context context, FasterSession fasterSession, long serialNo, FasterExecutionContext<Input, Output, Context> sessionCtx)
+                                                                          Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
+                internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? recordMetadata = new(pcontext.recordInfo, pcontext.logicalAddress) : default;
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<Input, Output, Context, FasterSession>(
-            ref Key key, 
-            Context context, 
-            FasterSession fasterSession, 
-            long serialNo, 
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextDelete<Input, Output, Context, FasterSession>(ref Key key, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalDelete(ref key, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, sessionCtx, sessionCtx, fasterSession, ref pcontext));
+                internalStatus = InternalDelete(ref key, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            var status = HandleOperationStatus(sessionCtx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
@@ -769,6 +757,7 @@ namespace FASTER.core
             Free();
             hlog.Dispose();
             readcache?.Dispose();
+            LockTable.Dispose();
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();

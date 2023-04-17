@@ -60,17 +60,8 @@ namespace FASTER.test
 
         private (Status status, OutputStruct output) CompletePendingResult()
         {
-            session.CompletePendingWithOutputs(out var completedOutputs);
+            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             return TestUtils.GetSinglePendingResult(completedOutputs);
-        }
-
-        private static (Status status, OutputStruct output) CompletePendingResult(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty> completedOutputs)
-        {
-            Assert.IsTrue(completedOutputs.Next());
-            var result = (completedOutputs.Current.Status, completedOutputs.Current.Output);
-            Assert.IsFalse(completedOutputs.Next());
-            completedOutputs.Dispose();
-            return result;
         }
 
         [Test]
@@ -560,11 +551,10 @@ namespace FASTER.test
             Assert.AreEqual(key1.kfield2, 14);
         }
 
-        // Test the ReadAtAddress where ReadFlags = ReadFlags.none
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadAtAddressReadFlagsNone()
+        public void ReadAtAddressDefaultOptions()
         {
             // Just functional test of ReadFlag so one device is enough
             deviceType = TestUtils.DeviceType.MLSD;
@@ -587,8 +577,6 @@ namespace FASTER.test
             Assert.AreEqual(key1.kfield1, 13);
             Assert.AreEqual(key1.kfield2, 14);
         }
-
-        // Test the ReadAtAddress where ReadFlags = ReadFlags.SkipReadCache
 
         class SkipReadCacheFunctions : Functions
         {
@@ -621,7 +609,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadAtAddressReadFlagsSkipReadCache()
+        public void ReadAtAddressIgnoreReadCache()
         {
             // Another ReadFlag functional test so one device is enough
             deviceType = TestUtils.DeviceType.MLSD;
@@ -676,7 +664,7 @@ namespace FASTER.test
 
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            ReadOptions readOptions = new() { StartAddress = readAtAddress, ReadFlags = ReadFlags.DisableReadCacheUpdates };
+            ReadOptions readOptions = new() { StartAddress = readAtAddress, CopyOptions = ReadCopyOptions.None };
             status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
             VerifyResult();
 
@@ -684,7 +672,7 @@ namespace FASTER.test
 
             // Put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
-            readOptions.ReadFlags = ReadFlags.None;
+            readOptions.CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.ReadCache);
             status = skipReadCacheSession.Read(ref key1, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending);
             VerifyResult();
@@ -807,6 +795,15 @@ namespace FASTER.test
             s.RMW(ref key, ref input);
             s.Read(ref key, ref output);
             Assert.AreEqual(10, output);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public static void LogPathtooLong()
+        {
+            string testDir = new string('x', Native32.WIN32_MAX_PATH - 11);                 // As in LSD, -11 for ".<segment>"
+            using var log = Devices.CreateLogDevice($"{testDir}", deleteOnClose: true);     // Should succeed
+            Assert.Throws(typeof(FasterException), () => Devices.CreateLogDevice($"{testDir}y", deleteOnClose: true));
         }
 
         [Test]

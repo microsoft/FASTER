@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using FASTER.core;
@@ -70,7 +70,8 @@ namespace StoreDiskReadBenchmark
         public override bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
         {
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
-            return true;        }
+            return true;
+        }
         public override bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
         {
             value.vfield1 += input.ifield1;

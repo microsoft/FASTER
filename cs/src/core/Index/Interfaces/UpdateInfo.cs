@@ -4,34 +4,6 @@
 namespace FASTER.core
 {
     /// <summary>
-    /// The type of session being used for this operation
-    /// </summary>
-    public enum SessionType : byte
-    {
-        /// <summary>
-        /// Direct calls through to the standard client session, which does ephemeral locking and epoch protection on a per-operation basis.
-        /// </summary>
-        BasicContext,
-
-        /// <summary>
-        /// An unsafe context which does ephemeral locking but allows the user to do coarse-grained epoch protection,
-        /// which can improve speed.
-        /// </summary>
-        UnsafeContext,
-
-        /// <summary>
-        /// An unsafe context that does no ephemeral locking; the application must lock and unlock records manually and 
-        /// make its own epoch protection calls.
-        /// </summary>
-        LockableUnsafeContext,
-
-        /// <summary>
-        /// A context that does no ephemeral locking; the application must lock and unlock records manually.
-        /// </summary>
-        LockableContext
-    }
-
-    /// <summary>
     /// What actions to take following the RMW IFunctions method call, such as cancellation or record expiration.
     /// </summary>
     public enum UpsertAction
@@ -40,11 +12,6 @@ namespace FASTER.core
         /// Execute the default action for the method 'false' return.
         /// </summary>
         Default,
-
-        /// <summary>
-        /// The operation cannot not be completed in-place because it would exceed available space.
-        /// </summary>
-        NeedMoreSpace,
 
         /// <summary>
         /// Stop the operation immediately and return.
@@ -57,11 +24,6 @@ namespace FASTER.core
     /// </summary>
     public struct UpsertInfo
     {
-        /// <summary>
-        /// The type of session context executing the operation
-        /// </summary>
-        public SessionType SessionType { get; internal set; }
-
         /// <summary>
         /// The FASTER execution context version of the operation
         /// </summary>
@@ -97,7 +59,6 @@ namespace FASTER.core
         /// </summary>
         public UpsertInfo(ref RMWInfo rmwInfo)
         {
-            this.SessionType = rmwInfo.SessionType;
             this.Version = rmwInfo.Version;
             this.SessionID = rmwInfo.SessionID;
             this.Address = rmwInfo.Address;
@@ -116,11 +77,6 @@ namespace FASTER.core
         /// Execute the default action for the method 'false' return.
         /// </summary>
         Default,
-
-        /// <summary>
-        /// The operation cannot not be completed in-place because it would exceed available space.
-        /// </summary>
-        NeedMoreSpace,
 
         /// <summary>
         /// Expire the record, including continuing actions to reinsert a new record with initial state.
@@ -143,11 +99,6 @@ namespace FASTER.core
     /// </summary>
     public struct RMWInfo
     {
-        /// <summary>
-        /// The type of session context executing the operation
-        /// </summary>
-        public SessionType SessionType { get; internal set; }
-
         /// <summary>
         /// The FASTER execution context version of the operation
         /// </summary>
@@ -200,11 +151,6 @@ namespace FASTER.core
     /// </summary>
     public struct DeleteInfo
     {
-        /// <summary>
-        /// The type of session context executing the operation
-        /// </summary>
-        public SessionType SessionType { get; internal set; }
-
         /// <summary>
         /// The FASTER execution context version of the operation
         /// </summary>
@@ -262,11 +208,6 @@ namespace FASTER.core
     /// </summary>
     public struct ReadInfo
     {
-        /// <summary>
-        /// The type of session context executing the operation
-        /// </summary>
-        public SessionType SessionType { get; internal set; }
-
         /// <summary>
         /// The FASTER execution context version of the operation
         /// </summary>

@@ -22,22 +22,21 @@ namespace FASTER.test
             return k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
         }
 
-        public override string ToString()
-        {
-            return kfield1.ToString();
-        }
+        public override string ToString() => $"kfield1 {kfield1}, kfield2 {kfield2}";
     }
 
     public struct ValueStruct
     {
         public long vfield1;
         public long vfield2;
+        public override string ToString() => $"vfield1 {vfield1}, vfield2 {vfield2}";
     }
 
     public struct InputStruct
     {
         public long ifield1;
         public long ifield2;
+        public override string ToString() => $"ifield1 {ifield1}, ifield2 {ifield2}";
     }
 
     public struct OutputStruct
@@ -49,6 +48,7 @@ namespace FASTER.test
     {
         public long cfield1;
         public long cfield2;
+        public override string ToString() => $"cfield1 {cfield1}, cfield2 {cfield2}";
     }
 
     public class Functions : FunctionsWithContext<Empty>

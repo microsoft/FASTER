@@ -94,6 +94,22 @@ namespace FASTER.core
             return true;
         }
 
+        public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref UpsertInfo upsertInfo, WriteReason reason)
+        {
+            var result = base.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+            if (result)
+                output = dst;
+            return result;
+        }
+
+        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref UpsertInfo upsertInfo)
+        {
+            var result = base.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
+            if (result)
+                output = dst;
+            return result;
+        }
+
         /// <inheritdoc/>
         public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RMWInfo rmwInfo) { value = output = input; return true; }
         /// <inheritdoc/>

@@ -15,7 +15,7 @@ namespace FASTER.core
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
-        internal readonly InternalFasterSession FasterSession;
+        internal readonly LockableContext<Key, Value, Input, Output, Context, Functions>.InternalFasterSession FasterSession;
 
         /// <summary>Indicates whether this struct has been initialized</summary>
         public bool IsNull => this.clientSession is null;
@@ -23,7 +23,7 @@ namespace FASTER.core
         internal LockableUnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             this.clientSession = clientSession;
-            FasterSession = new InternalFasterSession(clientSession);
+            FasterSession = new LockableContext<Key, Value, Input, Output, Context, Functions>.InternalFasterSession(clientSession);
         }
 
         #region Begin/EndUnsafe
@@ -48,72 +48,59 @@ namespace FASTER.core
         #endregion Begin/EndLockable
 
         #region Key Locking
+ 
+        /// <inheritdoc/>
+        public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
 
         /// <inheritdoc/>
-        public unsafe void Lock(ref Key key, LockType lockType)
+        public long GetLockCode(Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
+
+        /// <inheritdoc/>
+        public long GetLockCode(ref Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
+
+        /// <inheritdoc/>
+        public long GetLockCode(Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
+
+        /// <inheritdoc/>
+        public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
+
+        /// <inheritdoc/>
+        public int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareLockCodes(key1, key2);
+
+        /// <inheritdoc/>
+        public int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareLockCodes(ref key1, ref key2);
+
+        /// <inheritdoc/>
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys);
+
+        /// <inheritdoc/>
+        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys, start, count);
+
+        /// <inheritdoc/>
+        public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, 0, keys.Length);
+
+        /// <inheritdoc/>
+        public void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
+            where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Lock()");
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
-            LockOperation lockOp = new(LockOperationType.Lock, lockType);
-
-            OperationStatus status;
-            do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out _);
-            while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
-            Debug.Assert(status == OperationStatus.SUCCESS);
-
-            if (lockType == LockType.Exclusive)
-                ++clientSession.exclusiveLockCount;
-            else
-                ++clientSession.sharedLockCount;
+            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, start, count, LockOperationType.Lock);
         }
 
         /// <inheritdoc/>
-        public unsafe void Lock(Key key, LockType lockType) => Lock(ref key, lockType);
+        public void Unlock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Unlock(keys, 0, keys.Length);
 
         /// <inheritdoc/>
-        public void Unlock(ref Key key, LockType lockType)
+        public void Unlock<TLockableKey>(TLockableKey[] keys, int start, int count)
+            where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for Unlock()");
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Unlock()");
 
-            LockOperation lockOp = new(LockOperationType.Unlock, lockType);
-
-            OperationStatus status;
-            do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out _);
-            while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
-            Debug.Assert(status == OperationStatus.SUCCESS);
-
-            if (lockType == LockType.Exclusive)
-                --clientSession.exclusiveLockCount;
-            else
-                --clientSession.sharedLockCount;
+            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, start, count, LockOperationType.Unlock);
         }
-
-        /// <inheritdoc/>
-        public void Unlock(Key key, LockType lockType) => Unlock(ref key, lockType);
-
-        /// <inheritdoc/>
-        public (bool exclusive, byte shared) IsLocked(ref Key key)
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for IsLocked()");
-
-            LockOperation lockOp = new(LockOperationType.IsLocked, LockType.None);
-
-            OperationStatus status;
-            RecordInfo lockInfo;
-            do
-                status = clientSession.fht.InternalLock(ref key, lockOp, out lockInfo);
-            while (clientSession.fht.HandleImmediateNonPendingRetryStatus(status, clientSession.ctx, FasterSession));
-            Debug.Assert(status == OperationStatus.SUCCESS);
-            return (lockInfo.IsLockedExclusive, lockInfo.NumLockedShared);
-        }
-
-        /// <inheritdoc/>
-        public (bool exclusive, byte shared) IsLocked(Key key) => IsLocked(ref key);
 
         /// <summary>
         /// The session id of FasterSession
@@ -150,7 +137,7 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextRead(ref key, ref input, ref output, userContext, FasterSession, serialNo);
         }
 
         /// <inheritdoc/>
@@ -192,7 +179,7 @@ namespace FASTER.core
         public Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, FasterSession, serialNo);
         }
 
         /// <inheritdoc/>
@@ -200,7 +187,7 @@ namespace FASTER.core
         public Status ReadAtAddress(ref Input input, ref Output output, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextReadAtAddress(ref input, ref output, ref readOptions, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextReadAtAddress(ref input, ref output, ref readOptions, userContext, FasterSession, serialNo);
         }
 
         /// <inheritdoc/>
@@ -209,7 +196,7 @@ namespace FASTER.core
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             ReadOptions readOptions = default;
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
+            return clientSession.fht.ReadAsync(FasterSession, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
         }
 
         /// <inheritdoc/>
@@ -218,7 +205,7 @@ namespace FASTER.core
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             ReadOptions readOptions = default;
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, context, serialNo, token);
+            return clientSession.fht.ReadAsync(FasterSession, ref key, ref input, ref readOptions, context, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -228,7 +215,7 @@ namespace FASTER.core
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             Input input = default;
             ReadOptions readOptions = default;
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, token);
+            return clientSession.fht.ReadAsync(FasterSession, ref key, ref input, ref readOptions, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -238,7 +225,7 @@ namespace FASTER.core
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             Input input = default;
             ReadOptions readOptions = default;
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, context, serialNo, token);
+            return clientSession.fht.ReadAsync(FasterSession, ref key, ref input, ref readOptions, context, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -247,7 +234,7 @@ namespace FASTER.core
                                                                                                  Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
+            return clientSession.fht.ReadAsync(FasterSession, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
         }
 
         /// <inheritdoc/>
@@ -257,7 +244,7 @@ namespace FASTER.core
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
             Key key = default;
-            return clientSession.fht.ReadAsync(FasterSession, clientSession.ctx, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken, noKey: true);
+            return clientSession.fht.ReadAsync(FasterSession, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken, noKey: true);
         }
 
         /// <inheritdoc/>
@@ -275,7 +262,7 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, userContext, FasterSession, serialNo);
         }
 
         /// <inheritdoc/>
@@ -283,7 +270,7 @@ namespace FASTER.core
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextUpsert(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, FasterSession, serialNo);
         }
 
         /// <inheritdoc/>
@@ -309,7 +296,8 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.UpsertAsync(FasterSession, clientSession.ctx, ref key, ref input, ref desiredValue, userContext, serialNo, token);
+            return clientSession.fht.UpsertAsync<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalFasterSession>(
+                    FasterSession, ref key, ref input, ref desiredValue, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -332,7 +320,7 @@ namespace FASTER.core
         public Status RMW(ref Key key, ref Input input, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextRMW(ref key, ref input, ref output, out recordMetadata, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextRMW(ref key, ref input, ref output, out recordMetadata, userContext, FasterSession, serialNo);
         }
 
         /// <inheritdoc/>
@@ -364,7 +352,8 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.RmwAsync(FasterSession, clientSession.ctx, ref key, ref input, context, serialNo, token);
+            return clientSession.fht.RmwAsync<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalFasterSession>(
+                    FasterSession, ref key, ref input, context, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -377,7 +366,8 @@ namespace FASTER.core
         public Status Delete(ref Key key, Context userContext = default, long serialNo = 0)
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.ContextDelete(ref key, userContext, FasterSession, serialNo, clientSession.ctx);
+            return clientSession.fht.ContextDelete<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalFasterSession>(
+                    ref key, userContext, FasterSession, serialNo);
         }
 
         /// <inheritdoc/>
@@ -390,7 +380,8 @@ namespace FASTER.core
         public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
         {
             Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected());
-            return clientSession.fht.DeleteAsync(FasterSession, clientSession.ctx, ref key, userContext, serialNo, token);
+            return clientSession.fht.DeleteAsync<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalFasterSession>(
+                    FasterSession, ref key, userContext, serialNo, token);
         }
 
         /// <inheritdoc/>
@@ -412,203 +403,9 @@ namespace FASTER.core
         public void Refresh()
         {
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected());
-            clientSession.fht.InternalRefresh(clientSession.ctx, FasterSession);
+            clientSession.fht.InternalRefresh<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalFasterSession>(FasterSession);
         }
 
         #endregion IFasterContext
-
-        #region IFasterSession
-
-        // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)
-        internal readonly struct InternalFasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            private readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
-
-            public InternalFasterSession(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
-            {
-                _clientSession = clientSession;
-            }
-
-            #region IFunctions - Optional features supported
-            public bool DisableEphemeralLocking => true;       // We only lock in Lock/Unlock, explicitly; these are longer-duration locks.
-
-            public bool IsManualLocking => true;
-
-            public SessionType SessionType => SessionType.LockableUnsafeContext;
-            #endregion IFunctions - Optional features supported
-
-            #region IFunctions - Reads
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo) 
-                => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
-            {
-                if (_clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo))
-                    return true;
-                if (readInfo.Action == ReadAction.Expire)
-                    recordInfo.Tombstone = true;
-                return false;
-            }
-
-            public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
-                => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
-
-            #endregion IFunctions - Reads
-
-            #region IFunctions - Upserts
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) 
-                => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
-            {
-                recordInfo.SetDirtyAndModified();
-                _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
-            {
-                recordInfo.SetDirtyAndModified();
-
-                // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-                return _clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
-            }
-#endregion IFunctions - Upserts
-
-            #region IFunctions - RMWs
-            #region InitialUpdater
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref RMWInfo rmwInfo)
-                => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
-                => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-            {
-                recordInfo.SetDirtyAndModified();
-                _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-            }
-            #endregion InitialUpdater
-
-            #region CopyUpdater
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref RMWInfo rmwInfo)
-                => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output, ref rmwInfo);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
-                => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-            {
-                recordInfo.SetDirtyAndModified();
-                _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
-            }
-            #endregion CopyUpdater
-
-            #region InPlaceUpdater
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
-            {
-                recordInfo.SetDirtyAndModified();
-                return _clientSession.InPlaceUpdater(ref key, ref input, ref output, ref value, ref recordInfo, ref rmwInfo, out status);
-            }
-
-            public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
-                => _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
-
-            #endregion InPlaceUpdater
-            #endregion IFunctions - RMWs
-
-            #region IFunctions - Deletes
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
-                => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
-            {
-                recordInfo.SetDirtyAndModified();
-                _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
-            {
-                recordInfo.SetDirtyAndModified();
-                recordInfo.SetTombstone();
-                return _clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
-            }
-            #endregion IFunctions - Deletes
-
-            #region IFunctions - Dispose
-            public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
-                => _clientSession.functions.DisposeSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
-            public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-                => _clientSession.functions.DisposeCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
-            public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
-                => _clientSession.functions.DisposeInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-            public void DisposeSingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
-                => _clientSession.functions.DisposeSingleDeleter(ref key, ref value, ref deleteInfo);
-            public void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo)
-                => _clientSession.functions.DisposeDeserializedFromDisk(ref key, ref value);
-            #endregion IFunctions - Dispose
-
-            #region IFunctions - Checkpointing
-            public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
-            {
-                _clientSession.functions.CheckpointCompletionCallback(sessionID, sessionName, commitPoint);
-                _clientSession.LatestCommitPoint = commitPoint;
-            }
-            #endregion IFunctions - Checkpointing
-
-            #region Ephemeral locking
-            public bool TryLockEphemeralExclusive(ref RecordInfo recordInfo)
-            {
-                Debug.Assert(recordInfo.IsLockedExclusive, $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
-                return true;
-            }
-
-            public bool TryLockEphemeralShared(ref RecordInfo recordInfo)
-            {
-                Debug.Assert(recordInfo.IsLocked, $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock): XLocked {recordInfo.IsLockedExclusive}, Slocked {recordInfo.NumLockedShared}");
-                return true;
-            }
-
-            public void UnlockEphemeralExclusive(ref RecordInfo recordInfo) { }
-            public bool TryUnlockEphemeralShared(ref RecordInfo recordInfo) => true;
-            #endregion
-
-            #region Internal utilities
-            public int GetInitialLength(ref Input input)
-                => _clientSession.variableLengthStruct.GetInitialLength(ref input);
-
-            public int GetLength(ref Value t, ref Input input)
-                => _clientSession.variableLengthStruct.GetLength(ref t, ref input);
-
-            public IHeapContainer<Input> GetHeapContainer(ref Input input)
-            {
-                if (_clientSession.inputVariableLengthStruct == default)
-                    return new StandardHeapContainer<Input>(ref input);
-                return new VarLenHeapContainer<Input>(ref input, _clientSession.inputVariableLengthStruct, _clientSession.fht.hlog.bufferPool);
-            }
-
-            public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread();
-
-            public void UnsafeSuspendThread() => _clientSession.UnsafeSuspendThread();
-
-            public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-                => _clientSession.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
-            #endregion Internal utilities
-        }
-#endregion IFasterSession
     }
 }

@@ -2,27 +2,12 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool BlockAllocate<Input, Output, Context>(
-                int recordSize,
-                out long logicalAddress,
-                ref PendingContext<Input, Output, Context> pendingContext,
-                out OperationStatus internalStatus)
-            => TryBlockAllocate(hlog, recordSize, out logicalAddress, ref pendingContext, out internalStatus);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool BlockAllocateReadCache<Input, Output, Context>(
-                int recordSize,
-                out long logicalAddress,
-                ref PendingContext<Input, Output, Context> pendingContext,
-                out OperationStatus internalStatus)
-            => TryBlockAllocate(readcache, recordSize, out logicalAddress, ref pendingContext, out internalStatus);
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool TryBlockAllocate<Input, Output, Context>(
                 AllocatorBase<Key, Value> allocator,
@@ -51,6 +36,75 @@ namespace FASTER.core
             pendingContext.flushEvent = default;
             allocator.TryComplete();
             internalStatus = OperationStatus.RETRY_LATER;
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool TryAllocateRecord<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, ref OperationStackContext<Key, Value> stackCtx,
+                                                       int allocatedSize, bool recycle, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
+        {
+            status = OperationStatus.SUCCESS;
+            if (recycle && GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, allocatedSize, out newLogicalAddress, out newPhysicalAddress))
+                return true;
+
+            // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
+            for (; ; Thread.Yield() )
+            {
+                if (!TryBlockAllocate(hlog, allocatedSize, out newLogicalAddress, ref pendingContext, out status))
+                    break;
+
+                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                if (VerifyInMemoryAddresses(ref stackCtx))
+                {
+                    if (newLogicalAddress > stackCtx.recSrc.LatestLogicalAddress)
+                        return true;
+
+                    // This allocation is below the necessary address so abandon it and repeat the loop. TODO potential reuse
+                    hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
+                    continue;
+                }
+
+                // In-memory source dropped below HeadAddress during BlockAllocate.
+                if (recycle)
+                    SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
+                else
+                    hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
+                status = OperationStatus.RETRY_LATER;
+                break;
+            }
+
+            newPhysicalAddress = 0;
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool TryAllocateRecordReadCache<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, ref OperationStackContext<Key, Value> stackCtx,
+                                                       int allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
+        {
+            // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
+            for (; ; Thread.Yield())
+            {
+                if (!TryBlockAllocate(readcache, allocatedSize, out newLogicalAddress, ref pendingContext, out status))
+                    break;
+
+                newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
+                if (VerifyInMemoryAddresses(ref stackCtx))
+                {
+                    if (!stackCtx.hei.IsReadCache || newLogicalAddress > stackCtx.hei.AbsoluteAddress)
+                        return true;
+
+                    // This allocation is below the necessary address so abandon it and repeat the loop.
+                    ReadCacheAbandonRecord(newPhysicalAddress);
+                    continue;
+                }
+
+                // In-memory source dropped below HeadAddress during BlockAllocate.
+                ReadCacheAbandonRecord(newPhysicalAddress);
+                status = OperationStatus.RETRY_LATER;
+                break;
+            }
+
+            newPhysicalAddress = 0;
             return false;
         }
 

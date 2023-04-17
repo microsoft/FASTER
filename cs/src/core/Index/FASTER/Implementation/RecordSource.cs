@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static FASTER.core.Utility;
 
@@ -61,35 +60,24 @@ namespace FASTER.core
         internal bool HasReadCacheSrc;
 
         /// <summary>
-        /// Set by caller to indicate whether it has an ephemeral lock on the InMemorySrc record's <see cref="RecordInfo"/> (this may be mainlog or readcache).
+        /// Set by caller to indicate whether it has an transient lock in the LockTable for the operation Key.
         /// </summary>
-        internal bool HasInMemoryLock;
+        internal bool HasTransientLock;
 
         /// <summary>
-        /// Set by caller to indicate whether it has an ephemeral lock in the LockTable for the operation Key.
+        /// Status of ephemeral locking, if applicable.
         /// </summary>
-        internal bool HasLockTableLock;
+        internal EphemeralLockResult ephemeralLockResult;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearSrc()
-        {
-            this.LogicalAddress = Constants.kInvalidAddress;
-            this.PhysicalAddress = 0;
-            this.Log = default;
-            this.HasMainLogSrc = false;
-            this.HasReadCacheSrc = false;
-            this.HasInMemoryLock = false;
-            this.HasLockTableLock = false;
-        }
-
+        internal ref RecordInfo GetInfo() => ref Log.GetInfo(PhysicalAddress);
+        internal ref Key GetKey() => ref Log.GetKey(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ref RecordInfo GetSrcRecordInfo() => ref Log.GetInfo(PhysicalAddress);
+        internal ref Value GetValue() => ref Log.GetValue(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ref Value GetSrcValue() => ref Log.GetValue(PhysicalAddress);
+        internal long SetPhysicalAddress() => this.PhysicalAddress = Log.GetPhysicalAddress(LogicalAddress);
 
-        internal bool HasSrc => HasInMemorySrc || HasLockTableLock;
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
-        internal bool HasLock => HasInMemoryLock || HasLockTableLock;
 
         /// <summary>
         /// Initialize to the latest logical address from the caller.
@@ -102,71 +90,11 @@ namespace FASTER.core
             LowestReadCachePhysicalAddress = default;
             HasMainLogSrc = false;
             HasReadCacheSrc = default;
-            this.HasInMemoryLock = false;
-            HasLockTableLock = false;
+
+            // HasTransientLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
 
             this.LatestLogicalAddress = this.LogicalAddress = AbsoluteAddress(latestLogicalAddress);
             this.Log = srcLog;
-        }
-
-        /// <summary>
-        /// After a successful CopyUpdate or other replacement of a source record, this marks the source record as Sealed or Invalid.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkSourceRecordAfterSuccessfulCopyUpdate<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref RecordInfo srcRecordInfo)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            if (this.HasInMemorySrc)
-            {
-                this.AssertInMemorySourceWasNotEvicted();
-                if (this.HasReadCacheSrc)
-                {
-                    // If the record was evicted, it won't be accessed, so we do not need to worry about setting it invalid.
-                    // Even though we should be called with an XLock (unless ephemeral locking is disabled) we need to do this atomically;
-                    // otherwise this could race with ReadCacheEvict unlinking records.
-                    srcRecordInfo.SetInvalidAtomic();
-                }
-                else
-                {
-                    // Another thread may come along to do this update in-place, or use this record as a copy source, once we've released our lock;
-                    // Seal it to prevent that. This will cause the other thread to RETRY_NOW (unlike Invalid which ignores the record).
-                    // If the record was evicted, then we cannot Seal it, but we have already inserted the later record, so any attempt to retrieve
-                    // the old record from disk will find the newer version instead due to normal verification when completing pending I/O.
-                    // Because we have an XLock (unless ephemeral locking is disabled), we don't need an atomic operation here.
-                    srcRecordInfo.Seal();
-                }
-
-                // if fasterSession.DisableEphemeralLocking, the "finally" handler won't unlock it, so we do that here.
-                // For ephemeral locks, we don't clear the locks here (defer that to the "finally").
-                if (fasterSession.DisableEphemeralLocking)
-                    srcRecordInfo.ClearLocks();
-            }
-
-            // We successfully transferred the source recordInfo, and will unlock it in UnlockAfterUpdate, but if there was a LockTable entry,
-            // it was transferred and doesn't exist in the LockTable anymore.  A new LockTable entry may be written if the source record fell
-            // below HeadAddress due to BlockAllocate, but we handle that case in UnlockAfter*() below (by spinwaiting until it's in the LockTable).
-            this.HasLockTableLock = false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool InMemorySourceIsBelowHeadAddress() => this.HasInMemorySrc && this.LogicalAddress < this.Log.HeadAddress;
-
-        [Conditional("DEBUG")]
-        internal void AssertInMemorySourceWasNotEvicted()
-        {
-            if (this.HasInMemorySrc)
-            {
-                // We should have called VerifyInMemoryAddresses when starting this operation to verify we were above HeadAddress.
-                // After that, HeadAddress may be increased by another session, but we should always hold the epoch here and thus
-                // OnPagesClosed (which does the actual eviction) cannot be called.
-
-                // This should not be called on failure/retry, or it will fire spuriously. For example:
-                //   - Lock a record that is on the next page to be evicted
-                //   - Call BlockAllocate, which evicts that page
-                //   - This will then fail the subsequent VerifyInMemoryAddresses call, because the record is now below HeadAddress
-                // In this case, the record has been legitimately evicted.
-                Debug.Assert(this.LogicalAddress >= this.Log.ClosedUntilAddress, "Record should always be in memory at this point, regardless of HeadAddress");
-            }
         }
 
         public override string ToString()
@@ -175,9 +103,15 @@ namespace FASTER.core
             var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, pa {PhysicalAddress:x}"
-                 + $" lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)}, lrcpa {LowestReadCachePhysicalAddress:x}"
-                 + $" hasMLsrc {bstr(HasMainLogSrc)}, hasRCsrc {bstr(HasReadCacheSrc)}, hasIMlock {bstr(HasInMemoryLock)}, hasLTlock {bstr(HasLockTableLock)}";
+            string ephLockResult = this.ephemeralLockResult switch
+            {
+                EphemeralLockResult.Success => "S",
+                EphemeralLockResult.Failed => "F",
+                EphemeralLockResult.HoldForSeal => "H",
+                _ => "unknown"
+            };
+            return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
+                 + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, tLock {bstr(HasTransientLock)}, eLock {ephLockResult}";
         }
     }
 }
