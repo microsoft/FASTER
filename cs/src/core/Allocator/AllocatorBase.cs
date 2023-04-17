@@ -887,10 +887,8 @@ namespace FASTER.core
         /// <summary>
         /// Reset the hybrid log. WARNING: assumes that threads have drained out at this point.
         /// </summary>
-        public virtual void Reset(long diskBeginAddress, long diskFlushedUntilAddress)
+        public virtual void Reset()
         {
-            // First gracefully handle in-memory data and addresses
-
             var newBeginAddress = GetTailAddress();
 
             // Shift read-only addresses to tail without flushing
@@ -915,35 +913,67 @@ namespace FASTER.core
             // Update begin address to tail
             Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out _);
             
-            // Next, verify and set up disk segments
-
-            // Delete disk segments until specified disk begin address
-
-            long firstSegment = (int)(diskBeginAddress >> LogSegmentSizeBits);
-            if (firstSegment < device.StartSegment)
-                throw new FasterException($"Unable to reset to begin segment {firstSegment}, earliest available segment on disk is {device.StartSegment}");
-
-            // Delete disk segments after specified disk flushed until address
-            int tailStartSegment = (int)(diskFlushedUntilAddress >> LogSegmentSizeBits);
-            if ((diskFlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) > 0)
-                tailStartSegment++;
-
-            logger?.LogInformation("Setting disk to segment range [{firstSegment}--{tailStartSegment})", firstSegment, tailStartSegment);
-
-            int tailEndSegment = (int)(FlushedUntilAddress >> LogSegmentSizeBits);
-
-            logger?.LogInformation("Deleting disk segments until (not including) {firstSegment}", firstSegment);
-            TruncateUntilAddressBlocking(firstSegment << LogSegmentSizeBits);
-
-            for (int s = tailStartSegment; s <= tailEndSegment; s++)
-            {
-                logger?.LogInformation("Removing disk segment {s}", s);
-                RemoveSegment(s);
-            }
             this.FlushEvent.Initialize();
             Array.Clear(PageStatusIndicator, 0, BufferSize);
             for (int i = 0; i < BufferSize; i++)
                 PendingFlush[i].list.Clear();
+        }
+
+        internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
+        {
+            // Note: trimLog is unused right now. Can be used to trim the log to the minimum
+            // segment range necessary for recovery to given checkpoint
+
+            var diskBeginAddress = recoveredHLCInfo.info.beginAddress;
+            var diskFlushedUntilAddress =
+                recoveredHLCInfo.info.useSnapshotFile == 0 ?
+                recoveredHLCInfo.info.finalLogicalAddress :
+                recoveredHLCInfo.info.flushedLogicalAddress;
+
+            // Delete disk segments until specified disk begin address
+
+            // First valid disk segment required for recovery
+            long firstValidSegment = (int)(diskBeginAddress >> LogSegmentSizeBits);
+
+            // Last valid disk segment required for recovery
+            int lastValidSegment = (int)(diskFlushedUntilAddress >> LogSegmentSizeBits);
+            if ((diskFlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                lastValidSegment--;
+
+            logger?.LogInformation("Recovery requires disk segments in range [{firstSegment}--{tailStartSegment}]", firstValidSegment, lastValidSegment);
+
+            var firstAvailSegment = device.StartSegment;
+            var lastAvailSegment = device.EndSegment;
+
+            if (FlushedUntilAddress > GetFirstValidLogicalAddress(0))
+            {
+                int currTailSegment = (int)(FlushedUntilAddress >> LogSegmentSizeBits);
+                if ((FlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                    currTailSegment--;
+
+                if (currTailSegment > lastAvailSegment)
+                    lastAvailSegment = currTailSegment;
+            }
+
+            logger?.LogInformation("Available segment range on device: [{firstAvailSegment}--{lastAvailSegment}]", firstAvailSegment, lastAvailSegment);
+
+            if (firstValidSegment < firstAvailSegment)
+                throw new FasterException($"Unable to set first valid segment to {firstValidSegment}, first available segment on disk is {firstAvailSegment}");
+
+            if (lastAvailSegment >= 0 && lastValidSegment > lastAvailSegment)
+                throw new FasterException($"Unable to set last valid segment to {lastValidSegment}, last available segment on disk is {lastAvailSegment}");
+
+            if (trimLog)
+            {
+                logger?.LogInformation("Trimming disk segments until (not including) {firstSegment}", firstValidSegment);
+                TruncateUntilAddressBlocking(firstValidSegment << LogSegmentSizeBits);
+
+                for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
+                {
+                    logger?.LogInformation("Trimming tail segment {s} on disk", s);
+                    RemoveSegment(s);
+                }
+            }
         }
 
         /// <summary>

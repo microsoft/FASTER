@@ -58,9 +58,9 @@ namespace FASTER.core
             }
         }
 
-        public override void Reset(long diskBeginAddress, long diskFlushedUntilAddress)
+        public override void Reset()
         {
-            base.Reset(diskBeginAddress, diskFlushedUntilAddress);
+            base.Reset();
             for (int index = 0; index < BufferSize; index++)
             {
                 if (values[index] != null)
