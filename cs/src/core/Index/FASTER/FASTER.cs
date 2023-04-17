@@ -739,9 +739,8 @@ namespace FASTER.core
                     {
                         SystemState.RemoveIntermediate(ref _systemState);
                         if (_systemState.Phase != Phase.PREPARE_GROW && _systemState.Phase != Phase.IN_PROGRESS_GROW)
-                        {
-                            return true;
-                        }
+                            break;
+                        ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, default);
                     }
                 }
             }
@@ -749,6 +748,7 @@ namespace FASTER.core
             {
                 epoch.Suspend();
             }
+            return true;
         }
 
         /// <summary>
