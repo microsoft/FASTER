@@ -71,22 +71,25 @@ namespace FASTER.core
             if (fasterSession.Ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && fasterSession.Ctx.version == newPhaseInfo.Version)
                 return;
 
-            if (CheckpointVersionSwitchBarrier)
+            while (true)
             {
-                // In PREPARE phase, wait for threads to get to the next version
-                while (systemState.Phase == Phase.PREPARE)
-                {
-                    epoch.Suspend();
+                ThreadStateMachineStep(fasterSession.Ctx, fasterSession, default);
 
-                    // Outside epoch protection, wait for PREPARE to complete
-                    while (systemState.Phase == Phase.PREPARE)
-                        Thread.Yield();
+                // In prepare phases, after draining out ongoing transactions,
+                // spin and get threads to reach the next version before proceeding
 
-                    epoch.Resume();
-                }
+                if (CheckpointVersionSwitchBarrier &&
+                    fasterSession.Ctx.phase == Phase.PREPARE && 
+                    hlog.NumActiveLockingSessions == 0)
+                    continue;
+
+                if (fasterSession.Ctx.phase == Phase.PREPARE_GROW &&
+                    hlog.NumActiveLockingSessions == 0)
+                    continue;
+
+                break;
             }
 
-            ThreadStateMachineStep(fasterSession.Ctx, fasterSession, default);
         }
 
         internal static void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)
