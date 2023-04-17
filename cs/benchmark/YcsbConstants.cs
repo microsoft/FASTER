@@ -12,13 +12,6 @@ namespace FASTER.benchmark
         ConcurrentDictionaryYcsb
     };
 
-    enum LockImpl : byte
-    {
-        None = 0,
-        Ephemeral = 1,
-        Manual = 2
-    };
-
     enum AddressLineNum : int
     {
         Before = 1,

@@ -113,7 +113,7 @@ namespace FASTER.core
         {
             if (current.Phase != Phase.PERSISTENCE_CALLBACK) return;
 
-            if (ctx != null)
+            if (ctx is not null)
             {
                 if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                 {
@@ -166,7 +166,7 @@ namespace FASTER.core
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 
-            if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
+            if (ctx is null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
                 var s = faster._hybridLogCheckpoint.flushedSemaphore;
 
@@ -180,7 +180,7 @@ namespace FASTER.core
 
                 if (!notify) return;
 
-                if (ctx != null)
+                if (ctx is not null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
             
@@ -267,7 +267,7 @@ namespace FASTER.core
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 
-            if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
+            if (ctx is null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
                 var s = faster._hybridLogCheckpoint.flushedSemaphore;
 
@@ -282,7 +282,7 @@ namespace FASTER.core
 
                 if (!notify) return;
 
-                if (ctx != null)
+                if (ctx is not null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
             
@@ -360,7 +360,7 @@ namespace FASTER.core
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 
-            if (ctx == null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
+            if (ctx is null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
             {
                 var s = faster._hybridLogCheckpoint.flushedSemaphore;
 
@@ -375,7 +375,7 @@ namespace FASTER.core
 
                 if (!notify) return;
 
-                if (ctx != null)
+                if (ctx is not null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
             

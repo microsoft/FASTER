@@ -197,9 +197,9 @@ nativebin/
 
 # JetBrains
 cs/.idea/
-cs/remote/.idea
-cs/research/libdpr/.idea
-cs/libdpr/.idea
-cs/research/darq/.idea
+cs/remote/.idea/
+cs/research/libdpr/.idea/
+cs/libdpr/.idea/
+cs/research/darq/.idea/
 
 cs/**/BenchmarkDotNet.Artifacts/

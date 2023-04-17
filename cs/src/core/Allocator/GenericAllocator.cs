@@ -424,7 +424,7 @@ namespace FASTER.core
                 if (!src[i].info.Invalid)
                 {
                     var address = (flushPage << LogPageSizeBits) + i * recordSize;
-                    if (address < fuzzyStartLogicalAddress || !src[i].info.InNewVersion)
+                    if (address < fuzzyStartLogicalAddress || !src[i].info.IsInNewVersion)
                     {
                         if (KeyHasObjects())
                         {

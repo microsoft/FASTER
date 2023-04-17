@@ -455,7 +455,10 @@ namespace FASTER.test.Expiration
             {
                 output.AddFunc(Funcs.SingleReader);
                 if (IsExpired(key, value.field1))
+                {
+                    readInfo.Action = ReadAction.Expire;
                     return false;
+                }
                 output.retrievedValue = value.field1;
                 return true;
             }
@@ -464,7 +467,10 @@ namespace FASTER.test.Expiration
             {
                 output.AddFunc(Funcs.ConcurrentReader);
                 if (IsExpired(key, value.field1))
+                {
+                    readInfo.Action = ReadAction.Expire;
                     return false;
+                }
                 output.retrievedValue = value.field1;
                 return true;
             }
@@ -662,7 +668,7 @@ namespace FASTER.test.Expiration
             MaybeEvict(flushMode);
             IncrementValue(TestOp.PassiveExpire, flushMode);
             session.ctx.phase = phase;
-            GetRecord(ModifyKey, new(StatusCode.NotFound), flushMode);
+            GetRecord(ModifyKey, new(StatusCode.NotFound | StatusCode.Expired), flushMode);
         }
 
         [Test]
@@ -689,7 +695,10 @@ namespace FASTER.test.Expiration
             Assert.AreEqual(ExpirationResult.ExpireDelete, output.result);
 
             // Verify it's not there
-            GetRecord(key, new(StatusCode.NotFound), flushMode);
+            if (flushMode == FlushMode.NoFlush)
+                GetRecord(key, new(StatusCode.NotFound), flushMode);    // Expiration was IPU-deletion
+            else
+                GetRecord(key, new(StatusCode.NotFound | StatusCode.Expired), flushMode);
         }
 
         [Test]

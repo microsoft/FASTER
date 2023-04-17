@@ -19,11 +19,8 @@ namespace FASTER.core
         {
             if (untilAddress == -1)
                 untilAddress = Log.TailAddress;
-
-            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>
-                (this, functions, untilAddress, loggerFactory: loggerFactory);
+            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(this, functions, untilAddress, loggerFactory: loggerFactory);
         }
-
 
         /// <summary>
         /// Iterator for all (distinct) live key-values stored in FASTER
@@ -50,7 +47,6 @@ namespace FASTER.core
         }
     }
 
-
     internal sealed class FasterKVIterator<Key, Value, Input, Output, Context, Functions> : IFasterScanIterator<Key, Value>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
     {
@@ -60,6 +56,10 @@ namespace FASTER.core
         private readonly IFasterScanIterator<Key, Value> iter1;
         private IFasterScanIterator<Key, Value> iter2;
 
+        // Phases are:
+        //  0: Populate tempKv if the record is not the tailmost for the tag chain; if it is, then return it.
+        //  1: Return records from tempKv.
+        //  2: Done
         private int enumerationPhase;
 
         public FasterKVIterator(FasterKV<Key, Value> fht, Functions functions, long untilAddress, ILoggerFactory loggerFactory = null)
@@ -114,44 +114,34 @@ namespace FASTER.core
                     if (iter1.GetNext(out recordInfo))
                     {
                         ref var key = ref iter1.GetKey();
-                        ref var value = ref iter1.GetValue();
-
-                        var bucket = default(HashBucket*);
-                        var firstBucket = default(HashBucket*);
-                        var slot = default(int);
-                        var entry = default(HashBucketEntry);
-                        var hash = fht.Comparer.GetHashCode64(ref key);
-                        var tag = (ushort)((ulong)hash >> Constants.kHashTagShift);
-                        if (fht.FindTag(hash, tag, ref firstBucket, ref bucket, ref slot, ref entry) && entry.Address == iter1.CurrentAddress)
+                        HashEntryInfo hei = new(fht.Comparer.GetHashCode64(ref key));
+                        if (fht.FindTag(ref hei) && hei.entry.Address == iter1.CurrentAddress)
                         {
+                            // The tag chain starts with this (won't be true if we have readcache) so we won't see it again; remove it from tempKv if we've seen it before.
                             if (recordInfo.PreviousAddress >= fht.Log.BeginAddress)
                             {
+                                // Check if it's in-memory first so we don't spuriously create a tombstone record.
                                 if (tempKvSession.ContainsKeyInMemory(ref key, out _).Found)
-                                {
                                     tempKvSession.Delete(ref key);
-                                }
                             }
 
                             if (!recordInfo.Tombstone)
                                 return true;
+                            continue;
+                        }
 
-                            continue;
-                        }
+                        // Not the tailmost record in the tag chain so handle whether to add it to or remove it from tempKV (we want to return only the latest version).
+                        if (recordInfo.Tombstone)
+                            tempKvSession.Delete(ref key);
                         else
-                        {
-                            if (recordInfo.Tombstone)
-                                tempKvSession.Delete(ref key);
-                            else
-                                tempKvSession.Upsert(ref key, ref value);
-                            continue;
-                        }
+                            tempKvSession.Upsert(ref key, ref iter1.GetValue());
+                        continue;
                     }
-                    else
-                    {
-                        iter1.Dispose();
-                        enumerationPhase = 1;
-                        iter2 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
-                    }
+
+                    // Done with phase 0; dispose iter1 (the main-log iterator), initialize iter2 (over tempKv), and drop through to phase 1 handling.
+                    iter1.Dispose();
+                    enumerationPhase = 1;
+                    iter2 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
                 }
 
                 if (enumerationPhase == 1)
@@ -162,13 +152,13 @@ namespace FASTER.core
                             return true;
                         continue;
                     }
-                    else
-                    {
-                        iter2.Dispose();
-                        enumerationPhase = 2;
-                    }
+
+                    // Done with phase 1, so we're done. Drop through to phase 2 handling.
+                    iter2.Dispose();
+                    enumerationPhase = 2;
                 }
 
+                // Phase 2: we're done. This handles both the call that exhausted iter2, and any subsequent calls on this outer iterator.
                 recordInfo = default;
                 return false;
             }
@@ -193,7 +183,6 @@ namespace FASTER.core
 
             key = default;
             value = default;
-
             return false;
         }
 

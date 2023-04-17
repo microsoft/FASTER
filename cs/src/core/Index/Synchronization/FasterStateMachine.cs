@@ -199,11 +199,11 @@ namespace FASTER.core
             }
             #endregion
 
-            var currentState = ctx == null ? targetState : SystemState.Make(ctx.phase, ctx.version);
+            var currentState = ctx is null ? targetState : SystemState.Make(ctx.phase, ctx.version);
             var targetStartState = StartOfCurrentCycle(targetState);
 
             #region Get returning thread to start of current cycle, issuing completion callbacks if needed
-            if (ctx != null)
+            if (ctx is not null)
             {
                 if (ctx.version < targetStartState.Version)
                 {
@@ -226,7 +226,7 @@ namespace FASTER.core
                         fasterSession?.CheckpointCompletionCallback(ctx.sessionID, ctx.sessionName, commitPoint);
                     }
                 }
-                if ((ctx.version == targetStartState.Version) && (ctx.phase < Phase.REST) && !(ctx.threadStateMachine is IndexSnapshotStateMachine))
+                if ((ctx.version == targetStartState.Version) && (ctx.phase < Phase.REST) && ctx.threadStateMachine is not IndexSnapshotStateMachine)
                 {
                     IssueCompletionCallback(ctx, fasterSession);
                 }
@@ -237,7 +237,7 @@ namespace FASTER.core
             // we can directly fast forward session to target state
             if (currentTask == null || targetState.Phase == Phase.REST)
             {
-                if (ctx != null)
+                if (ctx is not null)
                 {
                     ctx.phase = targetState.Phase;
                     ctx.version = targetState.Version;
@@ -252,7 +252,7 @@ namespace FASTER.core
             // a checkpoint to complete on a client app thread), we start at current system state
             var threadState = targetState;
 
-            if (ctx != null)
+            if (ctx is not null)
             {
                 if (ctx.threadStateMachine == currentTask)
                 {
@@ -276,7 +276,7 @@ namespace FASTER.core
 
                 currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, fasterSession, valueTasks, token);
 
-                if (ctx != null)
+                if (ctx is not null)
                 {
                     ctx.phase = threadState.Phase;
                     ctx.version = threadState.Version;

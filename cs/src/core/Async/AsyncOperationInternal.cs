@@ -33,22 +33,20 @@ namespace FASTER.core
             /// <param name="fasterKV">The <see cref="FasterKV{Key, Value}"/> instance the async call was made on</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
             /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
-            /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
             /// <param name="output">The output to be populated by this operation</param>
             /// <returns></returns>
             Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, out Output output);
+                                            out Output output);
             /// <summary>
             /// Performs the asynchronous operation. This may be a wait for either a page-flush or a disk-read IO.
             /// </summary>
             /// <param name="fasterKV">The <see cref="FasterKV{Key, Value}"/> instance the async call was made on</param>
             /// <param name="fasterSession">The <see cref="IFasterSession{Key, Value, Input, Output, Context}"/> for this operation</param>
-            /// <param name="currentCtx">The <see cref="FasterExecutionContext{Input, Output, Context}"/> for this operation</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
             /// <param name="token">The cancellation token, if any</param>
             /// <returns></returns>
             ValueTask<TAsyncResult> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CancellationToken token);
+                                            PendingContext<Input, Output, Context> pendingContext, CancellationToken token);
 
             /// <summary>
             /// For RMW only, indicates whether there is a pending IO; no-op for other implementations.
@@ -64,19 +62,16 @@ namespace FASTER.core
             ExceptionDispatchInfo _exception;
             readonly FasterKV<Key, Value> _fasterKV;
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
-            readonly FasterExecutionContext<Input, Output, Context> _currentCtx;
             TAsyncOperation _asyncOperation;
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
             internal AsyncOperationInternal(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                      FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext,
-                                      ExceptionDispatchInfo exceptionDispatchInfo, TAsyncOperation asyncOperation)
+                                      PendingContext<Input, Output, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo, TAsyncOperation asyncOperation)
             {
                 _exception = exceptionDispatchInfo;
                 _fasterKV = fasterKV;
                 _fasterSession = fasterSession;
-                _currentCtx = currentCtx;
                 _pendingContext = pendingContext;
                 _asyncOperation = asyncOperation;
                 CompletionComputeStatus = Pending;
@@ -94,7 +89,7 @@ namespace FASTER.core
                     _exception.Throw();
 
                 // DoSlowOperation returns a new XxxAsyncResult, which contains a new UpdateAsyncInternal with a pendingContext with a default flushEvent
-                return _asyncOperation.DoSlowOperation(_fasterKV, _fasterSession, _currentCtx, _pendingContext, token);
+                return _asyncOperation.DoSlowOperation(_fasterKV, _fasterSession, _pendingContext, token);
             }
 
             internal TAsyncResult CompleteSync()
@@ -139,9 +134,9 @@ namespace FASTER.core
                     {
                         if (hasPendingIO)
                         {
-                            _currentCtx.ioPendingRequests.Remove(pendingId);
-                            _currentCtx.asyncPendingCount--;
-                            _currentCtx.pendingReads.Remove();
+                            _fasterSession.Ctx.ioPendingRequests.Remove(pendingId);
+                            _fasterSession.Ctx.asyncPendingCount--;
+                            _fasterSession.Ctx.pendingReads.Remove();
                         }
                     }
                 }
@@ -156,7 +151,7 @@ namespace FASTER.core
                 _fasterSession.UnsafeResumeThread();
                 try
                 {
-                    Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, _currentCtx, out Output output);
+                    Status status = _asyncOperation.DoFastOperation(_fasterKV, ref _pendingContext, _fasterSession, out Output output);
 
                     if (!status.IsPending)
                     {
@@ -244,7 +239,7 @@ namespace FASTER.core
 
         // This takes flushEvent as a parameter because we can't pass by ref to an async method.
         private static async ValueTask<(AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo edi)> WaitForFlushOrIOCompletionAsync<Input, Output, Context>(
-                        FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> currentCtx,
+                        FasterKV<Key, Value> @this, FasterExecutionContext<Input, Output, Context> sessionCtx,
                         CompletionEvent flushEvent, AsyncIOContext<Key, Value> diskRequest, CancellationToken token)
         {
             ExceptionDispatchInfo exceptionDispatchInfo = default;
@@ -264,8 +259,8 @@ namespace FASTER.core
                 else
                 {
                     Debug.Assert(flushEvent.IsDefault());
-                    currentCtx.asyncPendingCount++;
-                    currentCtx.pendingReads.Add();
+                    sessionCtx.asyncPendingCount++;
+                    sessionCtx.pendingReads.Add();
 
                     using (token.Register(() => diskRequest.asyncOperation.TrySetCanceled()))
                         diskRequest = await diskRequest.asyncOperation.Task.WithCancellationAsync(token).ConfigureAwait(false);

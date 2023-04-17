@@ -77,12 +77,12 @@ namespace FASTER.benchmark
 
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<Key, Value>
-                    (testLoader.MaxKey / 4, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableEphemeralLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                    (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode);
             else
                 store = new FasterKV<Key, Value>
-                    (testLoader.MaxKey / 2, new LogSettings { LogDevice = device, PreallocateLog = true },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, disableEphemeralLocking: testLoader.LockImpl != LockImpl.Ephemeral);
+                    (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true },
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode);
         }
 
         internal void Dispose()
@@ -310,22 +310,6 @@ namespace FASTER.benchmark
             dash.Start();
 #endif
 
-            ClientSession<Key, Value, Input, Output, Empty, Functions> session = default;
-            LockableUnsafeContext<Key, Value, Input, Output, Empty, Functions> luContext = default;
-
-            (Key key, LockType kind) xlock = (new Key { value = long.MaxValue }, LockType.Exclusive);
-            (Key key, LockType kind) slock = (new Key { value = long.MaxValue - 1 }, LockType.Shared);
-            if (testLoader.Options.LockImpl == (int)LockImpl.Manual)
-            {
-                session = store.For(functions).NewSession<Functions>();
-                luContext = session.LockableUnsafeContext;
-                luContext.BeginLockable();
-
-                Console.WriteLine("Taking 2 manual locks");
-                luContext.Lock(xlock.key, xlock.kind);
-                luContext.Lock(slock.key, slock.kind);
-            }
-
             Thread[] workers = new Thread[testLoader.Options.ThreadCount];
 
             Console.WriteLine("Executing setup.");
@@ -430,14 +414,6 @@ namespace FASTER.benchmark
             foreach (Thread worker in workers)
             {
                 worker.Join();
-            }
-
-            if (testLoader.Options.LockImpl == (int)LockImpl.Manual)
-            {
-                luContext.Unlock(xlock.key, xlock.kind);
-                luContext.Unlock(slock.key, slock.kind);
-                luContext.EndLockable();
-                session.Dispose();
             }
 
             waiter.Reset();

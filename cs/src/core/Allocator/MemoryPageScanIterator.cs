@@ -88,5 +88,8 @@ namespace FASTER.core
         {
             return ref page[offset].value;
         }
+
+        /// <inheritdoc/>
+        public override string ToString() => $"BA {BeginAddress}, EA {EndAddress}, CA {CurrentAddress}, NA {NextAddress}, start {start}, end {end}, recSize {recordSize}, pageSA {pageStartAddress}";
     }
 }

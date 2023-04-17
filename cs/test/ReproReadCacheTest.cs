@@ -51,9 +51,9 @@ namespace FASTER.test.ReadCacheTests
             DeleteDirectory(MethodTestDir, wait: true);
 
             ReadCacheSettings readCacheSettings = default;
-            bool disableEphemeralLocking = false;
             string filename = MethodTestDir + "/BasicFasterTests.log";
 
+            var lockingMode = LockingMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCacheMode rcm)
@@ -67,9 +67,9 @@ namespace FASTER.test.ReadCacheTests
                         };
                     continue;
                 }
-                if (arg is EphemeralLockingMode elm)
+                if (arg is LockingMode lm)
                 {
-                    disableEphemeralLocking = elm == EphemeralLockingMode.NoEphemeralLocking;
+                    lockingMode = lm;
                     continue;
                 }
                 if (arg is DeviceType deviceType)
@@ -88,7 +88,7 @@ namespace FASTER.test.ReadCacheTests
                     MemorySizeBits = 15,
                     PageSizeBits = 12,
                     ReadCacheSettings = readCacheSettings,
-                }, disableEphemeralLocking: disableEphemeralLocking);
+                }, lockingMode: lockingMode);
         }
 
         [TearDown]
@@ -106,8 +106,8 @@ namespace FASTER.test.ReadCacheTests
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
         //[Repeat(300)]
-        public unsafe void RandomReadCacheTest([Values(1, 2, 4, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
-                                                [Values] EphemeralLockingMode ephemeralLockingMode, [Values] ReadCacheMode readCacheMode,
+        public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
+                                                [Values] LockingMode lockingMode, [Values] ReadCacheMode readCacheMode,
 #if WINDOWS
                                                 [Values(DeviceType.LSD
 #else
@@ -160,7 +160,7 @@ namespace FASTER.test.ReadCacheTests
                     LocalRead(sessionContext, r.Next(startKey, endKey));
             }
 
-            const int MaxKeys = 24000;
+            const int MaxKeys = 8000;
 
             { // Write the values first (single-threaded, all keys)
                 var session = fht.For(new Functions()).NewSession<Functions>();

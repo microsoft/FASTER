@@ -19,7 +19,6 @@ namespace FASTER.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="fasterSession">Callback functions.</param>
-        /// <param name="sessionCtx">Session context</param>
         /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
@@ -42,88 +41,80 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<Input, Output, Context, FasterSession>(
-                            ref Key key, ref Input input, ref Value value, ref Output output,
-                            ref Context userContext,
-                            ref PendingContext<Input, Output, Context> pendingContext,
-                            FasterSession fasterSession,
-                            FasterExecutionContext<Input, Output, Context> sessionCtx,
-                            long lsn)
+        internal OperationStatus InternalUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output,
+                            ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession, long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            OperationStatus status = default;
             var latchOperation = LatchOperation.None;
             var latchDestination = LatchDestination.NormalProcessing;
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
-            if (sessionCtx.phase != Phase.REST)
-                HeavyEnter(stackCtx.hei.hash, sessionCtx, fasterSession);
+            if (fasterSession.Ctx.phase != Phase.REST)
+                HeavyEnter(stackCtx.hei.hash, fasterSession.Ctx, fasterSession);
 
-            // A 'ref' variable must be initialized. If we find a record for the key, we reassign the reference. We don't copy from this source, but we do lock it.
-            RecordInfo dummyRecordInfo = default;
-            ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
-
-            FindOrCreateTag(ref stackCtx.hei);
+            FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
             stackCtx.SetRecordSourceToHashEntry(hlog);
 
-            // We must always scan to HeadAddress; a Lockable*Context could be activated and lock the record in the immutable region while we're scanning.
-            TryFindRecordInMemory(ref key, ref stackCtx, hlog.HeadAddress);
+            // We blindly insert if we don't find the record in the mutable region.
+            RecordInfo dummyRecordInfo = new() { Valid = true };
+            ref RecordInfo srcRecordInfo = ref TryFindRecordInMemory(ref key, ref stackCtx, hlog.ReadOnlyAddress)
+                ? ref stackCtx.recSrc.GetInfo()
+                : ref dummyRecordInfo;
+            if (srcRecordInfo.IsClosed)
+                return OperationStatus.RETRY_LATER;
+
+            // Note: we do not track pendingContext.Initial*Address because we don't have an InternalContinuePendingUpsert
 
             UpsertInfo upsertInfo = new()
             {
-                SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
-                SessionID = sessionCtx.sessionID,
+                Version = fasterSession.Ctx.version,
+                SessionID = fasterSession.Ctx.sessionID,
                 Address = stackCtx.recSrc.LogicalAddress,
                 KeyHash = stackCtx.hei.hash
             };
 
-            #region Entry latch operation
-            if (sessionCtx.phase != Phase.REST)
-            {
-                latchDestination = AcquireLatchUpsert(sessionCtx, ref stackCtx.hei, ref status, ref latchOperation, stackCtx.recSrc.LogicalAddress);
-                if (latchDestination == LatchDestination.Retry)
-                    goto LatchRelease;
-            }
-            #endregion
+            if (!TryTransientXLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
+                return status;
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
-            #region Address and source record checks
+                #region Address and source record checks
 
                 if (stackCtx.recSrc.HasReadCacheSrc)
                 {
                     // Use the readcache record as the CopyUpdater source.
-                    goto LockSourceRecord;
+                    goto CreateNewRecord;
                 }
-                else if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
-                {
-                    // Mutable Region: Update the record in-place
-                    // We perform mutable updates only if we are in normal processing phase of checkpointing
-                    srcRecordInfo = ref hlog.GetInfo(stackCtx.recSrc.PhysicalAddress);
-                    if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                        goto LatchRelease;
 
+                // Check for CPR consistency after checking if source is readcache.
+                if (fasterSession.Ctx.phase != Phase.REST)
+                {
+                    latchDestination = CheckCPRConsistencyUpsert(fasterSession.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    if (latchDestination == LatchDestination.Retry)
+                        goto LatchRelease;
+                }
+
+                if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
+                {
+                    // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     if (srcRecordInfo.Tombstone)
                         goto CreateNewRecord;
 
-                    if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                    {
-                        EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
-                        srcRecordInfo = ref dummyRecordInfo;
-                        goto CreateNewRecord;
-                    }
-
                     upsertInfo.RecordInfo = srcRecordInfo;
-                    ref Value recordValue = ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress);
-                    if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo))
+                    ref Value recordValue = ref stackCtx.recSrc.GetValue();
+                    if (fasterSession.ConcurrentWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo, out stackCtx.recSrc.ephemeralLockResult))
                     {
-                        this.MarkPage(stackCtx.recSrc.LogicalAddress, sessionCtx);
+                        this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        goto LatchRelease;
+                    }
+                    if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
+                    {
+                        status = OperationStatus.RETRY_LATER;
                         goto LatchRelease;
                     }
                     if (upsertInfo.Action == UpsertAction.CancelOperation)
@@ -133,51 +124,26 @@ namespace FASTER.core
                     }
 
                     // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
-                    stackCtx.recSrc.HasMainLogSrc = true;
                     goto CreateNewRecord;
                 }
                 else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
                 {
-                    // Only need to go below ReadOnly for locking and Sealing.
-                    stackCtx.recSrc.HasMainLogSrc = true;
-                    goto LockSourceRecord;
+                    goto CreateNewRecord;
                 }
                 else
                 {
-                    // Either on-disk or no record exists - check for lock before creating new record. First ensure any record lock has transitioned to the LockTable.
-                    SpinWaitUntilRecordIsClosed(ref key, stackCtx.hei.hash, stackCtx.recSrc.LogicalAddress, hlog);
-                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, stackCtx.hei.hash), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
-                    if (LockTable.IsActive && !fasterSession.DisableEphemeralLocking 
-                            && !LockTable.TryLockEphemeral(ref key, stackCtx.hei.hash, LockType.Exclusive, out stackCtx.recSrc.HasLockTableLock))
-                    {
-                        status = OperationStatus.RETRY_LATER;
-                        goto LatchRelease;
-                    }
+                    // Either on-disk or no record exists - create new record.
+                    Debug.Assert(!fasterSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
                     goto CreateNewRecord;
                 }
             #endregion Address and source record checks
-
-            #region Lock source record
-            LockSourceRecord:
-                // This would be a local function to reduce "goto", but 'ref' variables and parameters aren't supported on local functions.
-                srcRecordInfo = ref stackCtx.recSrc.GetSrcRecordInfo();
-                if (!TryEphemeralXLock<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo, out status))
-                    goto LatchRelease;
-                if (!srcRecordInfo.IsValidUpdateOrLockSource)
-                {
-                    EphemeralXUnlockAndAbandonUpdate<Input, Output, Context, FasterSession>(fasterSession, ref stackCtx.recSrc, ref srcRecordInfo);
-                    srcRecordInfo = ref dummyRecordInfo;
-                }
-                goto CreateNewRecord;
-            #endregion Lock source record
 
             #region Create new record in the mutable region
             CreateNewRecord:
                 if (latchDestination != LatchDestination.CreatePendingContext)
                 {
                     // Immutable region or new record
-                    status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession,
-                                                   sessionCtx, ref stackCtx, ref srcRecordInfo);
+                    status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, fasterSession, ref stackCtx, ref srcRecordInfo);
                     if (!OperationStatusUtils.IsAppend(status))
                     {
                         // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
@@ -194,8 +160,12 @@ namespace FASTER.core
             }
             finally
             {
-                stackCtx.HandleNewRecordOnError(this);
-                EphemeralXUnlockAfterUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo);
+                // On success, we call UnlockAndSeal. Non-success includes the source address going below HeadAddress, in which case we rely on
+                // recordInfo.ClearBitsForDiskImages clearing locks and Seal.
+                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal && stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress && srcRecordInfo.IsLocked)
+                    srcRecordInfo.UnlockExclusive();
+                stackCtx.HandleNewRecordOnException(this);
+                TransientXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
             }
 
         #region Create pending context
@@ -203,18 +173,20 @@ namespace FASTER.core
             Debug.Assert(latchDestination == LatchDestination.CreatePendingContext, $"Upsert CreatePendingContext encountered latchDest == {latchDestination}");
             {
                 pendingContext.type = OperationType.UPSERT;
-                if (pendingContext.key == default) pendingContext.key = hlog.GetKeyContainer(ref key);
-                if (pendingContext.input == default) pendingContext.input = fasterSession.GetHeapContainer(ref input);
-                if (pendingContext.value == default) pendingContext.value = hlog.GetValueContainer(ref value);
+                if (pendingContext.key == default) 
+                    pendingContext.key = hlog.GetKeyContainer(ref key);
+                if (pendingContext.input == default) 
+                    pendingContext.input = fasterSession.GetHeapContainer(ref input);
+                if (pendingContext.value == default) 
+                    pendingContext.value = hlog.GetValueContainer(ref value);
 
                 pendingContext.output = output;
                 if (pendingContext.output is IHeapConvertible heapConvertible)
                     heapConvertible.ConvertToHeap();
 
                 pendingContext.userContext = userContext;
-                pendingContext.PrevLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                pendingContext.version = sessionCtx.version;
+                pendingContext.version = fasterSession.Ctx.version;
                 pendingContext.serialNum = lsn;
             }
         #endregion
@@ -242,61 +214,80 @@ namespace FASTER.core
             return status;
         }
 
-        private LatchDestination AcquireLatchUpsert<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> sessionCtx, ref HashEntryInfo hei, ref OperationStatus status,
-                                                                            ref LatchOperation latchOperation, long logicalAddress)
+        private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            switch (sessionCtx.phase)
+            if (!this.DoTransientLocking)
+                return AcquireCPRLatchUpsert(phase, ref stackCtx, ref status, ref latchOperation);
+
+            // This is AcquireCPRLatchUpsert without the bucket latching, since we already have a latch on either the bucket or the recordInfo.
+            // See additional comments in AcquireCPRLatchRMW.
+
+            switch (phase)
             {
-                case Phase.PREPARE:
-                    {
-                        if (HashBucket.TryAcquireSharedLatch(ref hei))
-                        {
-                            // Set to release shared latch (default)
-                            latchOperation = LatchOperation.Shared;
-                            // Here (and in InternalRead, AcquireLatchRMW, and AcquireLatchDelete) we still check the tail record of the bucket (entry.Address)
-                            // rather than the traced record (logicalAddress), because I'm worried that the implementation
-                            // may not allow in-place updates for version v when the bucket arrives v+1. 
-                            // This is safer but potentially unnecessary.
-                            if (CheckBucketVersionNew(ref hei.entry))
-                            {
-                                status = OperationStatus.CPR_SHIFT_DETECTED;
-                                return LatchDestination.Retry; // Pivot Thread on retry
-                            }
-                            break; // Normal Processing
-                        }
-                        else
-                        {
-                            status = OperationStatus.CPR_SHIFT_DETECTED;
-                            return LatchDestination.Retry; // Pivot Thread on retry
-                        }
-                    }
-                case Phase.IN_PROGRESS:
-                    {
-                        if (!CheckEntryVersionNew(logicalAddress))
-                        {
-                            if (HashBucket.TryAcquireExclusiveLatch(ref hei))
-                            {
-                                // Set to release exclusive latch (default)
-                                latchOperation = LatchOperation.Exclusive;
-                                return LatchDestination.CreateNewRecord; // Create a (v+1) record
-                            }
-                            else
-                            {
-                                status = OperationStatus.RETRY_LATER;
-                                return LatchDestination.Retry; // Refresh and retry operation
-                            }
-                        }
-                        break; // Normal Processing
-                    }
+                case Phase.PREPARE: // Thread is in V
+                    if (!IsEntryVersionNew(ref stackCtx.hei.entry))
+                        break; // Normal Processing; thread is in V, record is in V
+
+                    status = OperationStatus.CPR_SHIFT_DETECTED;
+                    return LatchDestination.Retry;  // Pivot Thread for retry (do not operate on V+1 record when thread is in V)
+
+                case Phase.IN_PROGRESS: // Thread is in V+1
                 case Phase.WAIT_INDEX_CHECKPOINT:
                 case Phase.WAIT_FLUSH:
+                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
+                        break;      // Normal Processing; V+1 thread encountered a record in V+1
+                    return LatchDestination.CreateNewRecord;    // Upsert never goes pending; always force creation of a (V+1) record
+
+                default:
+                    break;
+            }
+            return LatchDestination.NormalProcessing;
+        }
+
+        private LatchDestination AcquireCPRLatchUpsert(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        {
+            // See additional comments in AcquireCPRLatchRMW.
+
+            switch (phase)
+            {
+                case Phase.PREPARE: // Thread is in V
+                    if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
                     {
-                        if (!CheckEntryVersionNew(logicalAddress))
+                        // Set to release shared latch (default)
+                        latchOperation = LatchOperation.Shared;
+                        if (IsEntryVersionNew(ref stackCtx.hei.entry))
                         {
-                            return LatchDestination.CreateNewRecord; // Create a (v+1) record
+                            status = OperationStatus.CPR_SHIFT_DETECTED;
+                            return LatchDestination.Retry;  // Pivot Thread for retry (do not operate on V+1 record when thread is in V)
                         }
-                        break; // Normal Processing
+                        break; // Normal Processing; thread is in V, record is in V
                     }
+
+                    // Could not acquire Shared latch; system must be in V+1 (or we have too many shared latches).
+                    status = OperationStatus.CPR_SHIFT_DETECTED;
+                    return LatchDestination.Retry;  // Pivot Thread for retry
+
+                case Phase.IN_PROGRESS: // Thread is in V+1
+                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
+                        break;      // Normal Processing; V+1 thread encountered a record in V+1
+
+                    if (HashBucket.TryAcquireExclusiveLatch(ref stackCtx.hei))
+                    {
+                        // Set to release exclusive latch (default)
+                        latchOperation = LatchOperation.Exclusive;
+                        return LatchDestination.CreateNewRecord; // Upsert never goes pending; always force creation of a (v+1) record
+                    }
+
+                    // Could not acquire exclusive latch; likely a conflict on the bucket.
+                    status = OperationStatus.RETRY_LATER;
+                    return LatchDestination.Retry;  // Retry after refresh
+
+                case Phase.WAIT_INDEX_CHECKPOINT:   // Thread is in v+1
+                case Phase.WAIT_FLUSH:
+                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
+                        break;      // Normal Processing; V+1 thread encountered a record in V+1
+                    return LatchDestination.CreateNewRecord;    // Upsert never goes pending; always force creation of a (V+1) record
+
                 default:
                     break;
             }
@@ -312,43 +303,27 @@ namespace FASTER.core
         /// <param name="output">The result of IFunctions.SingleWriter</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="fasterSession">The current session</param>
-        /// <param name="sessionCtx">The current session context</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="srcRecordInfo">If <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value}.HasInMemorySrc"/>,
         ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value}.LogicalAddress"/></param>
         private OperationStatus CreateNewRecordUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output,
                                                                                              ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession,
-                                                                                             FasterExecutionContext<Input, Output, Context> sessionCtx,
                                                                                              ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
 
-            if (!GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress))
-            {
-                // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
-                do
-                {
-                    if (!BlockAllocate(allocatedSize, out newLogicalAddress, ref pendingContext, out OperationStatus status))
-                        return status;
-                    newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-                    if (!VerifyInMemoryAddresses(ref stackCtx))
-                    {
-                        SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
-                        return OperationStatus.RETRY_LATER;
-                    }
-                } while (newLogicalAddress < stackCtx.recSrc.LatestLogicalAddress);
-            }
+            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+                return status;
 
-            ref RecordInfo newRecordInfo = ref WriteTentativeInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionCtx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
-            stackCtx.newLogicalAddress = newLogicalAddress;
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            stackCtx.SetNewRecord(newLogicalAddress);
 
             UpsertInfo upsertInfo = new()
             {
-                SessionType = fasterSession.SessionType,
-                Version = sessionCtx.version,
-                SessionID = sessionCtx.sessionID,
+                Version = fasterSession.Ctx.version,
+                SessionID = fasterSession.Ctx.sessionID,
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
                 RecordInfo = newRecordInfo
@@ -365,14 +340,15 @@ namespace FASTER.core
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             upsertInfo.RecordInfo = newRecordInfo;
-            bool success = CASRecordIntoChain(ref stackCtx, newLogicalAddress);
+            bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
-                if (!CompleteTwoPhaseUpdate<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, ref srcRecordInfo, ref newRecordInfo, out var lockStatus))
-                    return lockStatus;
+                PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
-                stackCtx.ClearNewRecordTentativeBitAtomic(ref newRecordInfo);
+                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal)
+                    srcRecordInfo.UnlockExclusiveAndSeal();
+                stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);

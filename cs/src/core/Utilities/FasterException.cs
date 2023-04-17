@@ -44,4 +44,19 @@ namespace FASTER.core
         {
         }
     }
+
+    /// <summary>
+    /// FASTER IO exception type
+    /// </summary>
+    public class FasterIOException : FasterException
+    {
+        /// <summary>
+        /// Throw FASTER exception
+        /// </summary>
+        /// <param name="message"></param>
+        /// <param name="innerException"></param>
+        public FasterIOException(string message, Exception innerException) : base(message, innerException)
+        {
+        }
+    }
 }

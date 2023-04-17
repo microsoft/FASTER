@@ -44,6 +44,7 @@ namespace FASTER.core
 
             using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress))
             {
+                long numPending = 0;
                 while (iter1.GetNext(out var recordInfo))
                 {
                     ref var key = ref iter1.GetKey();
@@ -51,47 +52,19 @@ namespace FASTER.core
 
                     if (!recordInfo.Tombstone && !cf.IsDeleted(ref key, ref value))
                     {
-                        OperationStatus copyStatus;
-                        ReadOptions readOptions = new() { StopAddress = iter1.NextAddress, };
-                        do
+                        var status = fhtSession.CompactionCopyToTail(ref key, ref input, ref value, ref output, iter1.NextAddress);
+                        if (status.IsPending && ++numPending > 256)
                         {
-                            long checkedAddress = hlog.SafeReadOnlyAddress;
-                            
-                            var status = fhtSession.Read(ref key, ref input, ref output, ref readOptions, out var recordMetadata);
-
-                            // For now, we perform each record compaction separately. In order to do this in parallel to maximize IOPS,
-                            // we need a new Conditional Upsert API (CopyToTailIfNotExists)
-                            if (status.IsPending)
-                            {
-                                fhtSession.CompletePendingWithOutputs(out var completedOutput, true);
-                                try
-                                {
-                                    if (completedOutput.Next())
-                                    {
-                                        status = completedOutput.Current.Status;
-                                        recordMetadata = completedOutput.Current.RecordMetadata;
-                                    }
-                                    else
-                                        throw new FasterException("Pending Read did not complete during compaction");
-                                }
-                                finally
-                                {
-                                    completedOutput.Dispose();
-                                }
-                            }
-
-                            // Either record was found in future, or we returned NOTFOUND because of a tombstone in future
-                            if (status.Found || recordMetadata.Address >= iter1.NextAddress)
-                                break;
-                            
-                            copyStatus = fhtSession.CompactionCopyToTail(ref key, ref input, ref value, ref output, checkedAddress, iter1.CurrentAddress);
-                            recordMetadata.RecordInfo.PreviousAddress = checkedAddress;
-                        } while (copyStatus == OperationStatus.RECORD_ON_DISK);
+                            fhtSession.CompletePending(wait: true);
+                            numPending = 0;
+                        }
                     }
 
                     // Ensure address is at record boundary
                     untilAddress = iter1.NextAddress;
                 }
+                if (numPending > 0)
+                    fhtSession.CompletePending(wait: true);
             }
             Log.ShiftBeginAddress(untilAddress, false);
             return untilAddress;
@@ -130,13 +103,9 @@ namespace FASTER.core
                         ref var value = ref iter1.GetValue();
 
                         if (recordInfo.Tombstone || cf.IsDeleted(ref key, ref value))
-                        {
-                            tempKvSession.Delete(ref key, default, 0);
-                        }
+                            tempKvSession.Delete(ref key);
                         else
-                        {
-                            tempKvSession.Upsert(ref key, ref value, default, 0);
-                        }
+                            tempKvSession.Upsert(ref key, ref value);
                     }
                     // Ensure address is at record boundary
                     untilAddress = originalUntilAddress = iter1.NextAddress;
@@ -145,53 +114,47 @@ namespace FASTER.core
                 // Scan until SafeReadOnlyAddress
                 var scanUntil = hlog.SafeReadOnlyAddress;
                 if (untilAddress < scanUntil)
-                    LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
+                    ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempKvSession);
 
+                var numPending = 0;
                 using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
                 while (iter3.GetNext(out var recordInfo))
                 {
-                    if (!recordInfo.Tombstone)
-                    {
-                        OperationStatus copyStatus = default;
-                        do
-                        {
-                            // Try to ensure we have checked all immutable records
-                            scanUntil = hlog.SafeReadOnlyAddress;
-                            if (untilAddress < scanUntil)
-                                LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
+                    if (recordInfo.Tombstone)
+                        continue;
 
-                            // If record is not the latest in tempKv's memory for this key, ignore it
-                            if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress).Found)
-                            {
-                                if (iter3.CurrentAddress != tempKeyAddress)
-                                    continue;
-                            }
-                            else
-                            {
-                                // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
-                                continue;
-                            }
-                            // As long as there's no record of the same key whose address is >= untilAddress (scan boundary),
-                            // we are safe to copy the old record to the tail. We don't know the actualAddress in the main kv.
-                            copyStatus = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1, actualAddress: Constants.kUnknownAddress);
-                        } while (copyStatus == OperationStatus.RECORD_ON_DISK);
+                    // Try to ensure we have checked all immutable records
+                    scanUntil = hlog.SafeReadOnlyAddress;
+                    if (untilAddress < scanUntil)
+                        ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempKvSession);
+
+                    // If record is not the latest in tempKv's memory for this key, ignore it (will not be returned if deleted)
+                    if (!tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
+                        continue;
+
+                    // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
+                    // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
+                    var status = fhtSession.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1);
+                    if (status.IsPending && ++numPending > 256)
+                    {
+                        fhtSession.CompletePending(wait: true);
+                        numPending = 0;
                     }
                 }
+                if (numPending > 0)
+                    fhtSession.CompletePending(wait: true);
             }
             Log.ShiftBeginAddress(originalUntilAddress, false);
             return originalUntilAddress;
         }
 
-        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
+        private void ScanImmutableTailToRemoveFromTempKv<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
             using var iter = Log.Scan(untilAddress, scanUntil);
             while (iter.GetNext(out var _))
             {
-                ref var k = ref iter.GetKey();
-                ref var v = ref iter.GetValue();
-
-                tempKvSession.Delete(ref k, default, 0);
+                tempKvSession.Delete(ref iter.GetKey(), default, 0);
                 untilAddress = iter.NextAddress;
             }
         }
