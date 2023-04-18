@@ -146,6 +146,19 @@ namespace FASTER.core
                 RecoverFiles();
         }
 
+        /// <inheritdoc />
+        public override void Reset()
+        {
+            while (logHandles.Count > 0)
+            {
+                foreach (var handle in logHandles)
+                {
+                    logHandles.TryRemove(handle.Key, out _);
+                    handle.Value.Dispose();
+                }
+            }
+        }
+
         private void RecoverFiles()
         {
             FileInfo fi = new(FileName); // may not exist

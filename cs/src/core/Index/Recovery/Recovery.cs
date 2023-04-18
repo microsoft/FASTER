@@ -365,10 +365,8 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
-        /// Reset the store to an empty state. WARNING: call only when store is quiesced.
-        /// </summary>
-        void Reset()
+        /// <inheritdoc />
+        public void Reset()
         {
             // Reset the hash index
             Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
