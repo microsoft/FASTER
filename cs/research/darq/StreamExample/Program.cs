@@ -21,8 +21,6 @@ namespace SimpleStream
 
     public class Program
     {
-        public const string RESULTS_FILE_PATH = "Z:\\results\\";
-
         private static void RunStreamProducer(string traceFile, HardCodedClusterInfo clusterInfo)
         {
             var loader = new SearchListDataLoader(traceFile, clusterInfo);
@@ -30,9 +28,10 @@ namespace SimpleStream
             loader.Run(new WorkerId(0));
         }
 
-        private static void RunDarqWithProcessor(WorkerId me, HardCodedClusterInfo clusterInfo, IDarqProcessor processor, bool remoteProcessor = false)
+        private static void RunDarqWithProcessor(WorkerId me, HardCodedClusterInfo clusterInfo,
+            IDarqProcessor processor, bool remoteProcessor = false)
         {
-            var logDevice = new LocalStorageDevice($"D:\\w{me.guid}.log", deleteOnClose: true);
+            var logDevice = new LocalStorageDevice($"D:\\w{me.guid}\\data.log", deleteOnClose: true);
             var darqServer = new DarqServer(new DarqServerOptions
             {
                 Port = 15721 + (int)me.guid,
@@ -76,6 +75,18 @@ namespace SimpleStream
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
             if (result.Tag == ParserResultType.NotParsed) return;
             var options = result.MapResult(o => o, xs => new Options());
+            if (options.Type.Equals("generate"))
+            {
+                // Change the parameters as needed
+                new SearchListDataGenerator().SetOutputFile(options.TraceFile)
+                    .SetSearchTermRelevantProb(0.2)
+                    .SetTrendParameters(0.1, 50000, 10000)
+                    .SetSearchTermLength(80)
+                    .SetThroughput(50000)
+                    .SetNumSearchTerms(50000 * 30)
+                    .Generate();
+                return;
+            }
 
             // Compose cluster architecture
             var clusterInfo = new HardCodedClusterInfo();

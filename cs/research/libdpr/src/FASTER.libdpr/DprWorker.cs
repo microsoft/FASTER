@@ -206,6 +206,12 @@ namespace FASTER.libdpr
 
                 if (v != 0)
                     BeginRestore(dprFinder.SystemWorldLine(), v).GetAwaiter().GetResult();
+                else
+                {
+                    var deps = dependencySetPool.Checkout();
+                    var success = versions.TryAdd(1, deps);
+                    Debug.Assert(success);
+                }
             }
             else
             {
@@ -213,6 +219,12 @@ namespace FASTER.libdpr
                 // This worker is recovering from some failure and we need to load said checkpoint
                 if (v != 0)
                     BeginRestore(dprFinder.SystemWorldLine(), v).GetAwaiter().GetResult();
+                else
+                {
+                    var deps = dependencySetPool.Checkout();
+                    var success = versions.TryAdd(1, deps);
+                    Debug.Assert(success);
+                }
                 dprFinder.Refresh();
             }
         }
@@ -268,7 +280,7 @@ namespace FASTER.libdpr
             if (lastCheckpointMilli + checkpointPeriodMilli <= currentTime)
             {
                 BeginCheckpoint(
-                    Math.Max(versionScheme.CurrentState().Version + 1, dprFinder.GlobalMaxVersion()));
+                    Math.Max(versionScheme.CurrentState().Version + 1, dprFinder?.GlobalMaxVersion() ?? 0));
 
                 core.Utility.MonotonicUpdate(ref lastCheckpointMilli, currentTime, out _);
             }
