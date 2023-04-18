@@ -109,6 +109,8 @@ namespace FASTER.core
                     break;
                 case Phase.PREPARE_GROW:
                     nextState.Phase = Phase.IN_PROGRESS_GROW;
+                    SetToVersion(start.Version + 1);
+                    nextState.Version = ToVersion();
                     break;
                 case Phase.IN_PROGRESS_GROW:
                     nextState.Phase = Phase.REST;

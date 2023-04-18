@@ -92,16 +92,22 @@ namespace FASTER.core
             base.Reset();
             for (int index = 0; index < BufferSize; index++)
             {
-                if (values[index] != default)
-                {
-                    overflowPagePool.TryAdd(values[index % BufferSize]);
-                    values[index % BufferSize] = default;
-                    Interlocked.Decrement(ref AllocatedPageCount);
-                }
+                ReturnPage(index);
             }
 
             Array.Clear(segmentOffsets, 0, segmentOffsets.Length);
             Initialize();
+        }
+
+        void ReturnPage(int index)
+        {
+            Debug.Assert(index < BufferSize);
+            if (values[index] != default)
+            {
+                overflowPagePool.TryAdd(values[index]);
+                values[index] = default;
+                Interlocked.Decrement(ref AllocatedPageCount);
+            }
         }
 
         public override void Initialize()
@@ -361,11 +367,7 @@ namespace FASTER.core
             }
 
             if (EmptyPageCount > 0)
-            {
-                overflowPagePool.TryAdd(values[page % BufferSize]);
-                values[page % BufferSize] = default;
-                Interlocked.Decrement(ref AllocatedPageCount);
-            }
+                ReturnPage((int)(page % BufferSize));
         }
 
         private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,

@@ -220,7 +220,7 @@ namespace FASTER.core
             Debug.Assert(!readOnlyMode);
 
             if (beginAddress == 0)
-                beginAddress = Constants.kFirstValidAddress;
+                beginAddress = allocator.GetFirstValidLogicalAddress(0);
 
             try
             {
