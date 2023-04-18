@@ -915,9 +915,11 @@ namespace FASTER.core
             
             this.FlushEvent.Initialize();
             Array.Clear(PageStatusIndicator, 0, BufferSize);
-            for (int i = 0; i < BufferSize; i++)
-                PendingFlush[i].list.Clear();
-
+            if (PendingFlush != null)
+            {
+                for (int i = 0; i < BufferSize; i++)
+                    PendingFlush[i]?.list?.Clear();
+            }
             device.Reset();
         }
 
