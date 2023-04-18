@@ -147,9 +147,8 @@ namespace FASTER.core
                     break;
                 case Phase.PREPARE:
                     nextState.Phase = Phase.IN_PROGRESS;
-                    // TODO: Move to long for system state as well. 
                     SetToVersion(targetVersion == -1 ? start.Version + 1 : targetVersion);
-                    nextState.Version = (int)ToVersion();
+                    nextState.Version = ToVersion();
                     break;
                 case Phase.IN_PROGRESS:
                     nextState.Phase = Phase.REST;

@@ -51,8 +51,6 @@ namespace FASTER.core
             switch (next.Phase)
             {
                 case Phase.PREPARE_GROW:
-                    faster.epoch.BumpCurrentEpoch(() => faster.GlobalStateMachineStep(next));
-                    break;
                 case Phase.IN_PROGRESS_GROW:
                 case Phase.REST:
                     // nothing to do
@@ -76,6 +74,11 @@ namespace FASTER.core
             switch (current.Phase)
             {
                 case Phase.PREPARE_GROW:
+                    faster.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
+                    if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && faster.hlog.NumActiveLockingSessions == 0)
+                        faster.GlobalStateMachineStep(current);
+                    break;
+
                 case Phase.IN_PROGRESS_GROW:
                 case Phase.REST:
                     return;
@@ -106,6 +109,8 @@ namespace FASTER.core
                     break;
                 case Phase.PREPARE_GROW:
                     nextState.Phase = Phase.IN_PROGRESS_GROW;
+                    SetToVersion(start.Version + 1);
+                    nextState.Version = ToVersion();
                     break;
                 case Phase.IN_PROGRESS_GROW:
                     nextState.Phase = Phase.REST;

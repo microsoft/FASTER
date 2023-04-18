@@ -377,7 +377,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, ref ReadOptions readOptions,
-                                                                                                 Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default) 
+                                                                                                 Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
             => fht.ReadAsync(this.FasterSession, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
 
         /// <inheritdoc/>
@@ -448,12 +448,12 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => fht.UpsertAsync<Input, Output, Context, InternalFasterSession>(this.FasterSession, ref key, ref input, ref desiredValue, userContext, serialNo, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
 
         /// <inheritdoc/>
@@ -463,7 +463,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0) 
+        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
             => RMW(ref key, ref input, ref output, out _, userContext, serialNo);
 
         /// <inheritdoc/>
@@ -507,7 +507,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
             => fht.RmwAsync<Input, Output, Context, InternalFasterSession>(this.FasterSession, ref key, ref input, context, serialNo, token);
 
         /// <inheritdoc/>
@@ -537,7 +537,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => fht.DeleteAsync<Input, Output, Context, InternalFasterSession>(this.FasterSession, ref key, userContext, serialNo, token);
 
         /// <inheritdoc/>
@@ -802,7 +802,7 @@ namespace FASTER.core
         /// <param name="compactUntilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact(long compactUntilAddress, CompactionType compactionType = CompactionType.Scan) 
+        public long Compact(long compactUntilAddress, CompactionType compactionType = CompactionType.Scan)
             => Compact(compactUntilAddress, compactionType, default(DefaultCompactionFunctions<Key, Value>));
 
         /// <summary>
@@ -830,7 +830,7 @@ namespace FASTER.core
         {
             Input input = default;
             Output output = default;
-            return fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType, 
+            return fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType,
                     new SessionVariableLengthStructSettings<Value, Input> { valueLength = variableLengthStruct, inputLength = inputVariableLengthStruct });
         }
 
@@ -942,7 +942,7 @@ namespace FASTER.core
         /// </summary>
         internal bool IsInPreparePhase()
         {
-            return this.fht.SystemState.Phase == Phase.PREPARE;
+            return this.fht.SystemState.Phase == Phase.PREPARE || this.fht.SystemState.Phase == Phase.PREPARE_GROW;
         }
 
         #endregion Other Operations

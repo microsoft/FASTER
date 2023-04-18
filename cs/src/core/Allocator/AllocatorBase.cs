@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -167,6 +168,11 @@ namespace FASTER.core
         /// The lowest valid address in the log
         /// </summary>
         public long BeginAddress;
+        
+        /// <summary>
+        /// The lowest valid address on disk - updated when truncating log
+        /// </summary>
+        public long PersistedBeginAddress;
 
         /// <summary>
         /// Address until which we are currently closing. Used to coordinate linear closing of pages.
@@ -877,6 +883,99 @@ namespace FASTER.core
         /// </summary>
         internal abstract int OverflowPageCount { get; }
 
+
+        /// <summary>
+        /// Reset the hybrid log. WARNING: assumes that threads have drained out at this point.
+        /// </summary>
+        public virtual void Reset()
+        {
+            var newBeginAddress = GetTailAddress();
+
+            // Shift read-only addresses to tail without flushing
+            Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out _);
+            Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out _);
+
+            // Shift head address to tail
+            if (Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out _))
+            {
+                // Close addresses
+                OnPagesClosed(newBeginAddress);
+
+                // Wait for pages to get closed
+                while (ClosedUntilAddress < newBeginAddress)
+                {
+                    Thread.Yield();
+                    if (epoch.ThisInstanceProtected())
+                        epoch.ProtectAndDrain();
+                }
+            }
+
+            // Update begin address to tail
+            Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out _);
+            
+            this.FlushEvent.Initialize();
+            Array.Clear(PageStatusIndicator, 0, BufferSize);
+            for (int i = 0; i < BufferSize; i++)
+                PendingFlush[i].list.Clear();
+        }
+
+        internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
+        {
+            // Note: trimLog is unused right now. Can be used to trim the log to the minimum
+            // segment range necessary for recovery to given checkpoint
+
+            var diskBeginAddress = recoveredHLCInfo.info.beginAddress;
+            var diskFlushedUntilAddress =
+                recoveredHLCInfo.info.useSnapshotFile == 0 ?
+                recoveredHLCInfo.info.finalLogicalAddress :
+                recoveredHLCInfo.info.flushedLogicalAddress;
+
+            // Delete disk segments until specified disk begin address
+
+            // First valid disk segment required for recovery
+            long firstValidSegment = (int)(diskBeginAddress >> LogSegmentSizeBits);
+
+            // Last valid disk segment required for recovery
+            int lastValidSegment = (int)(diskFlushedUntilAddress >> LogSegmentSizeBits);
+            if ((diskFlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                lastValidSegment--;
+
+            logger?.LogInformation("Recovery requires disk segments in range [{firstSegment}--{tailStartSegment}]", firstValidSegment, lastValidSegment);
+
+            var firstAvailSegment = device.StartSegment;
+            var lastAvailSegment = device.EndSegment;
+
+            if (FlushedUntilAddress > GetFirstValidLogicalAddress(0))
+            {
+                int currTailSegment = (int)(FlushedUntilAddress >> LogSegmentSizeBits);
+                if ((FlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                    currTailSegment--;
+
+                if (currTailSegment > lastAvailSegment)
+                    lastAvailSegment = currTailSegment;
+            }
+
+            logger?.LogInformation("Available segment range on device: [{firstAvailSegment}--{lastAvailSegment}]", firstAvailSegment, lastAvailSegment);
+
+            if (firstValidSegment < firstAvailSegment)
+                throw new FasterException($"Unable to set first valid segment to {firstValidSegment}, first available segment on disk is {firstAvailSegment}");
+
+            if (lastAvailSegment >= 0 && lastValidSegment > lastAvailSegment)
+                throw new FasterException($"Unable to set last valid segment to {lastValidSegment}, last available segment on disk is {lastAvailSegment}");
+
+            if (trimLog)
+            {
+                logger?.LogInformation("Trimming disk segments until (not including) {firstSegment}", firstValidSegment);
+                TruncateUntilAddressBlocking(firstValidSegment << LogSegmentSizeBits);
+
+                for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
+                {
+                    logger?.LogInformation("Trimming tail segment {s} on disk", s);
+                    RemoveSegment(s);
+                }
+            }
+        }
+
         /// <summary>
         /// Initialize allocator
         /// </summary>
@@ -1294,7 +1393,26 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         protected virtual void TruncateUntilAddress(long toAddress)
         {
+            PersistedBeginAddress = toAddress;
             Task.Run(() => device.TruncateUntilAddress(toAddress));
+        }
+
+        /// <summary>
+        /// Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices
+        /// </summary>
+        /// <param name="toAddress"></param>
+        protected virtual void TruncateUntilAddressBlocking(long toAddress)
+        {
+            device.TruncateUntilAddress(toAddress);
+        }
+
+        /// <summary>
+        /// Remove disk segment
+        /// </summary>
+        /// <param name="segment"></param>
+        protected virtual void RemoveSegment(int segment)
+        {
+            device.RemoveSegment(segment);
         }
 
         internal virtual bool TryComplete()

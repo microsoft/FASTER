@@ -87,6 +87,29 @@ namespace FASTER.core
 
         internal override int OverflowPageCount => overflowPagePool.Count;
 
+        public override void Reset()
+        {
+            base.Reset();
+            for (int index = 0; index < BufferSize; index++)
+            {
+                ReturnPage(index);
+            }
+
+            Array.Clear(segmentOffsets, 0, segmentOffsets.Length);
+            Initialize();
+        }
+
+        void ReturnPage(int index)
+        {
+            Debug.Assert(index < BufferSize);
+            if (values[index] != default)
+            {
+                overflowPagePool.TryAdd(values[index]);
+                values[index] = default;
+                Interlocked.Decrement(ref AllocatedPageCount);
+            }
+        }
+
         public override void Initialize()
         {
             Initialize(recordSize);
@@ -267,6 +290,18 @@ namespace FASTER.core
             objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
         }
 
+        protected override void TruncateUntilAddressBlocking(long toAddress)
+        {
+            base.TruncateUntilAddressBlocking(toAddress);
+            objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
+        }
+
+        protected override void RemoveSegment(int segment)
+        {
+            base.RemoveSegment(segment);
+            objectLogDevice.RemoveSegment(segment);
+        }
+
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync(flushPage,
@@ -332,11 +367,7 @@ namespace FASTER.core
             }
 
             if (EmptyPageCount > 0)
-            {
-                overflowPagePool.TryAdd(values[page % BufferSize]);
-                values[page % BufferSize] = default;
-                Interlocked.Decrement(ref AllocatedPageCount);
-            }
+                ReturnPage((int)(page % BufferSize));
         }
 
         private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,
