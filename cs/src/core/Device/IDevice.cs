@@ -181,6 +181,11 @@ namespace FASTER.core
         /// <param name="segment"></param>
         /// <returns></returns>
         long GetFileSize(int segment);
+
+        /// <summary>
+        /// Reset the device (close and forget open handles)
+        /// </summary>
+        void Reset();
     }
 
     /// <summary>

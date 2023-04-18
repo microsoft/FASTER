@@ -917,6 +917,8 @@ namespace FASTER.core
             Array.Clear(PageStatusIndicator, 0, BufferSize);
             for (int i = 0; i < BufferSize; i++)
                 PendingFlush[i].list.Clear();
+
+            device.Reset();
         }
 
         internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)

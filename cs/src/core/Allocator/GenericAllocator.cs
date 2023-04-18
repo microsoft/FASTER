@@ -90,6 +90,7 @@ namespace FASTER.core
         public override void Reset()
         {
             base.Reset();
+            objectLogDevice.Reset();
             for (int index = 0; index < BufferSize; index++)
             {
                 ReturnPage(index);

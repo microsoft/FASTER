@@ -33,7 +33,7 @@ namespace FASTER.test.recovery
             }
 
             path = TestUtils.MethodTestDir + "/";
-            log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: false);
             TestUtils.RecreateDirectory(path);
         }
 
@@ -331,6 +331,25 @@ namespace FASTER.test.recovery
             {
                 s1.Upsert(ref key, ref key);
             }
+
+            // Reset store to empty state
+            fht1.Reset();
+
+            for (long key = 0; key < 2000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.NotFound, $"status = {status}");
+                }
+            }
+            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.NotFound);
+            }
+            completedOutputs.Dispose();
 
             // Rollback to previous checkpoint
             fht1.Recover(default, token);
