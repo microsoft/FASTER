@@ -79,7 +79,7 @@ namespace FASTER.core
             {
                 case Phase.PREPARE_GROW:
                     if (allThreadsInPrepareGrow && faster.hlog.NumActiveLockingSessions == 0)
-                        faster.GlobalStateMachineStep(current);
+                        faster.GlobalStateMachineStep(current, bumpEpoch: true);
                     break;
 
                 case Phase.IN_PROGRESS_GROW:

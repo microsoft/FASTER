@@ -938,7 +938,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Return true if Faster State Machine is in PREPARE sate
+        /// Return true if Faster State Machine is in PREPARE state
         /// </summary>
         internal bool IsInPreparePhase()
         {

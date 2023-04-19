@@ -75,7 +75,7 @@ namespace FASTER.core
             {
                 ThreadStateMachineStep(fasterSession.Ctx, fasterSession, default);
 
-                // In prepare phases, after draining out ongoing transactions,
+                // In prepare phases, after draining out ongoing transactions, we may
                 // spin and get threads to reach the next version before proceeding
 
                 if (CheckpointVersionSwitchBarrier &&
