@@ -60,7 +60,11 @@ namespace FASTER.core
             {
                 // Checkpoints cannot complete while we have active locking sessions.
                 while (IsInPreparePhase())
+                {
+                    if (fht.epoch.ThisInstanceProtected())
+                        fht.InternalRefresh<Input, Output, Context, InternalFasterSession>(FasterSession);
                     Thread.Yield();
+                }
 
                 fht.IncrementNumLockingSessions();
                 isAcquiredLockable = true;
