@@ -68,14 +68,18 @@ namespace FASTER.test.statemachine
             // Refresh s1
             uc1.Refresh();
 
+            // We can complete s2 now, as barrier is done
+            s2.CompleteOp();
+
+            // Depending on timing, we might need to refresh uc1 once, to get the system to WAIT_FLUSH
+            if (SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState))
+                uc1.Refresh();
+
             // We should now be in WAIT_FLUSH, 2 as all threads have reached IN_PROGRESS, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), fht1.SystemState));
 
             // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
-
-            // We can complete s2 now, as barrier is done
-            s2.CompleteOp();
 
             s2.Refresh();
 
