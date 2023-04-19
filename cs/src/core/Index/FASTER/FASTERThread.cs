@@ -79,9 +79,10 @@ namespace FASTER.core
                 // spin and get threads to reach the next version before proceeding
 
                 // If CheckpointVersionSwitchBarrier is set, then:
-                //   If system is in PREPARE phase (and all transactions have drained, i.e., NumActiveLockingSessions == 0),
-                //   Then (PREPARE, v) threads will SPIN during Refresh until they are in (IN_PROGRESS, v+1).
-                //   That way, no thread can work in the PREPARE phase, while any thread works in IN_PROGRESS.
+                //   If system is in PREPARE phase AND all transactions have drained (NumActiveLockingSessions == 0):
+                //      Then (PREPARE, v) threads will SPIN during Refresh until they are in (IN_PROGRESS, v+1).
+                //
+                //   That way no thread can work in the PREPARE phase while any thread works in IN_PROGRESS phase.
                 //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS, v+1) if all threads
                 //   have reached PREPARE and all transactions have drained (see VersionChangeTask.OnThreadState).
                 if (CheckpointVersionSwitchBarrier &&
