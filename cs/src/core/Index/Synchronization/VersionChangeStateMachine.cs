@@ -49,7 +49,7 @@ namespace FASTER.core
                     // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
                     // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
                     if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && faster.hlog.NumActiveLockingSessions == 0)
-                        faster.GlobalStateMachineStep(current, bumpEpoch: true);
+                        faster.GlobalStateMachineStep(current, bumpEpoch: faster.CheckpointVersionSwitchBarrier);
                     break;
                 case Phase.IN_PROGRESS:
                     if (ctx != null)
