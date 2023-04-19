@@ -90,6 +90,7 @@ namespace FASTER.core
                     hlog.NumActiveLockingSessions == 0)
                 {
                     epoch.ProtectAndDrain();
+                    Thread.Yield();
                     continue;
                 }
 
@@ -97,6 +98,7 @@ namespace FASTER.core
                     hlog.NumActiveLockingSessions == 0)
                 {
                     epoch.ProtectAndDrain();
+                    Thread.Yield();
                     continue;
                 }
                 break;
