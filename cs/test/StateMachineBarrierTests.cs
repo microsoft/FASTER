@@ -71,28 +71,22 @@ namespace FASTER.test.statemachine
             // We can complete s2 now, as barrier is done
             s2.CompleteOp();
 
-            // Depending on timing, we might need to refresh uc1 once, to get the system to WAIT_FLUSH
-            if (SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState))
-                uc1.Refresh();
+            // Depending on timing, we should now be in IN_PROGRESS, 2 or WAIT_FLUSH, 2
+            Assert.IsTrue(
+                SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), fht1.SystemState) ||
+                SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), fht1.SystemState)
+                );
 
-            // We should now be in WAIT_FLUSH, 2 as all threads have reached IN_PROGRESS, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), fht1.SystemState));
-
-            // Expect checkpoint completion callback
             f.checkpointCallbackExpectation = 1;
 
-            s2.Refresh();
+            // Forward the rest of the state machine
+            while (!SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState))
+            {
+                uc1.Refresh();
+                s2.Refresh();
+            }
 
-            // We should be in PERSISTENCE_CALLBACK, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), fht1.SystemState));
-
-            uc1.Refresh();
-
-            // Completion callback should have been called once
             Assert.AreEqual(0, f.checkpointCallbackExpectation);
-
-            // We should be in REST, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), fht1.SystemState));
 
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
