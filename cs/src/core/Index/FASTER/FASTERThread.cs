@@ -79,14 +79,19 @@ namespace FASTER.core
                 // spin and get threads to reach the next version before proceeding
 
                 if (CheckpointVersionSwitchBarrier &&
-                    fasterSession.Ctx.phase == Phase.PREPARE && 
+                    fasterSession.Ctx.phase == Phase.PREPARE &&
                     hlog.NumActiveLockingSessions == 0)
+                {
+                    epoch.ProtectAndDrain();
                     continue;
+                }
 
                 if (fasterSession.Ctx.phase == Phase.PREPARE_GROW &&
                     hlog.NumActiveLockingSessions == 0)
+                {
+                    epoch.ProtectAndDrain();
                     continue;
-
+                }
                 break;
             }
 
