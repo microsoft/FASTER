@@ -780,11 +780,36 @@ namespace FASTER.core
             where TScanFunctions : IScanIteratorFunctions<Key, Value>;
 
         /// <summary>
-        /// Implementation for push-scanning FASTER log from the LogAccessor
+        /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        internal bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, ref TScanFunctions scanFunctions)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+        {
+            OperationStackContext<Key, Value> stackCtx = new(store.comparer.GetHashCode64(ref key));
+            if (!store.FindTag(ref stackCtx.hei))
+                return false;
+            stackCtx.SetRecordSourceToHashEntry(store.hlog);
+            if (store.UseReadCache)
+                store.SkipReadCache(ref stackCtx, out _);
+            if (stackCtx.recSrc.LogicalAddress < store.hlog.BeginAddress)
+                return false;
+            return IterateKeyVersions(store, ref key, stackCtx.recSrc.LogicalAddress, ref scanFunctions);
+        }
+
+        /// <summary>
+        /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        internal abstract bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>;
+
+        /// <summary>
+        /// Implementation for push-scanning FASTER log
         /// </summary>
         internal bool PushScanImpl<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>
-            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator
+            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
         {
             if (!scanFunctions.OnStart(beginAddress, endAddress))
                 return false;
@@ -794,19 +819,9 @@ namespace FASTER.core
             for (; !stop && iter.BeginGetNext(out var recordInfo); ++numRecords)
             {
                 OperationStackContext<Key, Value> stackCtx = default;
-                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.Failed;
                 try
                 {
-                    ref var key = ref iter.GetKey();
-                    if (iter.CurrentAddress >= this.ReadOnlyAddress)
-                    {
-                        store.LockForScan(ref stackCtx, ref key, ref iter.GetLockableInfo());
-                        stop = !scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
-                    }
-                    else
-                    { 
-                        stop = !scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, iter.NextAddress);
-                    }
+                    stop = !PushToReader(store, ref scanFunctions, iter, numRecords, recordInfo, ref stackCtx);
                 }
                 catch (Exception ex)
                 {
@@ -817,11 +832,106 @@ namespace FASTER.core
                 {
                     if (stackCtx.recSrc.HasLock)
                         store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
-                    iter.EndGetNext();
+                    iter.EndGet();
                 }
             }
 
             scanFunctions.OnStop(!stop, numRecords);
+            return !stop;
+        }
+
+        /// <summary>
+        /// Implementation for push-iterating key versions
+        /// </summary>
+        internal bool IterateKeyVersionsImpl<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
+        {
+            if (!scanFunctions.OnStart(beginAddress, Constants.kInvalidAddress))
+                return false;
+
+            long numRecords = 1;
+            bool stop = false, continueOnDisk = false;
+            for (; !stop && iter.BeginGetPrevInMemory(ref key, out var recordInfo, out continueOnDisk); ++numRecords)
+            {
+                OperationStackContext<Key, Value> stackCtx = default;
+                try
+                {
+                    stop = !PushToReader(store, ref scanFunctions, iter, numRecords, recordInfo, ref stackCtx);
+                }
+                catch (Exception ex)
+                {
+                    scanFunctions.OnException(ex, numRecords);
+                    throw;
+                }
+                finally
+                {
+                    if (stackCtx.recSrc.HasLock)
+                        store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
+                    iter.EndGet();
+                }
+            }
+
+            if (continueOnDisk)
+            {
+                AsyncIOContextCompletionEvent<Key, Value> completionEvent = new();
+                try
+                { 
+                    var logicalAddress = iter.CurrentAddress;
+                    while (!stop && GetFromDiskAndPushToReader(ref key, ref logicalAddress, ref scanFunctions, numRecords, completionEvent, out stop))
+                        ++numRecords;
+                }
+                catch (Exception ex)
+                {
+                    scanFunctions.OnException(ex, numRecords);
+                    throw;
+                }
+                finally
+                {
+                    completionEvent.Dispose();
+                }
+            }
+
+            scanFunctions.OnStop(!stop, numRecords);
+            return !stop;
+        }
+
+        private bool PushToReader<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, ref TScanFunctions scanFunctions, TScanIterator iter, long numRecords, RecordInfo recordInfo, 
+                ref OperationStackContext<Key, Value> stackCtx)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
+        {
+            ref var key = ref iter.GetKey();
+            if (iter.CurrentAddress >= this.ReadOnlyAddress && !recordInfo.IsClosed)
+            {
+                store.LockForScan(ref stackCtx, ref key, ref iter.GetLockableInfo());
+                return scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+            }
+            return scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+        }
+
+        internal unsafe bool GetFromDiskAndPushToReader<TScanFunctions>(ref Key key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
+                AsyncIOContextCompletionEvent<Key, Value> completionEvent, out bool stop)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+        {
+            completionEvent.Prepare(GetKeyContainer(ref key), logicalAddress);
+
+            this.AsyncGetFromDisk(logicalAddress, this.GetAverageRecordSize(), completionEvent.request);
+            completionEvent.Wait();
+
+            stop = false;
+            if (completionEvent.exception is not null)
+            {
+                scanFunctions.OnException(completionEvent.exception, numRecords);
+                return false;
+            }
+            if (completionEvent.request.logicalAddress < this.BeginAddress)
+                return false;
+
+            RecordInfo recordInfo = this.GetInfoFromBytePointer(completionEvent.request.record.GetValidPointer());
+            recordInfo.ClearBitsForDiskImages();
+            stop = !scanFunctions.SingleReader(ref key, ref this.GetContextRecordValue(ref completionEvent.request), new RecordMetadata(recordInfo, completionEvent.request.logicalAddress), numRecords);
+            logicalAddress = recordInfo.PreviousAddress;
             return !stop;
         }
 
@@ -1636,7 +1746,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// 
-        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext<Key, Value> context)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1660,7 +1770,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Read record to memory - simple version
+        /// Read record to memory - simple read context version
         /// </summary>
         /// <param name="fromLogical"></param>
         /// <param name="numBytes"></param>
@@ -1960,17 +2070,7 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
-        /// Async get from disk
-        /// </summary>
-        /// <param name="fromLogical"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="context"></param>
-        /// <param name="result"></param>
-        public void AsyncGetFromDisk(long fromLogical,
-                              int numBytes,
-                              AsyncIOContext<Key, Value> context,
-                              SectorAlignedMemory result = default)
+        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
         {
             if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
@@ -1983,7 +2083,7 @@ namespace FASTER.core
             }
 
             if (result == null)
-                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context);
+                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, ref context);
             else
                 AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
         }
@@ -1991,12 +2091,9 @@ namespace FASTER.core
         private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
-            {
-                logger?.LogError($"AsyncGetFromDiskCallback error: {errorCode}");
-            }
+                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;
-
             var ctx = result.context;
             try
             {
@@ -2004,39 +2101,31 @@ namespace FASTER.core
                 int requiredBytes = GetRequiredRecordSize((long)record, ctx.record.available_bytes);
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
-                    // We have the complete record.
-                    if (RetrievedFullRecord(record, ref ctx))
+                    // We have all the required bytes. If we don't have the complete record, RetrievedFullRecord calls AsyncGetFromDisk.
+                    if (!RetrievedFullRecord(record, ref ctx))
+                        return;
+
+                    // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
+                    if (ctx.request_key is not null && !comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
                     {
-                        // ReadAtAddress does not have a request key, so it is an implicit match.
-                        if (ctx.request_key is null || comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
+                        // Keys don't match so request the previous record in the chain if it is in the range to resolve.
+                        ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
+                        if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                         {
-                            // The keys are same, so I/O is complete
-                            // ctx.record = result.record;
-                            if (ctx.callbackQueue != null)
-                                ctx.callbackQueue.Enqueue(ctx);
-                            else
-                                ctx.asyncOperation.TrySetResult(ctx);
-                        }
-                        else
-                        {
-                            // Keys are not same. I/O is not complete. Follow the chain to the previous record and issue a request for it if
-                            // it is in the range to resolve, else surface "not found".
-                            ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
-                            if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
-                            {
-                                ctx.record.Return();
-                                ctx.record = ctx.objBuffer = default;
-                                AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
-                            }
-                            else
-                            {
-                                if (ctx.callbackQueue != null)
-                                    ctx.callbackQueue.Enqueue(ctx);
-                                else
-                                    ctx.asyncOperation.TrySetResult(ctx);
-                            }
+                            ctx.record.Return();
+                            ctx.record = ctx.objBuffer = default;
+                            AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
+                            return;
                         }
                     }
+
+                    // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
+                    if (ctx.completionEvent is not null)
+                        ctx.completionEvent.Set(ref ctx);
+                    else if (ctx.callbackQueue is not null)
+                        ctx.callbackQueue.Enqueue(ctx);
+                    else
+                        ctx.asyncOperation.TrySetResult(ctx);
                 }
                 else
                 {
@@ -2046,7 +2135,10 @@ namespace FASTER.core
             }
             catch (Exception e)
             {
-                if (ctx.asyncOperation != null)
+                logger?.LogError(e, "AsyncGetFromDiskCallback error");
+                if (ctx.completionEvent is not null)
+                    ctx.completionEvent.SetException(e);
+                else if (ctx.asyncOperation is not null)
                     ctx.asyncOperation.TrySetException(e);
                 else
                     throw;

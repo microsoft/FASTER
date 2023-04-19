@@ -80,7 +80,7 @@ namespace FASTER.core
         private readonly FasterKV<Key, Value> tempKv;
         private readonly ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession;
         private readonly IFasterScanIterator<Key, Value> mainKvIter;
-        private readonly IPushScanIterator pushScanIterator;
+        private readonly IPushScanIterator<Key> pushScanIterator;
         private IFasterScanIterator<Key, Value> tempKvIter;
 
         enum IterationPhase {
@@ -109,7 +109,7 @@ namespace FASTER.core
                                               variableLengthStructSettings: variableLengthStructSettings, loggerFactory: loggerFactory, lockingMode: LockingMode.None);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
             mainKvIter = fht.Log.Scan(fht.Log.BeginAddress, untilAddress, allowMutable: !isPull);
-            pushScanIterator = mainKvIter as IPushScanIterator;
+            pushScanIterator = mainKvIter as IPushScanIterator<Key>;
         }
 
         public long CurrentAddress => iterationPhase == IterationPhase.MainKv ? mainKvIter.CurrentAddress : tempKvIter.CurrentAddress;
@@ -204,11 +204,11 @@ namespace FASTER.core
                                 if (mainKvIter.CurrentAddress >= fht.hlog.ReadOnlyAddress)
                                 {
                                     fht.LockForScan(ref stackCtx, ref key, ref pushScanIterator.GetLockableInfo());
-                                    stop = !scanFunctions.ConcurrentReader(ref key, ref mainKvIter.GetValue(), new RecordMetadata(recordInfo, mainKvIter.CurrentAddress), numRecords, mainKvIter.NextAddress);
+                                    stop = !scanFunctions.ConcurrentReader(ref key, ref mainKvIter.GetValue(), new RecordMetadata(recordInfo, mainKvIter.CurrentAddress), numRecords);
                                 }
                                 else
                                 {
-                                    stop = !scanFunctions.SingleReader(ref key, ref mainKvIter.GetValue(), new RecordMetadata(recordInfo, mainKvIter.CurrentAddress), numRecords, mainKvIter.NextAddress);
+                                    stop = !scanFunctions.SingleReader(ref key, ref mainKvIter.GetValue(), new RecordMetadata(recordInfo, mainKvIter.CurrentAddress), numRecords);
                                 }
                                 return !stop;
                             }
@@ -229,7 +229,7 @@ namespace FASTER.core
                         {
                             if (stackCtx.recSrc.HasLock)
                                 fht.UnlockForScan(ref stackCtx, ref mainKvIter.GetKey(), ref pushScanIterator.GetLockableInfo());
-                            pushScanIterator.EndGetNext();
+                            pushScanIterator.EndGet();
                         }
                     }
 
@@ -245,7 +245,7 @@ namespace FASTER.core
                     {
                         if (!recordInfo.Tombstone)
                         { 
-                            stop = !scanFunctions.SingleReader(ref tempKvIter.GetKey(), ref tempKvIter.GetValue(), new RecordMetadata(recordInfo, tempKvIter.CurrentAddress), numRecords, tempKvIter.NextAddress);
+                            stop = !scanFunctions.SingleReader(ref tempKvIter.GetKey(), ref tempKvIter.GetValue(), new RecordMetadata(recordInfo, tempKvIter.CurrentAddress), numRecords);
                             return !stop;
                         }
                         continue;

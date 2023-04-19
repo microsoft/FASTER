@@ -4,6 +4,7 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FASTER.core
@@ -11,9 +12,10 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class VariableLengthBlittableScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>, IPushScanIterator
+    public sealed class VariableLengthBlittableScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
     {
         private readonly VariableLengthBlittableAllocator<Key, Value> hlog;
+        private readonly IFasterEqualityComparer<Key> comparer;
         private readonly BlittableFrame frame;
 
         private SectorAlignedMemory memory;
@@ -41,6 +43,19 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Constructor for use with tail-to-head push iteration of the passed key's record versions
+        /// </summary>
+        internal VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, IFasterEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, epoch, hlog.LogPageSizeBits, logger: logger)
+        {
+            this.hlog = hlog;
+            this.comparer = comparer;
+            this.forceInMemory = false;
+            if (frameSize > 0)
+                frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
+        }
+
+        /// <summary>
         /// Gets reference to current key
         /// </summary>
         public ref Key GetKey() => ref hlog.GetKey(currentPhysicalAddress);
@@ -50,7 +65,7 @@ namespace FASTER.core
         /// </summary>
         public ref Value GetValue() => ref hlog.GetValue(currentPhysicalAddress);
 
-        ref RecordInfo IPushScanIterator.GetLockableInfo()
+        ref RecordInfo IPushScanIterator<Key>.GetLockableInfo()
         {
             // hlog.HeadAddress may have been incremented so use ClosedUntilAddress to avoid a false negative assert (not worth raising the temp headAddress out of BeginGetNext just for this).
             Debug.Assert(currentPhysicalAddress >= hlog.ClosedUntilAddress, "GetLockableInfo() should be in-memory");
@@ -77,11 +92,15 @@ namespace FASTER.core
                 currentPhysicalAddress = (long)memory.aligned_pointer;
             }
 
-            return ((IPushScanIterator)this).EndGetNext();
+            return ((IPushScanIterator<Key>)this).EndGet();
         }
 
-        bool IPushScanIterator.BeginGetNext(out RecordInfo recordInfo) => BeginGetNext(out recordInfo, out _, out _);
+        bool IPushScanIterator<Key>.BeginGetNext(out RecordInfo recordInfo) => BeginGetNext(out recordInfo, out _, out _);
 
+        /// <summary>
+        /// Get next record and keep the epoch held while we call the user's scan functions
+        /// </summary>
+        /// <returns>True if record found, false if end of scan</returns>
         internal bool BeginGetNext(out RecordInfo recordInfo, out long headAddress, out int recordSize)
         {
             recordInfo = default;
@@ -116,14 +135,10 @@ namespace FASTER.core
                 if (currentAddress < headAddress && !forceInMemory)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, endAddress);
 
-                long physicalAddress;
-                if (currentAddress >= headAddress || forceInMemory)
-                    physicalAddress = hlog.GetPhysicalAddress(currentAddress);
-                else
-                    physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
-
-                // Check if record fits on page, if not skip to next page
+                long physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
                 recordSize = hlog.GetRecordSize(physicalAddress).Item2;
+
+                // If record does not fit on page, skip to the next page.
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
                     nextAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
@@ -133,25 +148,75 @@ namespace FASTER.core
 
                 nextAddress = currentAddress + recordSize;
 
-                ref var info = ref hlog.GetInfo(physicalAddress);
-                if (info.SkipOnScan || info.IsNull())
+                recordInfo = ref hlog.GetInfo(physicalAddress);
+                if (recordInfo.SkipOnScan || recordInfo.IsNull())
                 {
                     epoch?.Suspend();
                     continue;
                 }
 
+                // Success; defer epoch?.Suspend(); to EndGet
                 currentPhysicalAddress = physicalAddress;
-                recordInfo = info;
-
-                // Success; defer epoch?.Suspend(); to EndGetNext
                 return true;
             }
         }
 
-        bool IPushScanIterator.EndGetNext()
+        /// <summary>
+        /// Get previous record and keep the epoch held while we call the user's scan functions
+        /// </summary>
+        /// <returns>True if record found, false if end of scan</returns>
+        bool IPushScanIterator<Key>.BeginGetPrevInMemory(ref Key key, out RecordInfo recordInfo, out bool continueOnDisk)
+        {
+            recordInfo = default;
+            continueOnDisk = false;
+
+            while (true)
+            {
+                // "nextAddress" is reused as "previous address" for this operation.
+                currentAddress = nextAddress;
+                if (currentAddress < hlog.HeadAddress)
+                {
+                    continueOnDisk = currentAddress >= hlog.BeginAddress;
+                    return false;
+                }
+
+                epoch?.Resume();
+                var headAddress = hlog.HeadAddress;
+
+                var currentPage = currentAddress >> hlog.LogPageSizeBits;
+                var offset = currentAddress & hlog.PageSizeMask;
+
+                long physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
+
+                recordInfo = hlog.GetInfo(physicalAddress);
+                nextAddress = recordInfo.PreviousAddress;
+                if (recordInfo.SkipOnScan || recordInfo.IsNull() || !comparer.Equals(ref hlog.GetKey(physicalAddress), ref key))
+                {
+                    epoch?.Suspend();
+                    continue;
+                }
+
+                // Success; defer epoch?.Suspend(); to EndGet
+                currentPhysicalAddress = physicalAddress;
+                return true;
+            }
+        }
+
+        bool IPushScanIterator<Key>.EndGet()
         {
             epoch?.Suspend();
             return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        long GetPhysicalAddress(long currentAddress, long headAddress, long currentPage, long offset)
+        {
+            long physicalAddress;
+            if (currentAddress >= headAddress || forceInMemory)
+                physicalAddress = hlog.GetPhysicalAddress(currentAddress);
+            else
+                physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
+            return physicalAddress;
         }
 
         /// <summary>

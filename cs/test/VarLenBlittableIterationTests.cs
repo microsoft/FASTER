@@ -48,10 +48,10 @@ namespace FASTER.test
 
             public bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref Key key, ref VLValue value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, nextAddress);
+            public bool ConcurrentReader(ref Key key, ref VLValue value, RecordMetadata recordMetadata, long numberOfRecords)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
 
-            public bool SingleReader(ref Key key, ref VLValue value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
+            public bool SingleReader(ref Key key, ref VLValue value, RecordMetadata recordMetadata, long numberOfRecords)
             {
                 if (keyMultToValue > 0)
                     Assert.AreEqual(key.key * keyMultToValue, value.field1);
@@ -88,7 +88,7 @@ namespace FASTER.test
                 {
                     using var iter = session.Iterate();
                     while (iter.GetNext(out var recordInfo))
-                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, default);
+                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default);
                 }
                 else
                     Assert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");

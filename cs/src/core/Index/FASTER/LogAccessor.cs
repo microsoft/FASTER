@@ -276,6 +276,14 @@ namespace FASTER.core
             => allocator.Scan(fht, beginAddress, endAddress, ref scanFunctions, scanBufferingMode);
 
         /// <summary>
+        /// Iterate versions of the specified key, starting with most recent
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool IterateKeyVersions<TScanFunctions>(ref TScanFunctions scanFunctions, ref Key key)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => allocator.IterateKeyVersions(fht, ref key, ref scanFunctions);
+
+        /// <summary>
         /// Flush log until current tail (records are still retained in memory)
         /// </summary>
         /// <param name="wait">Synchronous wait for operation to complete</param>

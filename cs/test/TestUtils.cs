@@ -19,6 +19,7 @@ namespace FASTER.test
         internal const string SmokeTestCategory = "Smoke";
         internal const string StressTestCategory = "Stress";
         internal const string FasterKVTestCategory = "FasterKV";
+        internal const string ReadTestCategory = "Read";
         internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";

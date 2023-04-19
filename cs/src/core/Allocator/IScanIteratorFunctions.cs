@@ -6,13 +6,13 @@ using System;
 namespace FASTER.core
 {
     /// <summary>
-    /// Callback functions for log scan
+    /// Callback functions for log scan or key-version iteration
     /// </summary>
     public interface IScanIteratorFunctions<Key, Value>
     {
         /// <summary>Iteration is starting.</summary>
         /// <param name="beginAddress">Start address of the scan</param>
-        /// <param name="endAddress">End address of the scan</param>
+        /// <param name="endAddress">End address of the scan; if iterating key versions, this is <see cref="Constants.kInvalidAddress"/></param>
         /// <returns>True to continue iteration, else false</returns>
         bool OnStart(long beginAddress, long endAddress);
 
@@ -21,18 +21,16 @@ namespace FASTER.core
         /// <param name="value">Reference to the current record's Value</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
         /// <param name="numberOfRecords">The number of records returned so far, including the current one.</param>
-        /// <param name="nextAddress">The logical address of the next record in the scan</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool SingleReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress);
+        bool SingleReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords);
 
         /// <summary>Next record in iteration for a record in mutable log memory.</summary>
         /// <param name="key">Reference to the current record's key</param>
         /// <param name="value">Reference to the current record's Value</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
         /// <param name="numberOfRecords">The number of records returned so far, including the current one.</param>
-        /// <param name="nextAddress">The logical address of the next record in the scan</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool ConcurrentReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress);
+        bool ConcurrentReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords);
 
         /// <summary>Iteration is complete.</summary>
         /// <param name="completed">If true, the iteration completed; else scanFunctions.*Reader() returned false to stop the iteration.</param>
@@ -45,10 +43,11 @@ namespace FASTER.core
         void OnException(Exception exception, long numberOfRecords);
     }
 
-    internal interface IPushScanIterator
+    internal interface IPushScanIterator<Key>
     {
         bool BeginGetNext(out RecordInfo recordInfo);
+        bool BeginGetPrevInMemory(ref Key key, out RecordInfo recordInfo, out bool continueOnDisk);
+        bool EndGet();
         ref RecordInfo GetLockableInfo();
-        bool EndGetNext();
     }
 }

@@ -45,10 +45,10 @@ namespace FASTER.test
 
             public bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, nextAddress);
+            public bool ConcurrentReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
 
-            public bool SingleReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
+            public bool SingleReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords)
             {
                 Assert.AreEqual(numRecords, key.key, $"log scan 1: key");
                 Assert.AreEqual(numRecords, value.value, $"log scan 1: value");
@@ -99,7 +99,7 @@ namespace FASTER.test
                 {
                     using var iter = fht.Log.Scan(start, fht.Log.TailAddress, sbm);
                     while (iter.GetNext(out var recordInfo))
-                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, default);
+                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default);
                 }
                 else
                     Assert.IsTrue(fht.Log.Scan(ref scanIteratorFunctions, start, fht.Log.TailAddress, sbm), "Failed to complete push iteration");

@@ -369,6 +369,15 @@ namespace FASTER.core
             return PushScanImpl(store, beginAddress, endAddress, ref scanFunctions, iter);
         }
 
+        /// <summary>
+        /// Implementation for push-iterating key versions, called from LogAccessor
+        /// </summary>
+        internal override bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+        {
+            using BlittableScanIterator<Key, Value> iter = new(this, store.comparer, beginAddress, epoch, logger: logger);
+            return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
+        }
+
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {

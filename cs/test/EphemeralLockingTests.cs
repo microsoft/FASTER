@@ -130,10 +130,10 @@ namespace FASTER.test.EphemeralLocking
 
             public bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress) 
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, nextAddress);
+            public bool ConcurrentReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords) 
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
 
-            public bool SingleReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
+            public bool SingleReader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords)
             {
                 ++count;
                 Assert.False(recordMetadata.RecordInfo.IsLocked, $"Unexpected Locked record for key {key}: {(recordMetadata.RecordInfo.IsLockedShared ? "S" : "")} {(recordMetadata.RecordInfo.IsLockedExclusive ? "X" : "")}");

@@ -25,10 +25,10 @@ namespace StoreVarLenTypes
 
             public bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, nextAddress);
+            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
 
-            public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, long nextAddress) 
+            public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords) 
                 => key.ToByteArray()[0] == count++;
 
             public void OnException(Exception exception, long numberOfRecords) { }
