@@ -730,18 +730,14 @@ namespace FASTER.core
                 while (true)
                 {
                     SystemState _systemState = SystemState.Copy(ref systemState);
-                    if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
-                    {
-                        SplitBuckets(0);
-                        epoch.ProtectAndDrain();
-                    }
-                    else
-                    {
-                        SystemState.RemoveIntermediate(ref _systemState);
-                        if (_systemState.Phase != Phase.PREPARE_GROW && _systemState.Phase != Phase.IN_PROGRESS_GROW)
-                            break;
+                    if (_systemState.Phase == Phase.PREPARE_GROW)
                         ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, default);
-                    }
+                    else if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
+                        SplitBuckets(0);
+                    else if (_systemState.Phase == Phase.REST)
+                        break;
+                    epoch.ProtectAndDrain();
+                    Thread.Yield();
                 }
             }
             finally
