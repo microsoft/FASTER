@@ -19,6 +19,7 @@ namespace FASTER.test
         internal const string SmokeTestCategory = "Smoke";
         internal const string StressTestCategory = "Stress";
         internal const string FasterKVTestCategory = "FasterKV";
+        internal const string ReadTestCategory = "Read";
         internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";
@@ -205,6 +206,10 @@ namespace FASTER.test
         public enum UpdateOp { Upsert, RMW, Delete }
 
         public enum HashModulo { NoMod = 0, Hundred = 100, Thousand = 1000 }
+
+        public enum ScanIteratorType { Pull, Push };
+
+        public enum ScanMode { Scan, Iterate };
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);

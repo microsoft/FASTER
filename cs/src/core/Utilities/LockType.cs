@@ -47,6 +47,7 @@ namespace FASTER.core
 
     internal enum EphemeralLockResult
     {
+        None,           // Default; not tried
         Success,        // Lock succeeded
         Failed,         // Lock failed due to timeout; must do RETRY_LATER
         HoldForSeal     // Lock succeeded, but was not unlocked because the user's IFunctions method requires a read-copy-update

@@ -12,7 +12,7 @@ using System.Diagnostics;
 
 namespace FASTER.core
 {
-    public unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
+    internal unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         // Circular buffer definition
         private readonly byte[][] values;
@@ -372,15 +372,27 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Iterator interface for scanning FASTER log
+        /// Iterator interface for pull-scanning FASTER log
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
+        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode) 
+            => new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+
+        /// <summary>
+        /// Implementation for push-scanning FASTER log, called from LogAccessor
+        /// </summary>
+        internal override bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            return new BlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            using BlittableScanIterator<Key, Value> iter = new(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            return PushScanImpl(store, beginAddress, endAddress, ref scanFunctions, iter);
+        }
+
+        /// <summary>
+        /// Implementation for push-iterating key versions, called from LogAccessor
+        /// </summary>
+        internal override bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+        {
+            using BlittableScanIterator<Key, Value> iter = new(this, store.comparer, beginAddress, epoch, logger: logger);
+            return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />

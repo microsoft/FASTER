@@ -22,7 +22,7 @@ namespace FASTER.core
         public Value value;
     }
 
-    public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
+    internal unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         // Circular buffer definition
         internal Record<Key, Value>[][] values;
@@ -1085,6 +1085,24 @@ namespace FASTER.core
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
             return new GenericScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+        }
+
+        /// <summary>
+        /// Implementation for push-scanning FASTER log, called from LogAccessor
+        /// </summary>
+        internal override bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
+        {
+            using GenericScanIterator<Key, Value> iter = new(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            return PushScanImpl(store, beginAddress, endAddress, ref scanFunctions, iter);
+        }
+
+        /// <summary>
+        /// Implementation for push-iterating key versions, called from LogAccessor
+        /// </summary>
+        internal override bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+        {
+            using GenericScanIterator<Key, Value> iter = new(this, store.comparer, beginAddress, epoch, logger: logger);
+            return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />

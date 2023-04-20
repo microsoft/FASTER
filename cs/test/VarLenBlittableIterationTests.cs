@@ -4,6 +4,7 @@
 using FASTER.core;
 using NUnit.Framework;
 using System;
+using static FASTER.test.BlittableIterationTests;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
@@ -11,11 +12,14 @@ using static FASTER.test.TestUtils;
 namespace FASTER.test
 {
     [TestFixture]
-    internal class BlittableIterationTests
+    internal class VarLenBlittableIterationTests
     {
-        private FasterKV<KeyStruct, ValueStruct> fht;
+        private FasterKV<Key, VLValue> fht;
         private IDevice log;
         private string path;
+
+        // Note: We always set value.length to 2, which includes both VLValue members; we are not exercising the "Variable Length" aspect here.
+        private const int ValueLength = 2;
 
         [SetUp]
         public void Setup()
@@ -23,7 +27,7 @@ namespace FASTER.test
             path = MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(path, wait:true);
+            DeleteDirectory(path, wait: true);
         }
 
         [TearDown]
@@ -36,7 +40,7 @@ namespace FASTER.test
             DeleteDirectory(path);
         }
 
-        internal struct BlittablePushIterationTestFunctions : IScanIteratorFunctions<KeyStruct, ValueStruct>
+        internal struct VarLenBlittablePushIterationTestFunctions : IScanIteratorFunctions<Key, VLValue>
         {
             internal int keyMultToValue;
             internal long numRecords;
@@ -44,13 +48,13 @@ namespace FASTER.test
 
             public bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords) 
+            public bool ConcurrentReader(ref Key key, ref VLValue value, RecordMetadata recordMetadata, long numberOfRecords)
                 => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
 
-            public bool SingleReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords)
+            public bool SingleReader(ref Key key, ref VLValue value, RecordMetadata recordMetadata, long numberOfRecords)
             {
                 if (keyMultToValue > 0)
-                    Assert.AreEqual(key.kfield1 * keyMultToValue, value.vfield1);
+                    Assert.AreEqual(key.key * keyMultToValue, value.field1);
                 return stopAt != ++numRecords;
             }
 
@@ -62,15 +66,15 @@ namespace FASTER.test
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public void BlittableIterationBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
+        public void VarLenBlittableIterationBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
             log = CreateTestDevice(deviceType, $"{path}{deviceType}.log");
-            fht = new FasterKV<KeyStruct, ValueStruct>
+            fht = new FasterKV<Key, VLValue>
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
                  lockingMode: scanIteratorType == ScanIteratorType.Pull ? LockingMode.None : LockingMode.Standard);
 
-            using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
-            BlittablePushIterationTestFunctions scanIteratorFunctions = new();
+            using var session = fht.NewSession(new VLFunctions());
+            VarLenBlittablePushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 500;
             var start = fht.Log.TailAddress;
@@ -92,50 +96,52 @@ namespace FASTER.test
                 Assert.AreEqual(expectedRecs, scanIteratorFunctions.numRecords);
             }
 
+            // Note: We always set value.length to 2, which includes both VLValue members; we are not exercising the "Variable Length" aspect here.
+
             // Initial population
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = i, length = ValueLength };
                 session.Upsert(ref key1, ref value);
             }
             iterateAndVerify(1, totalRecords);
 
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = 2 * i, vfield2 = i + 1 };
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = 2 * i, length = ValueLength };
                 session.Upsert(ref key1, ref value);
             }
             iterateAndVerify(2, totalRecords);
 
-            for (int i = totalRecords/2; i < totalRecords; i++)
+            for (int i = totalRecords / 2; i < totalRecords; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value);
-            }
-            iterateAndVerify(0, totalRecords);
-
-            for (int i = 0; i < totalRecords; i+=2)
-            {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = i, length = ValueLength };
                 session.Upsert(ref key1, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = i, length = ValueLength };
+                session.Upsert(ref key1, ref value);
+            }
+            iterateAndVerify(0, totalRecords);
+
+            for (int i = 0; i < totalRecords; i += 2)
+            {
+                var key1 = new Key { key = i };
                 session.Delete(ref key1);
             }
             iterateAndVerify(0, totalRecords / 2);
 
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = 3 * i, vfield2 = i + 1 };
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = 3 * i, length = ValueLength };
                 session.Upsert(ref key1, ref value);
             }
             iterateAndVerify(3, totalRecords);
@@ -147,14 +153,14 @@ namespace FASTER.test
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public void BlittableIterationPushStopTest()
+        public void VarLenBlittableIterationPushStopTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
-            log = Devices.CreateLogDevice($"{path}stop_test.log");
-            fht = new FasterKV<KeyStruct, ValueStruct>
+            log = CreateTestDevice(deviceType, $"{path}{deviceType}.log");
+            fht = new FasterKV<Key, VLValue>
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
 
-            using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
-            BlittablePushIterationTestFunctions scanIteratorFunctions = new();
+            using var session = fht.NewSession(new VLFunctions());
+            VarLenBlittablePushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 2000;
             var start = fht.Log.TailAddress;
@@ -173,8 +179,8 @@ namespace FASTER.test
             // Initial population
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                var key1 = new Key { key = i };
+                var value = new VLValue { field1 = i, length = ValueLength };
                 session.Upsert(ref key1, ref value);
             }
 
@@ -185,21 +191,20 @@ namespace FASTER.test
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void BlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] LockingMode lockingMode, [Values] ScanMode scanMode)
+        public unsafe void VarLenBlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] LockingMode lockingMode, [Values] ScanMode scanMode)
         {
             log = Devices.CreateLogDevice($"{path}lock_test.log");
-            fht = new FasterKV<KeyStruct, ValueStruct>(1L << 20,
+            fht = new FasterKV<Key, VLValue>
                  // Must be large enough to contain all records in memory to exercise locking
-                 new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20, SegmentSizeBits = 22 },
-                 lockingMode: lockingMode);
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 19, SegmentSizeBits = 22 });
 
             const int totalRecords = 2000;
             var start = fht.Log.TailAddress;
 
             void LocalScan(int i)
             {
-                using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
-                BlittablePushIterationTestFunctions scanIteratorFunctions = new();
+                using var session = fht.NewSession(new VLFunctions());
+                VarLenBlittablePushIterationTestFunctions scanIteratorFunctions = new();
                 if (scanMode == ScanMode.Scan)
                     Assert.IsTrue(fht.Log.Scan(ref scanIteratorFunctions, start, fht.Log.TailAddress), $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}");
                 else
@@ -209,21 +214,21 @@ namespace FASTER.test
 
             void LocalUpdate(int tid)
             {
-                using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
+                using var session = fht.NewSession(new VLFunctions());
                 for (int i = 0; i < totalRecords; i++)
                 {
-                    var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                    var value = new ValueStruct { vfield1 = (tid + 1) * i, vfield2 = i + 1 };
-                    session.Upsert(ref key1, ref value, 0);
+                    var key1 = new Key { key = i };
+                    var value = new VLValue { field1 = (tid + 1) * i, length = ValueLength };
+                    session.Upsert(ref key1, ref value);
                 }
             }
 
             { // Initial population
-                using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
+                using var session = fht.NewSession(new VLFunctions());
                 for (int i = 0; i < totalRecords; i++)
                 {
-                    var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                    var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                    var key1 = new Key { key = i };
+                    var value = new VLValue { field1 = i, length = ValueLength };
                     session.Upsert(ref key1, ref value);
                 }
             }
