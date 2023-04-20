@@ -59,14 +59,15 @@ namespace FASTER.core
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
+        /// <param name="omitSegmentIdFromFilename">Whether to exclude segmentId from filename (requires SegmentSize to be -1)</param>
         public LocalStorageDevice(string filename,
 
                                   bool preallocateFile = false,
                                   bool deleteOnClose = false,
                                   bool disableFileBuffering = true,
                                   long capacity = Devices.CAPACITY_UNSPECIFIED,
-                                  bool recoverDevice = false, bool useIoCompletionPort = false)
-            : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort)
+                                  bool recoverDevice = false, bool useIoCompletionPort = false, bool omitSegmentIdFromFilename = false)
+            : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort, omitSegmentIdFromFilename)
         {
         }
 
@@ -92,6 +93,7 @@ namespace FASTER.core
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="initialLogFileHandles">Optional set of preloaded safe file handles, which can speed up hydration of preexisting log file handles</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
+        /// <param name="omitSegmentIdFromFilename">Whether to exclude segmentId from filename (requires SegmentSize to be -1)</param>
         protected internal LocalStorageDevice(string filename,
                                       bool preallocateFile = false,
                                       bool deleteOnClose = false,
@@ -99,8 +101,9 @@ namespace FASTER.core
                                       long capacity = Devices.CAPACITY_UNSPECIFIED,
                                       bool recoverDevice = false,
                                       IEnumerable<KeyValuePair<int, SafeFileHandle>> initialLogFileHandles = null,
-                                      bool useIoCompletionPort = true)
-                : base(filename, GetSectorSize(filename), capacity)
+                                      bool useIoCompletionPort = true,
+                                      bool omitSegmentIdFromFilename = false)
+                : base(filename, GetSectorSize(filename), capacity, omitSegmentIdFromFilename)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {

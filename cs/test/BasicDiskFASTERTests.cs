@@ -78,13 +78,18 @@ namespace FASTER.test
         public void OmitSegmentIdTest([Values] TestUtils.DeviceType deviceType)
         {
             var filename = TestUtils.MethodTestDir + "/test.log";
-            using IDevice device = TestUtils.CreateTestDevice(deviceType, filename);
-            var storageBase = (StorageDeviceBase)device;
-            var segmentFilename = storageBase.GetSegmentFilename(filename, 0);
-            Assert.AreEqual(filename + ".0", segmentFilename);
-            storageBase.OmitSegmentIdFromFileName = true;
-            segmentFilename = storageBase.GetSegmentFilename(filename, 0);
-            Assert.AreEqual(filename, segmentFilename);
+            var omit = false;
+            for (var ii = 0; ii < 2; ++ii) 
+            { 
+                using IDevice device = TestUtils.CreateTestDevice(deviceType, filename, omitSegmentIdFromFilename: omit);
+                var storageBase = (StorageDeviceBase)device;
+                var segmentFilename = storageBase.GetSegmentFilename(filename, 0);
+                if (omit)
+                    Assert.AreEqual(filename, segmentFilename);
+                else
+                    Assert.AreEqual(filename + ".0", segmentFilename);
+                omit = true;
+            }
         }
 
         void TestDeviceWriteRead(IDevice log)

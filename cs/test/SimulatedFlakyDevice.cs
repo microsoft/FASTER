@@ -21,7 +21,7 @@ namespace FASTER.test
         private List<long> permanentlyFailedRangesStart, permanentlyFailedRangesEnd;
         private EpochProtectedVersionScheme versionScheme;
 
-        public SimulatedFlakyDevice(IDevice underlying, ErrorSimulationOptions options) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+        public SimulatedFlakyDevice(IDevice underlying, ErrorSimulationOptions options) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity, omitSegmentIdFromFilename: false)
         {
             this.underlying = underlying;
             this.options = options;

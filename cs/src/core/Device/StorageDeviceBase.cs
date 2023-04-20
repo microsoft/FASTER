@@ -72,7 +72,7 @@ namespace FASTER.core
         /// If true, skip adding the segmentId to the filename.
         /// </summary>
         /// <remarks>If true, SegmentSize must be -1</remarks>
-        protected internal bool OmitSegmentIdFromFileName { get; set; }
+        protected bool OmitSegmentIdFromFileName;
 
         /// <summary>
         /// Initializes a new StorageDeviceBase
@@ -80,10 +80,12 @@ namespace FASTER.core
         /// <param name="filename">Name of the file to use</param>
         /// <param name="sectorSize">The smallest unit of write of the underlying storage device (e.g. 512 bytes for a disk) </param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPAPCITY_UNSPECIFIED if there is no such limit </param>
-        public StorageDeviceBase(string filename, uint sectorSize, long capacity)
+        /// <param name="omitSegmentIdFromFilename">Whether to exclude segmentId from filename (requires SegmentSize to be -1)</param>
+        public StorageDeviceBase(string filename, uint sectorSize, long capacity, bool omitSegmentIdFromFilename)
         {
             FileName = filename;        
             SectorSize = sectorSize;
+            OmitSegmentIdFromFileName = omitSegmentIdFromFilename;
 
             segmentSize = -1;
             segmentSizeBits = 64;
@@ -97,12 +99,14 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segmentSize"></param>
         /// <param name="epoch"></param>
-        public virtual void Initialize(long segmentSize, LightEpoch epoch = null)
+        /// <param name="omitSegmentIdInFilename"></param>
+        public virtual void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdInFilename = false)
         {
             if (segmentSize != -1)
                 Debug.Assert(Capacity == -1 || Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
             this.segmentSize = segmentSize;
             this.epoch = epoch;
+            this.OmitSegmentIdFromFileName = omitSegmentIdInFilename;
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
                 if (segmentSize != -1)
