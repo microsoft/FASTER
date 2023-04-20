@@ -26,24 +26,6 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void HeavyEnter<Input, Output, Context, FasterSession>(long hash, FasterExecutionContext<Input, Output, Context> ctx, FasterSession session)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-        {
-            if (ctx.phase == Phase.PREPARE_GROW)
-            {
-                // We spin-wait as a simplification
-                // Could instead do a "heavy operation" here
-                while (systemState.Phase != Phase.IN_PROGRESS_GROW)
-                    Thread.SpinWait(100);
-                InternalRefresh<Input, Output, Context, FasterSession>(session);
-            }
-            if (ctx.phase == Phase.IN_PROGRESS_GROW)
-            {
-                SplitBuckets(hash);
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void SpinWaitUntilClosed(long address)
         {
             // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.

@@ -309,5 +309,10 @@ namespace FASTER.core
             if (segmentSize > 0) return segmentSize;
             return long.MaxValue;
         }
+
+        /// <inheritdoc/>
+        public virtual void Reset()
+        {
+        }
     }
 }

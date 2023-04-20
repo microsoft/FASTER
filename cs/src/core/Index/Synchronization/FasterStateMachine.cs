@@ -104,7 +104,8 @@ namespace FASTER.core
         /// the given expected state.
         /// </summary>
         /// <param name="expectedState">expected current global state</param>
-        internal void GlobalStateMachineStep(SystemState expectedState)
+        /// <param name="bumpEpoch">whether we bump the epoch for the final state transition</param>
+        internal void GlobalStateMachineStep(SystemState expectedState, bool bumpEpoch = false)
         {
             // Between state transition, temporarily block any concurrent execution thread 
             // from progressing to prevent perceived inconsistencies
@@ -113,12 +114,20 @@ namespace FASTER.core
 
             var nextState = currentSyncStateMachine.NextState(expectedState);
 
+            if (bumpEpoch)
+                epoch.BumpCurrentEpoch(() => MakeTransitionWorker(intermediate, nextState));
+            else
+                MakeTransitionWorker(intermediate, nextState);
+        }
+
+        void MakeTransitionWorker(SystemState intermediate, SystemState nextState)
+        {
             // Execute custom task logic
             currentSyncStateMachine.GlobalBeforeEnteringState(nextState, this);
             // Execute any additional callbacks in critical section
             foreach (var callback in callbacks)
                 callback.BeforeEnteringState(nextState, this);
-            
+
             var success = MakeTransition(intermediate, nextState);
             // Guaranteed to succeed, because other threads will always block while the system is in intermediate.
             Debug.Assert(success);
@@ -127,7 +136,6 @@ namespace FASTER.core
             // Mark the state machine done as we exit the state machine.
             if (nextState.Phase == Phase.REST) stateMachineActive = 0;
         }
-
 
         // Given the current global state, return the starting point of the state machine cycle
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

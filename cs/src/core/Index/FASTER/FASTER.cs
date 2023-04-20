@@ -66,6 +66,7 @@ namespace FASTER.core
         internal readonly bool DoTransientLocking;  // uses LockTable
         internal readonly bool DoEphemeralLocking;  // uses RecordInfo
         internal bool IsLocking => DoTransientLocking || DoEphemeralLocking;
+        internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
         internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
         internal void IncrementNumLockingSessions()
@@ -139,6 +140,7 @@ namespace FASTER.core
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
 
+            this.CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
             this.ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
@@ -728,25 +730,21 @@ namespace FASTER.core
                 while (true)
                 {
                     SystemState _systemState = SystemState.Copy(ref systemState);
-                    if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
-                    {
+                    if (_systemState.Phase == Phase.PREPARE_GROW)
+                        ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, default);
+                    else if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
                         SplitBuckets(0);
-                        epoch.ProtectAndDrain();
-                    }
-                    else
-                    {
-                        SystemState.RemoveIntermediate(ref _systemState);
-                        if (_systemState.Phase != Phase.PREPARE_GROW && _systemState.Phase != Phase.IN_PROGRESS_GROW)
-                        {
-                            return true;
-                        }
-                    }
+                    else if (_systemState.Phase == Phase.REST)
+                        break;
+                    epoch.ProtectAndDrain();
+                    Thread.Yield();
                 }
             }
             finally
             {
                 epoch.Suspend();
             }
+            return true;
         }
 
         /// <summary>

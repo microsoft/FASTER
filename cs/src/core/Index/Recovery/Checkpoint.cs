@@ -41,6 +41,9 @@ namespace FASTER.core
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
+        internal void CheckpointVersionShift(long oldVersion, long newVersion)
+            => checkpointManager.CheckpointVersionShift(oldVersion, newVersion);
+
         internal void WriteHybridLogMetaInfo()
         {
             var metadata = _hybridLogCheckpoint.info.ToByteArray();

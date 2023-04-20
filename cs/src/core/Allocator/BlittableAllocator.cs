@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -55,6 +56,38 @@ namespace FASTER.core
                 ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
                 nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
 #endif
+            }
+        }
+
+        public override void Reset()
+        {
+            base.Reset();
+            for (int index = 0; index < BufferSize; index++)
+            {
+                ReturnPage(index);
+            }
+            Initialize();
+        }
+
+        void ReturnPage(int index)
+        {
+            Debug.Assert(index < BufferSize);
+            if (values[index] != null)
+            {
+                overflowPagePool.TryAdd(new PageUnit
+                {
+#if !NET5_0_OR_GREATER
+                        handle = handles[index],
+#endif
+                    pointer = pointers[index],
+                    value = values[index]
+                });
+                values[index] = null;
+                pointers[index] = 0;
+#if !NET5_0_OR_GREATER
+                    handles[index] = default;
+#endif
+                Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 
@@ -254,23 +287,7 @@ namespace FASTER.core
         {
             ClearPage(page, 0);
             if (EmptyPageCount > 0)
-            {
-                int index = (int)(page % BufferSize);
-                overflowPagePool.TryAdd(new PageUnit
-                {
-#if !NET5_0_OR_GREATER
-                    handle = handles[index],
-#endif
-                    pointer = pointers[index],
-                    value = values[index]
-                });
-                values[index] = null;
-                pointers[index] = 0;
-#if !NET5_0_OR_GREATER
-                handles[index] = default;
-#endif
-                Interlocked.Decrement(ref AllocatedPageCount);
-            }
+                ReturnPage((int)(page % BufferSize));
         }
 
         /// <summary>
