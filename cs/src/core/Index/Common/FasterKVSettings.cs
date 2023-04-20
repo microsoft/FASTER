@@ -264,7 +264,8 @@ namespace FASTER.core
                 CheckpointDir = CheckpointDir,
                 CheckpointManager = CheckpointManager,
                 RemoveOutdated = RemoveOutdatedCheckpoints,
-                ThrottleCheckpointFlushDelayMs = ThrottleCheckpointFlushDelayMs
+                ThrottleCheckpointFlushDelayMs = ThrottleCheckpointFlushDelayMs,
+                CheckpointVersionSwitchBarrier = CheckpointVersionSwitchBarrier
             };
         }
 
