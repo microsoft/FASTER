@@ -248,10 +248,7 @@ namespace FASTER.devices
         /// </summary>
         internal IBlobManager BlobManager { get; set; }
 
-        string GetSegmentBlobName(int segmentId)
-        {
-            return $"{this.blobName}.{segmentId}";
-        }
+        string GetSegmentBlobName(int segmentId) => GetSegmentFilename(this.blobName, segmentId);
 
         internal void DetectHangs(object _)
         {

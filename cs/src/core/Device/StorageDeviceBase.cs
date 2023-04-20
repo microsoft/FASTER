@@ -69,6 +69,12 @@ namespace FASTER.core
         protected int startSegment = 0, endSegment = -1;
 
         /// <summary>
+        /// If true, skip adding the segmentId to the filename.
+        /// </summary>
+        /// <remarks>If true, SegmentSize must be -1</remarks>
+        protected internal bool OmitSegmentIdFromFileName { get; set; }
+
+        /// <summary>
         /// Initializes a new StorageDeviceBase
         /// </summary>
         /// <param name="filename">Name of the file to use</param>
@@ -111,6 +117,20 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Create a filename that may or may not include the segmentId
+        /// </summary>
+        protected internal string GetSegmentFilename(string filename, int segmentId)
+        {
+            Debug.Assert(!OmitSegmentIdFromFileName || this.SegmentSize == -1, "Cannot omit segment Id when segmentSize is not -1");
+            return GetSegmentFilename(filename, segmentId, !OmitSegmentIdFromFileName);
+        }
+
+        /// <summary>
+        /// Create a filename that may or may not include the segmentId
+        /// </summary>
+        protected internal static string GetSegmentFilename(string filename, int segmentId, bool appendSegmentId) 
+            => appendSegmentId ? $"{filename}.{segmentId}" : filename;
 
         /// <summary>
         /// Whether device should be throttled
