@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -21,6 +22,9 @@ namespace FASTER.common
         /// Response object
         /// </summary>
         protected SeaaBuffer responseObject;
+        
+        // For use when user invokes send variant with user-owned buffers
+        private SimpleObjectPool<SocketAsyncEventArgs> saeaPool = new(() => new SocketAsyncEventArgs());
 
         /// <summary>
         /// Reusable SeaaBuffer
@@ -131,17 +135,28 @@ namespace FASTER.common
         }
 
         /// <inheritdoc />
-        public override void SendResponse(byte[] buffer, int offset, int count, object context)
+        public override void SendResponse(byte[] buffer, int offset, int count, Action sendCallback)
         {
-            throw new System.NotImplementedException();
+            var saea = saeaPool.Checkout();
+            saea.SetBuffer(buffer, offset, count);
+            saea.UserToken = sendCallback;
+            saea.Completed += SaeaBuffer_Completed;
+            
+            if (Interlocked.Increment(ref throttleCount) > ThrottleMax)
+                throttle.Wait();
+            if (!socket.SendAsync(saea))
+                SaeaBuffer_Completed(null, saea);        
         }
-
-        /// <inheritdoc />
-        public override void SendCallback(object context)
+        
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SaeaBuffer_Completed(object sender, SocketAsyncEventArgs e)
         {
-            throw new System.NotImplementedException();
+            ((Action)e.UserToken)();
+            saeaPool.Return(e);
+            if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+                throttle.Release();
         }
-
+        
         /// <inheritdoc />
         public override void Dispose() => Dispose(false);
 

@@ -121,7 +121,7 @@ namespace FASTER.darq
                 TryRecoverLatest = false,
                 AutoRefreshSafeTailAddress = true,
                 AutoCommit = false,
-                TolerateDeviceFailure = false
+                TolerateDeviceFailure = false,
             };
             log = new FasterLog(logSetting);
         }

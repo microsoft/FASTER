@@ -26,7 +26,7 @@ namespace FASTER.libdpr
         private readonly ConcurrentDictionary<long, LightDependencySet> versions;
         protected readonly EpochProtectedVersionScheme versionScheme;
         private long maxLocallyCommitted;
-        private long worldLine = 0;
+        private long worldLine = 1;
         private long lastCheckpointMilli, lastRefreshMilli;
         private Stopwatch sw = Stopwatch.StartNew();
         private readonly TStateObject stateObject;

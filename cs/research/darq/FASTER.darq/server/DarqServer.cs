@@ -98,7 +98,7 @@ namespace FASTER.server
                     {
                         if (response.version <= darq.CommittedVersion())
                             // TODO(Tianyu): Figure out how to handle errors
-                            response.networkSender.SendResponse(response.buf, 0, response.size, response);
+                            response.networkSender.SendResponse(response.buf, 0, response.size, response.Dispose);
                         responseQueue.TryDequeue(out _);
                     }
 

@@ -50,6 +50,7 @@ namespace FASTER.libdpr
                     {
                         Console.WriteLine(
                             $"Current addr {currentAddress} is beyond replay end {replayEnd}, finishing processor recovery...");
+                        iterator.UnsafeRelease();
                         break;
                     }
 
@@ -78,6 +79,8 @@ namespace FASTER.libdpr
                         default:
                             throw new NotImplementedException();
                     }
+                    
+                    iterator.UnsafeRelease();
                 }
 
                 if (iterator.NextAddress >= replayEnd) break;

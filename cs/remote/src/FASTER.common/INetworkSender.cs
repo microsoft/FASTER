@@ -49,12 +49,8 @@ namespace FASTER.common
         /// <summary>
         /// Send response (caller owns buffer space)
         /// </summary>
-        void SendResponse(byte[] buffer, int offset, int count, object context);
-
-        /// <summary>
-        /// Send response (caller owns buffer space)
-        /// </summary>
-        void SendCallback(object context);
+        void SendResponse(byte[] buffer, int offset, int count, Action sendCallback);
+        
 
         /// <summary>
         /// Dispose, optionally waiting for ongoing outgoing calls to complete

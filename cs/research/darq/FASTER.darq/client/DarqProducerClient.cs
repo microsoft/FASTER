@@ -328,13 +328,18 @@ namespace FASTER.client
                 var dprHeader = new ReadOnlySpan<byte>(src, DprBatchHeader.FixedLenSize);
                 src += DprBatchHeader.FixedLenSize;
 
-                // TODO(Tianyu): handle here
-                if (dprClientSession.ReceiveHeader(dprHeader, out var wv) != DprBatchStatus.OK)
+                var dprResult = dprClientSession.ReceiveHeader(dprHeader, out var wv);
+                if (dprResult == DprBatchStatus.ROLLBACK)
                 {
                     rolledbackWorldline = dprClientSession.TerminalWorldLine;
                     return;
                 }
-                
+
+                if (dprResult == DprBatchStatus.IGNORE)
+                {
+                    return;
+                }
+
                 for (int i = 0; i < count; i++)
                 {
                     switch ((MessageType) (*src++))

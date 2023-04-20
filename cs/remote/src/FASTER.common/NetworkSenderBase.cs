@@ -63,10 +63,7 @@ namespace FASTER.common
         public abstract bool SendResponse(int offset, int size);
 
         /// <inheritdoc />
-        public abstract void SendResponse(byte[] buffer, int offset, int count, object context);
-
-        /// <inheritdoc />
-        public abstract void SendCallback(object context);
+        public abstract void SendResponse(byte[] buffer, int offset, int count, Action sendCallback);
 
         /// <inheritdoc />
         public abstract void Dispose();
