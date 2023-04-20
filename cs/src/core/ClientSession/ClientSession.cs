@@ -60,7 +60,11 @@ namespace FASTER.core
             {
                 // Checkpoints cannot complete while we have active locking sessions.
                 while (IsInPreparePhase())
+                {
+                    if (fht.epoch.ThisInstanceProtected())
+                        fht.InternalRefresh<Input, Output, Context, InternalFasterSession>(FasterSession);
                     Thread.Yield();
+                }
 
                 fht.IncrementNumLockingSessions();
                 isAcquiredLockable = true;
@@ -938,7 +942,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Return true if Faster State Machine is in PREPARE sate
+        /// Return true if Faster State Machine is in PREPARE state
         /// </summary>
         internal bool IsInPreparePhase()
         {

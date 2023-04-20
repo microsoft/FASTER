@@ -78,8 +78,10 @@ namespace FASTER.core
             switch (current.Phase)
             {
                 case Phase.PREPARE_GROW:
+                    // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
+                    // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
                     if (allThreadsInPrepareGrow && faster.hlog.NumActiveLockingSessions == 0)
-                        faster.GlobalStateMachineStep(current);
+                        faster.GlobalStateMachineStep(current, bumpEpoch: true);
                     break;
 
                 case Phase.IN_PROGRESS_GROW:
