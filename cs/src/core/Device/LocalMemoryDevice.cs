@@ -50,9 +50,8 @@ namespace FASTER.core
         /// <param name="latencyMs">Induced callback latency in ms (for testing purposes)</param>
         /// <param name="sector_size">Sector size for device (default 64)</param>
         /// <param name="fileName">Virtual path for the device</param>
-        /// <param name="omitSegmentIdFromFilename">Whether to exclude segmentId from filename (requires SegmentSize to be -1)</param>
-        public unsafe LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 64, string fileName = "/userspace/ram/storage", bool omitSegmentIdFromFilename = false)
-            : base(fileName, sector_size, capacity, omitSegmentIdFromFilename)
+        public unsafe LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 64, string fileName = "/userspace/ram/storage")
+            : base(fileName, sector_size, capacity)
         {
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
             Debug.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");

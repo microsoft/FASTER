@@ -59,15 +59,14 @@ namespace FASTER.core
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
-        /// <param name="omitSegmentIdFromFilename">Whether to exclude segmentId from filename (requires SegmentSize to be -1)</param>
         public LocalStorageDevice(string filename,
 
                                   bool preallocateFile = false,
                                   bool deleteOnClose = false,
                                   bool disableFileBuffering = true,
                                   long capacity = Devices.CAPACITY_UNSPECIFIED,
-                                  bool recoverDevice = false, bool useIoCompletionPort = false, bool omitSegmentIdFromFilename = false)
-            : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort, omitSegmentIdFromFilename)
+                                  bool recoverDevice = false, bool useIoCompletionPort = false)
+            : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort)
         {
         }
 
@@ -93,7 +92,6 @@ namespace FASTER.core
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="initialLogFileHandles">Optional set of preloaded safe file handles, which can speed up hydration of preexisting log file handles</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
-        /// <param name="omitSegmentIdFromFilename">Whether to exclude segmentId from filename (requires SegmentSize to be -1)</param>
         protected internal LocalStorageDevice(string filename,
                                       bool preallocateFile = false,
                                       bool deleteOnClose = false,
@@ -101,9 +99,8 @@ namespace FASTER.core
                                       long capacity = Devices.CAPACITY_UNSPECIFIED,
                                       bool recoverDevice = false,
                                       IEnumerable<KeyValuePair<int, SafeFileHandle>> initialLogFileHandles = null,
-                                      bool useIoCompletionPort = true,
-                                      bool omitSegmentIdFromFilename = false)
-                : base(filename, GetSectorSize(filename), capacity, omitSegmentIdFromFilename)
+                                      bool useIoCompletionPort = true)
+                : base(filename, GetSectorSize(filename), capacity)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -382,10 +379,7 @@ namespace FASTER.core
                 _callback((uint)errorCode, num_bytes, nativeOverlapped);
                 return true;
             }
-            else
-            {
-                return false;
-            }
+            return false;
         }
 
         /// <inheritdoc/>
@@ -397,12 +391,12 @@ namespace FASTER.core
         }
 
         private SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort)
-            => CreateHandle(segmentId, disableFileBuffering, deleteOnClose, preallocateFile, segmentSize, fileName, ioCompletionPort, !OmitSegmentIdFromFileName);
+            => CreateHandle(segmentId, disableFileBuffering, deleteOnClose, preallocateFile, segmentSize, fileName, ioCompletionPort, OmitSegmentIdFromFileName);
 
         /// <summary>
         /// Creates a SafeFileHandle for the specified segment. This can be used by derived classes to prepopulate logHandles in the constructor.
         /// </summary>
-        protected internal static SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort, bool appendSegmentId = true)
+        protected internal static SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort, bool omitSegmentId = false)
         {
             uint fileAccess = Native32.GENERIC_READ | Native32.GENERIC_WRITE;
             uint fileShare = unchecked(((uint)FileShare.ReadWrite & ~(uint)FileShare.Inheritable));
@@ -423,7 +417,7 @@ namespace FASTER.core
                 fileShare |= Native32.FILE_SHARE_DELETE;
             }
 
-            string segmentFileName = GetSegmentFilename(fileName, segmentId, appendSegmentId);
+            string segmentFileName = GetSegmentFilename(fileName, segmentId, omitSegmentId);
             var logHandle = Native32.CreateFileW(
                 segmentFileName,
                 fileAccess, fileShare,

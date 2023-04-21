@@ -80,12 +80,10 @@ namespace FASTER.core
         /// <param name="filename">Name of the file to use</param>
         /// <param name="sectorSize">The smallest unit of write of the underlying storage device (e.g. 512 bytes for a disk) </param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPAPCITY_UNSPECIFIED if there is no such limit </param>
-        /// <param name="omitSegmentIdFromFilename">Whether to exclude segmentId from filename (requires SegmentSize to be -1)</param>
-        public StorageDeviceBase(string filename, uint sectorSize, long capacity, bool omitSegmentIdFromFilename)
+        public StorageDeviceBase(string filename, uint sectorSize, long capacity)
         {
             FileName = filename;        
             SectorSize = sectorSize;
-            OmitSegmentIdFromFileName = omitSegmentIdFromFilename;
 
             segmentSize = -1;
             segmentSizeBits = 64;
@@ -99,14 +97,19 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segmentSize"></param>
         /// <param name="epoch"></param>
-        /// <param name="omitSegmentIdInFilename"></param>
-        public virtual void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdInFilename = false)
+        /// <param name="omitSegmentIdFromFilename"></param>
+        public virtual void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
             if (segmentSize != -1)
-                Debug.Assert(Capacity == -1 || Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
+            { 
+                if (Capacity != -1 && Capacity % segmentSize != 0)
+                    throw new FasterException("capacity must be a multiple of segment sizes");
+                if (omitSegmentIdFromFilename)
+                    throw new FasterException("omitSegmentIdInFilename requires a segment size of -1");
+            }
             this.segmentSize = segmentSize;
             this.epoch = epoch;
-            this.OmitSegmentIdFromFileName = omitSegmentIdInFilename;
+            this.OmitSegmentIdFromFileName = omitSegmentIdFromFilename;
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
                 if (segmentSize != -1)
@@ -124,17 +127,13 @@ namespace FASTER.core
         /// <summary>
         /// Create a filename that may or may not include the segmentId
         /// </summary>
-        protected internal string GetSegmentFilename(string filename, int segmentId)
-        {
-            Debug.Assert(!OmitSegmentIdFromFileName || this.SegmentSize == -1, "Cannot omit segment Id when segmentSize is not -1");
-            return GetSegmentFilename(filename, segmentId, !OmitSegmentIdFromFileName);
-        }
+        protected internal string GetSegmentFilename(string filename, int segmentId) => GetSegmentFilename(filename, segmentId, OmitSegmentIdFromFileName);
 
         /// <summary>
         /// Create a filename that may or may not include the segmentId
         /// </summary>
-        protected internal static string GetSegmentFilename(string filename, int segmentId, bool appendSegmentId) 
-            => appendSegmentId ? $"{filename}.{segmentId}" : filename;
+        protected internal static string GetSegmentFilename(string filename, int segmentId, bool omitSegmentId) 
+            => omitSegmentId ? filename : $"{filename}.{segmentId}";
 
         /// <summary>
         /// Whether device should be throttled

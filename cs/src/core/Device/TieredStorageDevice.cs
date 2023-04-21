@@ -29,7 +29,7 @@ namespace FASTER.core
         /// List of devices to be used. The list should be given in order of hot to cold. Read is served from the
         /// device with smallest index in the list that has the requested data
         /// </param>
-        public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : base(ComputeFileString(devices, commitPoint), 512, ComputeCapacity(devices), omitSegmentIdFromFilename: false)
+        public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : base(ComputeFileString(devices, commitPoint), 512, ComputeCapacity(devices))
         {
             Debug.Assert(commitPoint >= 0 && commitPoint < devices.Count, "commit point is out of range");
 
@@ -55,7 +55,7 @@ namespace FASTER.core
 
         public override void Initialize(long segmentSize, LightEpoch epoch, bool omitSegmentIdFromFileName = false)
         {
-            base.Initialize(segmentSize, epoch);
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFileName);
 
             foreach (IDevice devices in devices)
             {

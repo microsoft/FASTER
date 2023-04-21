@@ -14,7 +14,7 @@ namespace FASTER.core
         /// <summary>
         /// 
         /// </summary>
-        public NullDevice() : base("null", 512, Devices.CAPACITY_UNSPECIFIED, omitSegmentIdFromFilename: false)
+        public NullDevice() : base("null", 512, Devices.CAPACITY_UNSPECIFIED)
         {
         }
 

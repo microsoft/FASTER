@@ -139,7 +139,7 @@ namespace FASTER.core
         /// Constructs a new ShardedStorageDevice with the given partition scheme
         /// </summary>
         /// <param name="partitions"> The parition scheme to use </param>
-        public ShardedStorageDevice(IPartitionScheme partitions) : base("", 512, -1, false)
+        public ShardedStorageDevice(IPartitionScheme partitions) : base("", 512, -1)
         {
             this.partitions = partitions;
         }
@@ -158,10 +158,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segmentSize"></param>
         /// <param name="epoch"></param>
-        /// <param name="omitSegmentIdFromFileName"></param>
-        public override void Initialize(long segmentSize, LightEpoch epoch, bool omitSegmentIdFromFileName = false)
+        /// <param name="omitSegmentIdFromFilename"></param>
+        public override void Initialize(long segmentSize, LightEpoch epoch, bool omitSegmentIdFromFilename = false)
         {
-            base.Initialize(segmentSize, epoch);
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
 
             for (int i = 0; i < partitions.Devices.Count; i++)
             {

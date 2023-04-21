@@ -82,10 +82,9 @@ namespace FASTER.devices
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="logger">Logger</param>
-        /// <param name="omitSegmentIdFromFilename">Whether to exclude segmentId from filename (requires SegmentSize to be -1)</param>
         public AzureStorageDevice(string connectionString, string containerName, string directoryName, string blobName, IBlobManager blobManager = null, bool underLease = false, 
-            bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, ILogger logger = null, bool omitSegmentIdFromFilename = false)
-            : base($"{connectionString}/{containerName}/{directoryName}/{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity, omitSegmentIdFromFilename)
+                                  bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, ILogger logger = null)
+            : base($"{connectionString}/{containerName}/{directoryName}/{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             var pageBlobAccount = BlobUtilsV12.GetServiceClients(connectionString);
             var pageBlobContainer = BlobUtilsV12.GetContainerClients(pageBlobAccount, containerName);
@@ -125,10 +124,8 @@ namespace FASTER.devices
         /// The container is not deleted even if it was created in this constructor
         /// </param>
         /// <param name="logger">Logger</param>
-        /// <param name="omitSegmentIdFromFilename">Whether to exclude segmentId from filename (requires SegmentSize to be -1)</param>
-        internal AzureStorageDevice(string blobName, BlobUtilsV12.BlobDirectory pageBlobDirectory, BlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false,
-                ILogger logger = null, bool omitSegmentIdFromFilename = false)
-        : base($"{pageBlobDirectory}/{blobName}", PAGE_BLOB_SECTOR_SIZE, Devices.CAPACITY_UNSPECIFIED, omitSegmentIdFromFilename)
+        internal AzureStorageDevice(string blobName, BlobUtilsV12.BlobDirectory pageBlobDirectory, BlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, ILogger logger = null)
+        : base($"{pageBlobDirectory}/{blobName}", PAGE_BLOB_SECTOR_SIZE, Devices.CAPACITY_UNSPECIFIED)
         {
             this.deleteOnClose = deleteOnClose;
             this.blobs = new ConcurrentDictionary<int, BlobEntry>();
