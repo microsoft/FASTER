@@ -49,6 +49,10 @@ namespace FASTER.core
         public unsafe ReadOnlyMemory<T> AsValue(Memory<byte> source, void* sourcePtr)
             => Unsafe.As<Memory<byte>, ReadOnlyMemory<T>>(ref source).Slice(0, source.Length / sizeof(T));
 
+        /// <inheritdoc/>
+        public unsafe int GetSerializedLength(void* source)
+            => *(int*)source + sizeof(int);
+
         ///<inheritdoc/>
         public unsafe void Initialize(void* source, void* end)
         {

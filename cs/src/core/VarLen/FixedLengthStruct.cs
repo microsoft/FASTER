@@ -37,6 +37,10 @@ namespace FASTER.core
         public unsafe T AsValue(Memory<byte> source, void* sourcePtr)
             => Unsafe.AsRef<T>(sourcePtr);
 
+        /// <inheritdoc/>
+        public unsafe int GetSerializedLength(void* sourcePtr)
+            => size;
+
         public unsafe void Initialize(void* source, void* dest) { }
     }
 }

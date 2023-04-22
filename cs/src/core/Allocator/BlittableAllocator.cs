@@ -116,6 +116,16 @@ namespace FASTER.core
             return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
         }
 
+        public override Key GetKeyAsValueType(long logicalAddress)
+        {
+            return Unsafe.AsRef<Key>((byte*)GetPhysicalAddress(logicalAddress) + RecordInfo.GetLength());
+        }
+
+        public override Value GetValueAsValueType(long logicalAddress)
+        {
+            return Unsafe.AsRef<Value>((byte*)GetPhysicalAddress(logicalAddress) + RecordInfo.GetLength() + keySize);
+        }
+
         public override (int, int) GetRecordSize(long physicalAddress)
         {
             return (recordSize, recordSize);

@@ -177,6 +177,32 @@ namespace FASTER.core
             return ref values[pageIndex][offset / recordSize].value;
         }
 
+        public override Key GetKeyAsValueType(long logicalAddress)
+        {
+            long physicalAddress = GetPhysicalAddress(logicalAddress);
+
+            // Offset within page
+            int offset = (int)(physicalAddress & PageSizeMask);
+
+            // Index of page within the circular buffer
+            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
+
+            return values[pageIndex][offset / recordSize].key;
+        }
+
+        public override Value GetValueAsValueType(long logicalAddress)
+        {
+            long physicalAddress = GetPhysicalAddress(logicalAddress);
+
+            // Offset within page
+            int offset = (int)(physicalAddress & PageSizeMask);
+
+            // Index of page within the circular buffer
+            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
+
+            return values[pageIndex][offset / recordSize].value;
+        }
+
         public override (int, int) GetRecordSize(long physicalAddress)
         {
             return (recordSize, recordSize);

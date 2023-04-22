@@ -25,6 +25,12 @@ namespace FASTER.test
             => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
 
         public unsafe ref Key AsRef(void* source) => ref Unsafe.AsRef<Key>(source);
+        public unsafe Key AsValue(Memory<byte> source, void* sourcePtr)
+            => Unsafe.AsRef<Key>(sourcePtr);
+
+        public unsafe int GetSerializedLength(void* source)
+            => GetLength(ref Unsafe.AsRef<Key>(source));
+
         public unsafe void Initialize(void* source, void* dest) { }
 
         public override string ToString() => this.key.ToString();
@@ -47,6 +53,12 @@ namespace FASTER.test
             => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
 
         public unsafe ref VLValue AsRef(void* source) => ref Unsafe.AsRef<VLValue>(source);
+
+        public unsafe VLValue AsValue(Memory<byte> source, void* sourcePtr)
+            => Unsafe.AsRef<VLValue>(sourcePtr);
+
+        public unsafe int GetSerializedLength(void* source)
+            => GetLength(ref Unsafe.AsRef<VLValue>(source));
 
         public unsafe void Initialize(void* source, void* dest) { }
 

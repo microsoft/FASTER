@@ -58,6 +58,13 @@ namespace FASTER.core
         unsafe T AsValue(Memory<byte> source, void* sourcePtr);
 
         /// <summary>
+        /// Get length of the serialized version of the object at given address
+        /// </summary>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        public unsafe int GetSerializedLength(void* source);
+
+        /// <summary>
         /// Initialize given address range [source, end) as a serialized object of type T
         /// </summary>
         /// <param name="source"></param>

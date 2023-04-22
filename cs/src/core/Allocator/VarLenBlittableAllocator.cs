@@ -135,6 +135,47 @@ namespace FASTER.core
             return ref ValueLength.AsRef((byte*)ValueOffset(physicalAddress));
         }
 
+        public override Key GetKeyAsValueType(long logicalAddress)
+        {
+            // Offset within page
+            int offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
+
+            // Index of page within the circular buffer
+            int pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+
+            long ptr = *(nativePointers + pageIndex) + offset;
+
+            // Key is offset by RecordInfo header
+            ptr += RecordInfo.GetLength();
+
+            int byteArrayOffset = (int)((long)Unsafe.AsPointer(ref values[pageIndex][0]) - ptr);
+            int length = KeyLength.GetSerializedLength((void*)ptr);
+
+            return KeyLength.AsValue(new Memory<byte>(values[pageIndex], byteArrayOffset, length), (void*)ptr);
+        }
+
+        public override Value GetValueAsValueType(long logicalAddress)
+        {
+            // Offset within page
+            int offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
+
+            // Index of page within the circular buffer
+            int pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+
+            long ptr = *(nativePointers + pageIndex) + offset;
+
+            // Key is offset by RecordInfo header
+            ptr += RecordInfo.GetLength();
+
+            int keyLength = KeyLength.GetSerializedLength((void*)ptr);
+            ptr += keyLength;
+
+            int byteArrayOffset = (int)((long)Unsafe.AsPointer(ref values[pageIndex][0]) - ptr);
+            int length = ValueLength.GetSerializedLength((void*)ptr);
+
+            return ValueLength.AsValue(new Memory<byte>(values[pageIndex], byteArrayOffset, length), (void*)ptr);
+        }
+
         public override ref Value GetValue(long physicalAddress, long endAddress)
         {
             var src = (byte*)ValueOffset(physicalAddress);

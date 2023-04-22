@@ -27,6 +27,10 @@ namespace FASTER.core
         public unsafe SpanByte AsValue(Memory<byte> source, void* sourcePtr)
             => Unsafe.AsRef<SpanByte>(sourcePtr).Deserialize();
 
+        /// <inheritdoc/>
+        public unsafe int GetSerializedLength(void* source)
+            => Unsafe.AsRef<SpanByte>(source).Length + sizeof(int);
+
         /// <inheritdoc />
         public unsafe void Initialize(void* source, void* dest) { *(int*)source = (int)((byte*)dest - (byte*)source) - sizeof(int); }
     }

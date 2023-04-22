@@ -47,6 +47,10 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
+        public unsafe int GetSerializedLength(void* source)
+            => *(int*)source + sizeof(int);
+
+        /// <inheritdoc/>
         public unsafe Memory<T> AsValue(Memory<byte> source, void* sourcePtr)
             => Unsafe.As<Memory<byte>, Memory<T>>(ref source).Slice(0, source.Length / sizeof(T));
 

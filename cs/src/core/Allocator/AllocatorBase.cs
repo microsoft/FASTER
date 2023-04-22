@@ -314,6 +314,21 @@ namespace FASTER.core
         /// <param name="physicalAddress"></param>
         /// <returns></returns>
         public abstract ref Value GetValue(long physicalAddress);
+
+        /// <summary>
+        /// Get key
+        /// </summary>
+        /// <param name="logicalAddress"></param>
+        /// <returns></returns>
+        public abstract Key GetKeyAsValueType(long logicalAddress);
+
+        /// <summary>
+        /// Get value
+        /// </summary>
+        /// <param name="logicalAddress"></param>
+        /// <returns></returns>
+        public abstract Value GetValueAsValueType(long logicalAddress);
+
         /// <summary>
         /// Get value from address range
         /// </summary>
