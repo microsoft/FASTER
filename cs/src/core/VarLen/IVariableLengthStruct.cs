@@ -50,6 +50,14 @@ namespace FASTER.core
             ;
 
         /// <summary>
+        /// Return the value type (struct) given the serialized data at given address
+        /// </summary>
+        /// <param name="source">Memory associated with the data</param>
+        /// <param name="sourcePtr">Pointer to the data</param>
+        /// <returns></returns>
+        unsafe T AsValue(Memory<byte> source, void* sourcePtr);
+
+        /// <summary>
         /// Initialize given address range [source, end) as a serialized object of type T
         /// </summary>
         /// <param name="source"></param>

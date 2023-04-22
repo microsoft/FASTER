@@ -3,6 +3,7 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace FASTER.core
 {
@@ -31,6 +32,11 @@ namespace FASTER.core
             => Buffer.MemoryCopy(Unsafe.AsPointer(ref source), destination, GetLength(ref source), GetLength(ref source));
 
         public unsafe ref T AsRef(void* source) => ref Unsafe.AsRef<T>(source);
+
+        /// <inheritdoc/>
+        public unsafe T AsValue(Memory<byte> source, void* sourcePtr)
+            => Unsafe.AsRef<T>(sourcePtr);
+
         public unsafe void Initialize(void* source, void* dest) { }
     }
 }

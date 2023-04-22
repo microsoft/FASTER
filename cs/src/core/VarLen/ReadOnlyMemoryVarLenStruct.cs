@@ -1,5 +1,6 @@
 ﻿
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace FASTER.core
@@ -29,7 +30,7 @@ namespace FASTER.core
         [ThreadStatic]
         static int count;
 
-        ///<inheritdoc/>
+        /// <inheritdoc/>
         public unsafe ref ReadOnlyMemory<T> AsRef(void* source)
         {
             if (manager == null)
@@ -43,6 +44,10 @@ namespace FASTER.core
             cache.Item2 = cache.Item1.Memory;
             return ref cache.Item2;
         }
+
+        /// <inheritdoc/>
+        public unsafe ReadOnlyMemory<T> AsValue(Memory<byte> source, void* sourcePtr)
+            => Unsafe.As<Memory<byte>, ReadOnlyMemory<T>>(ref source).Slice(0, source.Length / sizeof(T));
 
         ///<inheritdoc/>
         public unsafe void Initialize(void* source, void* end)

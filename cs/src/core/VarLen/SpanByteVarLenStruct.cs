@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -21,6 +22,10 @@ namespace FASTER.core
 
         /// <inheritdoc />
         public unsafe ref SpanByte AsRef(void* source) => ref Unsafe.AsRef<SpanByte>(source);
+
+        /// <inheritdoc />
+        public unsafe SpanByte AsValue(Memory<byte> source, void* sourcePtr)
+            => Unsafe.AsRef<SpanByte>(sourcePtr).Deserialize();
 
         /// <inheritdoc />
         public unsafe void Initialize(void* source, void* dest) { *(int*)source = (int)((byte*)dest - (byte*)source) - sizeof(int); }
