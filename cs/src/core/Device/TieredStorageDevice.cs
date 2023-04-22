@@ -53,9 +53,9 @@ namespace FASTER.core
         {
         }
 
-        public override void Initialize(long segmentSize, LightEpoch epoch)
+        public override void Initialize(long segmentSize, LightEpoch epoch, bool omitSegmentIdFromFileName = false)
         {
-            base.Initialize(segmentSize, epoch);
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFileName);
 
             foreach (IDevice devices in devices)
             {
