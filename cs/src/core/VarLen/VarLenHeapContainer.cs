@@ -25,6 +25,13 @@ namespace FASTER.core
             return ref varLenStruct.AsRef(mem.GetValidPointer());
         }
 
+        public unsafe T GetAsValue()
+        {
+            var ptr = mem.GetValidPointer();
+            var len = varLenStruct.GetSerializedLength(ptr);
+            return varLenStruct.AsValue(new System.Memory<byte>(mem.buffer, mem.offset + mem.valid_offset, len), ptr);
+        }
+
         public void Dispose()
         {
             mem.Return();

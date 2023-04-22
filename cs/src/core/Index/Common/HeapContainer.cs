@@ -15,6 +15,12 @@ namespace FASTER.core
         /// Get a reference to the contained object
         /// </summary>
         ref T Get();
+
+        /// <summary>
+        /// Get contained object by value
+        /// </summary>
+        /// <returns></returns>
+        public T GetAsValue();
     }
 
     /// <summary>
@@ -31,6 +37,8 @@ namespace FASTER.core
         }
 
         public ref T Get() => ref obj;
+
+        public T GetAsValue() => obj;
 
         public void Dispose() { }
     }
