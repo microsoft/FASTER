@@ -78,7 +78,7 @@ namespace FASTER.server
             byte* b = buf + offset;
             fixed (byte* d = response.buf)
             {
-                var dend = networkSender.GetResponseObjectTail();
+                var dend = d + response.buf.Length;
                 var dcurr = d + sizeof(int); // reserve space for size
 
                 var src = b;

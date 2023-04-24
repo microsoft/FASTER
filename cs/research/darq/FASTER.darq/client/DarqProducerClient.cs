@@ -342,7 +342,8 @@ namespace FASTER.client
 
                 for (int i = 0; i < count; i++)
                 {
-                    switch ((MessageType) (*src++))
+                    var messageType = (MessageType)(*src++);
+                    switch (messageType)
                     {
                         case MessageType.DarqEnqueue:
                             // Pretty sure don't actually need to check for Math.Max here because requests are serviced in order?
