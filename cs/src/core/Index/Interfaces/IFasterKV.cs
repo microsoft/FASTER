@@ -206,6 +206,11 @@ namespace FASTER.core
         /// <returns>Whether checkpoint has completed</returns>
         ValueTask CompleteCheckpointAsync(CancellationToken token = default);
 
+        /// <summary>
+        /// Reset the store to an empty state, and dispose held file handles. WARNING: call only when store is quiesced.
+        /// </summary>
+        void Reset();
+
         #endregion
 
         #region Other Operations

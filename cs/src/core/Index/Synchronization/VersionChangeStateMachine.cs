@@ -45,8 +45,11 @@ namespace FASTER.core
                         ctx.markers[EpochPhaseIdx.Prepare] = true;
 
                     faster.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
+
+                    // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
+                    // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
                     if (faster.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && faster.hlog.NumActiveLockingSessions == 0)
-                        faster.GlobalStateMachineStep(current);
+                        faster.GlobalStateMachineStep(current, bumpEpoch: faster.CheckpointVersionSwitchBarrier);
                     break;
                 case Phase.IN_PROGRESS:
                     if (ctx != null)
@@ -130,12 +133,6 @@ namespace FASTER.core
             this.targetVersion = targetVersion;
         }
 
-        /// <summary>
-        /// Construct a new VersionChangeStateMachine that folds over the log at the end without waiting for flush. 
-        /// </summary>
-        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
-        public VersionChangeStateMachine(long targetVersion = -1) : this(targetVersion, new VersionChangeTask(), new FoldOverTask()) { }
-
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)
         {
@@ -147,9 +144,8 @@ namespace FASTER.core
                     break;
                 case Phase.PREPARE:
                     nextState.Phase = Phase.IN_PROGRESS;
-                    // TODO: Move to long for system state as well. 
                     SetToVersion(targetVersion == -1 ? start.Version + 1 : targetVersion);
-                    nextState.Version = (int)ToVersion();
+                    nextState.Version = ToVersion();
                     break;
                 case Phase.IN_PROGRESS:
                     nextState.Phase = Phase.REST;

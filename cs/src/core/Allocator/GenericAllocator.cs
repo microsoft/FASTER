@@ -22,7 +22,7 @@ namespace FASTER.core
         public Value value;
     }
 
-    public unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
+    internal unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         // Circular buffer definition
         internal Record<Key, Value>[][] values;
@@ -86,6 +86,30 @@ namespace FASTER.core
         }
 
         internal override int OverflowPageCount => overflowPagePool.Count;
+
+        public override void Reset()
+        {
+            base.Reset();
+            objectLogDevice.Reset();
+            for (int index = 0; index < BufferSize; index++)
+            {
+                ReturnPage(index);
+            }
+
+            Array.Clear(segmentOffsets, 0, segmentOffsets.Length);
+            Initialize();
+        }
+
+        void ReturnPage(int index)
+        {
+            Debug.Assert(index < BufferSize);
+            if (values[index] != default)
+            {
+                overflowPagePool.TryAdd(values[index]);
+                values[index] = default;
+                Interlocked.Decrement(ref AllocatedPageCount);
+            }
+        }
 
         public override void Initialize()
         {
@@ -267,6 +291,18 @@ namespace FASTER.core
             objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
         }
 
+        protected override void TruncateUntilAddressBlocking(long toAddress)
+        {
+            base.TruncateUntilAddressBlocking(toAddress);
+            objectLogDevice.TruncateUntilSegment((int)(toAddress >> LogSegmentSizeBits));
+        }
+
+        protected override void RemoveSegment(int segment)
+        {
+            base.RemoveSegment(segment);
+            objectLogDevice.RemoveSegment(segment);
+        }
+
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback,  PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteAsync(flushPage,
@@ -332,11 +368,7 @@ namespace FASTER.core
             }
 
             if (EmptyPageCount > 0)
-            {
-                overflowPagePool.TryAdd(values[page % BufferSize]);
-                values[page % BufferSize] = default;
-                Interlocked.Decrement(ref AllocatedPageCount);
-            }
+                ReturnPage((int)(page % BufferSize));
         }
 
         private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,
@@ -1053,6 +1085,24 @@ namespace FASTER.core
         public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
         {
             return new GenericScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+        }
+
+        /// <summary>
+        /// Implementation for push-scanning FASTER log, called from LogAccessor
+        /// </summary>
+        internal override bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
+        {
+            using GenericScanIterator<Key, Value> iter = new(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            return PushScanImpl(store, beginAddress, endAddress, ref scanFunctions, iter);
+        }
+
+        /// <summary>
+        /// Implementation for push-iterating key versions, called from LogAccessor
+        /// </summary>
+        internal override bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+        {
+            using GenericScanIterator<Key, Value> iter = new(this, store.comparer, beginAddress, epoch, logger: logger);
+            return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />

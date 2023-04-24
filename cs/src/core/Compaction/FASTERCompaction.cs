@@ -42,7 +42,7 @@ namespace FASTER.core
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
             using var fhtSession = For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>(sessionVariableLengthStructSettings: sessionVariableLengthStructSettings);
 
-            using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress))
+            using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress, allowMutable: true))
             {
                 long numPending = 0;
                 while (iter1.GetNext(out var recordInfo))
@@ -95,7 +95,7 @@ namespace FASTER.core
             using (var tempKv = new FasterKV<Key, Value>(IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: Comparer, variableLengthStructSettings: variableLengthStructSettings, loggerFactory: loggerFactory))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
             {
-                using (var iter1 = Log.Scan(hlog.BeginAddress, untilAddress))
+                using (var iter1 = Log.Scan(hlog.BeginAddress, untilAddress, allowMutable: true))
                 {
                     while (iter1.GetNext(out var recordInfo))
                     {
@@ -117,7 +117,7 @@ namespace FASTER.core
                     ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempKvSession);
 
                 var numPending = 0;
-                using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
+                using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress, allowMutable: true);
                 while (iter3.GetNext(out var recordInfo))
                 {
                     if (recordInfo.Tombstone)
@@ -151,7 +151,7 @@ namespace FASTER.core
         private void ScanImmutableTailToRemoveFromTempKv<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
         {
-            using var iter = Log.Scan(untilAddress, scanUntil);
+            using var iter = Log.Scan(untilAddress, scanUntil, allowMutable: true);
             while (iter.GetNext(out var _))
             {
                 tempKvSession.Delete(ref iter.GetKey(), default, 0);

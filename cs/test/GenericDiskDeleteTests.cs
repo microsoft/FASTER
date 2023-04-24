@@ -17,15 +17,15 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericDiskDeleteTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericDiskDeleteTests.obj.log", deleteOnClose: true);
+            DeleteDirectory(MethodTestDir, wait:true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/GenericDiskDeleteTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(MethodTestDir + "/GenericDiskDeleteTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
+                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
+                lockingMode: LockingMode.None);
             session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 
@@ -41,7 +41,7 @@ namespace FASTER.test
             objlog?.Dispose();
             objlog = null;
 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         [Test]

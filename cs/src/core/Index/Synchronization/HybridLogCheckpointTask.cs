@@ -34,6 +34,9 @@ namespace FASTER.core
                     // Capture begin address before checkpoint starts
                     faster._hybridLogCheckpoint.info.beginAddress = faster.hlog.BeginAddress;
                     break;
+                case Phase.IN_PROGRESS:
+                    faster.CheckpointVersionShift(lastVersion, next.Version);
+                    break;
                 case Phase.WAIT_FLUSH:
                     faster._hybridLogCheckpoint.info.headAddress = faster.hlog.HeadAddress;
                     faster._hybridLogCheckpoint.info.nextVersion = next.Version;

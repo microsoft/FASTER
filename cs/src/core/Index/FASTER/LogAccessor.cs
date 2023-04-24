@@ -2,8 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
-using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FASTER.core
@@ -23,7 +22,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fht"></param>
         /// <param name="allocator"></param>
-        public LogAccessor(FasterKV<Key, Value> fht, AllocatorBase<Key, Value> allocator)
+        internal LogAccessor(FasterKV<Key, Value> fht, AllocatorBase<Key, Value> allocator)
         {
             this.fht = fht;
             this.allocator = allocator;
@@ -253,14 +252,36 @@ namespace FASTER.core
         /// <summary>
         /// Scan the log given address range, returns all records with address less than endAddress
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        public IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+        /// <returns>Scan iterator instance</returns>
+        public IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering) 
+            => Scan(beginAddress, endAddress, scanBufferingMode, allowMutable: false);
+
+        internal IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, bool allowMutable)
+            => Scan(beginAddress, endAddress, ScanBufferingMode.DoublePageBuffering, allowMutable);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool allowMutable)
         {
+            if (endAddress >= fht.hlog.SafeReadOnlyAddress && !allowMutable && fht.IsLocking)
+                throw new FasterException($"Cannot run pull Scan() in the mutable region when locking is enabled; use the form that takes {nameof(IScanIteratorFunctions<Key, Value>)} instead");
             return allocator.Scan(beginAddress, endAddress, scanBufferingMode);
         }
+
+        /// <summary>
+        /// Scan the log given address range, returns all records with address less than endAddress
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => allocator.Scan(fht, beginAddress, endAddress, ref scanFunctions, scanBufferingMode);
+
+        /// <summary>
+        /// Iterate versions of the specified key, starting with most recent
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool IterateKeyVersions<TScanFunctions>(ref TScanFunctions scanFunctions, ref Key key)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => allocator.IterateKeyVersions(fht, ref key, ref scanFunctions);
 
         /// <summary>
         /// Flush log until current tail (records are still retained in memory)
@@ -303,10 +324,8 @@ namespace FASTER.core
         /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-        {
-            return Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, compactionType, sessionVariableLengthStructSettings);
-        }
+            where Functions : IFunctions<Key, Value, Input, Output, Context> 
+            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, compactionType, sessionVariableLengthStructSettings);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log

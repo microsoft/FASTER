@@ -3,15 +3,18 @@
 
 using Microsoft.Extensions.Logging;
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+#if !NET5_0_OR_GREATER
 using System.Runtime.InteropServices;
+#endif
 using System.Threading;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace FASTER.core
 {
-    public unsafe sealed class VariableLengthBlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
+    internal unsafe sealed class VariableLengthBlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         public const int kRecordAlignment = 8; // RecordInfo has a long field, so it should be aligned to 8-bytes
 
@@ -74,6 +77,38 @@ namespace FASTER.core
         }
 
         internal override int OverflowPageCount => overflowPagePool.Count;
+
+        public override void Reset()
+        {
+            base.Reset();
+            for (int index = 0; index < BufferSize; index++)
+            {
+                ReturnPage(index);
+            }
+            Initialize();
+        }
+
+        void ReturnPage(int index)
+        {
+            Debug.Assert(index < BufferSize);
+            if (values[index] != null)
+            {
+                overflowPagePool.TryAdd(new PageUnit
+                {
+#if !NET5_0_OR_GREATER
+                        handle = handles[index],
+#endif
+                    pointer = pointers[index],
+                    value = values[index]
+                });
+                values[index] = null;
+                pointers[index] = 0;
+#if !NET5_0_OR_GREATER
+                    handles[index] = default;
+#endif
+                Interlocked.Decrement(ref AllocatedPageCount);
+            }
+        }
 
         public override void Initialize()
         {
@@ -357,23 +392,7 @@ namespace FASTER.core
         {
             ClearPage(page, 0);
             if (EmptyPageCount > 0)
-            {
-                int index = (int)(page % BufferSize);
-                overflowPagePool.TryAdd(new PageUnit
-                {
-#if !NET5_0_OR_GREATER
-                    handle = handles[index],
-#endif
-                    pointer = pointers[index],
-                    value = values[index]
-                });
-                values[index] = null;
-                pointers[index] = 0;
-#if !NET5_0_OR_GREATER
-                handles[index] = default;
-#endif
-                Interlocked.Decrement(ref AllocatedPageCount);
-            }
+                ReturnPage((int)(page % BufferSize));
         }
 
         /// <summary>
@@ -476,15 +495,27 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Iterator interface for scanning FASTER log
+        /// Iterator interface for pull-scanning FASTER log
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
+        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode) 
+            => new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+
+        /// <summary>
+        /// Implementation for push-scanning FASTER log, called from LogAccessor
+        /// </summary>
+        internal override bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch, logger:logger);
+            using VariableLengthBlittableScanIterator<Key, Value> iter = new(this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            return PushScanImpl(store, beginAddress, endAddress, ref scanFunctions, iter);
+        }
+
+        /// <summary>
+        /// Implementation for push-iterating key versions, called from LogAccessor
+        /// </summary>
+        internal override bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+        {
+            using VariableLengthBlittableScanIterator<Key, Value> iter = new(this, store.comparer, beginAddress, epoch, logger: logger);
+            return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />

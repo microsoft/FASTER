@@ -12,6 +12,8 @@ namespace FASTER.core
     /// </summary>
     internal sealed class IndexResizeTask : ISynchronizationTask
     {
+        bool allThreadsInPrepareGrow;
+        
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value>(
             SystemState next,
@@ -20,7 +22,7 @@ namespace FASTER.core
             switch (next.Phase)
             {
                 case Phase.PREPARE_GROW:
-                    // nothing to do
+                    allThreadsInPrepareGrow = false;
                     break;
                 case Phase.IN_PROGRESS_GROW:
                     // Set up the transition to new version of HT
@@ -51,7 +53,7 @@ namespace FASTER.core
             switch (next.Phase)
             {
                 case Phase.PREPARE_GROW:
-                    faster.epoch.BumpCurrentEpoch(() => faster.GlobalStateMachineStep(next));
+                    faster.epoch.BumpCurrentEpoch(() => allThreadsInPrepareGrow = true);
                     break;
                 case Phase.IN_PROGRESS_GROW:
                 case Phase.REST:
@@ -76,6 +78,12 @@ namespace FASTER.core
             switch (current.Phase)
             {
                 case Phase.PREPARE_GROW:
+                    // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
+                    // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
+                    if (allThreadsInPrepareGrow && faster.hlog.NumActiveLockingSessions == 0)
+                        faster.GlobalStateMachineStep(current, bumpEpoch: true);
+                    break;
+
                 case Phase.IN_PROGRESS_GROW:
                 case Phase.REST:
                     return;

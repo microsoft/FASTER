@@ -365,8 +365,29 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc />
+        public void Reset()
+        {
+            // Reset the hash index
+            Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
+            overflowBucketsAllocator.Dispose();
+            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
+
+            // Reset the hybrid log
+            hlog.Reset();
+        }
+
+
         private long InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo)
         {
+            hlog.VerifyRecoveryInfo(recoveredHLCInfo, false);
+
+            if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
+            {
+                logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
+                Reset();
+            }
+
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 RecoverFuzzyIndex(recoveredICInfo);
 
@@ -401,6 +422,14 @@ namespace FASTER.core
 
         private async ValueTask<long> InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
         {
+            hlog.VerifyRecoveryInfo(recoveredHLCInfo, false);
+
+            if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
+            {
+                logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
+                Reset();
+            }
+
             if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 await RecoverFuzzyIndexAsync(recoveredICInfo, cancellationToken).ConfigureAwait(false);
 
@@ -996,7 +1025,7 @@ namespace FASTER.core
         }
     }
 
-    public abstract partial class AllocatorBase<Key, Value> : IDisposable
+    internal abstract partial class AllocatorBase<Key, Value> : IDisposable
     {
         /// <summary>
         /// Restore log

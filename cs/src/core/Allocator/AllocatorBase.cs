@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -41,7 +42,7 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public abstract partial class AllocatorBase<Key, Value> : IDisposable
+    internal abstract partial class AllocatorBase<Key, Value> : IDisposable
     {
         /// <summary>
         /// Epoch information
@@ -167,6 +168,11 @@ namespace FASTER.core
         /// The lowest valid address in the log
         /// </summary>
         public long BeginAddress;
+        
+        /// <summary>
+        /// The lowest valid address on disk - updated when truncating log
+        /// </summary>
+        public long PersistedBeginAddress;
 
         /// <summary>
         /// Address until which we are currently closing. Used to coordinate linear closing of pages.
@@ -644,7 +650,6 @@ namespace FASTER.core
         private unsafe void VerifyPage(long page)
         {
             var startLogicalAddress = GetStartLogicalAddress(page);
-            var endLogicalAddress = GetStartLogicalAddress(page + 1);
             var physicalAddress = GetPhysicalAddress(startLogicalAddress);
 
             long untilLogicalAddressInPage = GetPageSize();
@@ -767,13 +772,174 @@ namespace FASTER.core
         public abstract long[] GetSegmentOffsets();
 
         /// <summary>
-        /// Pull-based scan interface for HLOG
+        /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
+        /// <returns>Pull Scan iterator instance</returns>
         public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
+
+        /// <summary>
+        /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        internal abstract bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions,
+                ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>;
+
+        /// <summary>
+        /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        internal bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, ref TScanFunctions scanFunctions)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+        {
+            OperationStackContext<Key, Value> stackCtx = new(store.comparer.GetHashCode64(ref key));
+            if (!store.FindTag(ref stackCtx.hei))
+                return false;
+            stackCtx.SetRecordSourceToHashEntry(store.hlog);
+            if (store.UseReadCache)
+                store.SkipReadCache(ref stackCtx, out _);
+            if (stackCtx.recSrc.LogicalAddress < store.hlog.BeginAddress)
+                return false;
+            return IterateKeyVersions(store, ref key, stackCtx.recSrc.LogicalAddress, ref scanFunctions);
+        }
+
+        /// <summary>
+        /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        internal abstract bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>;
+
+        /// <summary>
+        /// Implementation for push-scanning FASTER log
+        /// </summary>
+        internal bool PushScanImpl<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
+        {
+            if (!scanFunctions.OnStart(beginAddress, endAddress))
+                return false;
+
+            long numRecords = 1;
+            bool stop = false;
+            for (; !stop && iter.BeginGetNext(out var recordInfo); ++numRecords)
+            {
+                OperationStackContext<Key, Value> stackCtx = default;
+                try
+                {
+                    stop = !PushToReader(store, ref scanFunctions, iter, numRecords, recordInfo, ref stackCtx);
+                }
+                catch (Exception ex)
+                {
+                    scanFunctions.OnException(ex, numRecords);
+                    throw;
+                }
+                finally
+                {
+                    if (stackCtx.recSrc.HasLock)
+                        store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
+                    iter.EndGet();
+                }
+            }
+
+            scanFunctions.OnStop(!stop, numRecords);
+            return !stop;
+        }
+
+        /// <summary>
+        /// Implementation for push-iterating key versions
+        /// </summary>
+        internal bool IterateKeyVersionsImpl<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
+        {
+            if (!scanFunctions.OnStart(beginAddress, Constants.kInvalidAddress))
+                return false;
+
+            long numRecords = 1;
+            bool stop = false, continueOnDisk = false;
+            for (; !stop && iter.BeginGetPrevInMemory(ref key, out var recordInfo, out continueOnDisk); ++numRecords)
+            {
+                OperationStackContext<Key, Value> stackCtx = default;
+                try
+                {
+                    stop = !PushToReader(store, ref scanFunctions, iter, numRecords, recordInfo, ref stackCtx);
+                }
+                catch (Exception ex)
+                {
+                    scanFunctions.OnException(ex, numRecords);
+                    throw;
+                }
+                finally
+                {
+                    if (stackCtx.recSrc.HasLock)
+                        store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
+                    iter.EndGet();
+                }
+            }
+
+            if (continueOnDisk)
+            {
+                AsyncIOContextCompletionEvent<Key, Value> completionEvent = new();
+                try
+                { 
+                    var logicalAddress = iter.CurrentAddress;
+                    while (!stop && GetFromDiskAndPushToReader(ref key, ref logicalAddress, ref scanFunctions, numRecords, completionEvent, out stop))
+                        ++numRecords;
+                }
+                catch (Exception ex)
+                {
+                    scanFunctions.OnException(ex, numRecords);
+                    throw;
+                }
+                finally
+                {
+                    completionEvent.Dispose();
+                }
+            }
+
+            scanFunctions.OnStop(!stop, numRecords);
+            return !stop;
+        }
+
+        private bool PushToReader<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, ref TScanFunctions scanFunctions, TScanIterator iter, long numRecords, RecordInfo recordInfo, 
+                ref OperationStackContext<Key, Value> stackCtx)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
+        {
+            ref var key = ref iter.GetKey();
+            if (iter.CurrentAddress >= this.ReadOnlyAddress && !recordInfo.IsClosed)
+            {
+                store.LockForScan(ref stackCtx, ref key, ref iter.GetLockableInfo());
+                return scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+            }
+            return scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+        }
+
+        internal unsafe bool GetFromDiskAndPushToReader<TScanFunctions>(ref Key key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
+                AsyncIOContextCompletionEvent<Key, Value> completionEvent, out bool stop)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+        {
+            completionEvent.Prepare(GetKeyContainer(ref key), logicalAddress);
+
+            this.AsyncGetFromDisk(logicalAddress, this.GetAverageRecordSize(), completionEvent.request);
+            completionEvent.Wait();
+
+            stop = false;
+            if (completionEvent.exception is not null)
+            {
+                scanFunctions.OnException(completionEvent.exception, numRecords);
+                return false;
+            }
+            if (completionEvent.request.logicalAddress < this.BeginAddress)
+                return false;
+
+            RecordInfo recordInfo = this.GetInfoFromBytePointer(completionEvent.request.record.GetValidPointer());
+            recordInfo.ClearBitsForDiskImages();
+            stop = !scanFunctions.SingleReader(ref key, ref this.GetContextRecordValue(ref completionEvent.request), new RecordMetadata(recordInfo, completionEvent.request.logicalAddress), numRecords);
+            logicalAddress = recordInfo.PreviousAddress;
+            return !stop;
+        }
 
         /// <summary>
         /// Scan page guaranteed to be in memory
@@ -869,13 +1035,110 @@ namespace FASTER.core
             if (PageSize < sectorSize)
                 throw new FasterException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
 
-            AlignedPageSizeBytes = ((PageSize + (sectorSize - 1)) & ~(sectorSize - 1));
+            AlignedPageSizeBytes = (PageSize + (sectorSize - 1)) & ~(sectorSize - 1);
         }
 
         /// <summary>
         /// Number of extra overflow pages allocated
         /// </summary>
         internal abstract int OverflowPageCount { get; }
+
+
+        /// <summary>
+        /// Reset the hybrid log. WARNING: assumes that threads have drained out at this point.
+        /// </summary>
+        public virtual void Reset()
+        {
+            var newBeginAddress = GetTailAddress();
+
+            // Shift read-only addresses to tail without flushing
+            Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out _);
+            Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out _);
+
+            // Shift head address to tail
+            if (Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out _))
+            {
+                // Close addresses
+                OnPagesClosed(newBeginAddress);
+
+                // Wait for pages to get closed
+                while (ClosedUntilAddress < newBeginAddress)
+                {
+                    Thread.Yield();
+                    if (epoch.ThisInstanceProtected())
+                        epoch.ProtectAndDrain();
+                }
+            }
+
+            // Update begin address to tail
+            Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out _);
+            
+            this.FlushEvent.Initialize();
+            Array.Clear(PageStatusIndicator, 0, BufferSize);
+            if (PendingFlush != null)
+            {
+                for (int i = 0; i < BufferSize; i++)
+                    PendingFlush[i]?.list?.Clear();
+            }
+            device.Reset();
+        }
+
+        internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
+        {
+            // Note: trimLog is unused right now. Can be used to trim the log to the minimum
+            // segment range necessary for recovery to given checkpoint
+
+            var diskBeginAddress = recoveredHLCInfo.info.beginAddress;
+            var diskFlushedUntilAddress =
+                recoveredHLCInfo.info.useSnapshotFile == 0 ?
+                recoveredHLCInfo.info.finalLogicalAddress :
+                recoveredHLCInfo.info.flushedLogicalAddress;
+
+            // Delete disk segments until specified disk begin address
+
+            // First valid disk segment required for recovery
+            long firstValidSegment = (int)(diskBeginAddress >> LogSegmentSizeBits);
+
+            // Last valid disk segment required for recovery
+            int lastValidSegment = (int)(diskFlushedUntilAddress >> LogSegmentSizeBits);
+            if ((diskFlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                lastValidSegment--;
+
+            logger?.LogInformation("Recovery requires disk segments in range [{firstSegment}--{tailStartSegment}]", firstValidSegment, lastValidSegment);
+
+            var firstAvailSegment = device.StartSegment;
+            var lastAvailSegment = device.EndSegment;
+
+            if (FlushedUntilAddress > GetFirstValidLogicalAddress(0))
+            {
+                int currTailSegment = (int)(FlushedUntilAddress >> LogSegmentSizeBits);
+                if ((FlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                    currTailSegment--;
+
+                if (currTailSegment > lastAvailSegment)
+                    lastAvailSegment = currTailSegment;
+            }
+
+            logger?.LogInformation("Available segment range on device: [{firstAvailSegment}--{lastAvailSegment}]", firstAvailSegment, lastAvailSegment);
+
+            if (firstValidSegment < firstAvailSegment)
+                throw new FasterException($"Unable to set first valid segment to {firstValidSegment}, first available segment on disk is {firstAvailSegment}");
+
+            if (lastAvailSegment >= 0 && lastValidSegment > lastAvailSegment)
+                throw new FasterException($"Unable to set last valid segment to {lastValidSegment}, last available segment on disk is {lastAvailSegment}");
+
+            if (trimLog)
+            {
+                logger?.LogInformation("Trimming disk segments until (not including) {firstSegment}", firstValidSegment);
+                TruncateUntilAddressBlocking(firstValidSegment << LogSegmentSizeBits);
+
+                for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
+                {
+                    logger?.LogInformation("Trimming tail segment {s} on disk", s);
+                    RemoveSegment(s);
+                }
+            }
+        }
 
         /// <summary>
         /// Initialize allocator
@@ -885,8 +1148,7 @@ namespace FASTER.core
         {
             Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
 
-            if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, sectorSize);
+            bufferPool ??= new SectorAlignedBufferPool(1, sectorSize);
 
             if (BufferSize > 0)
             {
@@ -1028,7 +1290,7 @@ namespace FASTER.core
         /// <returns></returns>
         public long GetPage(long logicalAddress)
         {
-            return (logicalAddress >> LogPageSizeBits);
+            return logicalAddress >> LogPageSizeBits;
         }
 
         /// <summary>
@@ -1294,7 +1556,26 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         protected virtual void TruncateUntilAddress(long toAddress)
         {
+            PersistedBeginAddress = toAddress;
             Task.Run(() => device.TruncateUntilAddress(toAddress));
+        }
+
+        /// <summary>
+        /// Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices
+        /// </summary>
+        /// <param name="toAddress"></param>
+        protected virtual void TruncateUntilAddressBlocking(long toAddress)
+        {
+            device.TruncateUntilAddress(toAddress);
+        }
+
+        /// <summary>
+        /// Remove disk segment
+        /// </summary>
+        /// <param name="segment"></param>
+        protected virtual void RemoveSegment(int segment)
+        {
+            device.RemoveSegment(segment);
         }
 
         internal virtual bool TryComplete()
@@ -1329,7 +1610,7 @@ namespace FASTER.core
         private void OnPagesClosed(long newSafeHeadAddress)
         {
             Debug.Assert(newSafeHeadAddress > 0);
-            if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
+            if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out _))
             {
                 // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
                 for (; ; Thread.Yield())
@@ -1425,7 +1706,7 @@ namespace FASTER.core
         {
             long currentReadOnlyAddress = ReadOnlyAddress;
             long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
-            long desiredReadOnlyAddress = (pageAlignedTailAddress - ReadOnlyLagAddress);
+            long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyLagAddress;
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out long oldReadOnlyAddress))
             {
                 // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
@@ -1546,7 +1827,7 @@ namespace FASTER.core
             TailPageOffset.Offset = (int)offsetInPage;
 
             // Allocate current page if necessary
-            var pageIndex = (TailPageOffset.Page % BufferSize);
+            var pageIndex = TailPageOffset.Page % BufferSize;
             if (!IsAllocated(pageIndex))
                 AllocatePage(pageIndex);
 
@@ -1587,7 +1868,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// 
-        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext<Key, Value> context)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1611,7 +1892,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Read record to memory - simple version
+        /// Read record to memory - simple read context version
         /// </summary>
         /// <param name="fromLogical"></param>
         /// <param name="numBytes"></param>
@@ -1717,7 +1998,7 @@ namespace FASTER.core
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
                 uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+                long adjustedUntilAddress = AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask);
 
                 if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
                 {
@@ -1911,17 +2192,7 @@ namespace FASTER.core
             }
         }
 
-        /// <summary>
-        /// Async get from disk
-        /// </summary>
-        /// <param name="fromLogical"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="context"></param>
-        /// <param name="result"></param>
-        public void AsyncGetFromDisk(long fromLogical,
-                              int numBytes,
-                              AsyncIOContext<Key, Value> context,
-                              SectorAlignedMemory result = default)
+        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
         {
             if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
@@ -1934,7 +2205,7 @@ namespace FASTER.core
             }
 
             if (result == null)
-                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context);
+                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, ref context);
             else
                 AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
         }
@@ -1942,12 +2213,9 @@ namespace FASTER.core
         private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
-            {
-                logger?.LogError($"AsyncGetFromDiskCallback error: {errorCode}");
-            }
+                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;
-
             var ctx = result.context;
             try
             {
@@ -1955,39 +2223,31 @@ namespace FASTER.core
                 int requiredBytes = GetRequiredRecordSize((long)record, ctx.record.available_bytes);
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
-                    // We have the complete record.
-                    if (RetrievedFullRecord(record, ref ctx))
+                    // We have all the required bytes. If we don't have the complete record, RetrievedFullRecord calls AsyncGetFromDisk.
+                    if (!RetrievedFullRecord(record, ref ctx))
+                        return;
+
+                    // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
+                    if (ctx.request_key is not null && !comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
                     {
-                        // ReadAtAddress does not have a request key, so it is an implicit match.
-                        if (ctx.request_key is null || comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
+                        // Keys don't match so request the previous record in the chain if it is in the range to resolve.
+                        ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
+                        if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                         {
-                            // The keys are same, so I/O is complete
-                            // ctx.record = result.record;
-                            if (ctx.callbackQueue != null)
-                                ctx.callbackQueue.Enqueue(ctx);
-                            else
-                                ctx.asyncOperation.TrySetResult(ctx);
-                        }
-                        else
-                        {
-                            // Keys are not same. I/O is not complete. Follow the chain to the previous record and issue a request for it if
-                            // it is in the range to resolve, else surface "not found".
-                            ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
-                            if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
-                            {
-                                ctx.record.Return();
-                                ctx.record = ctx.objBuffer = default;
-                                AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
-                            }
-                            else
-                            {
-                                if (ctx.callbackQueue != null)
-                                    ctx.callbackQueue.Enqueue(ctx);
-                                else
-                                    ctx.asyncOperation.TrySetResult(ctx);
-                            }
+                            ctx.record.Return();
+                            ctx.record = ctx.objBuffer = default;
+                            AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
+                            return;
                         }
                     }
+
+                    // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
+                    if (ctx.completionEvent is not null)
+                        ctx.completionEvent.Set(ref ctx);
+                    else if (ctx.callbackQueue is not null)
+                        ctx.callbackQueue.Enqueue(ctx);
+                    else
+                        ctx.asyncOperation.TrySetResult(ctx);
                 }
                 else
                 {
@@ -1997,7 +2257,10 @@ namespace FASTER.core
             }
             catch (Exception e)
             {
-                if (ctx.asyncOperation != null)
+                logger?.LogError(e, "AsyncGetFromDiskCallback error");
+                if (ctx.completionEvent is not null)
+                    ctx.completionEvent.SetException(e);
+                else if (ctx.asyncOperation is not null)
                     ctx.asyncOperation.TrySetException(e);
                 else
                     throw;

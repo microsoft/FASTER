@@ -146,6 +146,19 @@ namespace FASTER.core
                 RecoverFiles();
         }
 
+        /// <inheritdoc />
+        public override void Reset()
+        {
+            while (logHandles.Count > 0)
+            {
+                foreach (var handle in logHandles)
+                {
+                    logHandles.TryRemove(handle.Key, out _);
+                    handle.Value.Dispose();
+                }
+            }
+        }
+
         private void RecoverFiles()
         {
             FileInfo fi = new(FileName); // may not exist
@@ -366,10 +379,7 @@ namespace FASTER.core
                 _callback((uint)errorCode, num_bytes, nativeOverlapped);
                 return true;
             }
-            else
-            {
-                return false;
-            }
+            return false;
         }
 
         /// <inheritdoc/>
@@ -380,10 +390,13 @@ namespace FASTER.core
             return size;
         }
 
+        private SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort)
+            => CreateHandle(segmentId, disableFileBuffering, deleteOnClose, preallocateFile, segmentSize, fileName, ioCompletionPort, OmitSegmentIdFromFileName);
+
         /// <summary>
         /// Creates a SafeFileHandle for the specified segment. This can be used by derived classes to prepopulate logHandles in the constructor.
         /// </summary>
-        protected internal static SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort)
+        protected internal static SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort, bool omitSegmentId = false)
         {
             uint fileAccess = Native32.GENERIC_READ | Native32.GENERIC_WRITE;
             uint fileShare = unchecked(((uint)FileShare.ReadWrite & ~(uint)FileShare.Inheritable));
@@ -392,19 +405,19 @@ namespace FASTER.core
 
             if (disableFileBuffering)
             {
-                fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
+                fileFlags |= Native32.FILE_FLAG_NO_BUFFERING;
             }
 
             if (deleteOnClose)
             {
-                fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
+                fileFlags |= Native32.FILE_FLAG_DELETE_ON_CLOSE;
 
                 // FILE_SHARE_DELETE allows multiple FASTER instances to share a single log directory and each can specify deleteOnClose.
                 // This will allow the files to persist until all handles across all instances have been closed.
-                fileShare = fileShare | Native32.FILE_SHARE_DELETE;
+                fileShare |= Native32.FILE_SHARE_DELETE;
             }
 
-            string segmentFileName = GetSegmentName(fileName, segmentId);
+            string segmentFileName = GetSegmentFilename(fileName, segmentId, omitSegmentId);
             var logHandle = Native32.CreateFileW(
                 segmentFileName,
                 fileAccess, fileShare,
@@ -443,19 +456,11 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Static method to construct segment name
-        /// </summary>
-        protected static string GetSegmentName(string fileName, int segmentId)
-        {
-            return fileName + "." + segmentId;
-        }
-
-        /// <summary>
         ///
         /// </summary>
         /// <param name="segmentId"></param>
         /// <returns></returns>
-        protected string GetSegmentName(int segmentId) => GetSegmentName(FileName, segmentId);
+        protected string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
         /// <summary>
         /// 
