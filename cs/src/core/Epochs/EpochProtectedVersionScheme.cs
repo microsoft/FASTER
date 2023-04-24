@@ -417,7 +417,7 @@ namespace FASTER.core
             }
 
             // Otherwise, need to check that we are not a duplicate attempt to increment version
-            if (stateMachine.ToVersion() != -1 && currentMachine.actualToVersion >= stateMachine.ToVersion())
+            if (stateMachine.ToVersion() != -1 && actualStateMachine.actualToVersion >= stateMachine.ToVersion())
                 return StateMachineExecutionStatus.FAIL;
 
             return StateMachineExecutionStatus.RETRY;
