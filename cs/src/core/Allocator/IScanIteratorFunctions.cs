@@ -14,7 +14,11 @@ namespace FASTER.core
         /// <param name="beginAddress">Start address of the scan</param>
         /// <param name="endAddress">End address of the scan; if iterating key versions, this is <see cref="Constants.kInvalidAddress"/></param>
         /// <returns>True to continue iteration, else false</returns>
-        bool OnStart(long beginAddress, long endAddress);
+        bool OnStart(long beginAddress, long endAddress)
+#if NETSTANDARD2_1 || NET
+            => true
+#endif
+            ;
 
         /// <summary>Next record in iteration for a record not in mutable log memory.</summary>
         /// <param name="key">Reference to the current record's key</param>
@@ -35,12 +39,22 @@ namespace FASTER.core
         /// <summary>Iteration is complete.</summary>
         /// <param name="completed">If true, the iteration completed; else scanFunctions.*Reader() returned false to stop the iteration.</param>
         /// <param name="numberOfRecords">The number of records returned before the iteration stopped.</param>
-        void OnStop(bool completed, long numberOfRecords);
+        void OnStop(bool completed, long numberOfRecords)
+#if NETSTANDARD2_1 || NET
+        { }
+#else
+            ;
+#endif
 
         /// <summary>An exception was thrown on iteration (likely during <see name="SingleReader"/> or <see name="ConcurrentReader"/>.</summary>
         /// <param name="exception">The exception that was thrown.</param>
         /// <param name="numberOfRecords">The number of records returned, including the current one, before the exception.</param>
-        void OnException(Exception exception, long numberOfRecords);
+        void OnException(Exception exception, long numberOfRecords)
+#if NETSTANDARD2_1 || NET
+        { }
+#else
+            ;
+#endif
     }
 
     internal interface IPushScanIterator<Key>
