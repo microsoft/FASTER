@@ -6,7 +6,8 @@ using System;
 namespace FASTER.core
 {
     /// <summary>
-    /// Lightweight iterator for memory page (copied to buffer). GetNext() can be used outside epoch protection but ctor must be called within epoch protection.
+    /// Lightweight iterator for memory page (copied to buffer). GetNext() can be used outside epoch protection and locking,
+    /// but ctor must be called within epoch protection.
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
