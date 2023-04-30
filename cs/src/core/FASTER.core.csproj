@@ -5,7 +5,6 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <Platforms>AnyCPU;x64</Platforms>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
@@ -15,54 +14,18 @@
     <AssemblyName>FASTER.core</AssemblyName>
     <ErrorReport>prompt</ErrorReport>
     <SignAssembly>true</SignAssembly>
-    <ApplicationIcon />
     <OutputType>Library</OutputType>
-    <StartupObject />
     <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
-	<EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <DefineConstants>DEBUG</DefineConstants>
-    <DebugType>full</DebugType>
-    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
-  </PropertyGroup>
-  
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DefineConstants></DefineConstants>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\$(Platform)\Release\</OutputPath>
-  </PropertyGroup>
-  
-  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net6.0|AnyCPU'&#xD;&#xA;				 Or '$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net7.0|AnyCPU'">
-    <WarningsAsErrors>;NU1605</WarningsAsErrors>
-  </PropertyGroup>
-  
-  <ItemGroup>
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
-	<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-  </ItemGroup>
-  
-  <ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.1'">
-    <PackageReference Include="System.Memory" Version="4.5.5" />
-    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="7.0.0" />
-    <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
-  </ItemGroup>
 
-  <Choose>
-	<When Condition="'$(TargetFramework)' == 'netstandard2.0' Or '$(TargetFramework)' == 'netstandard2.1'">
-      <ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.Logging" Version="3.1.26" />
-	  </ItemGroup>
-	</When>
-    <Otherwise>
-	  <ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.Logging" Version="7.0.0" />
-	  </ItemGroup>
-	</Otherwise>
-  </Choose>
+  <ItemGroup>
+    <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
+  </ItemGroup>
 
 </Project>
