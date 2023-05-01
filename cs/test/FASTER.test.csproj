@@ -30,7 +30,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\src\core\FASTER.core.csproj" />
-    <ProjectReference
-      Include="..\src\devices\AzureStorageDevice\FASTER.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\src\devices\AzureStorageDevice\FASTER.devices.AzureStorageDevice.csproj" />
   </ItemGroup>
 </Project>
