@@ -313,7 +313,6 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     while (!eviction_in_progress.load()) {
       std::this_thread::yield();
     }
-    ++threads_evicting;
   }
   assert(eviction_in_progress.load());
 
