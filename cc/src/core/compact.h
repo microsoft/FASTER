@@ -35,6 +35,7 @@ struct ConcurrentCompactionThreadsContext {
     : iter{ nullptr }
     , to_other_store{ false } {
       active_threads.store(0);
+      pages_available.store(false);
   }
   // non-copyable
   ConcurrentCompactionThreadsContext(const ConcurrentCompactionThreadsContext&) = delete;
@@ -52,6 +53,7 @@ struct ConcurrentCompactionThreadsContext {
   ConcurrentLogPageIterator<F>* iter;
   std::deque<std::atomic<bool>> thread_finished;
   std::atomic<uint16_t> active_threads;
+  std::atomic<bool> pages_available;
   bool to_other_store;
 };
 
@@ -132,12 +134,12 @@ class CompactionConditionalInsertContext : public IAsyncContext {
     memcpy(&dest->value(), &record()->value(), value_size());
   }
   inline bool PutAtomic(void *rec) {
-    // Cannot guarrantee atomic upsert
+    // Cannot guarantee atomic upsert
     return false; // enforce fallback to RCU
   }
 
   /// Invoked from within callback
-  // Retrieve the correct entry in records_info data strcture
+  // Retrieve the correct entry in records_info data structure
   inline Address record_address() const {
     return address_;
   }

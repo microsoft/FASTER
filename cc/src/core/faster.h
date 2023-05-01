@@ -283,11 +283,8 @@ class FasterKv {
   OperationStatus InternalContinuePendingConditionalInsert(ExecutionContext& ctx,
       AsyncIOContext& io_context);
 
-  //template<class F>
-  //inline void InternalCompact(CompactionThreadsContext<F>* ct_ctx,
-  //                            bool to_other_store, int thread_idx);
   template<class F>
-  inline void InternalCompact(int thread_id);
+  inline void InternalCompact(int thread_id, uint32_t max_records);
 
   template<class C>
   inline Address TraceBackForKeyMatchCtxt(const C& ctxt, Address from_address,
@@ -352,6 +349,7 @@ class FasterKv {
   void GrowIndexBlocking();
 
   /// Compaction/Garbage collect methods
+  inline void CompactRecords();
   Address LogScanForValidity(Address from, faster_t* temp);
   bool ContainsKeyInMemory(IndexContext<key_t, value_t> key, Address offset);
 
@@ -445,6 +443,10 @@ class FasterKv {
   std::thread compaction_thread_;
   std::atomic<bool> auto_compaction_active_;
   std::atomic<bool> auto_compaction_scheduled_;
+
+ public:
+  // Hard limit of log size
+  uint64_t max_hlog_size_;
 
 
 #ifdef STATISTICS
@@ -777,16 +779,6 @@ inline Status FasterKv<K, V, D, H, OH>::Upsert(UC& context, AsyncCallback callba
                 "value_t is not a base class of upsert_context_t::value_t");
   static_assert(alignof(value_t) == alignof(typename upsert_context_t::value_t),
                 "alignof(value_t) != alignof(typename upsert_context_t::value_t)");
-
-  if (block_inserts_while_compacting_) {
-    while(next_hlog_begin_address_.load() != Address::kInvalidAddress) {
-      CompletePending(false);
-      if (other_store_ != nullptr && other_store_->epoch_.IsProtected()) {
-        other_store_->CompletePending(false);
-      }
-      std::this_thread::yield();
-    }
-  }
 
   pending_upsert_context_t pending_context{ context, callback };
   OperationStatus internal_status = InternalUpsert(pending_context);
@@ -1289,6 +1281,10 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   if(thread_ctx().phase != Phase::REST) {
     HeavyEnter();
   }
+  if (next_hlog_begin_address_.load() != Address::kInvalidAddress) {
+    CompactRecords();
+  }
+
   // Stamp request (if not stamped already)
   pending_context.try_stamp_request(thread_ctx().phase, thread_ctx().version);
 
@@ -1474,6 +1470,10 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
   if(phase != Phase::REST) {
     HeavyEnter();
   }
+  if (next_hlog_begin_address_.load() != Address::kInvalidAddress) {
+    CompactRecords();
+  }
+
   // Stamp request (if not stamped already)
   pending_context.try_stamp_request(thread_ctx().phase, thread_ctx().version);
 
@@ -3428,13 +3428,14 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 
   ConcurrentLogPageIterator<faster_t> iter(&hlog, &disk, &epoch_, hlog.begin_address.load(), Address(until_address));
   compaction_context_.Initialize(&iter, n_threads-1, to_other_store);
+  compaction_context_.pages_available.store(true);
 
   // Spawn the threads first
   for (size_t idx = 0; idx < n_threads-1; ++idx) {
-    threads.emplace_back(&FasterKv<K, V, D, H, OH>::InternalCompact<faster_t>, this, idx);
-    //threads[idx].detach();
+    threads.emplace_back(
+      &FasterKv<K, V, D, H, OH>::InternalCompact<faster_t>, this, idx, std::numeric_limits<uint32_t>::max());
   }
-  InternalCompact<faster_t>(-1); // participate in the compaction
+  InternalCompact<faster_t>(-1, std::numeric_limits<uint32_t>::max()); // participate in the compaction
 
   // Wait for threads
   // NOTE: since we have an active session, we *must* periodically refresh
@@ -3456,7 +3457,8 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     }
     std::this_thread::yield();
   }
-  assert(remaining == 0);
+  assert(remaining == 0 && compaction_context_.active_threads.load() == 0);
+
 
   if (checkpoint) {
     // index checkpoint
@@ -3600,7 +3602,7 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 
 template <class K, class V, class D, class H, class OH>
 template <class F>
-inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id) {
+inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id, uint32_t max_records) {
   static constexpr uint32_t kRefreshInterval = 64;
   static constexpr uint32_t kCompletePendingInterval = 512;
 
@@ -3640,9 +3642,11 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id) {
   uint32_t old_page = Address::kMaxPage;
 
   size_t num_iter = 0;
+  uint32_t records_processed = 0;
   bool pages_available = true;
   while(true) {
-    if (!pages_available) {
+    bool finished = !pages_available || (records_processed >= max_records);
+    if (finished) {
       goto complete_pending;
     }
 
@@ -3652,6 +3656,11 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id) {
     }
 
     if (record == nullptr || page == nullptr) {
+      if(!compaction_context_.pages_available.load()) {
+        pages_available = false;
+        continue;
+      }
+
       // Try to get next page
       while (pages_available) {
         Refresh();
@@ -3666,6 +3675,10 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id) {
         }
         std::this_thread::yield();
       }
+      if (!pages_available) {
+        compaction_context_.pages_available.store(false);
+      }
+
       continue;
     }
 
@@ -3681,6 +3694,7 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id) {
       pending_records.insert(record_address.control());
 
       // Insert record if not exists already in (recordAddress, tailAddress] range
+      ++records_processed;
       ci_context_t ci_context{ record, record_address, &pending_records };
       Status status = ConditionalInsert(ci_context, ci_callback,
                                         record_address, to_other_store);
@@ -3716,7 +3730,7 @@ complete_pending:
     }
 
     ++num_iter;
-    if (!pages_available && pending_records.empty()) {
+    if (finished && pending_records.empty()) {
       // no more records to compact && no callbacks pending
       break;
     }
@@ -4048,6 +4062,30 @@ create_record:
   }
 }
 
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::CompactRecords() {
+  constexpr static uint32_t kCompactionMaxRecords = 32;
+
+  if (compaction_context_.pages_available.load()) {
+    InternalCompact<faster_t>(-1, kCompactionMaxRecords);
+  }
+  if (Size() < max_hlog_size_) {
+    return;
+  }
+
+  log_warn("Max hlog size reached -> throttling active...");
+  while(Size() >= max_hlog_size_) {
+    Refresh();
+    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+    if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
+
+    if (compaction_context_.pages_available.load()) {
+      InternalCompact<faster_t>(-1, std::numeric_limits<uint32_t>::max());
+    }
+  }
+  log_warn("Stopped throttling!");
+}
+
 /// When invoked, compacts the hybrid-log between the begin address and a
 /// passed in offset (`untilAddress`).
 template <class K, class V, class D, class H, class OH>
@@ -4228,6 +4266,8 @@ template <class K, class V, class D, class H, class OH>
 void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
   uint64_t hlog_size_threshold = static_cast<uint64_t>(
     compaction_config_.hlog_size_budget * compaction_config_.trigger_perc);
+
+  max_hlog_size_ = compaction_config_.hlog_size_budget;
 
   while (auto_compaction_active_.load()) {
     if (Size() < hlog_size_threshold) {

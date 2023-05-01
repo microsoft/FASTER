@@ -571,6 +571,10 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
   HlogCompactionConfig& hot_compaction_config = hc_compaction_config_.hot_store;
   HlogCompactionConfig& cold_compaction_config = hc_compaction_config_.cold_store;
 
+  // Used for throttling incoming user writes when respective max hlog size has been reached
+  hot_store.max_hlog_size_ = hot_compaction_config.hlog_size_budget;
+  cold_store.max_hlog_size_ = cold_compaction_config.hlog_size_budget;
+
   uint64_t hot_log_size_threshold = static_cast<uint64_t>(
     hot_compaction_config.hlog_size_budget * hot_compaction_config.trigger_perc);
   uint64_t cold_log_size_threshold = static_cast<uint64_t>(
