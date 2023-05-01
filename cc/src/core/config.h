@@ -35,9 +35,9 @@ struct HlogCompactionConfig {
 
 struct HCCompactionConfig {
   HlogCompactionConfig hot_store{
-    250ms, 0.8, 0.2, 256_MiB, 1_GiB, 4, true };
+    250ms, 0.8, 0.2, 512_MiB, 1_GiB, 4, true };
   HlogCompactionConfig cold_store{
-    250ms, 0.9, 0.1, 1_GiB, 8_GiB, 4, true };
+    250ms, 0.9, 0.1, 256_MiB, 8_GiB, 4, true };
 };
 
 }
