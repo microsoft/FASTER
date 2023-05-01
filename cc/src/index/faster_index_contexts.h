@@ -1,3 +1,5 @@
+#pragma once
+
 #include "../core/async.h"
 #include "../core/async_result_types.h"
 #include "../core/utility.h"
@@ -46,13 +48,23 @@ struct alignas(Constants::kCacheLineBytes) HashIndexChunkEntry {
     return static_cast<uint32_t>(sizeof(HashIndexChunkEntry));
   }
   /// Number of entries per bucket
-  //static constexpr uint32_t kNumEntries = 64;
-  static constexpr uint32_t kNumEntries = 8;
+  //static constexpr uint32_t kNumEntries = 64;   // 4096B
+  //static constexpr uint32_t kNumEntries = 32;   // 2048B
+  //static constexpr uint32_t kNumEntries = 16;   // 1024B
+  //static constexpr uint32_t kNumEntries = 8;    //  512B
+  static constexpr uint32_t kNumEntries = 4;    //  256B
+  //static constexpr uint32_t kNumEntries = 2;    //  128B
+  //static constexpr uint32_t kNumEntries = 1;    //  64B
   /// The entries.
   ColdLogIndexHashBucket entries[kNumEntries];
 };
 //static_assert(sizeof(HashIndexChunkEntry) == 4096, "sizeof(HashIndexChunkEntry) != 4kB");
-static_assert(sizeof(HashIndexChunkEntry) == 512, "sizeof(HashIndexChunkEntry) != 512B");
+//static_assert(sizeof(HashIndexChunkEntry) == 2048, "sizeof(HashIndexChunkEntry) != 2kB");
+//static_assert(sizeof(HashIndexChunkEntry) == 1024, "sizeof(HashIndexChunkEntry) != 1kB");
+//static_assert(sizeof(HashIndexChunkEntry) == 512, "sizeof(HashIndexChunkEntry) != 512B");
+static_assert(sizeof(HashIndexChunkEntry) == 256, "sizeof(HashIndexChunkEntry) != 256B");
+//static_assert(sizeof(HashIndexChunkEntry) == 128, "sizeof(HashIndexChunkEntry) != 128B");
+//static_assert(sizeof(HashIndexChunkEntry) == 64, "sizeof(HashIndexChunkEntry) != 64B");
 
 enum class HashIndexOp : uint8_t {
   FIND_ENTRY = 0,
@@ -176,7 +188,7 @@ class FasterIndexReadContext : public FasterIndexContext {
 };
 
 /// Used by FindOrCreateEntry, TryUpdateEntry & UpdateEntry hash index methods
-/// NOTE: force argument distingishes between the update-related methods
+/// NOTE: force argument distinguishes between the update-related methods
 class FasterIndexRmwContext : public FasterIndexContext {
  public:
   FasterIndexRmwContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
@@ -253,9 +265,9 @@ class FasterIndexRmwContext : public FasterIndexContext {
       }
     } else { // FindOrCreateEntry
       assert(desired_entry_.address() == Address::kInvalidAddress);
-      bool sucess = atomic_entry->compare_exchange_strong(local_expected_entry, desired_entry_);
+      bool success = atomic_entry->compare_exchange_strong(local_expected_entry, desired_entry_);
       // update entry with latest bucket value
-      entry = sucess ? desired_entry_ : local_expected_entry;
+      entry = success ? desired_entry_ : local_expected_entry;
       result = Status::Ok;
     }
     // NOTE: this->entry has the most recent value of atomic_entry
