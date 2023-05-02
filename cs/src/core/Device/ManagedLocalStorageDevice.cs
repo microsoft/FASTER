@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -64,10 +65,13 @@ namespace FASTER.core
             {
                 foreach (var entry in logHandles)
                 {
-                    entry.Value.Item1.Dispose();
-                    entry.Value.Item2.Dispose();
-                    if (deleteOnClose)
-                        File.Delete(GetSegmentName(entry.Key));
+                    if (logHandles.TryRemove(entry.Key, out _))
+                    {
+                        entry.Value.Item1.Dispose();
+                        entry.Value.Item2.Dispose();
+                        if (deleteOnClose)
+                            File.Delete(GetSegmentName(entry.Key));
+                    }
                 }
             }
         }
