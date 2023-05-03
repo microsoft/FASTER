@@ -71,7 +71,39 @@ namespace FASTER.core
             if (fasterSession.Ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && fasterSession.Ctx.version == newPhaseInfo.Version)
                 return;
 
-            ThreadStateMachineStep(fasterSession.Ctx, fasterSession, default);
+            while (true)
+            {
+                ThreadStateMachineStep(fasterSession.Ctx, fasterSession, default);
+
+                // In prepare phases, after draining out ongoing multi-key ops, we may spin and get threads to
+                // reach the next version before proceeding
+
+                // If CheckpointVersionSwitchBarrier is set, then:
+                //   If system is in PREPARE phase AND all multi-key ops have drained (NumActiveLockingSessions == 0):
+                //      Then (PREPARE, v) threads will SPIN during Refresh until they are in (IN_PROGRESS, v+1).
+                //
+                //   That way no thread can work in the PREPARE phase while any thread works in IN_PROGRESS phase.
+                //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS, v+1) if all threads
+                //   have reached PREPARE and all multi-key ops have drained (see VersionChangeTask.OnThreadState).
+                if (CheckpointVersionSwitchBarrier &&
+                    fasterSession.Ctx.phase == Phase.PREPARE &&
+                    hlog.NumActiveLockingSessions == 0)
+                {
+                    epoch.ProtectAndDrain();
+                    Thread.Yield();
+                    continue;
+                }
+
+                if (fasterSession.Ctx.phase == Phase.PREPARE_GROW &&
+                    hlog.NumActiveLockingSessions == 0)
+                {
+                    epoch.ProtectAndDrain();
+                    Thread.Yield();
+                    continue;
+                }
+                break;
+            }
+
         }
 
         internal static void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)

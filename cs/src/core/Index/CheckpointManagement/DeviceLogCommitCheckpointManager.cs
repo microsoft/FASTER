@@ -484,5 +484,10 @@ namespace FASTER.core
 
             pbuffer.Return();
         }
+
+        /// <inheritdoc />
+        public void CheckpointVersionShift(long oldVersion, long newVersion)
+        {
+        }
     }
 }

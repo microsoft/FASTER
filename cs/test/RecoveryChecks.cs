@@ -33,7 +33,7 @@ namespace FASTER.test.recovery
             }
 
             path = TestUtils.MethodTestDir + "/";
-            log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: false);
             TestUtils.RecreateDirectory(path);
         }
 
@@ -286,6 +286,140 @@ namespace FASTER.test.recovery
                 }
                 s2.CompletePending(true);
             }
+        }
+
+        [Test]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        public void RecoveryRollback([Values] CheckpointType checkpointType)
+        {
+            using var fht1 = new FasterKV<long, long>
+                (128,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 11, SegmentSizeBits = 11 },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                );
+
+            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
+
+            for (long key = 0; key < 1000; key++)
+            {
+                s1.Upsert(ref key, ref key);
+            }
+
+            var task = fht1.TakeHybridLogCheckpointAsync(checkpointType);
+            (bool success, Guid token) = task.AsTask().GetAwaiter().GetResult();
+            Assert.IsTrue(success);
+
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.Found, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
+            }
+            s1.CompletePendingWithOutputs(out var completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.Found);
+                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+            }
+            completedOutputs.Dispose();
+
+            for (long key = 1000; key < 2000; key++)
+            {
+                s1.Upsert(ref key, ref key);
+            }
+
+            // Reset store to empty state
+            fht1.Reset();
+
+            for (long key = 0; key < 2000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.NotFound, $"status = {status}");
+                }
+            }
+            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.NotFound);
+            }
+            completedOutputs.Dispose();
+
+            // Rollback to previous checkpoint
+            fht1.Recover(default, token);
+
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.Found, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
+            }
+            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.Found);
+                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+            }
+            completedOutputs.Dispose();
+
+            for (long key = 1000; key < 2000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.NotFound, $"status = {status}");
+                }
+            }
+            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.NotFound);
+            }
+            completedOutputs.Dispose();
+
+            for (long key = 1000; key < 2000; key++)
+            {
+                s1.Upsert(ref key, ref key);
+            }
+
+            for (long key = 0; key < 2000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.Found, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
+                else
+                {
+                    s1.CompletePendingWithOutputs(out completedOutputs, true);
+                    while (completedOutputs.Next())
+                    {
+                        Assert.IsTrue(completedOutputs.Current.Status.Found);
+                        Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                    }
+                    completedOutputs.Dispose();
+                }
+            }
+            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.Found);
+                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+            }
+            completedOutputs.Dispose();
         }
     }
 

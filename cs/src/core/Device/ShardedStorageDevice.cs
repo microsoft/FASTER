@@ -154,13 +154,14 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// <see cref="IDevice.Initialize(long, LightEpoch)"/>
+        /// <see cref="IDevice.Initialize(long, LightEpoch, bool)"/>
         /// </summary>
         /// <param name="segmentSize"></param>
         /// <param name="epoch"></param>
-        public override void Initialize(long segmentSize, LightEpoch epoch)
+        /// <param name="omitSegmentIdFromFilename"></param>
+        public override void Initialize(long segmentSize, LightEpoch epoch, bool omitSegmentIdFromFilename = false)
         {
-            base.Initialize(segmentSize, epoch);
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
 
             for (int i = 0; i < partitions.Devices.Count; i++)
             {

@@ -256,6 +256,71 @@ namespace FASTER.test
             Assert.AreEqual(numEntries, counter.count);
         }
 
+        [Test]
+        [Category("FasterLog")]
+        public async ValueTask FasterLogTest2([Values] LogChecksumType logChecksum)
+        {
+            var iteratorType = IteratorType.Sync;
+
+            device = Devices.CreateLogDevice(path + "fasterlog.log", deleteOnClose: true);
+            var logSettings = new FasterLogSettings
+            { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
+            log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
+
+            log.Initialize(1000000L, 323);
+
+            log.Commit(true);
+
+            byte[] entry = new byte[entryLength];
+            for (int i = 0; i < entryLength; i++)
+                entry[i] = (byte)i;
+
+            for (int i = 0; i < numEntries; i++)
+            {
+                log.Enqueue(entry);
+            }
+
+            log.Commit(true);
+
+            // If endAddress > log.TailAddress then GetAsyncEnumerable() will wait until more entries are added.
+            var endAddress = IsAsync(iteratorType) ? log.TailAddress : long.MaxValue;
+            using var iter = log.Scan(0, endAddress);
+            var counter = new Counter(log);
+            switch (iteratorType)
+            {
+                case IteratorType.AsyncByteVector:
+                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                    {
+                        Assert.IsTrue(result.SequenceEqual(entry));
+                        counter.IncrementAndMaybeTruncateUntil(nextAddress);
+                    }
+
+                    break;
+                case IteratorType.AsyncMemoryOwner:
+                    await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter
+                                       .GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                    {
+                        Assert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
+                        result.Dispose();
+                        counter.IncrementAndMaybeTruncateUntil(nextAddress);
+                    }
+
+                    break;
+                case IteratorType.Sync:
+                    while (iter.GetNext(out byte[] result, out _, out _))
+                    {
+                        Assert.IsTrue(result.SequenceEqual(entry));
+                        counter.IncrementAndMaybeTruncateUntil(iter.NextAddress);
+                    }
+
+                    break;
+                default:
+                    Assert.Fail("Unknown IteratorType");
+                    break;
+            }
+
+            Assert.AreEqual(numEntries, counter.count);
+        }
 
         internal class TestConsumer : ILogEntryConsumer
         {

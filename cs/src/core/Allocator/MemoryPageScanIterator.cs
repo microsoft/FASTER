@@ -3,13 +3,11 @@
 
 using System;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
-
 namespace FASTER.core
 {
     /// <summary>
-    /// Lightweight iterator for memory page (copied to buffer).
-    /// Can be used outside epoch protection.
+    /// Lightweight iterator for memory page (copied to buffer). GetNext() can be used outside epoch protection and locking,
+    /// but ctor must be called within epoch protection.
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
@@ -20,7 +18,6 @@ namespace FASTER.core
         readonly int recordSize;
         readonly int start, end;
         int offset;
-        
 
         public MemoryPageScanIterator(Record<Key, Value>[] page, int start, int end, long pageStartAddress, int recordSize)
         {
@@ -45,10 +42,8 @@ namespace FASTER.core
         {
         }
 
-        public ref Key GetKey()
-        {
-            return ref page[offset].key;
-        }
+        public ref Key GetKey() => ref page[offset].key;
+        public ref Value GetValue() => ref page[offset].value;
 
         public bool GetNext(out RecordInfo recordInfo)
         {
@@ -82,11 +77,6 @@ namespace FASTER.core
                 value = default;
             }
             return r;
-        }
-
-        public ref Value GetValue()
-        {
-            return ref page[offset].value;
         }
 
         /// <inheritdoc/>

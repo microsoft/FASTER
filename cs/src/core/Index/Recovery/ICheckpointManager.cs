@@ -59,6 +59,13 @@ namespace FASTER.core
         void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
+        /// Callback to indicate version shift during checkpoint
+        /// </summary>
+        /// <param name="oldVersion"></param>
+        /// <param name="newVersion"></param>
+        void CheckpointVersionShift(long oldVersion, long newVersion);
+
+        /// <summary>
         /// Commit log incremental checkpoint (incremental snapshot)
         /// </summary>
         /// <param name="logToken"></param>
