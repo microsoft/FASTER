@@ -82,7 +82,8 @@ namespace FASTER.devices
         /// </param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="logger">Logger</param>
-        public AzureStorageDevice(string connectionString, string containerName, string directoryName, string blobName, IBlobManager blobManager = null, bool underLease = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, ILogger logger = null)
+        public AzureStorageDevice(string connectionString, string containerName, string directoryName, string blobName, IBlobManager blobManager = null, bool underLease = false, 
+                                  bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, ILogger logger = null)
             : base($"{connectionString}/{containerName}/{directoryName}/{blobName}", PAGE_BLOB_SECTOR_SIZE, capacity)
         {
             var pageBlobAccount = BlobUtilsV12.GetServiceClients(connectionString);
@@ -248,10 +249,7 @@ namespace FASTER.devices
         /// </summary>
         internal IBlobManager BlobManager { get; set; }
 
-        string GetSegmentBlobName(int segmentId)
-        {
-            return $"{this.blobName}.{segmentId}";
-        }
+        string GetSegmentBlobName(int segmentId) => GetSegmentFilename(this.blobName, segmentId);
 
         internal void DetectHangs(object _)
         {

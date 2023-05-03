@@ -67,9 +67,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segmentSize"></param>
         /// <param name="epoch">
+        /// <param name="omitSegmentIdFromFilename"></param>
         /// The instance of the epoch protection framework to use, if needed
         /// </param>
-        void Initialize(long segmentSize, LightEpoch epoch = null);
+        void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false);
 
         /// <summary>
         /// Try complete async IO completions
@@ -181,6 +182,11 @@ namespace FASTER.core
         /// <param name="segment"></param>
         /// <returns></returns>
         long GetFileSize(int segment);
+
+        /// <summary>
+        /// Reset the device (close and forget open handles)
+        /// </summary>
+        void Reset();
     }
 
     /// <summary>

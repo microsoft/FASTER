@@ -50,8 +50,8 @@ namespace FASTER.core
 
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
-            if (fasterSession.Ctx.phase != Phase.REST)
-                HeavyEnter(stackCtx.hei.hash, fasterSession.Ctx, fasterSession);
+            if (fasterSession.Ctx.phase == Phase.IN_PROGRESS_GROW)
+                SplitBuckets(stackCtx.hei.hash);
 
             FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
             stackCtx.SetRecordSourceToHashEntry(hlog);

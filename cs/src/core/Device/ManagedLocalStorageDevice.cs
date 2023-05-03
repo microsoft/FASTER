@@ -58,6 +58,21 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
+        public override void Reset()
+        {
+            while (logHandles.Count > 0)
+            {
+                foreach (var entry in logHandles)
+                {
+                    entry.Value.Item1.Dispose();
+                    entry.Value.Item2.Dispose();
+                    if (deleteOnClose)
+                        File.Delete(GetSegmentName(entry.Key));
+                }
+            }
+        }
+
+        /// <inheritdoc />
         // We do not throttle ManagedLocalStorageDevice because our AsyncPool of handles takes care of this
         public override bool Throttle() => false;
 
@@ -470,11 +485,7 @@ namespace FASTER.core
             pool.Free();
         }
 
-
-        private string GetSegmentName(int segmentId)
-        {
-            return FileName + "." + segmentId;
-        }
+        private string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
         private static uint GetSectorSize(string filename)
         {

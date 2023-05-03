@@ -22,9 +22,9 @@ namespace FASTER.test
         [Category("Smoke")]
         public unsafe void VariableLengthTest1()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
 
-            var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
+            var log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
             var fht = new FasterKV<Key, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
@@ -75,16 +75,16 @@ namespace FASTER.test
             s.Dispose();
             fht.Dispose();
             log.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         [Test]
         [Category("FasterKV")]
         public unsafe void VariableLengthTest2()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
 
-            var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
+            var log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
             var fht = new FasterKV<VLValue, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
@@ -146,7 +146,7 @@ namespace FASTER.test
             s.Dispose();
             fht.Dispose();
             log.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
     }
 }

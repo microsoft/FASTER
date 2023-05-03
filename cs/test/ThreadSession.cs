@@ -45,9 +45,14 @@ namespace FASTER.test.statemachine
             ev.WaitOne();
         }
 
-        public void Refresh()
+        public void Refresh(bool waitComplete = true)
         {
-            OtherSession("refresh");
+            OtherSession("refresh", waitComplete);
+        }
+
+        public void CompleteOp()
+        {
+            ev.WaitOne();
         }
 
         public void Dispose()
@@ -83,10 +88,10 @@ namespace FASTER.test.statemachine
             }
         }
 
-        private void OtherSession(string command)
+        private void OtherSession(string command, bool waitComplete = true)
         {
             q.Enqueue(command);
-            ev.WaitOne();
+            if (waitComplete) ev.WaitOne();
         }
     }
 

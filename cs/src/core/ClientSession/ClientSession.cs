@@ -60,7 +60,11 @@ namespace FASTER.core
             {
                 // Checkpoints cannot complete while we have active locking sessions.
                 while (IsInPreparePhase())
+                {
+                    if (fht.epoch.ThisInstanceProtected())
+                        fht.InternalRefresh<Input, Output, Context, InternalFasterSession>(FasterSession);
                     Thread.Yield();
+                }
 
                 fht.IncrementNumLockingSessions();
                 isAcquiredLockable = true;
@@ -377,7 +381,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, ref ReadOptions readOptions,
-                                                                                                 Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default) 
+                                                                                                 Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
             => fht.ReadAsync(this.FasterSession, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
 
         /// <inheritdoc/>
@@ -448,12 +452,12 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => fht.UpsertAsync<Input, Output, Context, InternalFasterSession>(this.FasterSession, ref key, ref input, ref desiredValue, userContext, serialNo, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
 
         /// <inheritdoc/>
@@ -463,7 +467,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0) 
+        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
             => RMW(ref key, ref input, ref output, out _, userContext, serialNo);
 
         /// <inheritdoc/>
@@ -507,7 +511,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
             => fht.RmwAsync<Input, Output, Context, InternalFasterSession>(this.FasterSession, ref key, ref input, context, serialNo, token);
 
         /// <inheritdoc/>
@@ -537,7 +541,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
             => fht.DeleteAsync<Input, Output, Context, InternalFasterSession>(this.FasterSession, ref key, userContext, serialNo, token);
 
         /// <inheritdoc/>
@@ -802,7 +806,7 @@ namespace FASTER.core
         /// <param name="compactUntilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact(long compactUntilAddress, CompactionType compactionType = CompactionType.Scan) 
+        public long Compact(long compactUntilAddress, CompactionType compactionType = CompactionType.Scan)
             => Compact(compactUntilAddress, compactionType, default(DefaultCompactionFunctions<Key, Value>));
 
         /// <summary>
@@ -830,7 +834,7 @@ namespace FASTER.core
         {
             Input input = default;
             Output output = default;
-            return fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType, 
+            return fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType,
                     new SessionVariableLengthStructSettings<Value, Input> { valueLength = variableLengthStruct, inputLength = inputVariableLengthStruct });
         }
 
@@ -897,21 +901,25 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Iterator for all (distinct) live key-values stored in FASTER
+        /// Pull iterator for all (distinct) live key-values stored in FASTER
         /// </summary>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>FASTER iterator</returns>
-        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1)
-        {
-            if (untilAddress == -1)
-                untilAddress = fht.Log.TailAddress;
+        public IFasterScanIterator<Key, Value> Iterate(long untilAddress = -1) 
+            => fht.Iterate<Input, Output, Context, Functions>(functions, untilAddress);
 
-            return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(fht, functions, untilAddress, loggerFactory: loggerFactory);
-        }
+        /// <summary>
+        /// Push iteration of all (distinct) live key-values stored in FASTER
+        /// </summary>
+        /// <param name="scanFunctions">Functions receiving pushed records</param>
+        /// <param name="untilAddress">Report records until this address (tail by default)</param>
+        /// <returns>True if Iteration completed; false if Iteration ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool Iterate<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1) 
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => fht.Iterate<Input, Output, Context, Functions, TScanFunctions>(functions, ref scanFunctions, untilAddress);
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
-        /// Call SuspendThread before any async op
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnsafeResumeThread()
@@ -938,11 +946,11 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Return true if Faster State Machine is in PREPARE sate
+        /// Return true if Faster State Machine is in PREPARE state
         /// </summary>
         internal bool IsInPreparePhase()
         {
-            return this.fht.SystemState.Phase == Phase.PREPARE;
+            return this.fht.SystemState.Phase == Phase.PREPARE || this.fht.SystemState.Phase == Phase.PREPARE_GROW;
         }
 
         #endregion Other Operations
@@ -999,6 +1007,7 @@ namespace FASTER.core
             }
 
             public bool IsManualLocking => false;
+            public FasterKV<Key, Value> Store => _clientSession.fht;
 
             #region IFunctions - Reads
             public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
@@ -1330,35 +1339,35 @@ namespace FASTER.core
             #region Transient locking
             public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DoTransientLocking)
+                if (!Store.DoTransientLocking)
                     return true;
-                if (!_clientSession.fht.LockTable.TryLockTransientExclusive(ref key, ref stackCtx.hei))
+                if (!Store.LockTable.TryLockTransientExclusive(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasTransientLock = true;
             }
 
             public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DoTransientLocking)
+                if (!Store.DoTransientLocking)
                     return true;
-                if (!_clientSession.fht.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
+                if (!Store.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
                     return false;
                 return stackCtx.recSrc.HasTransientLock = true;
             }
 
             public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DoTransientLocking)
+                if (!Store.DoTransientLocking)
                     return;
-                _clientSession.fht.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
+                Store.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.HasTransientLock = false;
             }
 
             public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!_clientSession.fht.DoTransientLocking)
+                if (!Store.DoTransientLocking)
                     return;
-                _clientSession.fht.LockTable.UnlockShared(ref key, ref stackCtx.hei);
+                Store.LockTable.UnlockShared(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.HasTransientLock = false;
             }
             #endregion Transient locking

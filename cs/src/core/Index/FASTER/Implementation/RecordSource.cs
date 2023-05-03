@@ -79,6 +79,8 @@ namespace FASTER.core
 
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
 
+        internal bool HasLock => HasTransientLock || ephemeralLockResult == EphemeralLockResult.Success;
+
         /// <summary>
         /// Initialize to the latest logical address from the caller.
         /// </summary>
@@ -92,6 +94,7 @@ namespace FASTER.core
             HasReadCacheSrc = default;
 
             // HasTransientLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
+            // ephemeralLockResult = ...; Do not clear this either
 
             this.LatestLogicalAddress = this.LogicalAddress = AbsoluteAddress(latestLogicalAddress);
             this.Log = srcLog;
@@ -108,7 +111,7 @@ namespace FASTER.core
                 EphemeralLockResult.Success => "S",
                 EphemeralLockResult.Failed => "F",
                 EphemeralLockResult.HoldForSeal => "H",
-                _ => "unknown"
+                _ => "none"
             };
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
                  + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, tLock {bstr(HasTransientLock)}, eLock {ephLockResult}";
