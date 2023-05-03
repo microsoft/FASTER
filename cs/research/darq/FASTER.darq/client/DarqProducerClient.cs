@@ -9,11 +9,28 @@ using FASTER.libdpr;
 
 namespace FASTER.client
 {
+    /// <summary>
+    /// Encodes information about a DARQ Cluster
+    /// </summary>
     public interface IDarqClusterInfo
     {
+        /// <summary></summary>
+        /// <returns>Create a new DprFinder instance for the cluster, or null if none is configured</returns>
         IDprFinder GetNewDprFinder();
 
-        (string, int) GetWorker(WorkerId worker);
+        /// <summary></summary>
+        /// <returns> workers present in the cluster and human-readable descriptions</returns>
+        IEnumerable<(WorkerId, string)> GetWorkers();
+
+        /// <summary></summary>
+        /// <returns>number of workers present in the cluster</returns>
+        int GetNumWorkers();
+
+        /// <summary></summary>
+        /// <param name="worker"> WorkerId of interest </param>
+        /// <returns> Return the IP address and port number the given worker is reachable at </returns>
+        (string, int) GetWorkerAddress(WorkerId worker);
+        
     }
 
     public class RollbackException : FasterException
@@ -29,18 +46,18 @@ namespace FASTER.client
     [Serializable]
     public class HardCodedClusterInfo : IDarqClusterInfo
     {
-        private Dictionary<WorkerId, (string, int)> workerMap;
+        private Dictionary<WorkerId, (string, string, int)> workerMap;
         private string dprFinderIp;
         private int dprFinderPort = -1;
 
         public HardCodedClusterInfo()
         {
-            workerMap = new Dictionary<WorkerId, (string, int)>();
+            workerMap = new Dictionary<WorkerId, (string, string, int)>();
         }
 
-        public HardCodedClusterInfo AddWorker(WorkerId worker, string ip, int port)
+        public HardCodedClusterInfo AddWorker(WorkerId worker, string description, string ip, int port)
         {
-            workerMap.Add(worker, (ip, port));
+            workerMap.Add(worker, (description, ip, port));
             return this;
         }
 
@@ -60,13 +77,16 @@ namespace FASTER.client
             return new RespGraphDprFinder(dprFinderIp, dprFinderPort);
         }
 
-        public (string, int) GetWorker(WorkerId worker)
+        public (string, int) GetWorkerAddress(WorkerId worker)
         {
-            return workerMap[worker];
+            var (_, ip, port) = workerMap[worker];
+            return (ip, port);
         }
+        
+        public IEnumerable<(WorkerId, string)> GetWorkers() =>
+            workerMap.Select(e => (e.Key, e.Value.Item1));
 
-        public IEnumerable<(WorkerId, string, int)> GetWorkers() =>
-            workerMap.Select(e => (e.Key, e.Value.Item1, e.Value.Item2));
+        public int GetNumWorkers() => workerMap.Count;
     }
 
     /// <summary>
@@ -115,7 +135,7 @@ namespace FASTER.client
         {
             var singleClient = clients.GetOrAdd(darqId, w =>
             {
-                var (ip, port) = darqClusterInfo.GetWorker(w);
+                var (ip, port) = darqClusterInfo.GetWorkerAddress(w);
                 return new SingleDarqProducerClient(dprSession, w, ip, port);
             });
             var task = singleClient.EnqueueMessageAsync(message, producerId, lsn, waitCommit);
@@ -135,7 +155,7 @@ namespace FASTER.client
         {
             var singleClient = clients.GetOrAdd(darqId, w =>
             {
-                var (ip, port) = darqClusterInfo.GetWorker(w);
+                var (ip, port) = darqClusterInfo.GetWorkerAddress(w);
                 return new SingleDarqProducerClient(dprSession, w, ip, port);
             });
 
@@ -284,7 +304,7 @@ namespace FASTER.client
                 EnqueueMessageInternal(message, producerId, lsn, callback);
             }
         }
-
+        
         internal unsafe void EnqueueMessageInternal(ReadOnlySpan<byte> message, long id, long lsn, Action<long> action)
         {
             byte* curr, end;

@@ -68,6 +68,18 @@ namespace FASTER.libdpr
         /// <returns>Get the message bytes</returns>
         public ReadOnlySpan<byte> GetMessageBody() => new ReadOnlySpan<byte>(message, 0, messageSize);
 
+
+        /// <summary></summary>
+        /// <returns>Get the message as a string -- only works if the message was constructed using a string with the relevant methods</returns>
+        public unsafe string GetMessageBodyAsString()
+        {
+            fixed (byte* b = message)
+            {
+                var size = *(int*)b;
+                return new string((sbyte*)b, sizeof(int), size);
+            }
+        }
+
         /// <summary>
         /// Reset this message to hold supplied values instead
         /// </summary>

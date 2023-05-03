@@ -33,17 +33,7 @@ namespace SimpleStream.searchlist
             {
                 case DarqMessageType.IN:
                 {
-                    string message;
-                    unsafe
-                    {
-                        fixed (byte* b = m.GetMessageBody())
-                        {
-                            var messageSize = *(int*)b;
-                            message = new string((sbyte*)b, sizeof(int), messageSize);
-                        }
-                    }
-                    
-
+                    var message = m.GetMessageBodyAsString();
                     var split = message.Split(":");
                     Debug.Assert(split.Length == 3);
                     var term = split[0].Trim();

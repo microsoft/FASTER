@@ -16,6 +16,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "playground", "playground", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StreamExample", "StreamExample\StreamExample.csproj", "{F0A5314A-3A52-449B-AFA0-40B2DD352B63}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HelloExample", "HelloExample\HelloExample.csproj", "{B4AA3221-4586-426D-B449-AA5B7303AC44}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -50,8 +52,13 @@ Global
 		{F0A5314A-3A52-449B-AFA0-40B2DD352B63}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F0A5314A-3A52-449B-AFA0-40B2DD352B63}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F0A5314A-3A52-449B-AFA0-40B2DD352B63}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4AA3221-4586-426D-B449-AA5B7303AC44}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4AA3221-4586-426D-B449-AA5B7303AC44}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4AA3221-4586-426D-B449-AA5B7303AC44}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4AA3221-4586-426D-B449-AA5B7303AC44}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{F0A5314A-3A52-449B-AFA0-40B2DD352B63} = {4996CBEF-5873-485D-BF02-63240C9033C0}
+		{B4AA3221-4586-426D-B449-AA5B7303AC44} = {4996CBEF-5873-485D-BF02-63240C9033C0}
 	EndGlobalSection
 EndGlobal

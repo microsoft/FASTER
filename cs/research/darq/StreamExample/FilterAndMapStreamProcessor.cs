@@ -23,18 +23,9 @@ namespace SimpleStream.searchlist
             {
                 case DarqMessageType.IN:
                 {
-                    SearchListJson searchListItem;
-                    unsafe
-                    {
-                        fixed (byte* b = m.GetMessageBody())
-                        {
-                            var jsonSize = *(int*)b;
-                            var json = new string((sbyte*)b, sizeof(int), jsonSize);
-                            searchListItem = JsonConvert.DeserializeObject<SearchListJson>(json);
-                            Debug.Assert(searchListItem != null);
-                        }
-                    }
-
+                    var searchListItem =
+                        JsonConvert.DeserializeObject<SearchListJson>(m.GetMessageBodyAsString());
+                    Debug.Assert(searchListItem != null);
                     var requestBuilder = new StepRequestBuilder(reusableRequest, input);
                     requestBuilder.MarkMessageConsumed(m.GetLsn());
                     if (searchListItem.SearchTerm.Contains(SearchListStreamUtils.relevantSearchTerm))

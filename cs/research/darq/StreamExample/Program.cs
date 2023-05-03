@@ -91,7 +91,7 @@ namespace SimpleStream
             // Compose cluster architecture
             var clusterInfo = new HardCodedClusterInfo();
             for (var i = 0; i < 4; i++)
-                clusterInfo.AddWorker(new WorkerId(i), "127.0.0.1", 15721 + i);
+                clusterInfo.AddWorker(new WorkerId(i), $"Test Worker {i}", "127.0.0.1", 15721 + i);
 
             switch (options.Type)
             {

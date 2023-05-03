@@ -13,15 +13,7 @@ namespace SimpleStream.searchlist
         public bool Update(DarqMessage inMessage, StepRequestBuilder stepBuilder)
         {
             Debug.Assert(inMessage.GetMessageType() == DarqMessageType.IN);
-            string message;
-            unsafe
-            {
-                fixed (byte* b = inMessage.GetMessageBody())
-                {
-                    var messageSize = *(int*)b;
-                    message = new string((sbyte*)b, sizeof(int), messageSize);
-                }
-            }
+            var message = inMessage.GetMessageBodyAsString();
 
             var split = message.Split(":");
             var key = split[0];
