@@ -14,6 +14,7 @@ namespace FASTER.core
     /// </summary>
     public sealed class VariableLengthBlittableScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
     {
+        private readonly FasterKV<Key, Value> store;
         private readonly VariableLengthBlittableAllocator<Key, Value> hlog;
         private readonly IFasterEqualityComparer<Key> comparer;
         private readonly BlittableFrame frame;
@@ -26,6 +27,7 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
+        /// <param name="store"></param>
         /// <param name="hlog"></param>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
@@ -33,9 +35,11 @@ namespace FASTER.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
+        internal VariableLengthBlittableScanIterator(FasterKV<Key, Value> store, VariableLengthBlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, 
+                ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
         {
+            this.store = store;
             this.hlog = hlog;
             this.forceInMemory = forceInMemory;
             if (frameSize > 0)
@@ -45,9 +49,10 @@ namespace FASTER.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal VariableLengthBlittableScanIterator(VariableLengthBlittableAllocator<Key, Value> hlog, IFasterEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
+        internal VariableLengthBlittableScanIterator(FasterKV<Key, Value> store, VariableLengthBlittableAllocator<Key, Value> hlog, IFasterEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, epoch, hlog.LogPageSizeBits, logger: logger)
         {
+            this.store = store;
             this.hlog = hlog;
             this.comparer = comparer;
             this.forceInMemory = false;
@@ -79,43 +84,16 @@ namespace FASTER.core
         /// <returns>True if record found, false if end of scan</returns>
         public unsafe bool GetNext(out RecordInfo recordInfo)
         {
-            if (!BeginGetNext(out recordInfo, out long headAddress, out int recordSize))
-                return false;
-
-            // We will return control to the caller, which means releasing epoch protection.
-            if (currentAddress >= headAddress || forceInMemory)
-            {
-                // Copy the entire record into bufferPool memory, so we do not have a ref to log data outside epoch protection.
-                memory?.Return();
-                memory = hlog.bufferPool.Get(recordSize);
-                Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.aligned_pointer, recordSize, recordSize);
-                currentPhysicalAddress = (long)memory.aligned_pointer;
-            }
-
-            return ((IPushScanIterator<Key>)this).EndGet();
-        }
-
-        bool IPushScanIterator<Key>.BeginGetNext(out RecordInfo recordInfo) => BeginGetNext(out recordInfo, out _, out _);
-
-        /// <summary>
-        /// Get next record and keep the epoch held while we call the user's scan functions
-        /// </summary>
-        /// <returns>True if record found, false if end of scan</returns>
-        internal bool BeginGetNext(out RecordInfo recordInfo, out long headAddress, out int recordSize)
-        {
             recordInfo = default;
 
             while (true)
             {
                 currentAddress = nextAddress;
                 if (currentAddress >= endAddress)
-                {
-                    headAddress = recordSize = 0;
                     return false;
-                }
 
                 epoch?.Resume();
-                headAddress = hlog.HeadAddress;
+                long headAddress = hlog.HeadAddress;
 
                 if (currentAddress < hlog.BeginAddress && !forceInMemory)
                 {
@@ -123,6 +101,7 @@ namespace FASTER.core
                     throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
+                // If currentAddress < headAddress and we're not buffering and not guaranteeing the records are in memory, fail.
                 if (frameSize == 0 && currentAddress < headAddress && !forceInMemory)
                 {
                     epoch?.Suspend();
@@ -136,7 +115,7 @@ namespace FASTER.core
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, endAddress);
 
                 long physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
-                recordSize = hlog.GetRecordSize(physicalAddress).Item2;
+                int recordSize = hlog.GetRecordSize(physicalAddress).Item2;
 
                 // If record does not fit on page, skip to the next page.
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
@@ -148,15 +127,45 @@ namespace FASTER.core
 
                 nextAddress = currentAddress + recordSize;
 
-                recordInfo = ref hlog.GetInfo(physicalAddress);
+                recordInfo = hlog.GetInfo(physicalAddress);
                 if (recordInfo.SkipOnScan || recordInfo.IsNull())
                 {
                     epoch?.Suspend();
                     continue;
                 }
 
-                // Success; defer epoch?.Suspend(); to EndGet
                 currentPhysicalAddress = physicalAddress;
+
+                // We will return control to the caller, which means releasing epoch protection, and we don't want the caller to lock.
+                // Copy the entire record into bufferPool memory, so we do not have a ref to log data outside epoch protection.
+                // Lock to ensure no value tearing while copying to temp storage.
+                memory?.Return();
+                memory = null;
+                if (currentAddress >= headAddress || forceInMemory)
+                {
+                    OperationStackContext<Key, Value> stackCtx = default;
+                    try
+                    {
+                        // GetKey() and GetLockableInfo() should work but for safety and consistency with other allocators use physicalAddress.
+                        if (currentAddress >= headAddress && store is not null)
+                            store.LockForScan(ref stackCtx, ref hlog.GetKey(physicalAddress), ref hlog.GetInfo(physicalAddress));
+
+                        memory = hlog.bufferPool.Get(recordSize);
+                        unsafe
+                        { 
+                            Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.aligned_pointer, recordSize, recordSize);
+                            currentPhysicalAddress = (long)memory.aligned_pointer;
+                        }
+                    }
+                    finally
+                    {
+                        if (stackCtx.recSrc.HasLock)
+                            store.UnlockForScan(ref stackCtx, ref GetKey(), ref ((IPushScanIterator<Key>)this).GetLockableInfo());
+                    }
+                }
+
+                // Success
+                epoch?.Suspend();
                 return true;
             }
         }
@@ -202,7 +211,7 @@ namespace FASTER.core
             }
         }
 
-        bool IPushScanIterator<Key>.EndGet()
+        bool IPushScanIterator<Key>.EndGetPrevInMemory()
         {
             epoch?.Suspend();
             return true;

@@ -45,9 +45,8 @@ namespace FASTER.core
 
     internal interface IPushScanIterator<Key>
     {
-        bool BeginGetNext(out RecordInfo recordInfo);
         bool BeginGetPrevInMemory(ref Key key, out RecordInfo recordInfo, out bool continueOnDisk);
-        bool EndGet();
+        bool EndGetPrevInMemory();
         ref RecordInfo GetLockableInfo();
     }
 }
