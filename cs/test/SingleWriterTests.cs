@@ -258,12 +258,12 @@ namespace FASTER.test.SingleWriter
                 fht.Log.FlushAndEvict(wait: true);
                 readKey(24);
             }
-            using var iter = fht.Log.Scan(0, 10964128, allowMutable: true);
+            using var iter = fht.Log.Scan(0, 10964128);
             while (iter.GetNext(out var _))
             {
             }
             iter.Dispose();
-            using var iter2 = fht.Log.Scan(10484712, 10964128, allowMutable: true);
+            using var iter2 = fht.Log.Scan(10484712, 10964128);
             while (iter2.GetNext(out var _))
             {
             }
