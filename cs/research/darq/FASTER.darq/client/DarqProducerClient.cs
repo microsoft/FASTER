@@ -30,7 +30,6 @@ namespace FASTER.client
         /// <param name="worker"> WorkerId of interest </param>
         /// <returns> Return the IP address and port number the given worker is reachable at </returns>
         (string, int) GetWorkerAddress(WorkerId worker);
-        
     }
 
     public class RollbackException : FasterException
@@ -82,7 +81,7 @@ namespace FASTER.client
             var (_, ip, port) = workerMap[worker];
             return (ip, port);
         }
-        
+
         public IEnumerable<(WorkerId, string)> GetWorkers() =>
             workerMap.Select(e => (e.Key, e.Value.Item1));
 
@@ -130,7 +129,8 @@ namespace FASTER.client
         /// </param>
         /// <param name="waitCommit">whether to wait until the enqueue is committed to complete the async task </param>
         /// <returns></returns>
-        public Task EnqueueMessageAsync(WorkerId darqId, ReadOnlySpan<byte> message, long producerId, long lsn,
+        public Task EnqueueMessageAsync(WorkerId darqId, ReadOnlySpan<byte> message, long producerId = -1,
+            long lsn = -1,
             bool forceFlush = true, bool waitCommit = false)
         {
             var singleClient = clients.GetOrAdd(darqId, w =>
@@ -149,8 +149,8 @@ namespace FASTER.client
             return task;
         }
 
-        public void EnqueueMessageWithCallback(WorkerId darqId, ReadOnlySpan<byte> message, long producerId, long lsn,
-            Action<long> callback,
+        public void EnqueueMessageWithCallback(WorkerId darqId, ReadOnlySpan<byte> message, Action<long> callback,
+            long producerId = -1, long lsn = -1,
             bool forceFlush = true, bool waitCommit = false)
         {
             var singleClient = clients.GetOrAdd(darqId, w =>
@@ -232,14 +232,14 @@ namespace FASTER.client
             {
                 var head = networkSender.GetResponseObjectHead();
                 // Set packet size in header
-                *(int*) head = -(offset - sizeof(int));
+                *(int*)head = -(offset - sizeof(int));
                 head += sizeof(int);
 
-                ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, WireFormat.DarqProducer);
+                ((BatchHeader*)head)->SetNumMessagesProtocol(numMessages, WireFormat.DarqProducer);
                 head += sizeof(BatchHeader);
 
                 // Set DprHeader size
-                *(int*) head = reservedDprHeaderSpace;
+                *(int*)head = reservedDprHeaderSpace;
                 head += sizeof(int);
 
                 // populate DPR header
@@ -265,6 +265,7 @@ namespace FASTER.client
                 rolledbackWorldline = snapshot.SystemWorldLine();
                 throw new RollbackException(rolledbackWorldline);
             }
+
             committed = snapshot.SafeVersion(target);
             while (!commitQueue.IsEmpty())
             {
@@ -304,7 +305,7 @@ namespace FASTER.client
                 EnqueueMessageInternal(message, producerId, lsn, callback);
             }
         }
-        
+
         internal unsafe void EnqueueMessageInternal(ReadOnlySpan<byte> message, long id, long lsn, Action<long> action)
         {
             byte* curr, end;
@@ -318,18 +319,18 @@ namespace FASTER.client
                 Flush();
             }
 
-            *curr = (byte) MessageType.DarqEnqueue;
+            *curr = (byte)MessageType.DarqEnqueue;
             curr += sizeof(byte);
 
-            *(long*) curr = id;
+            *(long*)curr = id;
             curr += sizeof(long);
-            *(long*) curr = lsn;
+            *(long*)curr = lsn;
             curr += sizeof(long);
 
             var batch = new SerializedDarqEntryBatch(curr);
             batch.SetContent(message);
             curr += entryBatchSize;
-            offset = (int) (curr - networkSender.GetResponseObjectHead());
+            offset = (int)(curr - networkSender.GetResponseObjectHead());
             numMessages++;
             callbackQueue.Enqueue(action);
         }
@@ -337,12 +338,12 @@ namespace FASTER.client
         unsafe void INetworkMessageConsumer.ProcessReplies(byte[] buf, int startOffset, int size)
         {
             if (rolledbackWorldline != -1) return;
-            
+
             fixed (byte* b = buf)
             {
                 var src = b + startOffset;
-                
-                var count = ((BatchHeader*) src)->NumMessages;
+
+                var count = ((BatchHeader*)src)->NumMessages;
                 src += BatchHeader.Size;
 
                 var dprHeader = new ReadOnlySpan<byte>(src, DprBatchHeader.FixedLenSize);
@@ -416,7 +417,7 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleReceiveCompletion(SocketAsyncEventArgs e)
         {
-            var connState = (DarqClientNetworkSession<SingleDarqProducerClient>) e.UserToken;
+            var connState = (DarqClientNetworkSession<SingleDarqProducerClient>)e.UserToken;
             if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || disposed)
             {
                 connState.socket.Dispose();
@@ -443,7 +444,7 @@ namespace FASTER.client
         {
             try
             {
-                var connState = (DarqClientNetworkSession<SingleDarqProducerClient>) e.UserToken;
+                var connState = (DarqClientNetworkSession<SingleDarqProducerClient>)e.UserToken;
                 do
                 {
                     // No more things to receive

@@ -23,16 +23,30 @@ namespace SimpleStream.searchlist
             {
                 case DarqMessageType.IN:
                 {
+                    var message = m.GetMessageBody();
+                    string messageString;
+                    unsafe
+                    {
+                        fixed (byte* b = message)
+                        {
+                            var size = *(int*)b;
+                            messageString = new string((sbyte*)b, sizeof(int), size);
+                        }
+                    }
                     var searchListItem =
-                        JsonConvert.DeserializeObject<SearchListJson>(m.GetMessageBodyAsString());
+                        JsonConvert.DeserializeObject<SearchListJson>(messageString);
                     Debug.Assert(searchListItem != null);
                     var requestBuilder = new StepRequestBuilder(reusableRequest, input);
                     requestBuilder.MarkMessageConsumed(m.GetLsn());
                     if (searchListItem.SearchTerm.Contains(SearchListStreamUtils.relevantSearchTerm))
                     {
-                        var outputMessage =
-                            $"{SearchListStreamUtils.relevantSearchTerm} : {SearchListStreamUtils.GetRegionCode(searchListItem.IP)} : {searchListItem.Timestamp}";
-                        requestBuilder.AddOutMessage(output, outputMessage);
+                        unsafe
+                        {
+                            var buffer = stackalloc byte[sizeof(int) + sizeof(long)];
+                            *(int*)buffer = SearchListStreamUtils.GetRegionCode(searchListItem.IP);
+                            *(long*)(buffer + sizeof(int)) = searchListItem.Timestamp;
+                            requestBuilder.AddOutMessage(output, new Span<byte>(buffer, sizeof(int) + sizeof(long)));
+                        }
                     }
                     
                     capabilities.Step(requestBuilder.FinishStep());

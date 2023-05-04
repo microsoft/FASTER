@@ -3,28 +3,40 @@ using FASTER.libdpr;
 
 namespace SimpleStream.searchlist
 {
-    // a fake backend that emulates some big model with hashes and arithmetic
+    // a fake backend that emulates some big model, but using hashes and arithmetic
     public class TrendDetectorState
     {
-        private Dictionary<string, int> aggregateState = new();
+        private Dictionary<int, int> aggregateState = new();
 
         // Update local state with entry, adding self-message to step for recoverability. Returns whether the entry
         // is considered an anomaly
         public bool Update(DarqMessage inMessage, StepRequestBuilder stepBuilder)
         {
             Debug.Assert(inMessage.GetMessageType() == DarqMessageType.IN);
-            var message = inMessage.GetMessageBodyAsString();
-
-            var split = message.Split(":");
-            var key = split[0];
-            var count = long.Parse(split[1]);
-            
+            int key;
+            long count;
+            unsafe
+            {
+                fixed (byte* b = inMessage.GetMessageBody())
+                {
+                    key = *(int*)b;
+                    count = *(long*)(b + sizeof(int));
+                }
+            }
             // magic number for starting the hash
             int prevHash;
             if (!aggregateState.TryGetValue(key, out prevHash)) prevHash = 17;
+            // Simulate updating the model state with hashing
             var newHash = aggregateState[key] = prevHash * 31 + count.GetHashCode();
 
-            stepBuilder.AddSelfMessage($"{key} : {newHash}");
+            unsafe
+            {
+                var buffer = stackalloc byte[2 * sizeof(int)];
+                *(int*)buffer = key;
+                *(int*)(buffer + sizeof(int)) = newHash;
+                stepBuilder.AddSelfMessage(new Span<byte>(buffer, 2 * sizeof(int)));
+            }
+
             // Simulate anomaly detection via some simple arithmetics
             return newHash % 256 == 0;
         }
@@ -36,11 +48,8 @@ namespace SimpleStream.searchlist
             {
                 fixed (byte* b = selfMessage.GetMessageBody())
                 {
-                    var messageSize = *(int*)b;
-                    var message = new string((sbyte*)b, sizeof(int), messageSize);
-                    var split = message.Split(":");
-                    var key = split[0];
-                    var hash = int.Parse(split[1]);
+                    var key = *(int*) b ;
+                    var hash = *(int *) (b + sizeof(int));
                     aggregateState[key] = hash;
                 }
             }
@@ -48,9 +57,18 @@ namespace SimpleStream.searchlist
 
         public void Checkpoint(long lsn, StepRequestBuilder stepBuilder)
         {
-            stepBuilder.StartCheckpoint(lsn);
-            foreach (var entry in aggregateState)
-                stepBuilder.AddSelfMessage($"{entry.Key} : {entry.Value}");
+            stepBuilder.ConsumeUntil(lsn);
+            unsafe
+            {
+                var buffer = stackalloc byte[2 * sizeof(int)];
+
+                foreach (var entry in aggregateState)
+                {
+                    *(int*)buffer = entry.Key;
+                    *(int*)(buffer + sizeof(int)) = entry.Value;
+                    stepBuilder.AddSelfMessage(new Span<byte>(buffer, 2 * sizeof(int)));
+                }
+            }
         }
 
     }

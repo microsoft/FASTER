@@ -20,6 +20,7 @@ namespace FASTER.libdpr
         private bool disposed = false;
         private byte[] reusedReadBuffer;
         private GCHandle? handle = null;
+        private long replayStart = 0;
         
         internal DarqScanIterator(FasterLog log, long replayEnd, bool speculative, bool replay = true)
         {
@@ -74,7 +75,8 @@ namespace FASTER.libdpr
                             }
                             break;
                         case DarqMessageType.CHECKPOINT:
-                            stateMessagesToReplay.Clear();
+                            // TODO(Tianyu): Rework this logic for correct handling
+                            replayStart = *(long*)(entry + sizeof(DarqMessageType));
                             break;
                         default:
                             throw new NotImplementedException();
@@ -108,22 +110,31 @@ namespace FASTER.libdpr
             // Try to replay state messages first
             if (stateMessagesToReplay.Count != 0)
             {
-                byte[] bytes;
-                (currentAddress, nextAddress, bytes) = stateMessagesToReplay.Dequeue();
-                handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
-                type = DarqMessageType.SELF;
-                entry = (byte*) handle.Value.AddrOfPinnedObject();
-                entryLength = bytes.Length;
-                return true;
+                while (true)
+                {
+                    byte[] bytes;
+                    (currentAddress, nextAddress, bytes) = stateMessagesToReplay.Dequeue();
+                    if (currentAddress <= replayStart) continue;
+                    
+                    handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+                    type = DarqMessageType.SELF;
+                    entry = (byte*)handle.Value.AddrOfPinnedObject();
+                    entryLength = bytes.Length;
+                    return true;
+                }
             }
 
             while (true)
             {
                 if (!iterator.UnsafeGetNext(out entry, out entryLength, out currentAddress, out nextAddress))
                     return false;
+                
+                if (currentAddress <= replayStart) {
+                    iterator.UnsafeRelease();
+                    continue;
+                }
 
                 type = (DarqMessageType) (*entry);
-
                 if (currentAddress <= replayEnd)
                 {
                     switch (type)

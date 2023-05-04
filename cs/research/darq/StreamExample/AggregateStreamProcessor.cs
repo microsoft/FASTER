@@ -13,8 +13,7 @@ namespace SimpleStream.searchlist
         private WorkerId input, output;
         private IDarqProcessorClientCapabilities capabilities;
         private long currentBatchStartTime = -1;
-        private long largestTimestampInBatch;
-        public Dictionary<string, long> currentBatchCount;
+        public Dictionary<int, long> currentBatchCount;
         private StepRequestBuilder currentRequest;
         private StepRequest reusableRequest;
 
@@ -22,7 +21,7 @@ namespace SimpleStream.searchlist
         {
             this.input = me;
             this.output = output;
-            currentBatchCount = new Dictionary<string, long>();
+            currentBatchCount = new Dictionary<int, long>();
             reusableRequest = new StepRequest(null);
             currentRequest = new StepRequestBuilder(reusableRequest, input);
         }
@@ -33,13 +32,18 @@ namespace SimpleStream.searchlist
             {
                 case DarqMessageType.IN:
                 {
-                    var message = m.GetMessageBodyAsString();
-                    var split = message.Split(":");
-                    Debug.Assert(split.Length == 3);
-                    var term = split[0].Trim();
-                    Debug.Assert(term.Equals(SearchListStreamUtils.relevantSearchTerm));
-                    var region = split[1].Trim();
-                    var timestamp = long.Parse(split[2].Trim());
+                    int region;
+                    long timestamp;
+                    var message = m.GetMessageBody();
+                    unsafe
+                    {
+                        fixed (byte* b = m.GetMessageBody())
+                        {
+                            region = *(int*)b;
+                            timestamp = *(long*)(b + sizeof(int));
+                        }
+                    }
+
                     if (currentBatchStartTime == -1)
                         currentBatchStartTime = timestamp;
                     
@@ -50,15 +54,24 @@ namespace SimpleStream.searchlist
 
                     if (timestamp > currentBatchStartTime + SearchListStreamUtils.WindowSizeMilli)
                     {
-                        foreach (var (k, count) in currentBatchCount)
-                            currentRequest.AddOutMessage(output, $"{k} : {count} : {largestTimestampInBatch}");
+                        unsafe
+                        {
+                            var buffer = stackalloc byte[sizeof(int) + sizeof(long)];
+                            foreach (var (k, count) in currentBatchCount)
+                            {
+                                *(int*)buffer = k;
+                                *(long*)(buffer + sizeof(int)) = count;
+                                currentRequest.AddOutMessage(output,
+                                    new Span<byte>(buffer, sizeof(int) + sizeof(long)));
+                            }
+                        }
+
                         capabilities.Step(currentRequest.FinishStep());
                         currentRequest = new StepRequestBuilder(reusableRequest, input);
                         currentBatchCount.Clear();
                         currentBatchStartTime = timestamp;
                     }
                     
-                    largestTimestampInBatch = Math.Max(largestTimestampInBatch, timestamp);
                     currentRequest.MarkMessageConsumed(m.GetLsn());
                     m.Dispose();
                     return true;
@@ -74,8 +87,6 @@ namespace SimpleStream.searchlist
             currentRequest = new StepRequestBuilder(reusableRequest, input);
             currentBatchCount.Clear();
             currentBatchStartTime = -1;
-            largestTimestampInBatch = 0;
-
         }
     }
 }

@@ -58,7 +58,7 @@ namespace FASTER.client
                 }
 
                 if (!iterator.UnsafeGetNext(out var entry, out var entryLength,
-                    out var lsn, out processedUpTo, out var type))
+                        out var lsn, out processedUpTo, out var type))
                     return false;
 
                 completionTracker.AddEntry(lsn, processedUpTo);
@@ -83,30 +83,32 @@ namespace FASTER.client
 
             return true;
         }
-        
+
         private unsafe void SendMessage(DarqMessage m)
         {
             Debug.Assert(m.GetMessageType() == DarqMessageType.OUT);
             var body = m.GetMessageBody();
             fixed (byte* h = body)
             {
-                var dest = *(WorkerId*) h;
+                var dest = *(WorkerId*)h;
                 var toSend = new ReadOnlySpan<byte>(h + sizeof(WorkerId),
                     body.Length - sizeof(WorkerId));
                 var completionTrackerLocal = completionTracker;
                 var lsn = m.GetLsn();
                 if (++numBatched < batchSize)
                 {
-                    producerClient.EnqueueMessageWithCallback(dest, toSend, darq.Me().guid, lsn,
-                        _ => { completionTrackerLocal.RemoveEntry(lsn); }, forceFlush: false);
+                    producerClient.EnqueueMessageWithCallback(dest, toSend,
+                        _ => { completionTrackerLocal.RemoveEntry(lsn); }, darq.Me().guid, lsn, forceFlush: false);
                 }
                 else
                 {
                     numBatched = 0;
-                    producerClient.EnqueueMessageWithCallback(dest, toSend, darq.Me().guid, lsn,
-                        _ => { completionTrackerLocal.RemoveEntry(lsn); }, forceFlush: true);
+                    producerClient.EnqueueMessageWithCallback(dest, toSend,
+                        _ => { completionTrackerLocal.RemoveEntry(lsn); }, darq.Me().guid, lsn,
+                        forceFlush: true);
                 }
             }
+
             m.Dispose();
         }
 
@@ -142,10 +144,11 @@ namespace FASTER.client
                     {
                         fixed (byte* h = body)
                         {
-                            for (var completed = (long*) h; completed < h + body.Length; completed++)
+                            for (var completed = (long*)h; completed < h + body.Length; completed++)
                                 completionTracker.RemoveEntry(*completed);
                         }
                     }
+
                     completionTracker.RemoveEntry(m.GetLsn());
                     m.Dispose();
                     break;

@@ -66,19 +66,7 @@ namespace FASTER.libdpr
 
         /// <summary></summary>
         /// <returns>Get the message bytes</returns>
-        public ReadOnlySpan<byte> GetMessageBody() => new ReadOnlySpan<byte>(message, 0, messageSize);
-
-
-        /// <summary></summary>
-        /// <returns>Get the message as a string -- only works if the message was constructed using a string with the relevant methods</returns>
-        public unsafe string GetMessageBodyAsString()
-        {
-            fixed (byte* b = message)
-            {
-                var size = *(int*)b;
-                return new string((sbyte*)b, sizeof(int), size);
-            }
-        }
+        public ReadOnlySpan<byte> GetMessageBody() => new(message, 0, messageSize);
 
         /// <summary>
         /// Reset this message to hold supplied values instead
@@ -193,16 +181,15 @@ namespace FASTER.libdpr
         }
         
         /// <summary>
-        /// Start a checkpoint that compresses DARQ state up to the given LSN, effectively consuming all IN/SELF
-        /// messages until the LSN. Users are responsible for handling any concurrent stepping that may occur
-        /// (checkpoints do not participate in normal validation for duplicate consumption) and adding new SELF
-        /// messages that replace the consumed ones. 
+        /// Consume all IN/SELF messages until the LSN (inclusive). Users are responsible for handling any concurrent
+        /// stepping that may occur (this message does not participate in normal validation for duplicate consumption)
+        /// and adding new SELF messages that replace the consumed ones. 
         /// </summary>
-        /// <param name="lsn"> LSN to checkpoint until </param>
+        /// <param name="lsn"> LSN to consume until </param>
         /// <returns> self-reference for chaining </returns>
-        public unsafe StepRequestBuilder StartCheckpoint(long lsn)
+        public unsafe StepRequestBuilder ConsumeUntil(long lsn)
         {
-            while (request.serializationBuffer.Length - request.size < sizeof(DarqMessageType))
+            while (request.serializationBuffer.Length - request.size < sizeof(DarqMessageType) + sizeof(long))
                 request.Grow();
 
             request.offsets.Add(request.size);
@@ -210,6 +197,7 @@ namespace FASTER.libdpr
             {
                 var head = b + request.size;
                 *(DarqMessageType*)head++ = DarqMessageType.CHECKPOINT;
+                *(long*)head = lsn;
                 request.size = (int)(head - b);
             }
 
@@ -252,72 +240,6 @@ namespace FASTER.libdpr
         }
 
         /// <summary>
-        /// Add an out message to this step.
-        /// </summary>
-        /// <param name="recipient">Intended recipient</param>
-        /// <param name="message">message body, as a string</param>
-        /// <returns> self-reference for chaining </returns>
-        public unsafe StepRequestBuilder AddOutMessage(WorkerId recipient, string message)
-        {
-            while (request.serializationBuffer.Length - request.size <
-                   message.Length + sizeof(DarqMessageType) + sizeof(WorkerId) + sizeof(int))
-                request.Grow();
-        
-            request.offsets.Add(request.size);
-            fixed (byte* b = request.serializationBuffer)
-            {
-                var head = b + request.size;
-                if (recipient.Equals(request.me))
-                {
-                    *(DarqMessageType*)head++ = DarqMessageType.IN;
-                }
-                else
-                {
-                    *(DarqMessageType*)head++ = DarqMessageType.OUT;
-                    *(WorkerId*)head = recipient;
-                    head += sizeof(WorkerId);
-                }
-        
-                *(int*)head = message.Length;
-                head += sizeof(int);
-        
-                fixed (char* m = message)
-                {
-                    for (var i = 0; i < message.Length; i++)
-                        *head++ = (byte)m[i];
-                }
-        
-                request.size = (int)(head - b);
-            }
-        
-            return this;
-        }
-
-        private static unsafe void CopyToSpan(string s, Span<byte> span)
-        {
-            Debug.Assert(span.Length >= s.Length);
-            fixed (char* c = s)
-            {
-                for (var i = 0; i < s.Length; i++)
-                    span[i] = (byte)c[i];
-            }
-        }
-
-        private static unsafe void PadWithBytes(Span<byte> span)
-        {
-            var pad = 0xC0FFEEDEADBEEF;
-            fixed (byte* b = span)
-            {
-                var bend = b + span.Length;
-                for (var head = (long*)b; head + 1 < bend; head++)
-                    *head = pad;
-
-                for (var head = span.Length / sizeof(long) * sizeof(long); head < span.Length; head++)
-                    span[head] = 0xDB;
-            }
-        }
-
-        /// <summary>
         /// Add a self message to this step.
         /// </summary>
         /// <param name="message">message body, as bytes</param>
@@ -335,38 +257,6 @@ namespace FASTER.libdpr
                 *(DarqMessageType*)head++ = DarqMessageType.SELF;
                 message.CopyTo(new Span<byte>(head, message.Length));
                 head += message.Length;
-                request.size = (int)(head - b);
-            }
-
-            return this;
-        }
-
-        /// <summary>
-        /// Add a self message to this step.
-        /// </summary>
-        /// <param name="message">message body, as a string</param>
-        /// <returns> self-reference for chaining </returns>
-        public unsafe StepRequestBuilder AddSelfMessage(string message)
-        {
-            while (request.serializationBuffer.Length - request.size <
-                   message.Length + sizeof(DarqMessageType) + sizeof(WorkerId) + sizeof(int))
-                request.Grow();
-
-            request.offsets.Add(request.size);
-            fixed (byte* b = request.serializationBuffer)
-            {
-                var head = b + request.size;
-                *(DarqMessageType*)head++ = DarqMessageType.SELF;
-
-                *(int*)head = message.Length;
-                head += sizeof(int);
-
-                fixed (char* m = message)
-                {
-                    for (var i = 0; i < message.Length; i++)
-                        *head++ = (byte)m[i];
-                }
-
                 request.size = (int)(head - b);
             }
 

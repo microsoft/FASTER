@@ -20,6 +20,28 @@ public class Options
 
 public class Program
 {
+    public static string[] namePool = {
+        "Alex",
+        "Avery",
+        "Brennan",
+        "Carson",
+        "Dakota",
+        "Eli",
+        "Elliot",
+        "Emery",
+        "Finley",
+        "Harley",
+        "Hayden",
+        "Jesse",
+        "Jordan",
+        "Kai",
+        "Morgan",
+        "Parker",
+        "Reese",
+        "Riley",
+        "Rowan",
+        "Sage"
+    };
     private static void RunDarqWithProcessor(WorkerId me, IDarqClusterInfo clusterInfo)
     {
         var logDevice = new LocalStorageDevice($"D:\\w{me.guid}\\data.log", deleteOnClose: true);
@@ -41,7 +63,7 @@ public class Program
                 LogChecksum = LogChecksumType.None,
                 MutableFraction = default,
                 FastCommitMode = true,
-                DeleteOnClose = false
+                DeleteOnClose = true
             },
             commitIntervalMilli = 5,
             refreshIntervalMilli = 5
@@ -75,10 +97,30 @@ public class Program
             t.Start();
 
         var darqClient = new DarqProducerClient(clusterInfo);
-        // TODO(Tianyu): Implement string variant for these things
-        darqClient.EnqueueMessageAsync(new WorkerId(0), );
-        
+        darqClient.EnqueueMessageAsync(new WorkerId(0), GetInitialMessage(options));
         foreach (var t in threads)
             t.Join();
+    }
+
+    private static byte[] GetInitialMessage(Options options)
+    {
+        var random = new Random();
+        var nextName = namePool[random.Next() % namePool.Length];
+        var messageSize = nextName.Length + 2 * sizeof(int);
+        var serializationBuffer = new byte[messageSize];
+        unsafe
+        {
+            fixed (byte* b = serializationBuffer)
+            {
+                var head = b;
+                *(int*) head = options.NumGreetings;
+                head += sizeof(int);
+                *(int*)head = nextName.Length;
+                head += sizeof(int);
+                foreach (var t in nextName)
+                    *head++ = (byte)t;
+            }
+        }
+        return serializationBuffer;
     }
 }
