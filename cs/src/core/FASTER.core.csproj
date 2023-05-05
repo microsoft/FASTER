@@ -2,27 +2,42 @@
 
   <PropertyGroup>
     <TargetFrameworks>net7.0;net6.0;netstandard2.1;netstandard2.0</TargetFrameworks>
-  </PropertyGroup>
-
-  <PropertyGroup>
+    <OutputType>Library</OutputType>
     <LangVersion>latest</LangVersion>
-  </PropertyGroup>
-
-  <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>FASTER.core</RootNamespace>
     <AssemblyName>FASTER.core</AssemblyName>
     <ErrorReport>prompt</ErrorReport>
+    <GenerateDocumentFile>true</GenerateDocumentFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <SignAssembly>true</SignAssembly>
-    <OutputType>Library</OutputType>
     <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>Microsoft.FASTER.Core</PackageId>
+    <Title>FASTER</Title>
+    <Authors>Microsoft</Authors>
+    <PackageProjectUrl>https://github.com/microsoft/FASTER</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <Description>FASTER is a fast concurrent persistent log and key-value store with cache for larger-than-memory data.</Description>
+    <PackageReleaseNotes>See the FASTER project website at https://github.com/microsoft/FASTER for more details.</PackageReleaseNotes>
+    <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <PackageTags>FASTER key-value store cache log  microsoft dictionary hashtable concurrent persistent</PackageTags>
+    <RepositoryUrl>https://github.com/microsoft/FASTER</RepositoryUrl>
   </PropertyGroup>
 
 
   <ItemGroup>
+    <PackageReference Include="GitVersion.MsBuild" Version="5.12.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.0" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
