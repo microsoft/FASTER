@@ -13,6 +13,7 @@ namespace FASTER.core
     /// </summary>
     public sealed class BlittableScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
     {
+        private readonly FasterKV<Key, Value> store;
         private readonly BlittableAllocator<Key, Value> hlog;
         private readonly IFasterEqualityComparer<Key> comparer;
         private readonly BlittableFrame frame;
@@ -25,6 +26,7 @@ namespace FASTER.core
         /// <summary>
         /// Constructor for use with head-to-tail scan
         /// </summary>
+        /// <param name="store"></param>
         /// <param name="hlog"></param>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
@@ -32,9 +34,11 @@ namespace FASTER.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
+        internal BlittableScanIterator(FasterKV<Key, Value> store, BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, 
+                LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
         {
+            this.store = store;
             this.hlog = hlog;
             this.forceInMemory = forceInMemory;
             if (frameSize > 0)
@@ -44,9 +48,10 @@ namespace FASTER.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal BlittableScanIterator(BlittableAllocator<Key, Value> hlog, IFasterEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
+        internal BlittableScanIterator(FasterKV<Key, Value> store, BlittableAllocator<Key, Value> hlog, IFasterEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, epoch, hlog.LogPageSizeBits, logger: logger)
         {
+            this.store = store;
             this.hlog = hlog;
             this.comparer = comparer;
             this.forceInMemory = false;
@@ -74,13 +79,7 @@ namespace FASTER.core
         /// Get next record in iterator
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        public unsafe bool GetNext(out RecordInfo recordInfo) => ((IPushScanIterator<Key>)this).BeginGetNext(out recordInfo) && ((IPushScanIterator<Key>)this).EndGet();
-
-        /// <summary>
-        /// Get next record and keep the epoch held while we call the user's scan functions
-        /// </summary>
-        /// <returns>True if record found, false if end of scan</returns>
-        bool IPushScanIterator<Key>.BeginGetNext(out RecordInfo recordInfo)
+        public unsafe bool GetNext(out RecordInfo recordInfo)
         {
             recordInfo = default;
 
@@ -99,6 +98,7 @@ namespace FASTER.core
                     throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
                 }
 
+                // If currentAddress < headAddress and we're not buffering and not guaranteeing the records are in memory, fail.
                 if (frameSize == 0 && currentAddress < headAddress && !forceInMemory)
                 {
                     epoch?.Suspend();
@@ -131,8 +131,24 @@ namespace FASTER.core
                     continue;
                 }
 
-                // Success; defer epoch?.Suspend(); to EndGet
-                return CopyDataMembers(physicalAddress);
+                OperationStackContext<Key, Value> stackCtx = default;
+                try
+                {
+                    // Lock to ensure no value tearing while copying to temp storage.
+                    // We cannot use GetKey() and GetLockableInfo() because they have not yet been set.
+                    if (currentAddress >= headAddress && store is not null)
+                        store.LockForScan(ref stackCtx, ref hlog.GetKey(physicalAddress), ref ((IPushScanIterator<Key>)this).GetLockableInfo());
+                    CopyDataMembers(physicalAddress);
+                }
+                finally
+                {
+                    if (stackCtx.recSrc.HasLock)
+                        store.UnlockForScan(ref stackCtx, ref hlog.GetKey(physicalAddress), ref ((IPushScanIterator<Key>)this).GetLockableInfo());
+                }
+
+                // Success
+                epoch?.Suspend();
+                return true;
             }
         }
 
@@ -173,13 +189,13 @@ namespace FASTER.core
                     continue;
                 }
 
-                // Success; defer epoch?.Suspend(); to EndGet
+                // Success; defer epoch?.Suspend(); to EndGetPrevInMemory
                 return CopyDataMembers(physicalAddress);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IPushScanIterator<Key>.EndGet()
+        bool IPushScanIterator<Key>.EndGetPrevInMemory()
         {
             epoch?.Suspend();
             return true;
@@ -204,8 +220,7 @@ namespace FASTER.core
         {
             if (framePhysicalAddress == 0)
             {
-                // Copy the blittable values to data members; we have no ref into the log after the epoch.Suspend().
-                // Do the copy only for log data, not frame, because this could be a large structure.
+                // Copy the values from the log to data members so we have no ref into the log after the epoch.Suspend().
                 currentKey = hlog.GetKey(physicalAddress);
                 currentValue = hlog.GetValue(physicalAddress);
             }

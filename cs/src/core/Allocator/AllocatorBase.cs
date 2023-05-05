@@ -775,7 +775,7 @@ namespace FASTER.core
         /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
         /// <returns>Pull Scan iterator instance</returns>
-        public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
+        public abstract IFasterScanIterator<Key, Value> Scan(FasterKV<Key, Value> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
 
         /// <summary>
         /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
@@ -819,26 +819,25 @@ namespace FASTER.core
         {
             if (!scanFunctions.OnStart(beginAddress, endAddress))
                 return false;
+            var headAddress = this.HeadAddress;
 
             long numRecords = 1;
             bool stop = false;
-            for (; !stop && iter.BeginGetNext(out var recordInfo); ++numRecords)
+            for (; !stop && iter.GetNext(out var recordInfo); ++numRecords)
             {
-                OperationStackContext<Key, Value> stackCtx = default;
                 try
                 {
-                    stop = !PushToReader(store, ref scanFunctions, iter, numRecords, recordInfo, ref stackCtx);
+                    // Pull Iter records are in temp storage so do not need locks, but we'll call ConcurrentReader because, for example, GenericAllocator
+                    // may need to know the object is in that region.
+                    if (iter.CurrentAddress >= headAddress && !recordInfo.IsClosed)
+                        stop = !scanFunctions.ConcurrentReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+                    else
+                        stop = !scanFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
                 }
                 catch (Exception ex)
                 {
                     scanFunctions.OnException(ex, numRecords);
                     throw;
-                }
-                finally
-                {
-                    if (stackCtx.recSrc.HasLock)
-                        store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
-                    iter.EndGet();
                 }
             }
 
@@ -855,6 +854,7 @@ namespace FASTER.core
         {
             if (!scanFunctions.OnStart(beginAddress, Constants.kInvalidAddress))
                 return false;
+            var headAddress = this.HeadAddress;
 
             long numRecords = 1;
             bool stop = false, continueOnDisk = false;
@@ -863,7 +863,14 @@ namespace FASTER.core
                 OperationStackContext<Key, Value> stackCtx = default;
                 try
                 {
-                    stop = !PushToReader(store, ref scanFunctions, iter, numRecords, recordInfo, ref stackCtx);
+                    // Iter records above headAddress will be in log memory and must be locked.
+                    if (iter.CurrentAddress >= headAddress && !recordInfo.IsClosed)
+                    {
+                        store.LockForScan(ref stackCtx, ref key, ref iter.GetLockableInfo());
+                        stop = !scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+                    }
+                    else
+                        stop = !scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
                 }
                 catch (Exception ex)
                 {
@@ -874,7 +881,7 @@ namespace FASTER.core
                 {
                     if (stackCtx.recSrc.HasLock)
                         store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
-                    iter.EndGet();
+                    iter.EndGetPrevInMemory();
                 }
             }
 
@@ -900,20 +907,6 @@ namespace FASTER.core
 
             scanFunctions.OnStop(!stop, numRecords);
             return !stop;
-        }
-
-        private bool PushToReader<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, ref TScanFunctions scanFunctions, TScanIterator iter, long numRecords, RecordInfo recordInfo, 
-                ref OperationStackContext<Key, Value> stackCtx)
-            where TScanFunctions : IScanIteratorFunctions<Key, Value>
-            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
-        {
-            ref var key = ref iter.GetKey();
-            if (iter.CurrentAddress >= this.ReadOnlyAddress && !recordInfo.IsClosed)
-            {
-                store.LockForScan(ref stackCtx, ref key, ref iter.GetLockableInfo());
-                return scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
-            }
-            return scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
         }
 
         internal unsafe bool GetFromDiskAndPushToReader<TScanFunctions>(ref Key key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
@@ -950,9 +943,6 @@ namespace FASTER.core
         internal abstract void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer);
         #endregion
 
-        /// <summary>
-        /// Allocator base 
-        /// </summary>
         protected readonly ILogger logger;
 
         /// <summary>
@@ -1595,7 +1585,9 @@ namespace FASTER.core
                 // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 if (OnReadOnlyObserver != null)
                 {
-                    using var iter = Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
+                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
+                    // will have seen a record below the new ReadOnlyAddress as "in mutable region".
+                    using var iter = Scan(store:null, oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
                     OnReadOnlyObserver?.OnNext(iter);
                 }
                 AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
@@ -1655,6 +1647,8 @@ namespace FASTER.core
                     long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
                     long end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
+                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
+                    // will have seen a record below the eviction range as "in mutable region".
                     if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
 

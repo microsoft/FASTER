@@ -6,17 +6,17 @@ namespace FASTER.core
     /// <summary>
     /// A structure carrying metadata about a record in the log.
     /// </summary>
-    public struct RecordMetadata
+    public readonly struct RecordMetadata
     {
         /// <summary>
         /// The <see cref="RecordInfo"/> header of the record.
         /// </summary>
-        public RecordInfo RecordInfo;
+        public readonly RecordInfo RecordInfo;
 
         /// <summary>
         /// The logical address of the record.
         /// </summary>
-        public long Address;
+        public readonly long Address;
 
         internal RecordMetadata(RecordInfo recordInfo, long address = Constants.kInvalidAddress)
         {

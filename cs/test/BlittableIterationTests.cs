@@ -42,11 +42,6 @@ namespace FASTER.test
             internal long numRecords;
             internal int stopAt;
 
-            public bool OnStart(long beginAddress, long endAddress) => true;
-
-            public bool ConcurrentReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords) 
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
-
             public bool SingleReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords)
             {
                 if (keyMultToValue > 0)
@@ -54,8 +49,10 @@ namespace FASTER.test
                 return stopAt != ++numRecords;
             }
 
+            public bool ConcurrentReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
+            public bool OnStart(long beginAddress, long endAddress) => true;
             public void OnException(Exception exception, long numberOfRecords) { }
-
             public void OnStop(bool completed, long numberOfRecords) { }
         }
 
@@ -73,7 +70,6 @@ namespace FASTER.test
             BlittablePushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 500;
-            var start = fht.Log.TailAddress;
 
             void iterateAndVerify(int keyMultToValue, int expectedRecs)
             {

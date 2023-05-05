@@ -20,8 +20,6 @@ namespace FASTER.core
         {
             if (untilAddress == -1)
                 untilAddress = Log.TailAddress;
-            if (untilAddress >= hlog.SafeReadOnlyAddress && this.IsLocking)
-                throw new FasterException($"Cannot run pull Iterate() in the mutable region when locking is enabled; use the form that takes {nameof(IScanIteratorFunctions<Key, Value>)} instead");
             return new FasterKVIterator<Key, Value, Input, Output, Context, Functions>(this, functions, untilAddress, isPull: true, loggerFactory: loggerFactory);
         }
 
@@ -108,7 +106,7 @@ namespace FASTER.core
             tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: fht.Comparer,
                                               variableLengthStructSettings: variableLengthStructSettings, loggerFactory: loggerFactory, lockingMode: LockingMode.None);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
-            mainKvIter = fht.Log.Scan(fht.Log.BeginAddress, untilAddress, allowMutable: !isPull);
+            mainKvIter = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
             pushScanIterator = mainKvIter as IPushScanIterator<Key>;
         }
 
@@ -149,11 +147,7 @@ namespace FASTER.core
                             return true;
                         }
 
-                        // Not the tailmost record in the tag chain so add it to or remove it from tempKV (we want to return only the latest version).
-                        if (recordInfo.Tombstone)
-                            tempKvSession.Delete(ref key);
-                        else
-                            tempKvSession.Upsert(ref key, ref mainKvIter.GetValue());
+                        ProcessNonTailmostMainKvRecord(recordInfo, key);
                         continue;
                     }
 
@@ -191,7 +185,7 @@ namespace FASTER.core
                 if (iterationPhase == IterationPhase.MainKv)
                 {
                     OperationStackContext<Key, Value> stackCtx = default;
-                    if (pushScanIterator.BeginGetNext(out var recordInfo))
+                    if (mainKvIter.GetNext(out var recordInfo))
                     {
                         try
                         {
@@ -201,23 +195,16 @@ namespace FASTER.core
                                 if (recordInfo.Tombstone)
                                     continue;
 
+                                // Push Iter records are in temp storage so do not need locks, but we'll call ConcurrentReader because, for example, GenericAllocator
+                                // may need to know the object is in that region.
                                 if (mainKvIter.CurrentAddress >= fht.hlog.ReadOnlyAddress)
-                                {
-                                    fht.LockForScan(ref stackCtx, ref key, ref pushScanIterator.GetLockableInfo());
                                     stop = !scanFunctions.ConcurrentReader(ref key, ref mainKvIter.GetValue(), new RecordMetadata(recordInfo, mainKvIter.CurrentAddress), numRecords);
-                                }
                                 else
-                                {
                                     stop = !scanFunctions.SingleReader(ref key, ref mainKvIter.GetValue(), new RecordMetadata(recordInfo, mainKvIter.CurrentAddress), numRecords);
-                                }
                                 return !stop;
                             }
 
-                            // Not the tailmost record in the tag chain so add it to or remove it from tempKV (we want to return only the latest version).
-                            if (recordInfo.Tombstone)
-                                tempKvSession.Delete(ref key);
-                            else
-                                tempKvSession.Upsert(ref key, ref mainKvIter.GetValue());
+                            ProcessNonTailmostMainKvRecord(recordInfo, key);
                             continue;
                         }
                         catch (Exception ex)
@@ -229,7 +216,6 @@ namespace FASTER.core
                         {
                             if (stackCtx.recSrc.HasLock)
                                 fht.UnlockForScan(ref stackCtx, ref mainKvIter.GetKey(), ref pushScanIterator.GetLockableInfo());
-                            pushScanIterator.EndGet();
                         }
                     }
 
@@ -262,6 +248,19 @@ namespace FASTER.core
             }
         }
 
+        private void ProcessNonTailmostMainKvRecord(RecordInfo recordInfo, Key key)
+        {
+            // Not the tailmost record in the tag chain so add it to or remove it from tempKV (we want to return only the latest version).
+            if (recordInfo.Tombstone)
+            {
+                // Check if it's in-memory first so we don't spuriously create a tombstone record.
+                if (tempKvSession.ContainsKeyInMemory(ref key, out _).Found)
+                    tempKvSession.Delete(ref key);
+            }
+            else
+                tempKvSession.Upsert(ref key, ref mainKvIter.GetValue());
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool IsTailmostMainKvRecord(ref Key key, RecordInfo recordInfo, ref OperationStackContext<Key, Value> stackCtx)
         {
@@ -281,8 +280,8 @@ namespace FASTER.core
                             tempKvSession.Delete(ref key);
                     }
 
-                    // If the record is not deleted, we can let the caller process it directly within mainKvIter.
-                    return !recordInfo.Tombstone;
+                    // Let the caller process it directly within the mainKvIter loop, including detecting that the record is deleted (and thus tempKv has been handled here).
+                    return true;
                 }
             }
             return false;

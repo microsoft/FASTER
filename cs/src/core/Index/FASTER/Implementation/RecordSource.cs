@@ -111,7 +111,7 @@ namespace FASTER.core
                 EphemeralLockResult.Success => "S",
                 EphemeralLockResult.Failed => "F",
                 EphemeralLockResult.HoldForSeal => "H",
-                _ => "unknown"
+                _ => "none"
             };
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
                  + $" logSrc {bstr(HasMainLogSrc)}, rcSrc {bstr(HasReadCacheSrc)}, tLock {bstr(HasTransientLock)}, eLock {ephLockResult}";
