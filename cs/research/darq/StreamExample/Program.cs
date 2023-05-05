@@ -70,6 +70,7 @@ namespace SimpleStream
             darqServer.Dispose();
         }
 
+        // TODO(Tianyu): WIP
         public static void Main(string[] args)
         {
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);

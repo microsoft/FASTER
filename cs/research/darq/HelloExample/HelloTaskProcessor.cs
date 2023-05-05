@@ -1,7 +1,6 @@
 ﻿using System.Diagnostics;
 using FASTER.client;
 using FASTER.common;
-using FASTER.core;
 using FASTER.libdpr;
 
 namespace HelloExample;
@@ -69,8 +68,7 @@ public class HelloTaskProcessor : IDarqProcessor
                 }
 
                 requestBuilder.AddSelfMessage(BitConverter.GetBytes(count));
-                // TODO(Tianyu): Is this correct?
-                requestBuilder.ConsumeUntil(m.GetLsn());
+                requestBuilder.MarkMessageConsumed(m.GetLsn());
                 
                 if (numGreetingsLeft != 0)
                 {

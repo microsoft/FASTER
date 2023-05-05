@@ -180,6 +180,7 @@ namespace FASTER.libdpr
             return this;
         }
         
+        // TODO(Tianyu): WIP, New Feature
         /// <summary>
         /// Consume all IN/SELF messages until the LSN (inclusive). Users are responsible for handling any concurrent
         /// stepping that may occur (this message does not participate in normal validation for duplicate consumption)
