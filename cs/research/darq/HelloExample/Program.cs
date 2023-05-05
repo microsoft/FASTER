@@ -18,6 +18,10 @@ public class Options
     public int NumGreetings { get; set; }
 }
 
+/// <summary>
+/// Example DARQ program that issues (resiliently) the specified number of greetings, randomly chained across available
+/// workers. Each worker persistently maintains a count of the number of greetings they have issued. 
+/// </summary>
 public class Program
 {
     public static string[] namePool = {
