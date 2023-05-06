@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace FASTER.test.readaddress
 {
     [TestFixture]
-    public class ReadAddressTests
+    internal class ReadAddressTests
     {
         const int numKeys = 1000;
         const int keyMod = 100;
@@ -230,7 +230,6 @@ namespace FASTER.test.readaddress
                 Assert.GreaterOrEqual(lap, 0);
                 long expectedValue = SetReadOutput(defaultKeyToScan, LapOffset(lap) + defaultKeyToScan);
 
-                Assert.AreEqual(status.NotFound, recordInfo.Tombstone, $"status({status}) == NOTFOUND != Tombstone ({recordInfo.Tombstone}) on lap {lap}");
                 Assert.AreEqual(lap == deleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({deleteLap}) != Tombstone ({recordInfo.Tombstone})");
                 if (!recordInfo.Tombstone)
                     Assert.AreEqual(expectedValue, actualOutput.value, $"lap({lap})");
@@ -296,6 +295,63 @@ namespace FASTER.test.readaddress
                         break;
                     readOptions.StartAddress = recordMetadata.RecordInfo.PreviousAddress;
                 }
+            }
+        }
+
+        struct IterateKeyTestScanIteratorFunctions : IScanIteratorFunctions<Key, Value>
+        {
+            readonly TestStore testStore;
+            internal int numRecords;
+            internal int stopAt;
+
+            internal IterateKeyTestScanIteratorFunctions(TestStore ts) => testStore = ts;
+
+            public bool OnStart(long beginAddress, long endAddress) => true;
+
+            public bool ConcurrentReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
+
+            public bool SingleReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords)
+            {
+                Output output = new() { address = recordMetadata.Address, value = SetReadOutput(key.key, value.value) };
+                int lap = maxLap - ++numRecords;
+                Assert.AreEqual(lap != 0, testStore.ProcessChainRecord(new (StatusCode.Found), recordMetadata, lap, ref output), $"lap ({lap}) == 0 != ProcessChainRecord(...)");
+                Assert.AreEqual(numRecords, numberOfRecords, "mismatched record count");
+                return stopAt != numRecords;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+
+            public void OnStop(bool completed, long numberOfRecords) { }
+        }
+
+        [Test, Category(FasterKVTestCategory), Category(ReadTestCategory)]
+        public void IterateKeyTests([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode, [Values] LockingMode lockingMode)
+        {
+            using var testStore = new TestStore(useReadCache:false, ReadCopyOptions.None, flushMode != FlushMode.NoFlush, lockingMode);
+            testStore.Populate(useRMW: true, useAsync: false).GetAwaiter().GetResult();
+
+            for (int iteration = 0; iteration < 2; ++iteration)
+            {
+                var key = new Key(defaultKeyToScan);
+                IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore);
+                Assert.IsTrue(testStore.fkv.Log.IterateKeyVersions(ref scanFunctions, ref key));
+                Assert.AreEqual(maxLap, scanFunctions.numRecords);
+            }
+        }
+
+        [Test, Category(FasterKVTestCategory), Category(ReadTestCategory)]
+        public void IterateKeyStopTests([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode, [Values] LockingMode lockingMode)
+        {
+            using var testStore = new TestStore(useReadCache: false, ReadCopyOptions.None, flushMode != FlushMode.NoFlush, lockingMode);
+            testStore.Populate(useRMW: false, useAsync: false).GetAwaiter().GetResult();
+
+            for (int iteration = 0; iteration < 2; ++iteration)
+            {
+                var key = new Key(defaultKeyToScan);
+                IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore) { stopAt = 4 };
+                Assert.IsFalse(testStore.fkv.Log.IterateKeyVersions(ref scanFunctions, ref key));
+                Assert.AreEqual(scanFunctions.stopAt, scanFunctions.numRecords);
             }
         }
 

@@ -112,7 +112,7 @@ namespace FASTER.test
             {
                 log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
                 using var fht = new FasterKV<KeyStruct, ValueStruct>
-                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 }, lockingMode: LockingMode.None);
                 using var session = fht.NewSession(copyOnWrite);
 
                 var key = default(KeyStruct);

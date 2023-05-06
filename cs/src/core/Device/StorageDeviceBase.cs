@@ -69,6 +69,12 @@ namespace FASTER.core
         protected int startSegment = 0, endSegment = -1;
 
         /// <summary>
+        /// If true, skip adding the segmentId to the filename.
+        /// </summary>
+        /// <remarks>If true, SegmentSize must be -1</remarks>
+        protected bool OmitSegmentIdFromFileName;
+
+        /// <summary>
         /// Initializes a new StorageDeviceBase
         /// </summary>
         /// <param name="filename">Name of the file to use</param>
@@ -91,12 +97,19 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segmentSize"></param>
         /// <param name="epoch"></param>
-        public virtual void Initialize(long segmentSize, LightEpoch epoch = null)
+        /// <param name="omitSegmentIdFromFilename"></param>
+        public virtual void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
             if (segmentSize != -1)
-                Debug.Assert(Capacity == -1 || Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
+            { 
+                if (Capacity != -1 && Capacity % segmentSize != 0)
+                    throw new FasterException("capacity must be a multiple of segment sizes");
+                if (omitSegmentIdFromFilename)
+                    throw new FasterException("omitSegmentIdInFilename requires a segment size of -1");
+            }
             this.segmentSize = segmentSize;
             this.epoch = epoch;
+            this.OmitSegmentIdFromFileName = omitSegmentIdFromFilename;
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
                 if (segmentSize != -1)
@@ -111,6 +124,16 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Create a filename that may or may not include the segmentId
+        /// </summary>
+        protected internal string GetSegmentFilename(string filename, int segmentId) => GetSegmentFilename(filename, segmentId, OmitSegmentIdFromFileName);
+
+        /// <summary>
+        /// Create a filename that may or may not include the segmentId
+        /// </summary>
+        protected internal static string GetSegmentFilename(string filename, int segmentId, bool omitSegmentId) 
+            => omitSegmentId ? filename : $"{filename}.{segmentId}";
 
         /// <summary>
         /// Whether device should be throttled

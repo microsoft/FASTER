@@ -72,6 +72,26 @@ namespace FASTER.test
             TestDeviceWriteRead(device);
         }
 
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public void OmitSegmentIdTest([Values] TestUtils.DeviceType deviceType)
+        {
+            var filename = TestUtils.MethodTestDir + "/test.log";
+            var omit = false;
+            for (var ii = 0; ii < 2; ++ii) 
+            { 
+                using IDevice device = TestUtils.CreateTestDevice(deviceType, filename, omitSegmentIdFromFilename: omit);
+                var storageBase = (StorageDeviceBase)device;
+                var segmentFilename = storageBase.GetSegmentFilename(filename, 0);
+                if (omit)
+                    Assert.AreEqual(filename, segmentFilename);
+                else
+                    Assert.AreEqual(filename + ".0", segmentFilename);
+                omit = true;
+            }
+        }
+
         void TestDeviceWriteRead(IDevice log)
         {
             fht = new FasterKV<KeyStruct, ValueStruct>

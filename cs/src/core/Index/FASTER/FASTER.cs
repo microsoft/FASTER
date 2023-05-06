@@ -14,8 +14,7 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    public partial class FasterKV<Key, Value> : FasterBase,
-        IFasterKV<Key, Value>
+    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         internal readonly AllocatorBase<Key, Value> hlog;
         internal readonly AllocatorBase<Key, Value> readcache;
@@ -66,6 +65,7 @@ namespace FASTER.core
 
         internal readonly bool DoTransientLocking;  // uses LockTable
         internal readonly bool DoEphemeralLocking;  // uses RecordInfo
+        internal bool IsLocking => DoTransientLocking || DoEphemeralLocking;
         internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
         internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 

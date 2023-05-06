@@ -488,11 +488,7 @@ namespace FASTER.core
             pool.Free();
         }
 
-
-        private string GetSegmentName(int segmentId)
-        {
-            return FileName + "." + segmentId;
-        }
+        private string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
         private static uint GetSectorSize(string filename)
         {

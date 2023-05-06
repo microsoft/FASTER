@@ -409,7 +409,11 @@ All these call be accessed through Visual Studio via the main FASTER.sln solutio
 
 ## Key Iteration
 
-FasterKV supports key iteration in order to get the set of distinct keys that are active (not deleted or expired) and indexed by the store. Related pull request is [here](https://github.com/microsoft/FASTER/pull/287). Usage is shown below:
+FasterKV supports key iteration in order to get the set of distinct keys that are active (not deleted or expired) and indexed by the store. Related pull request is [here](https://github.com/microsoft/FASTER/pull/287). There are two flavors:
+- Pull (the original, shown in the preceding PR), where the caller calls GetNext(). This can only be called to iterate up to the `ReadOnlyAddress`, due to locking considerations.
+- Push, where the caller passes a reference to an implementation of `IScanIteratorFunctions<Key, Value>`, which contains methods similar to `IFunctions` for `ConcurrentReader` (if the record is in the mutable region; here, locking is done by FASTER before `ConcurrentReader` is called) and `SingleReader` (other records).
+
+Pull usage is:
 
 ```cs
 using var iter = session.Iterate();
@@ -418,6 +422,18 @@ while (iter.GetNext(out var recordInfo))
    ref Key key = ref iter.GetKey();
    ref Value value = ref iter.GetValue();
 }
+```
+
+Push accepts a reference to the `IScanIteratorFunctions` implementation, to support passing a `struct` reference which will allow inlining. The usage is:
+
+```cs
+struct MyScanFunctions : IScanIteratorFunctions<MyKey, MyValue>
+{
+    // ... Implementation ...
+}
+
+MyScanFunctions myScanFunctions = new();
+using var iter = session.Iterate(ref myScanFunctions);
 ```
 
 ## Log Scan

@@ -1025,7 +1025,7 @@ namespace FASTER.core
         }
     }
 
-    public abstract partial class AllocatorBase<Key, Value> : IDisposable
+    internal abstract partial class AllocatorBase<Key, Value> : IDisposable
     {
         /// <summary>
         /// Restore log
