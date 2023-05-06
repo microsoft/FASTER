@@ -486,7 +486,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public void CheckpointVersionShift(long oldVersion, long newVersion)
+        public virtual void CheckpointVersionShift(long oldVersion, long newVersion)
         {
         }
     }
