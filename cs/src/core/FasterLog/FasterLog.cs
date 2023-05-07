@@ -211,6 +211,22 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Reset FasterLog to empty state
+        /// WARNING: Run after database is quiesced
+        /// </summary>
+        public void Reset()
+        {
+            var beginAddress = allocator.GetFirstValidLogicalAddress(0);
+            allocator.Reset();
+            CommittedUntilAddress = beginAddress;
+            CommittedBeginAddress = beginAddress;
+            SafeTailAddress = beginAddress;
+
+            commitNum = 0;
+            this.beginAddress = beginAddress;
+        }
+
+        /// <summary>
         /// Initialize new log instance with specific begin address and (optional) last commit number
         /// </summary>
         /// <param name="beginAddress"></param>
@@ -224,6 +240,7 @@ namespace FASTER.core
 
             try
             {
+                allocator.Reset();
                 allocator.RestoreHybridLog(beginAddress, beginAddress, beginAddress, beginAddress);
             }
             catch
