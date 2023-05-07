@@ -34,10 +34,10 @@ namespace FASTER.core
         {
             if (refCache == null)
             {
-                refCache = new (UnmanagedMemoryManager<T>, Memory<T>)[4];
-                for (int i = 0; i < 4; i++) refCache[i] = (new UnmanagedMemoryManager<T>(), default);
+                refCache = new (UnmanagedMemoryManager<T>, Memory<T>)[8];
+                for (int i = 0; i < 8; i++) refCache[i] = (new UnmanagedMemoryManager<T>(), default);
             }
-            count = (count + 1) % 4;
+            count = (count + 1) % 8;
             ref var cache = ref refCache[count];
             var len = *(int*)source;
             cache.Item1.SetDestination((T*)((byte*)source + sizeof(int)),  len / sizeof(T));
