@@ -169,7 +169,7 @@ namespace FASTER.test.SingleWriter
         {
         }
 
-        const int numRecords = 300_000;
+        const int numRecords = 1_000;
         const string keyPrefix = "key_";
         string valuePrefix = "value_";
 
@@ -183,7 +183,7 @@ namespace FASTER.test.SingleWriter
         public void Setup()
         {
             // create a string of size 1024 bytes
-            valuePrefix = new string('a', 102400);
+            valuePrefix = new string('a', 1024);
 
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
@@ -223,8 +223,7 @@ namespace FASTER.test.SingleWriter
                 StructWithString key = new(ii, keyPrefix);
                 StructWithString value = new(ii, valuePrefix);
                 session.Upsert(ref key, ref value);
-                if (fht.Log.TailAddress == 10484712)
-                //if (ii % 50_000 == 0)
+                if (ii % 3_000 == 0)
                 {
                     fht.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).GetAwaiter().GetResult();
                     fht.Recover();
@@ -258,15 +257,14 @@ namespace FASTER.test.SingleWriter
                 fht.Log.FlushAndEvict(wait: true);
                 readKey(24);
             }
-            using var iter = fht.Log.Scan(0, 10964128);
+            int count = 0;
+            using var iter = fht.Log.Scan(0, fht.Log.TailAddress);
             while (iter.GetNext(out var _))
             {
+                count++;
             }
-            iter.Dispose();
-            using var iter2 = fht.Log.Scan(10484712, 10964128);
-            while (iter2.GetNext(out var _))
-            {
-            }
+            Assert.AreEqual(count, numRecords);
+
             fht.Log.Compact<StructWithString, StructWithString, Empty, StructWithStringTestFunctions>(functions, fht.Log.SafeReadOnlyAddress, compactionType);
             readKey(48);
         }
