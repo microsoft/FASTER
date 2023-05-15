@@ -50,13 +50,17 @@ namespace FASTER.core
                 RecordInfo = newRecordInfo
             };
 
-            if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+            ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
+
+            if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref newRecordInfo, ref upsertInfo, reason))
             {
                 // No SaveAlloc here as we won't retry, but TODO this record could be reused later.
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                 return (upsertInfo.Action == UpsertAction.CancelOperation) ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
             }
+            SetLengths(newPhysicalAddress, ref newRecordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
 
             #endregion Allocate new record and call SingleWriter
 
@@ -93,7 +97,7 @@ namespace FASTER.core
             // Success, and any read locks have been transferred.
             pendingContext.recordInfo = newRecordInfo;
             pendingContext.logicalAddress = upsertInfo.Address;
-            fasterSession.PostSingleWriter(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
+            fasterSession.PostSingleWriter(ref key, ref input, ref value, ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                            ref newRecordInfo, ref upsertInfo, reason);
             stackCtx.ClearNewRecord();
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);

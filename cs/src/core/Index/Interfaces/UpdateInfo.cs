@@ -50,6 +50,17 @@ namespace FASTER.core
         public RecordInfo RecordInfo { get; internal set; }
 
         /// <summary>
+        /// The length of data in the value that is in use. Incoming, it is set by FASTER to the result of <see cref="IVariableLengthStruct{T, Input}.GetLength(ref T, ref Input)"/>.
+        /// If an application wants to allow data to shrink and then grow again within the same record, it must set this to the correct length on output. 
+        /// </summary>
+        public int UsedValueLength { get; set; }
+
+        /// <summary>
+        /// The allocated length of the record value.
+        /// </summary>
+        public int FullValueLength { get; internal set; }
+
+        /// <summary>
         /// What actions FASTER should perform on a false return from the IFunctions method
         /// </summary>
         public UpsertAction Action { get; set; }
@@ -126,6 +137,17 @@ namespace FASTER.core
         public RecordInfo RecordInfo { get; internal set; }
 
         /// <summary>
+        /// The length of data in the value that is in use. Incoming, it is set by FASTER to the result of <see cref="IVariableLengthStruct{T, Input}.GetLength(ref T, ref Input)"/>.
+        /// If an application wants to allow data to shrink and then grow again within the same record, it must set this to the correct length on output. 
+        /// </summary>
+        public int UsedValueLength { get; set; }
+
+        /// <summary>
+        /// The allocated length of the record value.
+        /// </summary>
+        public int FullValueLength { get; internal set; }
+
+        /// <summary>
         /// What actions FASTER should perform on a false return from the IFunctions method
         /// </summary>
         public RMWAction Action { get; set; }
@@ -175,6 +197,17 @@ namespace FASTER.core
         /// The header of the record.
         /// </summary>
         public RecordInfo RecordInfo { get; internal set; }
+
+        /// <summary>
+        /// The length of data in the value that is in use. Incoming, it is set by FASTER to the result of <see cref="IVariableLengthStruct{T, Input}.GetLength(ref T, ref Input)"/>.
+        /// If an application wants to allow data to shrink and then grow again within the same record, it must set this to the correct length on output. 
+        /// </summary>
+        public int UsedValueLength { get; set; }
+
+        /// <summary>
+        /// The allocated length of the record value.
+        /// </summary>
+        public int FullValueLength { get; internal set; }
 
         /// <summary>
         /// What actions FASTER should perform on a false return from the IFunctions method

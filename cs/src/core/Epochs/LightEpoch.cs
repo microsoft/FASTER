@@ -485,22 +485,6 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// A 32-bit murmur3 implementation.
-        /// </summary>
-        /// <param name="h"></param>
-        /// <returns></returns>
-        static int Murmur3(int h)
-        {
-            uint a = (uint)h;
-            a ^= a >> 16;
-            a *= 0x85ebca6b;
-            a ^= a >> 13;
-            a *= 0xc2b2ae35;
-            a ^= a >> 16;
-            return (int)a;
-        }
-
-        /// <summary>
         /// Allocate a new entry in epoch table. This is called 
         /// once for a thread.
         /// </summary>
@@ -510,7 +494,7 @@ namespace FASTER.core
             if (Metadata.threadId == 0) // run once per thread for performance
             {
                 Metadata.threadId = Environment.CurrentManagedThreadId;
-                uint code = (uint)Murmur3(Metadata.threadId);
+                uint code = (uint)Utility.Murmur3(Metadata.threadId);
                 Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
                 Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }

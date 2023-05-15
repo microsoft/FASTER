@@ -75,6 +75,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{C60F148B-2
 		..\docs\_docs\26-fasterkv-samples.md = ..\docs\_docs\26-fasterkv-samples.md
 		..\docs\_docs\29-fasterkv-cpp.md = ..\docs\_docs\29-fasterkv-cpp.md
 		..\docs\_docs\30-fasterkv-record-locking.md = ..\docs\_docs\30-fasterkv-record-locking.md
+		..\docs\_docs\31-fasterkv-revivification.md = ..\docs\_docs\31-fasterkv-revivification.md
 		..\docs\_docs\40-fasterlog-basics.md = ..\docs\_docs\40-fasterlog-basics.md
 		..\docs\_docs\43-fasterlog-tuning.md = ..\docs\_docs\43-fasterlog-tuning.md
 		..\docs\_docs\46-fasterlog-samples.md = ..\docs\_docs\46-fasterlog-samples.md

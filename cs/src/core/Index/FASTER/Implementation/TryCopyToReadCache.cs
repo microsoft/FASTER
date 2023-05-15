@@ -43,7 +43,7 @@ namespace FASTER.core
             };
 
             Output output = default;
-            if (!fasterSession.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+            if (!fasterSession.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref newRecordInfo, ref upsertInfo, WriteReason.CopyToReadCache))
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
@@ -86,7 +86,7 @@ namespace FASTER.core
             // Success.
             pendingContext.recordInfo = newRecordInfo;
             pendingContext.logicalAddress = upsertInfo.Address;
-            fasterSession.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
+            fasterSession.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
                                     ref newRecordInfo, ref upsertInfo, WriteReason.CopyToReadCache);
             stackCtx.ClearNewRecord();
             return true;

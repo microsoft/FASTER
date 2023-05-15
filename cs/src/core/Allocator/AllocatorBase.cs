@@ -315,12 +315,12 @@ namespace FASTER.core
         /// <returns></returns>
         public abstract ref Value GetValue(long physicalAddress);
         /// <summary>
-        /// Get value from address range
+        /// Get value from address range. For varlen, also call ValueLength.Initialize().
         /// </summary>
         /// <param name="physicalAddress"></param>
         /// <param name="endPhysicalAddress"></param>
         /// <returns></returns>
-        public virtual ref Value GetValue(long physicalAddress, long endPhysicalAddress) => ref GetValue(physicalAddress);
+        public virtual ref Value GetAndInitializeValue(long physicalAddress, long endPhysicalAddress) => ref GetValue(physicalAddress);
 
         /// <summary>
         /// Get address info for key
@@ -389,6 +389,17 @@ namespace FASTER.core
         /// <param name="value"></param>
         /// <returns></returns>
         public abstract (int, int) GetRecordSize(ref Key key, ref Value value);
+
+        /// <summary>
+        /// Get record size
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="value"></param>
+        /// <param name="fasterSession"></param>
+        /// <returns></returns>
+        public abstract (int, int) GetRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, FasterSession fasterSession)
+            where FasterSession : IVariableLengthStruct<Value, Input>;
 
         /// <summary>
         /// Allocate page

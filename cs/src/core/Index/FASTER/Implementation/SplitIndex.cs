@@ -56,7 +56,6 @@ namespace FASTER.core
             {
                 Thread.Yield();
             }
-
         }
 
         private void SplitChunk(

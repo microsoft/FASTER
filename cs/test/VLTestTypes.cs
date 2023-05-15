@@ -63,8 +63,8 @@ namespace FASTER.test
 
         public void CopyTo(ref VLValue dst)
         {
-            var fulllength = GetLength(ref this);
-            Buffer.MemoryCopy(Unsafe.AsPointer(ref this), Unsafe.AsPointer(ref dst), fulllength, fulllength);
+            var fullValueLength = GetLength(ref this);
+            Buffer.MemoryCopy(Unsafe.AsPointer(ref this), Unsafe.AsPointer(ref dst), fullValueLength, fullValueLength);
         }
 
         public long GetHashCode64(ref VLValue k) => Utility.GetHashCode(k.length) ^ Utility.GetHashCode(k.field1);

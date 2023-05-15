@@ -105,19 +105,35 @@ namespace FASTER.core
                     // Mutable Region: Update the record in-place
                     deleteInfo.RecordInfo = srcRecordInfo;
                     ref Value recordValue = ref stackCtx.recSrc.GetValue();
-                    if (fasterSession.ConcurrentDeleter(ref stackCtx.recSrc.GetKey(), ref recordValue, ref srcRecordInfo, ref deleteInfo, out stackCtx.recSrc.ephemeralLockResult))
+
+                    // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside ConcurrentDeleter, in the ephemeral lock
+                    if (fasterSession.ConcurrentDeleter(stackCtx.recSrc.PhysicalAddress, ref stackCtx.recSrc.GetKey(), ref recordValue, ref srcRecordInfo, 
+                            ref deleteInfo, out int fullRecordLength, out stackCtx.recSrc.ephemeralLockResult))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                         if (WriteDefaultOnDelete)
                             recordValue = default;
 
-                        // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
+                        // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling
+                        // a prior version of this record (i.e., if there is an earlier record for this key, it would be reachable again).
                         if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
                         {
-                            // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
-                            // the hashtable entry has already been updated by someone else.
-                            var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
-                            stackCtx.hei.TryCAS(address, tag: 0);
+                            if (this.LockTable.IsEnabled || srcRecordInfo.TrySeal())
+                            {
+                                if (srcRecordInfo.Tombstone)   // If this is false, it was revivified by another session immediately after ConcurrentDeleter completed.
+                                {
+                                    // If we CAS out of the hashtable successfully, add it to the free list.
+                                    var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
+                                    if (stackCtx.hei.TryCAS(address, tag: 0))
+                                    {
+                                        // It's safe to unseal after setting Tombstone; it's no longer in the hash table and we've cleared Tombstone, so another session
+                                        // trying to revivify in-place will see that Tombstone is cleared if it manages to Seal.
+                                        srcRecordInfo.Tombstone = false;
+                                        srcRecordInfo.Unseal();
+                                        FreeRecordPool.Enqueue(stackCtx.recSrc.LogicalAddress, fullRecordLength);
+                                    }
+                                }
+                            }
                         }
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
@@ -231,7 +247,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var value = default(Value);
-            var (_, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
+            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
 
             if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: false, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
@@ -248,13 +264,17 @@ namespace FASTER.core
                 RecordInfo = newRecordInfo
             };
 
-            if (!fasterSession.SingleDeleter(ref key, ref hlog.GetValue(newPhysicalAddress), ref newRecordInfo, ref deleteInfo))
+            ref Value newValue = ref hlog.GetValue(newPhysicalAddress);     // No endAddress arg, so no varlen Initialize() is done
+            (deleteInfo.UsedValueLength, deleteInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
+
+            if (!fasterSession.SingleDeleter(ref key, ref newValue, ref newRecordInfo, ref deleteInfo))
             {
-                // Don't save allocation because we did not allocate a full Value.
+                // Don't save allocation because we did not allocate a full Value. TODO: Track whether we have a filler; if so it was revivified and thus can be reused again.
                 if (deleteInfo.Action == DeleteAction.CancelOperation)
                     return OperationStatus.CANCELED;
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
+            SetDeletedValueLengths(newPhysicalAddress, ref srcRecordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             deleteInfo.RecordInfo = newRecordInfo;

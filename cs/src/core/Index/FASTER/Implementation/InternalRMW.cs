@@ -104,11 +104,56 @@ namespace FASTER.core
                 if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
                 {
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
+                    ref Value recordValue = ref stackCtx.recSrc.GetValue();
                     if (srcRecordInfo.Tombstone)
-                        goto CreateNewRecord;
+                    {
+                        // Try in-place revivification of the record.
+                        if (srcRecordInfo.Filler)
+                        {
+                            if (!this.LockTable.IsEnabled && !srcRecordInfo.TrySeal())
+                                return OperationStatus.RETRY_NOW;
+                            bool ok = true;
+                            try
+                            {
+                                if (srcRecordInfo.Tombstone && srcRecordInfo.Filler)
+                                {
+                                    srcRecordInfo.Tombstone = false;
+                                    (rmwInfo.UsedValueLength, rmwInfo.FullValueLength) = GetDeletedValueLengths(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
 
+                                    if (!IsFixedLengthReviv)    // Non-fixed-length must update the usedValueLength with the current input
+                                    {
+                                        // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
+                                        var (actualSize, allocatedSize) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+                                        if (ok = GetRecordLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, rmwInfo.FullValueLength) >= allocatedSize)
+                                            rmwInfo.UsedValueLength = ReInitialize(stackCtx.recSrc.PhysicalAddress, actualSize, rmwInfo.FullValueLength, srcRecordInfo, ref recordValue);
+                                    }
+
+                                    rmwInfo.RecordInfo = srcRecordInfo;
+                                    if (ok && fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref rmwInfo))
+                                    {
+                                        this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
+                                        pendingContext.recordInfo = srcRecordInfo;
+                                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                                        goto LatchRelease;
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                SetLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                                srcRecordInfo.Unseal();
+                                if (!ok)
+                                    srcRecordInfo.Tombstone = true; // Restore tombstone on inability to update in place
+                            }
+                        }
+                        goto CreateNewRecord;
+                    }
+
+                    // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater, in the ephemeral lock.
                     rmwInfo.RecordInfo = srcRecordInfo;
-                    if (fasterSession.InPlaceUpdater(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref rmwInfo, out status, out stackCtx.recSrc.ephemeralLockResult)
+                    if (fasterSession.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref rmwInfo,
+                                                     out status, out stackCtx.recSrc.ephemeralLockResult)
                         || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
@@ -119,6 +164,7 @@ namespace FASTER.core
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         goto LatchRelease;
                     }
+
                     // Note: stackCtx.recSrc.ephemeralLockResult == Failed was already handled by 'out status' above
                     if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                         goto LatchRelease;
@@ -404,10 +450,14 @@ namespace FASTER.core
 
             // Populate the new record
             rmwInfo.RecordInfo = newRecordInfo;
+            ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            (rmwInfo.UsedValueLength, rmwInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
+
             if (!doingCU)
             {
-                if (fasterSession.InitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output, ref newRecordInfo, ref rmwInfo))
+                if (fasterSession.InitialUpdater(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo, ref rmwInfo))
                 {
+                    SetLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = forExpiration
                         ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired)
                         : OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
@@ -421,9 +471,9 @@ namespace FASTER.core
             }
             else
             {
-                ref Value newRecordValue = ref hlog.GetValue(newPhysicalAddress, newPhysicalAddress + actualSize);
                 if (fasterSession.CopyUpdater(ref key, ref input, ref value, ref newRecordValue, ref output, ref newRecordInfo, ref rmwInfo))
                 {
+                    SetLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
                     goto DoCAS;
                 }
@@ -500,6 +550,7 @@ namespace FASTER.core
             else
                 fasterSession.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref newRecordInfo, ref rmwInfo);
 
+            SetLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }

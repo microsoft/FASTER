@@ -47,6 +47,9 @@ namespace FASTER.core
             if (recycle && GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, allocatedSize, out newLogicalAddress, out newPhysicalAddress))
                 return true;
 
+            if (TryDequeueFreeRecord(ref allocatedSize, stackCtx.hei.entry, out newLogicalAddress, out newPhysicalAddress))
+                return true;
+
             // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
             for (; ; Thread.Yield() )
             {

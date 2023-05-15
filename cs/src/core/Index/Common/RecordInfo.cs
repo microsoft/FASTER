@@ -21,8 +21,8 @@ namespace FASTER.core
         const int kTotalBits = kTotalSizeInBytes * 8;
 
         // Previous address
-        const int kPreviousAddressBits = 48;
-        const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
+        internal const int kPreviousAddressBits = 48;
+        internal const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
 
         // Shift position of lock in word
         const int kLockShiftInWord = kPreviousAddressBits;
@@ -127,6 +127,28 @@ namespace FASTER.core
             Debug.Assert(!IsSealed, "Trying to X unlock a Sealed record");
             word = (word & ~kExclusiveLockBitMask) | kSealedBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
         }
+
+        /// <summary>
+        /// Seal this record (currently only called to prepare it for inline revivification).
+        /// </summary>
+        public bool TrySeal()
+        {
+            // If this fails for any reason it means another record is trying to modify (perhaps revivify) it, so return false to RETRY_LATER.
+            long expected_word = word;
+            return !IsClosedWord(expected_word) && expected_word == Interlocked.CompareExchange(ref word, expected_word | kSealedBitMask, expected_word);
+        }
+
+        /// <summary>
+        /// Unseal this record that was previously sealed for revivification.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Unseal()
+        {
+            Debug.Assert(IsSealed, "Record should have been sealed");
+            Debug.Assert(Valid, "Record should be valid");
+            word &= ~kSealedBitMask;
+        }
+
 
         /// <summary>
         /// Try to take an exclusive (write) lock on RecordInfo

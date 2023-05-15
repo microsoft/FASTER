@@ -588,11 +588,13 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult)
             {
                 lockResult = EphemeralLockResult.Success;       // Ephemeral locking is not used with Lockable contexts
+                (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = _clientSession.fht.GetValueLengths<Input, Output, Context, IFasterSession<Key, Value, Input, Output, Context>>(physicalAddress, ref dst, ref recordInfo, this);
                 if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo))
                     return false;
+                _clientSession.fht.SetLengths(physicalAddress, ref dst, ref recordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
                 recordInfo.SetDirtyAndModified();
                 return true;
             }
@@ -635,19 +637,21 @@ namespace FASTER.core
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status, out EphemeralLockResult lockResult)
+            public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status, out EphemeralLockResult lockResult)
             {
                 lockResult = EphemeralLockResult.Success;       // Ephemeral locking is not used with Lockable contexts
+                (rmwInfo.UsedValueLength, rmwInfo.FullValueLength) = _clientSession.fht.GetValueLengths<Input, Output, Context, IFasterSession<Key, Value, Input, Output, Context>>(physicalAddress, ref value, ref recordInfo, this);
                 if (!_clientSession.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
                     return false;
+                _clientSession.fht.SetLengths(physicalAddress, ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                 recordInfo.SetDirtyAndModified();
                 return true;
             }
+            #endregion InPlaceUpdater
 
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
                 => _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
 
-            #endregion InPlaceUpdater
             #endregion IFunctions - RMWs
 
             #region IFunctions - Deletes
@@ -663,11 +667,15 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out int fullRecordLength, out EphemeralLockResult lockResult)
             {
                 lockResult = EphemeralLockResult.Success;       // Ephemeral locking is not used with Lockable contexts
+                (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, fullRecordLength) = _clientSession.fht.GetRecordLengths<Input, Output, Context, IFasterSession<Key, Value, Input, Output, Context>>(physicalAddress, ref value, ref recordInfo, this);
                 if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo))
                     return false;
+                if (_clientSession.fht.WriteDefaultOnDelete)
+                    value = default;
+                _clientSession.fht.SetDeletedValueLengths(physicalAddress, ref recordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
                 recordInfo.SetDirtyAndModified();
                 recordInfo.SetTombstone();
                 return true;

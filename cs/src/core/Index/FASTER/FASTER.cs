@@ -27,7 +27,7 @@ namespace FASTER.core
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;
-        private readonly bool WriteDefaultOnDelete;
+        internal readonly bool WriteDefaultOnDelete;
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
@@ -77,7 +77,11 @@ namespace FASTER.core
         internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref this.hlog.NumActiveLockingSessions);
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
-        
+
+        internal bool EnableFreeRecordPool => FreeRecordPool is not null;
+        internal bool FreeRecordPoolHasRecords => EnableFreeRecordPool && FreeRecordPool.HasRecords;
+        internal FreeRecordPool FreeRecordPool;
+
         /// <summary>
         /// Create FasterKV instance
         /// </summary>
@@ -87,7 +91,7 @@ namespace FASTER.core
                 fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(),
                 fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
                 fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
-                fasterKVSettings.TryRecoverLatest, fasterKVSettings.LockingMode, null, fasterKVSettings.logger)
+                fasterKVSettings.TryRecoverLatest, fasterKVSettings.LockingMode, null, maxFreeRecordsInBin: fasterKVSettings.MaxFreeRecordsInBin)
         { }
 
         /// <summary>
@@ -103,12 +107,13 @@ namespace FASTER.core
         /// <param name="lockingMode">How FASTER should do record locking</param>
         /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="FasterKVSettings{Key, Value}"/>).</param>
         /// <param name="logger">Logger to use.</param>
-        /// <param name="lockTableSize">Number of buckets in the lock table</param>
+        /// <param name="maxFreeRecordsInBin">The number of free records in the free-record pool (in addition to any in the hash chains).
+        ///     If non-zero, we will revivify and reuse Tombstoned records encountered in the mutable region during Updates.</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, LockingMode lockingMode = LockingMode.Standard,
-            ILoggerFactory loggerFactory = null, ILogger logger = null, int lockTableSize = Constants.kDefaultLockTableSize)
+            ILoggerFactory loggerFactory = null, ILogger logger = null, int maxFreeRecordsInBin = Constants.DefaultMaxFreeRecordsInBin)
         {
             this.loggerFactory = loggerFactory;
             this.logger = logger ?? this.loggerFactory?.CreateLogger("FasterKV Constructor");
@@ -239,6 +244,7 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             this.LockTable = new OverflowBucketLockTable<Key, Value>(lockingMode == LockingMode.Standard ? this : null);
+            this.InitializeRevivification(variableLengthStructSettings?.valueLength, maxFreeRecordsInBin, fixedRecordLength: keyLen is null);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
@@ -759,22 +765,21 @@ namespace FASTER.core
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
+            FreeRecordPool?.Dispose();
         }
 
         private static void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
         {
             if (typeof(Key) == typeof(SpanByte))
             {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<SpanByte, Value>() as VariableLengthStructSettings<Key, Value>;
+                variableLengthStructSettings ??= new VariableLengthStructSettings<SpanByte, Value>() as VariableLengthStructSettings<Key, Value>;
 
                 if (variableLengthStructSettings.keyLength == null)
                     (variableLengthStructSettings as VariableLengthStructSettings<SpanByte, Value>).keyLength = new SpanByteVarLenStruct();
             }
             else if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0]))
             {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>();
+                variableLengthStructSettings ??= new VariableLengthStructSettings<Key, Value>();
 
                 if (variableLengthStructSettings.keyLength == null)
                 {
@@ -785,8 +790,7 @@ namespace FASTER.core
             }
             else if (typeof(Key).IsGenericType && (typeof(Key).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Key).GetGenericArguments()[0]))
             {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>();
+                variableLengthStructSettings ??= new VariableLengthStructSettings<Key, Value>();
 
                 if (variableLengthStructSettings.keyLength == null)
                 {
@@ -798,16 +802,14 @@ namespace FASTER.core
 
             if (typeof(Value) == typeof(SpanByte))
             {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Key, SpanByte>() as VariableLengthStructSettings<Key, Value>;
+                variableLengthStructSettings ??= new VariableLengthStructSettings<Key, SpanByte>() as VariableLengthStructSettings<Key, Value>;
 
                 if (variableLengthStructSettings.valueLength == null)
                     (variableLengthStructSettings as VariableLengthStructSettings<Key, SpanByte>).valueLength = new SpanByteVarLenStruct();
             }
             else if (typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(Memory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
             {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>();
+                variableLengthStructSettings ??= new VariableLengthStructSettings<Key, Value>();
 
                 if (variableLengthStructSettings.valueLength == null)
                 {
@@ -818,8 +820,7 @@ namespace FASTER.core
             }
             else if (typeof(Value).IsGenericType && (typeof(Value).GetGenericTypeDefinition() == typeof(ReadOnlyMemory<>)) && Utility.IsBlittableType(typeof(Value).GetGenericArguments()[0]))
             {
-                if (variableLengthStructSettings == null)
-                    variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>();
+                variableLengthStructSettings ??= new VariableLengthStructSettings<Key, Value>();
 
                 if (variableLengthStructSettings.valueLength == null)
                 {
