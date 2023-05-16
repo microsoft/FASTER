@@ -7,7 +7,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
-using static FASTER.test.Revivification.RevivificationVarLenTests;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test.Revivification
@@ -99,7 +98,7 @@ namespace FASTER.test.Revivification
             for (int key = 0; key < numRecords; key++)
             {
                 var status = session.Upsert(key, key * valueMult);
-                Assert.IsTrue(status.Found, status.ToString());
+                Assert.IsTrue(status.Record.Created, status.ToString());
             }
         }
 
@@ -178,12 +177,14 @@ namespace FASTER.test.Revivification
             private static RMWInfo CopyToRMWInfo(ref UpsertInfo upsertInfo)
             {
                 return new()
-                { 
+                {
                     Version = upsertInfo.Version,
                     SessionID = upsertInfo.SessionID,
                     Address = upsertInfo.Address,
                     KeyHash = upsertInfo.KeyHash,
                     RecordInfo = default,
+                    UsedValueLength = upsertInfo.UsedValueLength,
+                    FullValueLength = upsertInfo.FullValueLength,
                     Action = RMWAction.Default,
                 };
             }
@@ -191,13 +192,17 @@ namespace FASTER.test.Revivification
             public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 var rmwInfo = CopyToRMWInfo(ref upsertInfo);
-                return InitialUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
+                var result = InitialUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
+                upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
+                return result;
             }
 
             public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 var rmwInfo = CopyToRMWInfo(ref upsertInfo);
-                return InPlaceUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
+                var result = InPlaceUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
+                upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
+                return result;
             }
 
             public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -441,7 +446,7 @@ namespace FASTER.test.Revivification
                 keyVec.Fill((byte)ii);
                 functions.expectedUsedValueLengths.Enqueue(input.TotalSize);
                 var status = session.Upsert(ref key, ref input, ref input, ref output);
-                Assert.IsTrue(status.Found, status.ToString());
+                Assert.IsTrue(status.Record.Created, status.ToString());
                 Assert.IsEmpty(functions.expectedUsedValueLengths);
             }
         }
@@ -489,7 +494,7 @@ namespace FASTER.test.Revivification
                 session.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
                 session.RMW(ref key, ref input);
-            Assert.IsEmpty(functions.expectedUsedValueLengths); ;
+            Assert.IsEmpty(functions.expectedUsedValueLengths);
 
             if (growth == Growth.Shrink)
             {
@@ -1258,7 +1263,7 @@ namespace FASTER.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(GrowLength));
                 var status = session.Upsert(ref key, ref input, ref input, ref output);
-                Assert.IsTrue(status.Found, status.ToString());
+                Assert.IsTrue(status.Record.Created, status.ToString());
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(GrowLength));
                 status = session.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
@@ -1358,7 +1363,7 @@ namespace FASTER.test.Revivification
                 var keyObj = new MyKey { key = key };
                 var valueObj = new MyValue { value = key + valueMult };
                 var status = session.Upsert(keyObj, valueObj);
-                Assert.IsTrue(status.Found, status.ToString());
+                Assert.IsTrue(status.Record.Created, status.ToString());
             }
         }
 

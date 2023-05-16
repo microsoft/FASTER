@@ -111,14 +111,14 @@ namespace FASTER.core
                             ref deleteInfo, out int fullRecordLength, out stackCtx.recSrc.ephemeralLockResult))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
-                        if (WriteDefaultOnDelete)
-                            recordValue = default;
 
-                        // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling
-                        // a prior version of this record (i.e., if there is an earlier record for this key, it would be reachable again).
-                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
+                        // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
+                        // Otherwise if there is an earlier record for this key, it would be reachable again. // TODO: Consider this reuse for mid-chain records as well.
+                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking 
+                                && srcRecordInfo.PreviousAddress < hlog.BeginAddress && UseFreeRecordPool)
                         {
-                            if (this.LockTable.IsEnabled || srcRecordInfo.TrySeal())
+                            // Always Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
+                            if (srcRecordInfo.TrySeal())
                             {
                                 if (srcRecordInfo.Tombstone)   // If this is false, it was revivified by another session immediately after ConcurrentDeleter completed.
                                 {
@@ -126,10 +126,10 @@ namespace FASTER.core
                                     var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
                                     if (stackCtx.hei.TryCAS(address, tag: 0))
                                     {
-                                        // It's safe to unseal after setting Tombstone; it's no longer in the hash table and we've cleared Tombstone, so another session
-                                        // trying to revivify in-place will see that Tombstone is cleared if it manages to Seal.
+                                        // Clear Tombstone, so another session trying to revivify in-place will see that Tombstone is cleared if it manages to Seal.
+                                        // Do *not* Unseal() here; the record may be in FasterKVIterator's tempKv, so we do not want to clear both Tombstone and Seal.
+                                        // Therefore, delay Unseal() to when it's dequeued from the free record pool.
                                         srcRecordInfo.Tombstone = false;
-                                        srcRecordInfo.Unseal();
                                         FreeRecordPool.Enqueue(stackCtx.recSrc.LogicalAddress, fullRecordLength);
                                     }
                                 }
@@ -248,8 +248,7 @@ namespace FASTER.core
         {
             var value = default(Value);
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
-
-            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: false, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, ref allocatedSize, recycle: false, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
             ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: true, stackCtx.recSrc.LatestLogicalAddress);

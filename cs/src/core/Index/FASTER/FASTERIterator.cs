@@ -263,7 +263,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IsTailmostMainKvRecord(ref Key key, RecordInfo recordInfo, ref OperationStackContext<Key, Value> stackCtx)
+        bool IsTailmostMainKvRecord(ref Key key, RecordInfo mainKvRecordInfo, ref OperationStackContext<Key, Value> stackCtx)
         {
             stackCtx = new(fht.comparer.GetHashCode64(ref key));
             if (fht.FindTag(ref stackCtx.hei))
@@ -274,7 +274,7 @@ namespace FASTER.core
                 if (stackCtx.recSrc.LogicalAddress == mainKvIter.CurrentAddress)
                 {
                     // The tag chain starts with this record, so we won't see this key again; remove it from tempKv if we've seen it before.
-                    if (recordInfo.PreviousAddress >= fht.Log.BeginAddress)
+                    if (mainKvRecordInfo.PreviousAddress >= fht.Log.BeginAddress)
                     {
                         // Check if it's in-memory first so we don't spuriously create a tombstone record.
                         if (tempKvSession.ContainsKeyInMemory(ref key, out _).Found)
@@ -282,7 +282,7 @@ namespace FASTER.core
                     }
 
                     // If the record is not deleted, we can let the caller process it directly within mainKvIter.
-                    return !recordInfo.Tombstone;
+                    return !mainKvRecordInfo.Tombstone;
                 }
             }
             return false;

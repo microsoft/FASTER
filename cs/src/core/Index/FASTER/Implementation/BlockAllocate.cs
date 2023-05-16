@@ -41,7 +41,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecord<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, ref OperationStackContext<Key, Value> stackCtx,
-                                                       int allocatedSize, bool recycle, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
+                                                       ref int allocatedSize, bool recycle, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
         {
             status = OperationStatus.SUCCESS;
             if (recycle && GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, allocatedSize, out newLogicalAddress, out newPhysicalAddress))

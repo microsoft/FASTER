@@ -78,8 +78,8 @@ namespace FASTER.core
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
-        internal bool EnableFreeRecordPool => FreeRecordPool is not null;
-        internal bool FreeRecordPoolHasRecords => EnableFreeRecordPool && FreeRecordPool.HasRecords;
+        internal bool UseFreeRecordPool => FreeRecordPool is not null;
+        internal bool FreeRecordPoolHasRecords => UseFreeRecordPool && FreeRecordPool.HasRecords;
         internal FreeRecordPool FreeRecordPool;
 
         /// <summary>

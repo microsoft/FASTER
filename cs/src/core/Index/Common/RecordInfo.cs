@@ -144,7 +144,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Unseal()
         {
-            Debug.Assert(IsSealed, "Record should have been sealed");
+            // Do not assert IsSealed; we only unseal in a short scope in revivification when not using LockTable, and this saves us an "if" when calling this.
             Debug.Assert(Valid, "Record should be valid");
             word &= ~kSealedBitMask;
         }

@@ -31,12 +31,8 @@ namespace FASTER.core
                                     ref RecordInfo srcRecordInfo, FasterSession fasterSession, WriteReason reason)
         where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            #region Create new copy in mutable region
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
-
-            #region Allocate new record and call SingleWriter
-
-            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, ref allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
             ref var newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);
@@ -61,8 +57,6 @@ namespace FASTER.core
                 return (upsertInfo.Action == UpsertAction.CancelOperation) ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
             }
             SetLengths(newPhysicalAddress, ref newRecordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
-
-            #endregion Allocate new record and call SingleWriter
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             bool success;
@@ -101,7 +95,6 @@ namespace FASTER.core
                                            ref newRecordInfo, ref upsertInfo, reason);
             stackCtx.ClearNewRecord();
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);
-            #endregion
         }
     }
 }

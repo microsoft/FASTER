@@ -372,7 +372,13 @@ namespace FASTER.core
                 result = bins[index + 1].Dequeue<Key, Value>(size, minAddress, out address);
 
             if (result)
+            { 
                 Interlocked.Decrement(ref this.numberOfRecords);
+
+                // We are finally safe to unseal, since epoch management guarantees nobody is still executing who could
+                // have seen this record before it went into the free record pool.
+                fkv.hlog.GetInfo(fkv.hlog.GetPhysicalAddress(address)).Unseal();
+            }
             return result;
         }
 
