@@ -19,6 +19,7 @@ namespace FASTER.core
         const long kSizeMask = kMaxSize - 1;
         const long kSizeMaskInWord = kSizeMask << kSizeShiftInWord;
 
+        // 'word' contains the reclaimable logicalAddress and the size of the record at that address.
         private long word;
         private const long emptyWord = 0;
 
@@ -154,18 +155,16 @@ namespace FASTER.core
         internal int GetInitialPartitionIndex()
         {
             // Taken from LightEpoch
-            var threadId = Environment.OSVersion.Platform == PlatformID.Win32NT ? (int)Native32.GetCurrentThreadId() : Thread.CurrentThread.ManagedThreadId;
-            var partitionId = Utility.Murmur3(threadId) % partitionCount;
-            return partitionId >= 0 ? partitionId : -partitionId;
+            var threadId = Environment.CurrentManagedThreadId;
+            var partitionId = (uint)Utility.Murmur3(threadId) % partitionCount;
+            return (int)partitionId;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int Increment(int pointer)
         {
             var next = pointer + 1;
-            if (next == partitionSize)
-                next = 1;   // The first "FreeRecord" in the partition is the head/tail popinters
-            return next;
+            return next == partitionSize ? 1 : next;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -191,7 +190,7 @@ namespace FASTER.core
                     var prev = tail;
                     var next = Increment(prev);
                     if (next == head)
-                        break; // The bin is full
+                        break; // The partition is full
                     if (Interlocked.CompareExchange(ref tail, next, prev) != prev)
                         continue;
                     if ((partitionStart + prev)->Set(address, size))
@@ -224,7 +223,7 @@ namespace FASTER.core
                 {
                     var prev = head;
                     if (prev == tail)
-                        break; // The bin is empty
+                        break; // The partition is empty
                     var next = Increment(prev);
                     if (Interlocked.CompareExchange(ref head, next, prev) != prev)
                         continue;
@@ -372,7 +371,7 @@ namespace FASTER.core
                 result = bins[index + 1].Dequeue<Key, Value>(size, minAddress, out address);
 
             if (result)
-            { 
+            {
                 Interlocked.Decrement(ref this.numberOfRecords);
 
                 // We are finally safe to unseal, since epoch management guarantees nobody is still executing who could

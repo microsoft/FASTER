@@ -7,6 +7,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test.Revivification
@@ -15,7 +17,30 @@ namespace FASTER.test.Revivification
 
     public enum CollisionRange { Ten = 10, None = int.MaxValue }
 
-    internal struct RevivificationSpanByteComparer : IFasterEqualityComparer<SpanByte>
+    static class RevivificationTestUtils
+    {
+        internal static RMWInfo CopyToRMWInfo(ref UpsertInfo upsertInfo)
+            => new()
+            {
+                Version = upsertInfo.Version,
+                SessionID = upsertInfo.SessionID,
+                Address = upsertInfo.Address,
+                KeyHash = upsertInfo.KeyHash,
+                RecordInfo = default,
+                UsedValueLength = upsertInfo.UsedValueLength,
+                FullValueLength = upsertInfo.FullValueLength,
+                Action = RMWAction.Default,
+            };
+
+        internal static FreeRecordPool SwapFreeRecordPool<TKey, TValue>(FasterKV<TKey, TValue> fht, FreeRecordPool pool)
+        {
+            var temp = fht.FreeRecordPool;
+            fht.FreeRecordPool = pool;
+            return temp;
+        }
+    }
+
+    internal readonly struct RevivificationSpanByteComparer : IFasterEqualityComparer<SpanByte>
     {
         private readonly SpanByteComparer defaultComparer;
         private readonly int collisionRange;
@@ -174,24 +199,9 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(this.session.ctx.version, deleteInfo.Version);
             }
 
-            private static RMWInfo CopyToRMWInfo(ref UpsertInfo upsertInfo)
-            {
-                return new()
-                {
-                    Version = upsertInfo.Version,
-                    SessionID = upsertInfo.SessionID,
-                    Address = upsertInfo.Address,
-                    KeyHash = upsertInfo.KeyHash,
-                    RecordInfo = default,
-                    UsedValueLength = upsertInfo.UsedValueLength,
-                    FullValueLength = upsertInfo.FullValueLength,
-                    Action = RMWAction.Default,
-                };
-            }
-
             public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
-                var rmwInfo = CopyToRMWInfo(ref upsertInfo);
+                var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
                 var result = InitialUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
                 upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
                 return result;
@@ -199,7 +209,7 @@ namespace FASTER.test.Revivification
 
             public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                var rmwInfo = CopyToRMWInfo(ref upsertInfo);
+                var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
                 var result = InPlaceUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
                 upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
                 return result;
@@ -600,20 +610,13 @@ namespace FASTER.test.Revivification
         const byte delBelowRO = numRecords / 2 - 4;
         const byte copiedBelowRO = numRecords / 2 - 5;
 
-        private FreeRecordPool SwapFreeRecordPool(FreeRecordPool pool)
-        {
-            var temp = this.fht.FreeRecordPool;
-            this.fht.FreeRecordPool = pool;
-            return temp;
-        }
-
         private long PrepareDeletes(bool stayInChain, byte delAboveRO, FlushMode flushMode)
         {
             Populate(0, numRecords / 2);
 
             FreeRecordPool pool = default;
             if (stayInChain)
-                pool = SwapFreeRecordPool(pool);
+                pool = RevivificationTestUtils.SwapFreeRecordPool(fht, pool);
 
             // Delete key below (what will be) the readonly line. This is for a target for the test; the record should not be revivified.
             Span<byte> keyVecDelBelowRO = stackalloc byte[10];
@@ -646,7 +649,7 @@ namespace FASTER.test.Revivification
             if (stayInChain)
             {
                 Assert.AreEqual(0, pool.NumberOfRecords);
-                pool = SwapFreeRecordPool(pool);
+                pool = RevivificationTestUtils.SwapFreeRecordPool(fht, pool);
             }
 
             Assert.AreEqual(tailAddress, fht.Log.TailAddress);
@@ -702,7 +705,7 @@ namespace FASTER.test.Revivification
                 keyVecToTest.Fill(delAboveRO);
                 expectReviv = true;
             }
-            else 
+            else
             {
                 Assert.Fail($"Unexpected updateKey {updateKey}");
                 expectReviv = false;    // make the compiler happy
@@ -740,7 +743,7 @@ namespace FASTER.test.Revivification
             bool stayInChain = deleteDest == DeleteDest.InChain;
             FreeRecordPool pool = default;
             if (stayInChain)
-                pool = SwapFreeRecordPool(pool);
+                pool = RevivificationTestUtils.SwapFreeRecordPool(fht, pool);
 
             // This freed record stays in the hash chain.
             byte chainKey = numRecords / 2 - 1;
@@ -890,7 +893,7 @@ namespace FASTER.test.Revivification
             int expectedBin = 0, actualBin;
 
             int size = FreeRecordPool.InitialBinSize;
-            for ( ; size <= FreeRecord.kMaxSize; size *= 2)
+            for (; size <= FreeRecord.kMaxSize; size *= 2)
             {
                 Assert.IsTrue(fht.FreeRecordPool.GetEnqueueBinIndex(size - 1, out actualBin));
                 Assert.AreEqual(expectedBin, actualBin);
@@ -990,7 +993,7 @@ namespace FASTER.test.Revivification
             // partitionSize - 2 because:
             //   The first element of the partition is head/tail
             //   The tail cannot be incremented to be equal to head (or the list would be considered empty), so we lose one element of capacity
-            Assert.AreEqual(partitionSize - 2, count);  
+            Assert.AreEqual(partitionSize - 2, count);
 
             // Dequeue one to open up a space in the partition. Note: the type specification for the function is not needed here as we do not pass hlog)
             Assert.IsTrue(bin.Dequeue<int, int>(dequeueRecordSize, minAddress, out _));
@@ -1168,7 +1171,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SimpleOversizeRevivifyTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] DeleteDest deleteDest, 
+        public void SimpleOversizeRevivifyTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] DeleteDest deleteDest,
                                                [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -1178,7 +1181,7 @@ namespace FASTER.test.Revivification
             // Both in and out of chain revivification of oversize should have the same lengths.
             FreeRecordPool pool = default;
             if (stayInChain)
-                pool = SwapFreeRecordPool(pool);
+                pool = RevivificationTestUtils.SwapFreeRecordPool(fht, pool);
 
             Span<byte> inputVec = stackalloc byte[OversizeLength];
             var input = SpanByte.FromFixedSpan(inputVec);
@@ -1274,7 +1277,7 @@ namespace FASTER.test.Revivification
                 functions.expectedSingleDestLength = InitialLength;
                 functions.expectedConcurrentDestLength = InitialLength;
 
-                var spanSlice = inputVec.Slice(0, InitialLength / 2);
+                var spanSlice = inputVec[..(InitialLength / 2)];
                 var inputSlice = SpanByte.FromFixedSpan(spanSlice);
 
                 keyVec.Fill(targetRO);
@@ -1394,7 +1397,6 @@ namespace FASTER.test.Revivification
         }
     }
 
-#if TODOtest
     [TestFixture]
     class RevivificationVarLenStressTests
     {
@@ -1402,13 +1404,23 @@ namespace FASTER.test.Revivification
 
         internal class RevivificationStressFunctions : SpanByteFunctions<Empty>
         {
-            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo upsertInfo, long address, WriteReason reason) 
-                => InitialUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref upsertInfo, address);
+            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            {
+                var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
+                var result = InitialUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
+                upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
+                return result;
+            }
 
-            public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo upsertInfo, long address)
-                => InPlaceUpdater(ref key, ref input, ref dst, ref output, ref recordInfo, ref upsertInfo, address);
+            public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            {
+                var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
+                var result = InPlaceUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
+                upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
+                return result;
+            }
 
-            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo rmwInfo, long address)
+            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 if (input.Length > value.Length)
                     return false;
@@ -1417,7 +1429,7 @@ namespace FASTER.test.Revivification
                 return true;
             }
 
-            public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo rmwInfo, long address)
+            public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 if (input.Length > newValue.Length)
                     return false;
@@ -1426,7 +1438,7 @@ namespace FASTER.test.Revivification
                 return true;
             }
 
-            public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RecordInfo recordInfo, ref UpdateInfo rmwInfo, long address)
+            public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 if (input.Length > value.Length)
                     return false;
@@ -1437,12 +1449,13 @@ namespace FASTER.test.Revivification
                 return true;
             }
 
-            public override void SingleDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref UpdateInfo deleteInfo, long address)
+            public override bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo)
             {
                 value = default;
+                return true;
             }
 
-            public override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref RecordInfo recordInfo, ref UpdateInfo updateInfo, long address)
+            public override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo)
             {
                 value = default;
                 return true;
@@ -1468,6 +1481,7 @@ namespace FASTER.test.Revivification
             CollisionRange collisionRange = CollisionRange.None;
             int maxRecsPerBin = DefaultMaxRecsPerBin;
             LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySizeBits = 22 };
+            var lockingMode = LockingMode.Standard;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is CollisionRange cr)
@@ -1475,10 +1489,15 @@ namespace FASTER.test.Revivification
                     collisionRange = cr;
                     continue;
                 }
+                if (arg is LockingMode lm)
+                {
+                    lockingMode = lm;
+                    continue;
+                }
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, disableLocking: false, maxFreeRecordsInBin: maxRecsPerBin);
+            fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, lockingMode: lockingMode, maxFreeRecordsInBin: maxRecsPerBin);
 
             var valueVLS = new RevivificationVLS();
             functions = new RevivificationStressFunctions();
@@ -1512,7 +1531,8 @@ namespace FASTER.test.Revivification
                 fixed (byte* _ = keyVec)
                 {
                     var key = SpanByte.FromFixedSpan(keyVec);
-                    Assert.AreEqual(Status.OK, session.Upsert(ref key, ref input, ref input, ref output));
+                    var status = session.Upsert(ref key, ref input, ref input, ref output);
+                    Assert.IsTrue(status.Record.Created, status.ToString());
                 }
             }
         }
@@ -1525,10 +1545,15 @@ namespace FASTER.test.Revivification
             const int numItems = 10000;
             var flags = new long[numItems];
             const int size = 42;    // size doesn't matter in this test
+            const int numEnqueueThreads = 1;
+            const int numDequeueThreads = 0;
+            const int numRetries = 1;
 
+            // TODO < numItems; set flag according to Enqueue return
             var bin = new FreeRecordBin(numItems * 2, size);
             bool done = false;
 
+            // TODO multiple threads
             unsafe void runEnqueueThread(int tid)
             {
                 try
@@ -1539,16 +1564,23 @@ namespace FASTER.test.Revivification
                         for (var ii = 1; ii < numItems; ++ii)
                         {
                             flags[ii] = 1;
-                            bin.Enqueue(ii, size);
+                            Assert.IsTrue(bin.Enqueue(ii, size));
                         }
 
-                        // Make sure all were dequeued. Sleep a bit for the dequeue threads to pull out the last records.
-                        Thread.Sleep(100);
+                        // Continue until all are dequeued or we hit the retry limit.
                         List<int> strays = new();
-                        for (var ii = 1; ii < numItems; ++ii)
+                        for (var retries = 0; retries < numRetries; ++retries)
                         {
-                            if (flags[ii] != 0)
-                                strays.Add(ii);
+                            // Sleep a bit for the dequeue threads to catch up.
+                            Thread.Sleep(100);
+                            strays.Clear();
+                            for (var ii = 1; ii < numItems; ++ii)
+                            {
+                                if (flags[ii] != 0)
+                                    strays.Add(ii);
+                            }
+                            if (strays.Count == 0)
+                                return;
                         }
                         Assert.AreEqual(0, strays.Count);
                     }
@@ -1571,15 +1603,12 @@ namespace FASTER.test.Revivification
                 }
             }
 
-            int numDequeueThreads = 5;
-
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
-            tasks.Add(Task.Factory.StartNew(() => runEnqueueThread(0)));
-            for (int t = 1; t < numDequeueThreads; t++)
-            {
-                var tid = t;
-                tasks.Add(Task.Factory.StartNew(() => runDequeueThread(tid)));
-            }
+            // Task rather than Thread for propagation of exception.
+            List<Task> tasks = new();
+            for (int t = 0; t < numEnqueueThreads; t++)
+                tasks.Add(Task.Factory.StartNew(() => runEnqueueThread(tasks.Count + 1)));
+            for (int t = 0; t < numDequeueThreads; t++)
+                tasks.Add(Task.Factory.StartNew(() => runDequeueThread(tasks.Count + 1)));
             Task.WaitAll(tasks.ToArray());
         }
 
@@ -1667,7 +1696,7 @@ namespace FASTER.test.Revivification
                                                 [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             // Turn off freelist.
-            fht.SwapFreeRecordPool(null);
+            RevivificationTestUtils.SwapFreeRecordPool(fht, null);
 
             int numIterations = 100;
             int numThreadsEachOp = 1;
@@ -1737,5 +1766,4 @@ namespace FASTER.test.Revivification
             Task.WaitAll(tasks.ToArray());
         }
     }
-#endif // TODOtest
 }
