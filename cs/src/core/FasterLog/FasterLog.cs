@@ -21,7 +21,7 @@ namespace FASTER.core
     public sealed class FasterLog : IDisposable
     {
         private Exception cannedException = null;
-        
+
         readonly BlittableAllocator<Empty, byte> allocator;
         readonly LightEpoch epoch;
         readonly ILogCommitManager logCommitManager;
@@ -230,27 +230,31 @@ namespace FASTER.core
         /// Initialize new log instance with specific begin address and (optional) last commit number
         /// </summary>
         /// <param name="beginAddress"></param>
+        /// <param name="committedUntilAddress"></param>
         /// <param name="lastCommitNum"></param>
-        public void Initialize(long beginAddress, long lastCommitNum = 0)
+        public void Initialize(long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
         {
             Debug.Assert(!readOnlyMode);
 
             if (beginAddress == 0)
                 beginAddress = allocator.GetFirstValidLogicalAddress(0);
 
+            if (committedUntilAddress == 0)
+                committedUntilAddress = beginAddress;
+
             try
             {
                 allocator.Reset();
-                allocator.RestoreHybridLog(beginAddress, beginAddress, beginAddress, beginAddress);
+                allocator.RestoreHybridLog(beginAddress, committedUntilAddress, committedUntilAddress, committedUntilAddress);
             }
             catch
             {
                 if (!tolerateDeviceFailure) throw;
             }
 
-            CommittedUntilAddress = beginAddress;
+            CommittedUntilAddress = committedUntilAddress;
             CommittedBeginAddress = beginAddress;
-            SafeTailAddress = beginAddress;
+            SafeTailAddress = committedUntilAddress;
 
             commitNum = lastCommitNum;
             this.beginAddress = beginAddress;
@@ -341,7 +345,7 @@ namespace FASTER.core
             if (disposeLogCommitManager)
                 logCommitManager.Dispose();
         }
-        
+
         #region Enqueue
         /// <summary>
         /// Enqueue entry to log (in memory) - no guarantee of flush/commit
@@ -381,7 +385,7 @@ namespace FASTER.core
                 Thread.Yield();
             return logicalAddress;
         }
-        
+
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
         /// </summary>
@@ -439,9 +443,9 @@ namespace FASTER.core
                     if (cannedException != null) throw cannedException;
                     return false;
                 }
-            
+
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            entry.SerializeTo(new Span<byte>((void *) (headerSize + physicalAddress), length));
+            entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
             SetHeader(length, (byte*)physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
@@ -482,10 +486,10 @@ namespace FASTER.core
             }
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            foreach(var entry in entries)
+            foreach (var entry in entries)
             {
                 var length = entry.SerializedLength;
-                entry.SerializeTo(new Span<byte>((void *)(headerSize + physicalAddress), length));
+                entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
                 SetHeader(length, (byte*)physicalAddress);
                 physicalAddress += Align(length) + headerSize;
             }
@@ -494,7 +498,7 @@ namespace FASTER.core
             if (AutoCommit) Commit();
             return true;
         }
-        
+
         /// <summary>
         /// Try to enqueue entry to log (in memory). If it returns true, we are
         /// done. If it returns false, we need to retry.
@@ -515,13 +519,13 @@ namespace FASTER.core
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
-            if (logicalAddress == 0)
-            {
-                epoch.Suspend();
-                if (cannedException != null) throw cannedException;
-                return false;
-            }
-            
+                if (logicalAddress == 0)
+                {
+                    epoch.Suspend();
+                    if (cannedException != null) throw cannedException;
+                    return false;
+                }
+
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             fixed (byte* bp = entry)
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
@@ -557,7 +561,7 @@ namespace FASTER.core
                 if (cannedException != null) throw cannedException;
                 return false;
             }
-            
+
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             fixed (byte* bp = &entry.GetPinnableReference())
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
@@ -968,7 +972,7 @@ namespace FASTER.core
 
             return logicalAddress;
         }
-        
+
         /// <summary>
         /// Enqueue entry to log in memory (async) - completes after entry is 
         /// appended to memory, NOT committed to storage.
@@ -1005,7 +1009,7 @@ namespace FASTER.core
 
             return logicalAddress;
         }
-        
+
         /// <summary>
         /// Enqueue batch of entries to log in memory (async) - completes after entry is 
         /// appended to memory, NOT committed to storage.
@@ -1058,7 +1062,7 @@ namespace FASTER.core
         {
             if (untilAddress == 0) untilAddress = TailAddress;
             if (commitNum == -1) commitNum = this.commitNum;
-            
+
             while (commitNum > persistedCommitNum || untilAddress > CommittedUntilAddress)
             {
                 if (cannedException != null) throw cannedException;
@@ -1104,7 +1108,7 @@ namespace FASTER.core
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to spin
             var tail = TailAddress;
             var lastCommit = commitNum;
-            
+
             var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
             if (!spinWait) return;
             if (success)
@@ -1300,7 +1304,7 @@ namespace FASTER.core
             WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
-        
+
         /// <summary>
         /// Append entry to log - spin-waits until entry is committed to storage.
         /// Does NOT itself issue flush!
@@ -1316,7 +1320,7 @@ namespace FASTER.core
             WaitForCommit(logicalAddress + 1);
             return logicalAddress;
         }
-        
+
         /// <summary>
         /// Append entry to log - spin-waits until entry is committed to storage.
         /// Does NOT itself issue flush!
@@ -1492,7 +1496,7 @@ namespace FASTER.core
 
             return logicalAddress;
         }
-        
+
         /// <summary>
         /// Append entry to log (async) - completes after entry is committed to storage.
         /// Does NOT itself issue flush!
@@ -1754,7 +1758,7 @@ namespace FASTER.core
                 allocator.AsyncReadRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
-            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);          
+            await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
             return GetRecordLengthAndFree(ctx.record);
         }
 
@@ -1829,12 +1833,12 @@ namespace FASTER.core
         private unsafe bool TryEnqueueCommitRecord(ref FasterLogRecoveryInfo info)
         {
             var entryBodySize = info.SerializedSize();
-            
+
             int allocatedLength = headerSize + Align(entryBodySize);
             ValidateAllocatedLength(allocatedLength);
-            
+
             epoch.Resume();
-            
+
             var logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
             {
@@ -1860,12 +1864,12 @@ namespace FASTER.core
         {
             return beginAddress > CommittedBeginAddress || IteratorsChanged(ref info) || info.Cookie != null;
         }
-        
+
         private void CommitMetadataOnly(ref FasterLogRecoveryInfo info)
         {
             var fromAddress = CommittedUntilAddress > info.BeginAddress ? CommittedUntilAddress : info.BeginAddress;
             var untilAddress = FlushedUntilAddress > info.BeginAddress ? FlushedUntilAddress : info.BeginAddress;
-            
+
             CommitCallback(new CommitInfo
             {
                 FromAddress = fromAddress,
@@ -1941,7 +1945,7 @@ namespace FASTER.core
                     ongoingCommitRequests.Dequeue();
                 }
             }
-            
+
             // Nothing was committed --- this was probably an auto-flush. Return now without touching any
             // commit task tracking.
             if (coveredCommits.Count == 0) return;
@@ -1971,7 +1975,7 @@ namespace FASTER.core
 
             // We fast-forwarded commits earlier, so write it out if not covered by another commit
             if (latestCommit.FastForwardAllowed) WriteCommitMetadata(latestCommit);
-            
+
             // TODO: Can invoke earlier in the case of fast commit
             var _commitTcs = commitTcs;
             commitTcs = new TaskCompletionSource<LinkedCommitInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1988,7 +1992,7 @@ namespace FASTER.core
             var _lastPersistedIterators = LastPersistedIterators;
             if (_lastPersistedIterators == null)
             {
-                return info.Iterators != null &&  info.Iterators.Count != 0;
+                return info.Iterators != null && info.Iterators.Count != 0;
             }
             if (info.Iterators == null || _lastPersistedIterators.Count != info.Iterators.Count)
                 return true;
@@ -2171,7 +2175,7 @@ namespace FASTER.core
                 }
                 catch { }
             }
-            
+
             // Need to potentially scan log for the entry 
             if (scanStart < requestedCommitNum)
             {
@@ -2179,7 +2183,7 @@ namespace FASTER.core
                 if (!fastCommitMode)
                     // In the case where precisely requested commit num is not available, can just throw exception
                     throw new FasterException("requested commit num is not available");
-                
+
                 // If no exact metadata is found, scan forward to see if we able to find a commit entry
                 // Shut up safe guards, I know what I am doing
                 CommittedUntilAddress = long.MaxValue;
@@ -2256,7 +2260,8 @@ namespace FASTER.core
                 {
                     using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
                     scanIterator.ScanForwardForCommit(ref info);
-                } catch { }
+                }
+                catch { }
             }
 
             // if until address is 0, that means info is still its default value and we haven't been able to recover
@@ -2272,7 +2277,7 @@ namespace FASTER.core
                     allocator.HeadAddress = long.MaxValue;
                 return (new Dictionary<string, long>(), null);
             }
-            
+
             if (!readOnlyMode)
             {
                 var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
@@ -2281,7 +2286,7 @@ namespace FASTER.core
 
                 if (headAddress == 0)
                     headAddress = Constants.kFirstValidAddress;
-                await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken : cancellationToken).ConfigureAwait(false);
+                await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
             var iterators = CompleteRestoreFromCommit(info);
@@ -2472,7 +2477,7 @@ namespace FASTER.core
                     Buffer.MemoryCopy(ptr + headerSize, bp, length, length);
                 }
             }
-            
+
             record.Return();
             return (result, length);
         }
@@ -2494,22 +2499,22 @@ namespace FASTER.core
             record.Return();
             return length;
         }
-        
+
 
         private bool CommitInternal(out long commitTail, out long actualCommitNum, bool fastForwardAllowed, byte[] cookie, long proposedCommitNum, Action callback)
         {
             if (cannedException != null)
                 throw cannedException;
-            
+
             commitTail = actualCommitNum = 0;
-            
+
             if (readOnlyMode)
                 throw new FasterException("Cannot commit in read-only mode");
 
             if (fastForwardAllowed && (cookie != null || proposedCommitNum != -1 || callback != null))
                 throw new FasterException(
                     "Fast forwarding a commit is only allowed when no cookie, commit num, or callback is specified");
-            
+
             var info = new FasterLogRecoveryInfo
             {
                 FastForwardAllowed = fastForwardAllowed,
@@ -2535,7 +2540,7 @@ namespace FASTER.core
                     // log has been closed, throw an exception
                     throw new FasterException("log has already been closed");
                 }
-                
+
                 // Make sure we will not be allowed to back out of a commit if AdmitCommit returns true, as the commit policy
                 // may need to update internal logic for every true response. We might waste some commit nums if commit
                 // policy filters out a lot of commits, but that's fine.
@@ -2565,14 +2570,14 @@ namespace FASTER.core
                 }
 
                 Utility.MonotonicUpdate(ref commitCoveredAddress, commitTail, out _);
-                
+
                 commitPolicy.OnCommitCreated(info);
                 // Enqueue the commit record's content and offset into the queue so it can be picked up by the next flush
                 // At this point, we expect the commit record to be flushed out as a distinct recovery point
                 ongoingCommitRequests.Enqueue((commitTail, info));
             }
 
-            
+
             // As an optimization, if a concurrent flush has already advanced FlushedUntilAddress
             // past this commit, we can manually trigger a commit callback for safety, and return.
             if (commitTail <= FlushedUntilAddress)
@@ -2643,7 +2648,7 @@ namespace FASTER.core
                 *(ulong*)dest = Utility.XorBytes(dest + 8, length + 4);
             }
         }
-        
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void SetCommitRecordHeader(int length, byte* dest)
         {
