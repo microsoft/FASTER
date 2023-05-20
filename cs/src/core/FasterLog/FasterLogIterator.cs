@@ -132,6 +132,27 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Asynchronously consume the log with given consumer until end of iteration or cancelled
+        /// </summary>
+        /// <param name="consumer"> consumer </param>
+        /// <param name="throttleMs">throttle the iteration speed</param>
+        /// <param name="token"> cancellation token </param>
+        /// <typeparam name="T"> consumer type </typeparam>
+        public async Task BulkConsumeAllAsync<T>(T consumer, int throttleMs = 0, CancellationToken token = default) where T : IBulkLogEntryConsumer
+        {
+            while (!disposed)
+            {
+                // TryConsumeNext returns false if we have to wait for the next record.
+                while (!TryBulkConsumeNext(consumer))
+                {
+                    if (!await WaitAsync(token).ConfigureAwait(false))
+                        return;
+                    if (throttleMs > 0) await Task.Delay(throttleMs, token).ConfigureAwait(false);
+                }
+            }
+        }
+
+        /// <summary>
         /// Wait for iteration to be ready to continue
         /// </summary>
         /// <returns>true if there's more data available to be read; false if there will never be more data (log has been shutdown / iterator has reached endAddress)</returns>
@@ -431,6 +452,90 @@ namespace FASTER.core
                 epoch.Suspend();
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Consume the next entry in the log with the given consumer
+        /// </summary>
+        /// <param name="consumer">consumer</param>
+        /// <typeparam name="T">concrete type of consumer</typeparam>
+        /// <returns>whether a next entry is present</returns>
+        public unsafe bool TryBulkConsumeNext<T>(T consumer) where T : IBulkLogEntryConsumer
+        {
+            if (disposed)
+            {
+                currentAddress = default;
+                nextAddress = default;
+                return false;
+            }
+
+            bool retVal;
+
+            epoch.Resume();
+
+            // Find a contiguous set of log entries
+            long startPhysicalAddress = 0;
+            long startLogicalAddress = 0, endLogicalAddress = 0;
+            long newNextAddress;
+            try
+            {
+                while (true)
+                {
+                    var hasNext = GetNextInternal(out var newPhysicalAddress, out var newEntryLength, out var newCurrentAddress,
+                        out newNextAddress, out bool isCommitRecord);
+
+                    if (!hasNext)
+                    {
+                        retVal = false;
+                        break;
+                    }
+
+                    if (startPhysicalAddress == 0)
+                    {
+                        // Start a new run
+                        startPhysicalAddress = newPhysicalAddress;
+                        startLogicalAddress = endLogicalAddress = newCurrentAddress;
+                    }
+
+                    if ((newCurrentAddress >> allocator.LogPageSizeBits) != (endLogicalAddress >> allocator.LogPageSizeBits))
+                    {
+                        // We are on a new page, process previous chunk
+                        int totalEntryLength = (int)(endLogicalAddress - startLogicalAddress);
+                        consumer.Consume((byte*)startPhysicalAddress, totalEntryLength, startLogicalAddress, newNextAddress);
+
+                        // Start a new run
+                        startPhysicalAddress = newPhysicalAddress;
+                        startLogicalAddress = newCurrentAddress;
+                    }
+
+                    int totalLength = headerSize + Align(newEntryLength);
+
+                    // Extend the current run
+                    endLogicalAddress = newCurrentAddress + totalLength;
+
+                    if (isCommitRecord)
+                    {
+                        FasterLogRecoveryInfo info = new();
+                        info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte*)newPhysicalAddress, newEntryLength)));
+                        if (info.CommitNum == long.MaxValue)
+                        {
+                            retVal = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (endLogicalAddress > startLogicalAddress)
+                {
+                    int totalEntryLength = (int)(endLogicalAddress - startLogicalAddress);
+                    consumer.Consume((byte*)startPhysicalAddress, totalEntryLength, startLogicalAddress, newNextAddress);
+                }
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+            return retVal;
         }
 
         /// <summary>
