@@ -19,9 +19,15 @@ namespace FASTER.core
         const long kSizeMask = kMaxSize - 1;
         const long kSizeMaskInWord = kSizeMask << kSizeShiftInWord;
 
+        // This is the empty word we replace the current word with on Reads.
+        private const long emptyWord = 0;
+
+        #region Start of instance data
         // 'word' contains the reclaimable logicalAddress and the size of the record at that address.
         private long word;
-        private const long emptyWord = 0;
+
+        internal const int StructSize = sizeof(long);
+        #endregion Start of instance data
 
         public long Address
         {
@@ -47,16 +53,13 @@ namespace FASTER.core
 
         internal bool Set(long address, long size)
         {
-            // Don't replace a higher address with a lower one.
-            FreeRecord old_record = new(this.word);
-            while (old_record.Address < address)
-            {
-                long newWord = (size << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
-                if (Interlocked.CompareExchange(ref word, newWord, old_record.word) == old_record.word)
-                    return true;
-                old_record = new(this.word);
-            }
-            return false;
+            // If it's set, that means someone else won a race to set it (we will only be here on the first lap
+            // of the circular buffer, or on a subsequent lap after Read has read/cleared the record).
+            if (this.IsSet)
+                return false;
+
+            long newWord = (size << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
+            return Interlocked.CompareExchange(ref word, newWord, emptyWord) == emptyWord;
         }
 
         internal bool Take(long size, long minAddress, out long address)
@@ -99,28 +102,30 @@ namespace FASTER.core
         internal bool IsSet => word != emptyWord;
     }
 
-    internal unsafe class FreeRecordBin
+    internal unsafe class FreeRecordBin : IDisposable
     {
         private readonly FreeRecord[] recordsArray;
         internal readonly int maxSize;
         private readonly int recordCount;
-        private readonly int partitionCount;
-        private readonly int partitionSize;
+        internal readonly int partitionCount;
+        internal readonly int partitionSize;
 
-        private readonly GCHandle handle;
         private readonly FreeRecord* records;
+#if !NET5_0_OR_GREATER
+        private readonly GCHandle handle;
+#endif
 
         // Used by test also
         internal static void GetPartitionSizes(int maxRecs, out int partitionCount, out int partitionSize, out int recordCount)
         {
             partitionCount = Environment.ProcessorCount / 2;
 
-            if (maxRecs < partitionCount)
+            // If we don't have enough records to make partitions worthwhile, don't use them
+            if (maxRecs <= partitionCount * 4)
                 partitionCount = 1;
 
             // Round up to align partitions to cache boundary.
-            var pad = Constants.kCacheLineBytes / sizeof(long) - 1;
-            partitionSize = ((((maxRecs + pad) / partitionCount) * sizeof(long) + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1)) / sizeof(long);
+            partitionSize = (((maxRecs / partitionCount) * FreeRecord.StructSize + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1)) / FreeRecord.StructSize;
 
             // Overallocate to allow space for cache-aligned start
             recordCount = partitionSize * partitionCount;
@@ -132,22 +137,27 @@ namespace FASTER.core
 
             GetPartitionSizes(maxRecs, out this.partitionCount, out this.partitionSize, out this.recordCount);
 
-            this.recordsArray = new FreeRecord[this.recordCount + Constants.kCacheLineBytes / sizeof(long)];
-
             // Allocate the GCHandle so we can create a cache-aligned pointer.
+#if NET5_0_OR_GREATER
+            this.recordsArray = GC.AllocateArray<FreeRecord>(this.recordCount + Constants.kCacheLineBytes / FreeRecord.StructSize, pinned: true);
+            long p = (long)Unsafe.AsPointer(ref recordsArray[0]);
+#else
+            this.recordsArray = new FreeRecord[this.recordCount + Constants.kCacheLineBytes / FreeRecord.StructSize];
             handle = GCHandle.Alloc(this.recordsArray, GCHandleType.Pinned);
             long p = (long)handle.AddrOfPinnedObject();
+#endif
 
             // Force the pointer to align to cache boundary.
             long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
             this.records = (FreeRecord*)p2;
 
-            // Initialize head and tail to 1, as we will store head and tail as the first items in the partition.
+            // Initialize read and write pointers to 1, as we will store them as the first items in the partition.
             for (var ii = 0; ii < partitionCount; ++ii)
             {
-                int* head = (int*)(records + ii * partitionSize);
-                *head = 1;
-                *(head + 1) = 1;
+                // Don't use GetReadPos/GetWritePos here; they assert the value is already > 0.
+                int* partitionStart = (int*)GetPartitionStart(ii);
+                *partitionStart = 1;
+                *(partitionStart + 1) = 1;
             }
         }
 
@@ -171,6 +181,20 @@ namespace FASTER.core
         internal unsafe FreeRecord* GetPartitionStart(int partitionIndex) => records + partitionSize * (partitionIndex % partitionCount);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe ref int GetReadPos(FreeRecord* partitionStart) => ref GetPos(partitionStart, 0);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe ref int GetWritePos(FreeRecord* partitionStart) => ref GetPos(partitionStart, 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe static ref int GetPos(FreeRecord* partitionStart, int offset)
+        {
+            ref int pos = ref Unsafe.AsRef<int>((int*)partitionStart + offset);
+            Debug.Assert(pos > 0);
+            return ref pos;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Enqueue(long address, int size) => Enqueue(address, size, GetInitialPartitionIndex());
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -179,21 +203,18 @@ namespace FASTER.core
             for (var iPart = 0; iPart < this.partitionCount; ++iPart)
             {
                 FreeRecord* partitionStart = GetPartitionStart(initialPartitionIndex + iPart);
-                ref int head = ref Unsafe.AsRef<int>((int*)partitionStart);
-                ref int tail = ref Unsafe.AsRef<int>((int*)partitionStart + 1);
-                Debug.Assert(head > 0);
-                Debug.Assert(tail > 0);
+                ref int read = ref GetReadPos(partitionStart);
+                ref int write = ref GetWritePos(partitionStart);
 
-                // Start at 1 because head/tail are in the first element
-                for (var iRec = 1; iRec < this.recordCount; ++iRec)
+                while (true)
                 {
-                    var prev = tail;
-                    var next = Increment(prev);
-                    if (next == head)
+                    var currWrite = write;
+                    var nextWrite = Increment(currWrite);
+                    if (nextWrite == read)
                         break; // The partition is full
-                    if (Interlocked.CompareExchange(ref tail, next, prev) != prev)
+                    if (Interlocked.CompareExchange(ref write, nextWrite, currWrite) != currWrite)
                         continue;
-                    if ((partitionStart + prev)->Set(address, size))
+                    if ((partitionStart + nextWrite)->Set(address, size))
                         return true;
                 }
             }
@@ -201,8 +222,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Dequeue<Key, Value>(int size, long minAddress, out long address)
-            => Dequeue<Key, Value>(size, minAddress, null, out address);
+        public bool Dequeue<Key, Value>(int size, long minAddress, out long address) => Dequeue<Key, Value>(size, minAddress, null, out address);
 
         public bool Dequeue<Key, Value>(int size, long minAddress, FasterKV<Key, Value> fkv, out long address)
         {
@@ -213,25 +233,22 @@ namespace FASTER.core
             for (var iPart = 0; iPart < this.partitionCount; ++iPart)
             {
                 FreeRecord* partitionStart = GetPartitionStart(initialPartitionIndex + iPart);
-                ref int head = ref Unsafe.AsRef<int>((int*)partitionStart);
-                ref int tail = ref Unsafe.AsRef<int>((int*)partitionStart + 1);
-                Debug.Assert(head > 0);
-                Debug.Assert(tail > 0);
+                ref int read = ref GetReadPos(partitionStart);
+                ref int write = ref GetWritePos(partitionStart);
 
-                // Start at 1 because head/tail are in the first element
-                for (var iRec = 1; iRec < this.partitionSize; ++iRec)
+                while (true)
                 {
-                    var prev = head;
-                    if (prev == tail)
+                    var currRead = read;
+                    if (currRead == write)
                         break; // The partition is empty
-                    var next = Increment(prev);
-                    if (Interlocked.CompareExchange(ref head, next, prev) != prev)
+                    var nextRead = Increment(currRead);
+                    if (nextRead == write && !(partitionStart + nextRead)->IsSet)
+                        break; // Enqueue has incremented 'write' but not yet written to it.
+                    if (Interlocked.CompareExchange(ref read, nextRead, currRead) != currRead)
                         continue;
 
-                    var success = fkv is null
-                        ? (partitionStart + prev)->Take(size, minAddress, out address)
-                        : (partitionStart + prev)->Take(size, minAddress, fkv, out address);
-                    if (success)
+                    FreeRecord* record = partitionStart + nextRead;
+                    if (fkv is null ? record->Take(size, minAddress, out address) : record->Take(size, minAddress, fkv, out address))
                         return true;
                 }
             }
@@ -240,14 +257,15 @@ namespace FASTER.core
             return false;
         }
 
-        internal void Dispose()
+        public void Dispose()
         {
-            if (this.recordsArray is not null)
-                handle.Free();
+#if !NET5_0_OR_GREATER
+            handle.Free();
+#endif
         }
     }
 
-    internal class FreeRecordPool
+    internal class FreeRecordPool : IDisposable
     {
         internal const int InitialBinSize = 16;  // RecordInfo + int key/value
         internal readonly FreeRecordBin[] bins;
@@ -381,7 +399,7 @@ namespace FASTER.core
             return result;
         }
 
-        internal void Dispose()
+        public void Dispose()
         {
             foreach (var bin in this.bins)
                 bin.Dispose();

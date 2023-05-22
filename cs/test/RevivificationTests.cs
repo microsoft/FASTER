@@ -5,8 +5,8 @@ using FASTER.core;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
@@ -974,8 +974,8 @@ namespace FASTER.test.Revivification
             int logicalAddress = 1_000_000;
 
             var partitionStart = bin.GetPartitionStart(initialPartition);
-            ref int head = ref Unsafe.AsRef<int>((int*)partitionStart);
-            ref int tail = ref Unsafe.AsRef<int>((int*)partitionStart + 1);
+            ref int head = ref FreeRecordBin.GetReadPos(partitionStart);
+            ref int tail = ref FreeRecordBin.GetWritePos(partitionStart);
             Assert.AreEqual(1, head);
             Assert.AreEqual(1, tail);
 
@@ -1052,8 +1052,8 @@ namespace FASTER.test.Revivification
             for (var iPart = initialPartition; iPart < partitionCount; ++iPart)
             {
                 var p = bin.GetPartitionStart(iPart);
-                ref int h = ref Unsafe.AsRef<int>((int*)p);
-                ref int t = ref Unsafe.AsRef<int>((int*)p + 1);
+                ref int h = ref FreeRecordBin.GetReadPos(p);
+                ref int t = ref FreeRecordBin.GetWritePos(p);
                 Assert.AreEqual(1, h, $"initialPartition {initialPartition}, current partition {iPart}");
                 Assert.AreEqual(1, t, $"initialPartition {initialPartition}, current partition {iPart}");
             }
@@ -1073,16 +1073,16 @@ namespace FASTER.test.Revivification
                 // Make sure we didn't overflow to the next bin (ensures counts are as expected)
                 var nextPart = iPart < partitionCount - 1 ? iPart + 1 : 0;
                 var p = bin.GetPartitionStart(nextPart);
-                ref int h = ref Unsafe.AsRef<int>((int*)p);
-                ref int t = ref Unsafe.AsRef<int>((int*)p + 1);
+                ref int h = ref FreeRecordBin.GetReadPos(p);
+                ref int t = ref FreeRecordBin.GetWritePos(p);
                 Assert.AreEqual(1, h, $"initialPartition {initialPartition}, current partition {iPart}, nextPart = {nextPart}, count = {count}");
                 Assert.AreEqual(1, t, $"initialPartition {initialPartition}, current partition {iPart}, nextPart = {nextPart}, count = {count}");
             }
 
             // Prepare for wrap: Get partition 0's info
             var partitionStart = bin.GetPartitionStart(0);
-            ref int head = ref Unsafe.AsRef<int>((int*)partitionStart);
-            ref int tail = ref Unsafe.AsRef<int>((int*)partitionStart + 1);
+            ref int head = ref FreeRecordBin.GetReadPos(partitionStart);
+            ref int tail = ref FreeRecordBin.GetWritePos(partitionStart);
             Assert.AreEqual(1, head, $"initialPartition {initialPartition}");
             Assert.AreEqual(1, tail, $"initialPartition {initialPartition}");
 
@@ -1407,7 +1407,8 @@ namespace FASTER.test.Revivification
             public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
-                var result = InitialUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
+                // Pass src, not input (which may be empty)
+                var result = InitialUpdater(ref key, ref src, ref dst, ref output, ref rmwInfo);
                 upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
                 return result;
             }
@@ -1415,16 +1416,18 @@ namespace FASTER.test.Revivification
             public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
-                var result = InPlaceUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
+                // Pass src, not input (which may be empty)
+                var result = InPlaceUpdater(ref key, ref src, ref dst, ref output, ref rmwInfo);
                 upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
                 return result;
             }
 
-            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
-                if (input.Length > value.Length)
+                if (input.Length > newValue.Length)
                     return false;
-                input.CopyTo(ref value);
+                input.CopyTo(ref newValue);
+                newValue.Length = input.Length;
                 rmwInfo.UsedValueLength = input.TotalSize;
                 return true;
             }
@@ -1434,6 +1437,7 @@ namespace FASTER.test.Revivification
                 if (input.Length > newValue.Length)
                     return false;
                 input.CopyTo(ref newValue);
+                newValue.Length = input.Length;
                 rmwInfo.UsedValueLength = input.TotalSize;
                 return true;
             }
@@ -1442,9 +1446,8 @@ namespace FASTER.test.Revivification
             {
                 if (input.Length > value.Length)
                     return false;
-                input.CopyTo(ref value);      // Does not change dst.Length, which is fine for everything except shrinking (we've allocated sufficient space in other cases)
-                if (input.Length < value.Length)
-                    value.Length = input.Length;
+                input.CopyTo(ref value);        // Does not change dst.Length, which is fine for everything except shrinking (we've allocated sufficient space in other cases)
+                value.Length = input.Length;    // We must ensure that the value length on the log is the same as the UsedValueLength we return
                 rmwInfo.UsedValueLength = input.TotalSize;
                 return true;
             }
@@ -1537,23 +1540,42 @@ namespace FASTER.test.Revivification
             }
         }
 
+        private unsafe List<int> EnumerateSetRecords(FreeRecordBin bin)
+        {
+            List<int> result = new();
+            for (var iPart = 0; iPart < bin.partitionCount; ++iPart)
+            {
+                FreeRecord* partitionStart = bin.GetPartitionStart(iPart);
+
+                // Skip the first element (containing read/write pointers)
+                for (var iRec = 1; iRec < bin.partitionSize; ++iRec)
+                {
+                    if (partitionStart[iRec].IsSet)
+                        result.Add(iPart * bin.partitionSize + iRec);
+                }
+            }
+            return result;
+        }
+
         [Test]
         [Category(RevivificationCategory)]
+        //[Repeat(30)]
         public void ArtificialFreeBinThreadStressTest()
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
             const int numIterations = 100;
             const int numItems = 10000;
             var flags = new long[numItems];
             const int size = 42;    // size doesn't matter in this test
             const int numEnqueueThreads = 1;
-            const int numDequeueThreads = 0;
-            const int numRetries = 1;
+            const int numDequeueThreads = 5;
+            const int numRetries = 10;
 
             // TODO < numItems; set flag according to Enqueue return
-            var bin = new FreeRecordBin(numItems * 2, size);
+            using var bin = new FreeRecordBin(numItems * 2, size);
             bool done = false;
 
-            // TODO multiple threads
             unsafe void runEnqueueThread(int tid)
             {
                 try
@@ -1568,21 +1590,24 @@ namespace FASTER.test.Revivification
                         }
 
                         // Continue until all are dequeued or we hit the retry limit.
-                        List<int> strays = new();
+                        List<int> strayFlags = new();
                         for (var retries = 0; retries < numRetries; ++retries)
                         {
-                            // Sleep a bit for the dequeue threads to catch up.
-                            Thread.Sleep(100);
-                            strays.Clear();
+                            // Yield to let the dequeue threads catch up.
+                            Thread.Sleep(50);
+                            strayFlags.Clear();
                             for (var ii = 1; ii < numItems; ++ii)
                             {
                                 if (flags[ii] != 0)
-                                    strays.Add(ii);
+                                    strayFlags.Add(ii);
                             }
-                            if (strays.Count == 0)
+                            if (strayFlags.Count == 0)
                                 return;
                         }
-                        Assert.AreEqual(0, strays.Count);
+
+                        Assert.AreEqual(0, strayFlags.Count);
+                        var strayRecords = EnumerateSetRecords(bin);
+                        Assert.AreEqual(0, strayRecords.Count);
                     }
                 }
                 finally
@@ -1606,9 +1631,15 @@ namespace FASTER.test.Revivification
             // Task rather than Thread for propagation of exception.
             List<Task> tasks = new();
             for (int t = 0; t < numEnqueueThreads; t++)
-                tasks.Add(Task.Factory.StartNew(() => runEnqueueThread(tasks.Count + 1)));
+            { 
+                var tid = t + 1;
+                tasks.Add(Task.Factory.StartNew(() => runEnqueueThread(tid)));
+            }
             for (int t = 0; t < numDequeueThreads; t++)
-                tasks.Add(Task.Factory.StartNew(() => runDequeueThread(tasks.Count + 1)));
+            {
+                var tid = t + 1;
+                tasks.Add(Task.Factory.StartNew(() => runDequeueThread(tid)));
+            }
             Task.WaitAll(tasks.ToArray());
         }
 
@@ -1641,7 +1672,6 @@ namespace FASTER.test.Revivification
                         fixed (byte* _ = keyVec)
                         {
                             var key = SpanByte.FromFixedSpan(keyVec);
-                            Thread.Sleep(rng.Next(10));
                             localSession.Delete(key);
                         }
                     }
@@ -1703,11 +1733,6 @@ namespace FASTER.test.Revivification
 
             unsafe void runDeleteThread(int tid)
             {
-                Span<byte> inputVec = stackalloc byte[InitialLength];
-                var input = SpanByte.FromFixedSpan(inputVec);
-
-                Random rng = new(tid * 101);
-
                 using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
                 localSession.ctx.phase = phase;
 
@@ -1729,8 +1754,6 @@ namespace FASTER.test.Revivification
             {
                 Span<byte> inputVec = stackalloc byte[InitialLength / 2];       // /2 because of "next-highest bin" dequeueing
                 var input = SpanByte.FromFixedSpan(inputVec);
-
-                Random rng = new(tid * 101);
 
                 using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
                 localSession.ctx.phase = phase;

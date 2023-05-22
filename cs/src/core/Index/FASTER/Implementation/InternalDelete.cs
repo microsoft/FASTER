@@ -132,6 +132,11 @@ namespace FASTER.core
                                         srcRecordInfo.Tombstone = false;
                                         FreeRecordPool.Enqueue(stackCtx.recSrc.LogicalAddress, fullRecordLength);
                                     }
+                                    else
+                                    { 
+                                        // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
+                                        srcRecordInfo.Unseal();
+                                    }
                                 }
                             }
                         }
