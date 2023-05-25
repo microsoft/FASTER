@@ -95,6 +95,11 @@ namespace FASTER.core
         public byte[] RecoveredCookie;
 
         /// <summary>
+        /// Header size used by FasterLog
+        /// </summary>
+        public int HeaderSize => headerSize;
+
+        /// <summary>
         /// Task notifying commit completions
         /// </summary>
         internal Task<LinkedCommitInfo> CommitTask => commitTcs.Task;
@@ -374,6 +379,20 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Enqueue raw pre-formatted bytes with headers to the log (in memory).
+        /// </summary>
+        /// <param name="entryBytes">Raw bytes to be enqueued to log</param>
+        /// <returns>First logical address of added entries</returns>
+        public long UnsafeEnqueueRaw(ReadOnlySpan<byte> entryBytes)
+        {
+            long logicalAddress;
+            while (!UnsafeTryEnqueueRaw(entryBytes, out logicalAddress))
+                Thread.Yield();
+            return logicalAddress;
+
+        }
+
+        /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
         /// </summary>
         /// <param name="readOnlySpanBatch">Batch of entries to be enqueued to log</param>
@@ -530,6 +549,44 @@ namespace FASTER.core
             fixed (byte* bp = entry)
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
             SetHeader(length, (byte*)physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to enqueue raw pre-formatted bytes with headers to the log (in memory). If it returns true, we are
+        /// done. If it returns false, we need to retry.
+        /// </summary>
+        /// <param name="entryBytes">Entry bytes to be enqueued to log</param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        /// <returns>Whether the append succeeded</returns>
+        public unsafe bool UnsafeTryEnqueueRaw(ReadOnlySpan<byte> entryBytes, out long logicalAddress)
+        {
+            int length = entryBytes.Length;
+
+            // Length should be pre-aligned
+            Debug.Assert(length == Align(length));
+            logicalAddress = 0;
+            int allocatedLength = length;
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+                if (logicalAddress == 0)
+                {
+                    epoch.Suspend();
+                    if (cannedException != null) throw cannedException;
+                    return false;
+                }
+
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             if (AutoCommit) Commit();
@@ -2609,6 +2666,22 @@ namespace FASTER.core
                 return *(int*)(ptr + 8);
             return 0;
         }
+
+        /// <summary>
+        /// Get length of entry from pointer to header
+        /// </summary>
+        /// <param name="headerPtr"></param>
+        /// <returns></returns>
+        public unsafe int UnsafeGetLength(byte* headerPtr)
+            => GetLength(headerPtr);
+
+        /// <summary>
+        /// Get aligned version of record length
+        /// </summary>
+        /// <param name="length"></param>
+        /// <returns></returns>
+        public int UnsafeAlign(int length)
+            => Align(length);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe bool VerifyChecksum(byte* ptr, int length)
