@@ -85,8 +85,12 @@ namespace FASTER.core
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
+                // Revivification or some other operation may have sealed the record while we waited for the lock.
+                if (srcRecordInfo.IsClosed)
+                    return OperationStatus.RETRY_LATER;
+
                 #region Address and source record checks
- 
+
                 if (stackCtx.recSrc.HasReadCacheSrc)
                 {
                     // Use the readcache record as the CopyUpdater source.
@@ -125,7 +129,7 @@ namespace FASTER.core
                                         // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
                                         var (actualSize, allocatedSize) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
                                         if (ok = GetRecordLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, rmwInfo.FullValueLength) >= allocatedSize)
-                                            rmwInfo.UsedValueLength = ReInitialize(stackCtx.recSrc.PhysicalAddress, actualSize, rmwInfo.FullValueLength, srcRecordInfo, ref recordValue);
+                                            rmwInfo.UsedValueLength = ReInitialize(stackCtx.recSrc.PhysicalAddress, actualSize, rmwInfo.FullValueLength, ref srcRecordInfo, ref recordValue);
                                     }
 
                                     rmwInfo.RecordInfo = srcRecordInfo;

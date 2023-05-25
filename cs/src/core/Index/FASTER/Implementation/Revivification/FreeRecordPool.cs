@@ -72,7 +72,9 @@ namespace FASTER.core
                     address = old_record.Address;
                     return true;
                 }
+                Debug.Assert(this.word == emptyWord, "CAS should only fail if another thread did Take() first, which would leave word==emptyWord");
             }
+
             address = emptyWord;
             return false;
         }
@@ -93,8 +95,10 @@ namespace FASTER.core
                         address = old_record.Address;
                         return true;
                     }
+                    Debug.Assert(this.word == emptyWord, "CAS should only fail if another thread did Take() first, which would leave word==emptyWord");
                 }
             }
+
             address = emptyWord;
             return false;
         }
@@ -260,7 +264,8 @@ namespace FASTER.core
         public void Dispose()
         {
 #if !NET5_0_OR_GREATER
-            handle.Free();
+            if (handle.IsAllocated)
+                handle.Free();
 #endif
         }
     }
@@ -389,13 +394,7 @@ namespace FASTER.core
                 result = bins[index + 1].Dequeue<Key, Value>(size, minAddress, out address);
 
             if (result)
-            {
                 Interlocked.Decrement(ref this.numberOfRecords);
-
-                // We are finally safe to unseal, since epoch management guarantees nobody is still executing who could
-                // have seen this record before it went into the free record pool.
-                fkv.hlog.GetInfo(fkv.hlog.GetPhysicalAddress(address)).Unseal();
-            }
             return result;
         }
 

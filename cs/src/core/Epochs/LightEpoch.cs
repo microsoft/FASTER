@@ -159,7 +159,8 @@ namespace FASTER.core
         public void Dispose()
         {
 #if !NET5_0_OR_GREATER
-            tableHandle.Free();
+            if (tableHandle.IsAllocated)
+                tableHandle.Free();
 #endif
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;

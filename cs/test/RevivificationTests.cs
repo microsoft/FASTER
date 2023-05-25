@@ -17,6 +17,13 @@ namespace FASTER.test.Revivification
 
     public enum CollisionRange { Ten = 10, None = int.MaxValue }
 
+    internal static class ByteFills
+    {
+        internal const byte Populate = 0x31;
+        internal const byte Input = 0x34;
+        internal const byte RevivInput = 0x37;
+    }
+
     static class RevivificationTestUtils
     {
         internal static RMWInfo CopyToRMWInfo(ref UpsertInfo upsertInfo)
@@ -446,6 +453,7 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Populate);
 
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
 
@@ -491,6 +499,7 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[functions.expectedInputLength];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Input);
 
             // For Grow, we won't be able to satisfy the request with a revivification, and the new value length will be GrowLength
             functions.expectedUsedValueLengths.Enqueue(sizeof(int) + InitialLength);
@@ -548,6 +557,7 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength / 2];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Input);
 
             SpanByteAndMemory output = new();
 
@@ -587,6 +597,7 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength / 2];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Input);
 
             SpanByteAndMemory output = new();
 
@@ -677,6 +688,8 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength / 2];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Input);
+
             SpanByteAndMemory output = new();
 
             Span<byte> keyVecToTest = stackalloc byte[10];
@@ -759,6 +772,8 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Input);
+
             SpanByteAndMemory output = new();
 
             // Revivify in the chain. Because this stays in the chain, the expectedFullValueLength is roundup(InitialLength)
@@ -807,6 +822,8 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Input);
+
             SpanByteAndMemory output = new();
 
             // Revivify in the chain. Because this stays in the chain, the expectedFullValueLength is roundup(InitialLength)
@@ -852,6 +869,8 @@ namespace FASTER.test.Revivification
             // Again, allocate at half-size due to "retrieve from next-highest bin".
             Span<byte> inputVec = stackalloc byte[InitialLength / 2];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Input);
+
             SpanByteAndMemory output = new();
 
             functions.expectedInputLength = InitialLength / 2;
@@ -1119,10 +1138,12 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Input);
 
             // Smaller input for revivification, due to the next-higher-bin dequeueing
             Span<byte> revivInputVec = stackalloc byte[InitialLength / 2];
             var revivInput = SpanByte.FromFixedSpan(revivInputVec);
+            revivInputVec.Fill(ByteFills.RevivInput);
 
             SpanByteAndMemory output = new();
 
@@ -1185,6 +1206,8 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[OversizeLength];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Input);
+
             SpanByteAndMemory output = new();
 
             byte chainKey = numRecords + 1;
@@ -1255,6 +1278,7 @@ namespace FASTER.test.Revivification
                 // Because of the "next-higher bin" dequeue in the FreeRecordPool, add a larger record here, then delete it so it can be dequeued.
                 Span<byte> inputVec = stackalloc byte[GrowLength];
                 var input = SpanByte.FromFixedSpan(inputVec);
+                inputVec.Fill(ByteFills.Input);
 
                 // Set to expect the longer input length
                 functions.expectedInputLength = GrowLength;
@@ -1292,6 +1316,7 @@ namespace FASTER.test.Revivification
             {
                 Span<byte> inputVec = stackalloc byte[InitialLength / 2];
                 var input = SpanByte.FromFixedSpan(inputVec);
+                inputVec.Fill(ByteFills.Input);
 
                 keyVec.Fill(targetRO);
 
@@ -1453,14 +1478,12 @@ namespace FASTER.test.Revivification
             }
 
             public override bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo)
-            {
-                value = default;
-                return true;
-            }
+                => ConcurrentDeleter(ref key, ref value, ref deleteInfo);
 
-            public override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo)
+            public unsafe override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo)
             {
                 value = default;
+                deleteInfo.UsedValueLength = value.TotalSize;
                 return true;
             }
         }
@@ -1525,6 +1548,7 @@ namespace FASTER.test.Revivification
         {
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(ByteFills.Populate);
 
             SpanByteAndMemory output = new();
 
@@ -1655,9 +1679,6 @@ namespace FASTER.test.Revivification
 
             unsafe void runDeleteThread(int tid)
             {
-                Span<byte> inputVec = stackalloc byte[InitialLength];
-                var input = SpanByte.FromFixedSpan(inputVec);
-
                 Random rng = new(tid * 101);
 
                 using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
@@ -1682,6 +1703,7 @@ namespace FASTER.test.Revivification
             {
                 Span<byte> inputVec = stackalloc byte[InitialLength / 2];       // /2 because of "next-highest bin" dequeueing
                 var input = SpanByte.FromFixedSpan(inputVec);
+                inputVec.Fill(ByteFills.Input);
 
                 Random rng = new(tid * 101);
 
@@ -1754,6 +1776,7 @@ namespace FASTER.test.Revivification
             {
                 Span<byte> inputVec = stackalloc byte[InitialLength / 2];       // /2 because of "next-highest bin" dequeueing
                 var input = SpanByte.FromFixedSpan(inputVec);
+                inputVec.Fill(ByteFills.Input);
 
                 using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
                 localSession.ctx.phase = phase;

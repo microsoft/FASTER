@@ -96,7 +96,7 @@ namespace FASTER.core
         private static bool IsClosedWord(long word) => (word & (kValidBitMask | kSealedBitMask)) != kValidBitMask;
 
         public bool IsClosed => IsClosedWord(word);
-        private bool IsSealed => (this.word & kSealedBitMask) != 0;
+        public bool IsSealed => (this.word & kSealedBitMask) != 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InitializeLockShared() => this.word += kSharedLockIncrement;

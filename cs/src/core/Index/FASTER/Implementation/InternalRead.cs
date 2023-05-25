@@ -195,6 +195,13 @@ namespace FASTER.core
 
                 try
                 {
+                    // Some operation may have Invalidated the record while we waited for the lock.
+                    if (srcRecordInfo.IsClosed)
+                    { 
+                        status = OperationStatus.RETRY_LATER;
+                        return false;
+                    }
+
                     if (fasterSession.SingleReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo))
                         return true;
                     status = readInfo.Action == ReadAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
@@ -233,6 +240,10 @@ namespace FASTER.core
 
             try
             {
+                // Revivification or some other operation may have sealed the record while we waited for the lock.
+                if (srcRecordInfo.IsClosed)
+                    return OperationStatus.RETRY_LATER;
+
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
@@ -277,6 +288,10 @@ namespace FASTER.core
 
             try
             {
+                // Revivification or some other operation may have sealed the record while we waited for the lock.
+                if (srcRecordInfo.IsSealed)
+                    return OperationStatus.RETRY_LATER;
+
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
                 ref Value recordValue = ref stackCtx.recSrc.GetValue();

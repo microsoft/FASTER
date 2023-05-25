@@ -84,6 +84,10 @@ namespace FASTER.core
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
+                // Revivification or some other operation may have sealed the record while we waited for the lock.
+                if (srcRecordInfo.IsClosed)
+                    return OperationStatus.RETRY_LATER;
+
                 #region Address and source record checks
 
                 if (stackCtx.recSrc.HasReadCacheSrc)

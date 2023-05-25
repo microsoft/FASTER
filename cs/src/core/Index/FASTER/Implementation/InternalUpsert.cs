@@ -81,6 +81,10 @@ namespace FASTER.core
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
+                // Revivification or some other operation may have sealed the record while we waited for the lock.
+                if (srcRecordInfo.IsClosed)
+                    return OperationStatus.RETRY_LATER;
+
                 #region Address and source record checks
 
                 if (stackCtx.recSrc.HasReadCacheSrc)
@@ -121,7 +125,7 @@ namespace FASTER.core
                                         // Upsert uses GetRecordSize because it has both the initial Input and Value
                                         var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref input, ref value, fasterSession);
                                         if (ok = GetRecordLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, upsertInfo.FullValueLength) >= allocatedSize)
-                                            upsertInfo.UsedValueLength = ReInitialize(stackCtx.recSrc.PhysicalAddress, actualSize, upsertInfo.FullValueLength, srcRecordInfo, ref recordValue);
+                                            upsertInfo.UsedValueLength = ReInitialize(stackCtx.recSrc.PhysicalAddress, actualSize, upsertInfo.FullValueLength, ref srcRecordInfo, ref recordValue);
                                     }
 
                                     upsertInfo.RecordInfo = srcRecordInfo;

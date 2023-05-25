@@ -98,7 +98,7 @@ namespace FASTER.core
             if (IsFixedLengthReviv)
                 return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
             if (recordInfo.Tombstone)
-                return (GetDeletedValueLengths(physicalAddress, ref recordInfo));
+                return GetDeletedValueLengths(physicalAddress, ref recordInfo);
 
             // Only get valueOffset if we need it.
             if (recordInfo.Filler)
@@ -189,29 +189,35 @@ namespace FASTER.core
             if (FreeRecordPoolHasRecords && FreeRecordPool.Dequeue(allocatedSize, MinFreeRecordAddress(entry), this, out logicalAddress))
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
+                Debug.Assert(recordInfo.IsSealed, "recordInfo should still have the revivification Seal");
                 if (IsFixedLengthReviv)
-                {
                     allocatedSize = FixedLengthStruct<Value>.Length;
-                }
                 else
                 {
-                    ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
+                    Debug.Assert(recordInfo.Filler, "recordInfo should have the Filler bit set for varlen");
                     int valueOffset = GetValueOffset(physicalAddress);
-                    allocatedSize = valueOffset + GetDeletedValueLengths(physicalAddress, ref recordInfo).fullValueLength;
+                    var recordAllocatedSize = valueOffset + GetDeletedValueLengths(physicalAddress, ref recordInfo).fullValueLength;
+                    Debug.Assert(recordAllocatedSize >= allocatedSize, "recordAllocatedSize should be >= allocatedSize"); 
+                    allocatedSize = recordAllocatedSize;
                 }
+
+                // We are finally safe to unseal, since epoch management guarantees nobody is still executing who could
+                // have seen this record before it went into the free record pool.
+                recordInfo.Unseal();
                 return true;
             }
             logicalAddress = physicalAddress = default;
             return false;
         }
 
-        private int ReInitialize(long physicalAddress, int actualSize, int fullValueLength, RecordInfo recordInfo, ref Value recordValue)
+        private int ReInitialize(long physicalAddress, int actualSize, int fullValueLength, ref RecordInfo srcRecordInfo, ref Value recordValue)
         {
-            // Zero memory, call GetValue to re-initialize, and remove Filler
+            // Zero memory, call GetAndInitializeValue to re-initialize, and remove Filler
             byte* valuePointer = (byte*)Unsafe.AsPointer(ref recordValue);
+            srcRecordInfo.Filler = false;
             Native32.ZeroMemory(valuePointer, fullValueLength);
             hlog.GetAndInitializeValue(physicalAddress, physicalAddress + actualSize);
-            recordInfo.Filler = false;
             return (int)(physicalAddress + actualSize - (long)valuePointer);
         }
     }
