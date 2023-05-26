@@ -84,9 +84,11 @@ namespace FASTER.core
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
-                // Revivification or some other operation may have sealed the record while we waited for the lock.
+                // Revivification or some other operation may have sealed or deleted the record while we waited for the lock.
                 if (srcRecordInfo.IsClosed)
                     return OperationStatus.RETRY_LATER;
+                if (srcRecordInfo.Tombstone)
+                    return OperationStatus.NOTFOUND;
 
                 #region Address and source record checks
 
@@ -134,6 +136,10 @@ namespace FASTER.core
                                         // Do *not* Unseal() here; the record may be in FasterKVIterator's tempKv, so we do not want to clear both Tombstone and Seal.
                                         // Therefore, delay Unseal() to when it's dequeued from the free record pool.
                                         srcRecordInfo.Tombstone = false;
+
+                                        // Change from "preserving key and storing full value length" to "not preserving key and storing allocated size".
+                                        *GetTombstonedValueLengthPointer(stackCtx.recSrc.PhysicalAddress) = 0;
+                                        SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, fullRecordLength);
                                         FreeRecordPool.Enqueue(stackCtx.recSrc.LogicalAddress, fullRecordLength);
                                     }
                                     else
@@ -282,7 +288,8 @@ namespace FASTER.core
                     return OperationStatus.CANCELED;
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
-            SetDeletedValueLengths(newPhysicalAddress, ref srcRecordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
+
+            SetTombstonedValueLength(newPhysicalAddress, ref srcRecordInfo, deleteInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             deleteInfo.RecordInfo = newRecordInfo;
@@ -306,11 +313,8 @@ namespace FASTER.core
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
             fasterSession.DisposeSingleDeleter(ref insertedKey, ref insertedValue, ref newRecordInfo, ref deleteInfo);
-            if (WriteDefaultOnDelete)
-            {
-                insertedKey = default;
-                insertedValue = default;
-            }
+            insertedKey = default;
+            insertedValue = default;
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

@@ -122,14 +122,16 @@ namespace FASTER.core
                                 if (srcRecordInfo.Tombstone && srcRecordInfo.Filler)
                                 {
                                     srcRecordInfo.Tombstone = false;
-                                    (rmwInfo.UsedValueLength, rmwInfo.FullValueLength) = GetDeletedValueLengths(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
-
-                                    if (!IsFixedLengthReviv)    // Non-fixed-length must update the usedValueLength with the current input
+                                    if (IsFixedLengthReviv)
+                                        rmwInfo.UsedValueLength = rmwInfo.FullValueLength = FixedLengthStruct<Value>.Length;
+                                    else
                                     {
+                                        rmwInfo.FullValueLength = GetTombstonedValueLength(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
+
                                         // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
                                         var (actualSize, allocatedSize) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
-                                        if (ok = GetRecordLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, rmwInfo.FullValueLength) >= allocatedSize)
-                                            rmwInfo.UsedValueLength = ReInitialize(stackCtx.recSrc.PhysicalAddress, actualSize, rmwInfo.FullValueLength, ref srcRecordInfo, ref recordValue);
+                                        if (ok = GetRecordLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, rmwInfo.FullValueLength) >= actualSize)
+                                            rmwInfo.UsedValueLength = ReInitializeValue(stackCtx.recSrc.PhysicalAddress, actualSize, ref srcRecordInfo, ref recordValue);
                                     }
 
                                     rmwInfo.RecordInfo = srcRecordInfo;

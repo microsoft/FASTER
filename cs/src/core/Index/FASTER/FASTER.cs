@@ -27,7 +27,6 @@ namespace FASTER.core
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;
-        internal readonly bool WriteDefaultOnDelete;
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
@@ -177,8 +176,6 @@ namespace FASTER.core
             if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength is null) ||
                 (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength is null))
             {
-                WriteDefaultOnDelete = true;
-
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)

@@ -86,7 +86,7 @@ namespace FASTER.core
             {
                 // Because this is oversize, we need hlog to get the length out of the record's value (it won't fit in FreeRecord.kSizeBits)
                 long physicalAddress = fkv.hlog.GetPhysicalAddress(old_record.Address);
-                long recordSize = fkv.GetDeletedRecordLength(physicalAddress, ref fkv.hlog.GetInfo(physicalAddress));
+                long recordSize = fkv.GetFreeRecordSize(physicalAddress, ref fkv.hlog.GetInfo(physicalAddress));
 
                 if (recordSize >= size)
                 {

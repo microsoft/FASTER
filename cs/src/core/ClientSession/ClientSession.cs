@@ -1292,14 +1292,13 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleterNoLock(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out int fullRecordLength)
+            public bool ConcurrentDeleterNoLock(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out int allocatedSize)
             {
-                (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, fullRecordLength) = _clientSession.fht.GetRecordLengths<Input, Output, Context, IFasterSession<Key, Value, Input, Output, Context>>(physicalAddress, ref value, ref recordInfo, this);
+                (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.fht.GetRecordLengths<Input, Output, Context, IFasterSession<Key, Value, Input, Output, Context>>(physicalAddress, ref value, ref recordInfo, this);
                 if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo))
                     return false;
-                if (_clientSession.fht.WriteDefaultOnDelete)
-                    value = default;
-                _clientSession.fht.SetDeletedValueLengths(physicalAddress, ref recordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
+                value = default;
+                _clientSession.fht.SetTombstonedValueLength(physicalAddress, ref recordInfo, deleteInfo.FullValueLength);
                 recordInfo.SetDirtyAndModified();
                 recordInfo.SetTombstone();
                 return true;

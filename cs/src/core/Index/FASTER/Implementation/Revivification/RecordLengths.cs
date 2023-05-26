@@ -21,15 +21,15 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int RoundupLength(int length) => (length + sizeof(int) - 1) & (~(sizeof(int) - 1));
+        internal static int RoundupLengthToInt(int length) => (length + sizeof(int) - 1) & (~(sizeof(int) - 1));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private long MinFreeRecordAddress(HashBucketEntry entry) => entry.Address > this.hlog.ReadOnlyAddress ? entry.Address : this.hlog.ReadOnlyAddress;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int* GetValueLengthPointer(long physicalAddress, int usedValueLength)
+        private int* GetValueFullLengthPointer(long physicalAddress, int usedValueLength)
         {
-            Debug.Assert(RoundupLength(usedValueLength) == usedValueLength, "usedValueLength should have int-aligned length");
+            Debug.Assert(RoundupLengthToInt(usedValueLength) == usedValueLength, "usedValueLength should have int-aligned length");
             return (int*)((byte*)physicalAddress + GetValueOffset(physicalAddress) + usedValueLength);
         }
 
@@ -47,13 +47,13 @@ namespace FASTER.core
         {
             if (IsFixedLengthReviv)
                 return;
-            usedValueLength = RoundupLength(usedValueLength);
+            usedValueLength = RoundupLengthToInt(usedValueLength);
             Debug.Assert(fullValueLength >= usedValueLength, $"usedValueLength {usedValueLength}, fullValueLength {fullValueLength}");
             int availableLength = fullValueLength - usedValueLength;
             Debug.Assert(availableLength >= 0, $"availableLength {availableLength}");
             if (availableLength >= sizeof(int))
             {
-                *GetValueLengthPointer(physicalAddress, usedValueLength) = fullValueLength;
+                *GetValueFullLengthPointer(physicalAddress, usedValueLength) = fullValueLength;
                 recordInfo.Filler = true;
                 return;
             }
@@ -84,8 +84,8 @@ namespace FASTER.core
             Debug.Assert(recordInfo.Filler, "Callers should have ensured recordInfo.Filler");
 
             int actualValueLength = varLenValueOnlyLengthStruct.GetLength(ref value);
-            int usedValueLength = RoundupLength(actualValueLength);
-            int fullValueLength = *GetValueLengthPointer(physicalAddress, usedValueLength); // Get the length from the Value space after usedValueLength
+            int usedValueLength = RoundupLengthToInt(actualValueLength);
+            int fullValueLength = *GetValueFullLengthPointer(physicalAddress, usedValueLength); // Get the length from the Value space after usedValueLength
             Debug.Assert(fullValueLength >= 0, $"fullValueLength {fullValueLength}");
             Debug.Assert(fullValueLength >= usedValueLength, $"usedValueLength {usedValueLength}, fullValueLength {fullValueLength}");
             return (actualValueLength, fullValueLength);
@@ -98,7 +98,7 @@ namespace FASTER.core
             if (IsFixedLengthReviv)
                 return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
             if (recordInfo.Tombstone)
-                return GetDeletedValueLengths(physicalAddress, ref recordInfo);
+                return (0, GetFreeRecordSize(physicalAddress, ref recordInfo));
 
             // Only get valueOffset if we need it.
             if (recordInfo.Filler)
@@ -129,7 +129,7 @@ namespace FASTER.core
             int usedValueLength, fullValueLength;
             if (recordInfo.Tombstone)
             {
-                (usedValueLength, fullValueLength) = GetDeletedValueLengths(physicalAddress, ref recordInfo);
+                (usedValueLength, fullValueLength) = (0, GetFreeRecordSize(physicalAddress, ref recordInfo));
                 return (usedValueLength, fullValueLength, valueOffset + fullValueLength);
             }
 
@@ -152,37 +152,56 @@ namespace FASTER.core
             return (usedValueLength, fullValueLength, fullRecordLength);
         }
 
-        // Deleted value invariant: the full value length starts at the beginning of the value offset.
+        // A "free record" is one on the FreeList; it does NOT preserve the key.
+        #region FreeRecords
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void SetDeletedValueLengths(long physicalAddress, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
+        internal void SetFreeRecordSize(long physicalAddress, ref RecordInfo recordInfo, int allocatedSize)
         {
             if (!IsFixedLengthReviv)
             {
-                Debug.Assert(usedValueLength >= 0, $"usedValueLength {usedValueLength}");
-                Debug.Assert(fullValueLength >= sizeof(long) && RoundupLength(fullValueLength) == fullValueLength, "VarLen GetRecordSize() should have ensured nonzero record-aligned length");
-                int* ptr = GetValueLengthPointer(physicalAddress, 0);
-                *ptr = fullValueLength;
-                *(ptr + 1) = usedValueLength;
+                Debug.Assert(allocatedSize >= sizeof(long) && RoundupLengthToInt(allocatedSize) == allocatedSize, "VarLen GetRecordSize() should have ensured nonzero int-aligned length");
+                *GetFreeRecordSizePointer(physicalAddress) = allocatedSize;
                 recordInfo.Filler = true;
             }
         }
 
+        // A "free record" is one on the FreeList; it does NOT preserve the key.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private (int usedValueLength, int fullValueLength) GetDeletedValueLengths(long physicalAddress, ref RecordInfo recordInfo)
+        internal int GetFreeRecordSize(long physicalAddress, ref RecordInfo recordInfo)
         {
             Debug.Assert(recordInfo.Filler, "Should have filler set");
-            if (IsFixedLengthReviv)
-                return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length);
-            int* ptr = GetValueLengthPointer(physicalAddress, 0);
-            return (*(ptr + 1), *ptr);
+            return IsFixedLengthReviv ? hlog.GetAverageRecordSize() : *GetFreeRecordSizePointer(physicalAddress);
         }
 
+        // Use Key space for the value as FreeRecords do not preserve the key.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int GetDeletedRecordLength(long physicalAddress, ref RecordInfo recordInfo)
+        internal unsafe int* GetFreeRecordSizePointer(long physicalAddress) => (int*)Unsafe.AsPointer(ref hlog.GetKey(physicalAddress));
+        #endregion FreeRecords
+
+        // TombstonedRecords are in the tag chain with the tombstone bit set (they are not in the freelist). They preserve the key (they mark that key as deleted,
+        // which is important if there is a subsequent record for that key).
+        #region TombstonedRecords
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetTombstonedValueLength(long physicalAddress, ref RecordInfo recordInfo, int fullValueLength)
         {
-            int valueOffset = GetValueOffset(physicalAddress);
-            return valueOffset + GetDeletedValueLengths(physicalAddress, ref recordInfo).fullValueLength;
+            if (!IsFixedLengthReviv)
+            {
+                Debug.Assert(fullValueLength >= sizeof(long) && RoundupLengthToInt(fullValueLength) == fullValueLength, "VarLen GetRecordSize() should have ensured nonzero int-aligned length");
+                *GetTombstonedValueLengthPointer(physicalAddress) = fullValueLength;
+                recordInfo.Filler = true;
+            }
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal int GetTombstonedValueLength(long physicalAddress, ref RecordInfo recordInfo)
+        {
+            Debug.Assert(recordInfo.Filler, "Should have filler set");
+            return IsFixedLengthReviv ? FixedLengthStruct<Value>.Length : *GetTombstonedValueLengthPointer(physicalAddress);
+        }
+
+        // Use Value space as TombstonedRecords preserve the key.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe int* GetTombstonedValueLengthPointer(long physicalAddress) => (int*)Unsafe.AsPointer(ref hlog.GetValue(physicalAddress));
+        #endregion TombstonedRecords
 
         bool TryDequeueFreeRecord(ref int allocatedSize, HashBucketEntry entry, out long logicalAddress, out long physicalAddress)
         {
@@ -191,15 +210,16 @@ namespace FASTER.core
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 Debug.Assert(recordInfo.IsSealed, "recordInfo should still have the revivification Seal");
-                if (IsFixedLengthReviv)
-                    allocatedSize = FixedLengthStruct<Value>.Length;
-                else
+
+                // If IsFixedLengthReviv, the allocatedSize will be unchanged
+                if (!IsFixedLengthReviv)
                 {
                     Debug.Assert(recordInfo.Filler, "recordInfo should have the Filler bit set for varlen");
-                    int valueOffset = GetValueOffset(physicalAddress);
-                    var recordAllocatedSize = valueOffset + GetDeletedValueLengths(physicalAddress, ref recordInfo).fullValueLength;
-                    Debug.Assert(recordAllocatedSize >= allocatedSize, "recordAllocatedSize should be >= allocatedSize"); 
-                    allocatedSize = recordAllocatedSize;
+                    var freeAllocatedSize = GetFreeRecordSize(physicalAddress, ref recordInfo);
+                    *GetFreeRecordSizePointer(physicalAddress) = 0;
+                    recordInfo.Filler = false;
+                    Debug.Assert(freeAllocatedSize >= allocatedSize, $"freeAllocatedSize {freeAllocatedSize} should be >= allocatedSize {allocatedSize}"); 
+                    allocatedSize = freeAllocatedSize;
                 }
 
                 // We are finally safe to unseal, since epoch management guarantees nobody is still executing who could
@@ -211,12 +231,10 @@ namespace FASTER.core
             return false;
         }
 
-        private int ReInitialize(long physicalAddress, int actualSize, int fullValueLength, ref RecordInfo srcRecordInfo, ref Value recordValue)
+        private int ReInitializeValue(long physicalAddress, int actualSize, ref RecordInfo srcRecordInfo, ref Value recordValue)
         {
-            // Zero memory, call GetAndInitializeValue to re-initialize, and remove Filler
             byte* valuePointer = (byte*)Unsafe.AsPointer(ref recordValue);
             srcRecordInfo.Filler = false;
-            Native32.ZeroMemory(valuePointer, fullValueLength);
             hlog.GetAndInitializeValue(physicalAddress, physicalAddress + actualSize);
             return (int)(physicalAddress + actualSize - (long)valuePointer);
         }

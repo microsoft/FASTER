@@ -44,7 +44,7 @@ namespace FASTER.core
                                                        ref int allocatedSize, bool recycle, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
         {
             status = OperationStatus.SUCCESS;
-            if (recycle && GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, allocatedSize, out newLogicalAddress, out newPhysicalAddress))
+            if (recycle && GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, ref allocatedSize, out newLogicalAddress, out newPhysicalAddress))
                 return true;
 
             if (TryDequeueFreeRecord(ref allocatedSize, stackCtx.hei.entry, out newLogicalAddress, out newPhysicalAddress))
@@ -123,13 +123,12 @@ namespace FASTER.core
                 return;
             }
 
-            // Use Key in case we have ushort or byte Key/Value; blittable types do not 8-byte align the record size, and it's easier than figure out where Value starts.
-            *(int*)Unsafe.AsPointer(ref hlog.GetKey(physicalAddress)) = allocatedSize;
+            *GetFreeRecordSizePointer(physicalAddress) = allocatedSize;
             pendingContext.retryNewLogicalAddress = logicalAddress;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool GetAllocationForRetry<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, long minAddress, int minSize, out long newLogicalAddress, out long newPhysicalAddress)
+        bool GetAllocationForRetry<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, long minAddress, ref int allocatedSize, out long newLogicalAddress, out long newPhysicalAddress)
         {
             // Use an earlier allocation from a failed operation, if possible.
             newLogicalAddress = pendingContext.retryNewLogicalAddress;
@@ -140,10 +139,13 @@ namespace FASTER.core
                 return false;
             }
             newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            int* len_ptr = (int*)Unsafe.AsPointer(ref hlog.GetKey(newPhysicalAddress));
+            int* len_ptr = GetFreeRecordSizePointer(newPhysicalAddress);
             int recordSize = *len_ptr;
             *len_ptr = 0;
-            return recordSize >= minSize;
+            if (recordSize < allocatedSize)
+                return false;
+            allocatedSize = recordSize;
+            return true;
         }
     }
 }

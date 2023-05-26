@@ -379,7 +379,7 @@ namespace FASTER.test.Revivification
 
         static int SpanByteTotalSize(int dataLength) => sizeof(int) + dataLength;
 
-        static int RoundUpTotalSizeUsed(int totalSize) => FasterKV<SpanByte, SpanByte>.RoundupLength(totalSize);
+        static int RoundUpTotalSizeUsed(int totalSize) => FasterKV<SpanByte, SpanByte>.RoundupLengthToInt(totalSize);
 
         const int numRecords = 200;
         const int DefaultMaxRecsPerBin = 1024;
@@ -621,7 +621,7 @@ namespace FASTER.test.Revivification
         const byte delBelowRO = numRecords / 2 - 4;
         const byte copiedBelowRO = numRecords / 2 - 5;
 
-        private long PrepareDeletes(bool stayInChain, byte delAboveRO, FlushMode flushMode)
+        private long PrepareDeletes(bool stayInChain, byte delAboveRO, FlushMode flushMode, CollisionRange collisionRange)
         {
             Populate(0, numRecords / 2);
 
@@ -662,6 +662,8 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(0, pool.NumberOfRecords);
                 pool = RevivificationTestUtils.SwapFreeRecordPool(fht, pool);
             }
+            else if (collisionRange == CollisionRange.None)     // CollisionRange.Ten has a valid .PreviousAddress so won't be moved to FreeList
+                Assert.IsTrue(fht.FreeRecordPool.HasRecords, "Delete did not move to FreeRecordList as expected");
 
             Assert.AreEqual(tailAddress, fht.Log.TailAddress);
 
@@ -684,7 +686,7 @@ namespace FASTER.test.Revivification
                 ? (int)CollisionRange.Ten + 3       // Will remain in chain
                 : 2));                              // Will be sent to free list
 
-            long tailAddress = PrepareDeletes(stayInChain, delAboveRO, FlushMode.ReadOnly);
+            long tailAddress = PrepareDeletes(stayInChain, delAboveRO, FlushMode.ReadOnly, collisionRange);
 
             Span<byte> inputVec = stackalloc byte[InitialLength / 2];
             var input = SpanByte.FromFixedSpan(inputVec);
@@ -1256,7 +1258,7 @@ namespace FASTER.test.Revivification
             byte delAboveRO = (byte)(numRecords - 2);   // Will be sent to free list
             byte targetRO = (byte)numRecords / 2 - 15;
 
-            long tailAddress = PrepareDeletes(stayInChain: false, delAboveRO, FlushMode.OnDisk);
+            long tailAddress = PrepareDeletes(stayInChain: false, delAboveRO, FlushMode.OnDisk, collisionRange);
 
             // We always want freelist for this test.
             Assert.IsTrue(fht.FreeRecordPool.HasRecords);

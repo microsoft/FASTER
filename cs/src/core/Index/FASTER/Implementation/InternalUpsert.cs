@@ -118,14 +118,17 @@ namespace FASTER.core
                                 if (srcRecordInfo.Tombstone && srcRecordInfo.Filler)
                                 {
                                     srcRecordInfo.Tombstone = false;
-                                    (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetDeletedValueLengths(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
 
-                                    if (!IsFixedLengthReviv)    // Non-fixed-length must update the usedValueLength with the current input
+                                    if (IsFixedLengthReviv)
+                                        upsertInfo.UsedValueLength = upsertInfo.FullValueLength = FixedLengthStruct<Value>.Length;
+                                    else
                                     {
+                                        upsertInfo.FullValueLength = GetTombstonedValueLength(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
+
                                         // Upsert uses GetRecordSize because it has both the initial Input and Value
                                         var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref input, ref value, fasterSession);
-                                        if (ok = GetRecordLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, upsertInfo.FullValueLength) >= allocatedSize)
-                                            upsertInfo.UsedValueLength = ReInitialize(stackCtx.recSrc.PhysicalAddress, actualSize, upsertInfo.FullValueLength, ref srcRecordInfo, ref recordValue);
+                                        if (ok = GetRecordLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, upsertInfo.FullValueLength) >= actualSize)
+                                            upsertInfo.UsedValueLength = ReInitializeValue(stackCtx.recSrc.PhysicalAddress, actualSize, ref srcRecordInfo, ref recordValue);
                                     }
 
                                     upsertInfo.RecordInfo = srcRecordInfo;
@@ -411,11 +414,8 @@ namespace FASTER.core
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
             fasterSession.DisposeSingleWriter(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
-            if (WriteDefaultOnDelete)
-            {
-                insertedKey = default;
-                insertedValue = default;
-            }
+            insertedKey = default;
+            insertedValue = default;
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
