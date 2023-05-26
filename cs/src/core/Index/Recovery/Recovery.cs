@@ -185,7 +185,7 @@ namespace FASTER.core
         {
             IndexCheckpointInfo recoveredICInfo = new IndexCheckpointInfo();
             recoveredICInfo.Recover(token, checkpointManager);
-            return (long)recoveredICInfo.info.num_ht_bytes;
+            return (long)(recoveredICInfo.info.num_ht_bytes + recoveredICInfo.info.num_ofb_bytes);
         }
 
         private void GetClosestHybridLogCheckpointInfo(
