@@ -129,9 +129,8 @@ namespace FASTER.core
                                         rmwInfo.FullValueLength = GetTombstonedValueLength(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
 
                                         // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
-                                        var (actualSize, allocatedSize) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
-                                        if (ok = GetRecordLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, rmwInfo.FullValueLength) >= actualSize)
-                                            rmwInfo.UsedValueLength = ReInitializeValue(stackCtx.recSrc.PhysicalAddress, actualSize, ref srcRecordInfo, ref recordValue);
+                                        var (actualSize, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+                                        (ok, rmwInfo.UsedValueLength) = TryReinitializeTombstonedValue(stackCtx.recSrc.PhysicalAddress, actualSize, ref srcRecordInfo, ref recordValue, rmwInfo.FullValueLength);
                                     }
 
                                     rmwInfo.RecordInfo = srcRecordInfo;
@@ -147,7 +146,7 @@ namespace FASTER.core
                             }
                             finally
                             {
-                                SetLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                                SetLiveFullValueLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                                 srcRecordInfo.Unseal();
                                 if (!ok)
                                     srcRecordInfo.Tombstone = true; // Restore tombstone on inability to update in place
@@ -457,13 +456,13 @@ namespace FASTER.core
             // Populate the new record
             rmwInfo.RecordInfo = newRecordInfo;
             ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-            (rmwInfo.UsedValueLength, rmwInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
+            (rmwInfo.UsedValueLength, rmwInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
             if (!doingCU)
             {
                 if (fasterSession.InitialUpdater(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo, ref rmwInfo))
                 {
-                    SetLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                    SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = forExpiration
                         ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired)
                         : OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
@@ -479,7 +478,7 @@ namespace FASTER.core
             {
                 if (fasterSession.CopyUpdater(ref key, ref input, ref value, ref newRecordValue, ref output, ref newRecordInfo, ref rmwInfo))
                 {
-                    SetLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                    SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
                     goto DoCAS;
                 }
@@ -556,7 +555,7 @@ namespace FASTER.core
             else
                 fasterSession.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref newRecordInfo, ref rmwInfo);
 
-            SetLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+            SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }

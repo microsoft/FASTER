@@ -278,8 +278,8 @@ namespace FASTER.core
                 RecordInfo = newRecordInfo
             };
 
-            ref Value newValue = ref hlog.GetValue(newPhysicalAddress);     // No endAddress arg, so no varlen Initialize() is done
-            (deleteInfo.UsedValueLength, deleteInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
+            ref Value newValue = ref hlog.GetValue(newPhysicalAddress);     // No endAddress arg, so no varlen Initialize() is done (since we're deleting the record)
+            (deleteInfo.UsedValueLength, deleteInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newValue);
 
             if (!fasterSession.SingleDeleter(ref key, ref newValue, ref newRecordInfo, ref deleteInfo))
             {

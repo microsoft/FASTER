@@ -126,9 +126,8 @@ namespace FASTER.core
                                         upsertInfo.FullValueLength = GetTombstonedValueLength(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
 
                                         // Upsert uses GetRecordSize because it has both the initial Input and Value
-                                        var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref input, ref value, fasterSession);
-                                        if (ok = GetRecordLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, upsertInfo.FullValueLength) >= actualSize)
-                                            upsertInfo.UsedValueLength = ReInitializeValue(stackCtx.recSrc.PhysicalAddress, actualSize, ref srcRecordInfo, ref recordValue);
+                                        var (actualSize, _) = hlog.GetRecordSize(ref key, ref input, ref value, fasterSession);
+                                        (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue(stackCtx.recSrc.PhysicalAddress, actualSize, ref srcRecordInfo, ref recordValue, upsertInfo.FullValueLength);
                                     }
 
                                     upsertInfo.RecordInfo = srcRecordInfo;
@@ -144,7 +143,7 @@ namespace FASTER.core
                             }
                             finally
                             {
-                                SetLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+                                SetLiveFullValueLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
                                 srcRecordInfo.Unseal();
                                 if (!ok)
                                     srcRecordInfo.Tombstone = true; // Restore tombstone on inability to update in place
@@ -380,7 +379,7 @@ namespace FASTER.core
             };
 
             ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
+            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
             if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert))
             {
@@ -390,7 +389,7 @@ namespace FASTER.core
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
 
-            SetLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+            SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             upsertInfo.RecordInfo = newRecordInfo;

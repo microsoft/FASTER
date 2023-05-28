@@ -47,7 +47,7 @@ namespace FASTER.core
             };
 
             ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetLengths(actualSize, allocatedSize, newPhysicalAddress);
+            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
             if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref newRecordInfo, ref upsertInfo, reason))
@@ -56,7 +56,7 @@ namespace FASTER.core
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                 return (upsertInfo.Action == UpsertAction.CancelOperation) ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
             }
-            SetLengths(newPhysicalAddress, ref newRecordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+            SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             bool success;
