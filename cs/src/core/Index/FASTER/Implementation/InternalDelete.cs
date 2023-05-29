@@ -130,7 +130,7 @@ namespace FASTER.core
                                 {
                                     // If we CAS out of the hashtable successfully, add it to the free list.
                                     var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
-                                    if (stackCtx.hei.TryCAS(address, tag: 0))
+                                    if (stackCtx.hei.TryCAS(address))
                                     {
                                         // Clear Tombstone, so another session trying to revivify in-place will see that Tombstone is cleared if it manages to Seal.
                                         // Do *not* Unseal() here; the record may be in FasterKVIterator's tempKv, so we do not want to clear both Tombstone and Seal.

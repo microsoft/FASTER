@@ -76,15 +76,12 @@ namespace FASTER.core
         internal void SetToCurrent() => this.entry = new HashBucketEntry() { word = this.bucket->bucket_entries[this.slot] };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryCAS(long newLogicalAddress) => TryCAS(newLogicalAddress, this.tag);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryCAS(long newLogicalAddress, ushort tag)
+        internal bool TryCAS(long newLogicalAddress)
         {
             // Insert as the first record in the hash chain.
             HashBucketEntry updatedEntry = new()
             {
-                Tag = tag,
+                Tag = this.tag,
                 Address = newLogicalAddress & Constants.kAddressMask,
                 Pending = this.entry.Pending,
                 Tentative = false
@@ -94,7 +91,6 @@ namespace FASTER.core
             if (this.entry.word == Interlocked.CompareExchange(ref this.bucket->bucket_entries[this.slot], updatedEntry.word, this.entry.word))
             {
                 this.entry.word = updatedEntry.word;
-                this.tag = tag;
                 return true;
             }
             return false;
