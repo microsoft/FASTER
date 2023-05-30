@@ -184,7 +184,7 @@ the log to consumers in a safe way. Since it is slightly more expensive, we do n
 every enqueue, and instead expose to users to call on demand. You use `RefreshUncommitted` similarly to `Commit`, either call
 it from the enqueue thread (e.g., after every enqueue or a batch of enqueues) or have a separate thread/task that periodically 
 calls it. Note that while `RefreshUncommitted` incurs a small CPU overhead to the write operation, it does not perform any 
-I/O operation. The example in [playground](https://github.com/microsoft/FASTER/tree/master/cs/playground/FasterLogPubSub)
+I/O operation. The example in [samples](https://github.com/microsoft/FASTER/tree/master/cs/samples/FasterLogPubSub)
 shows how to use this feature.
 
 

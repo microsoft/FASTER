@@ -267,7 +267,7 @@ namespace FASTER.test
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = IsAsync(iteratorType) ? await FasterLog.CreateAsync(logSettings) : new FasterLog(logSettings);
 
-            log.Initialize(1000000L, 323);
+            log.Initialize(1000000L, 1000000L, 323);
 
             log.Commit(true);
 

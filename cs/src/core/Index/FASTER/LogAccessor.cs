@@ -253,19 +253,9 @@ namespace FASTER.core
         /// Scan the log given address range, returns all records with address less than endAddress
         /// </summary>
         /// <returns>Scan iterator instance</returns>
-        public IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering) 
-            => Scan(beginAddress, endAddress, scanBufferingMode, allowMutable: false);
-
-        internal IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, bool allowMutable)
-            => Scan(beginAddress, endAddress, ScanBufferingMode.DoublePageBuffering, allowMutable);
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool allowMutable)
-        {
-            if (endAddress >= fht.hlog.SafeReadOnlyAddress && !allowMutable && fht.IsLocking)
-                throw new FasterException($"Cannot run pull Scan() in the mutable region when locking is enabled; use the form that takes {nameof(IScanIteratorFunctions<Key, Value>)} instead");
-            return allocator.Scan(beginAddress, endAddress, scanBufferingMode);
-        }
+        public IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering) 
+            => allocator.Scan(store: null, beginAddress, endAddress, scanBufferingMode);
 
         /// <summary>
         /// Scan the log given address range, returns all records with address less than endAddress

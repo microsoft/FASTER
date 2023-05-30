@@ -42,7 +42,7 @@ namespace FASTER.test.SingleWriter
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
 
             functions = new SingleWriterTestFunctions();
             LogSettings logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog) };
@@ -59,7 +59,7 @@ namespace FASTER.test.SingleWriter
                 }
             }
 
-            fht = new FasterKV<int, int>(1L << 20, logSettings);
+            fht = new FasterKV<int, int>(1L << 20, logSettings, new CheckpointSettings { CheckpointDir = MethodTestDir });
             session = fht.For(functions).NewSession<SingleWriterTestFunctions>();
         }
 
@@ -121,6 +121,152 @@ namespace FASTER.test.SingleWriter
             input = (int)expectedReason;
             fht.Log.Compact<int, int, Empty, SingleWriterTestFunctions>(functions, ref input, ref output, fht.Log.SafeReadOnlyAddress, CompactionType.Scan);
             Assert.AreEqual(expectedReason, functions.actualReason);
+        }
+    }
+
+    [TestFixture]
+    class StructWithStringTests
+    {
+        public struct StructWithString
+        {
+            public int intField;
+            public string stringField;
+
+            public StructWithString(int intValue, string prefix)
+            {
+                this.intField = intValue;
+                this.stringField = prefix + intValue.ToString();
+            }
+
+            public override string ToString() => this.stringField;
+
+            public class Comparer : IFasterEqualityComparer<StructWithString>
+            {
+                public long GetHashCode64(ref StructWithString k) => Utility.GetHashCode(k.intField);
+
+                public bool Equals(ref StructWithString k1, ref StructWithString k2)
+                    => k1.intField == k2.intField && k1.stringField == k2.stringField;
+            }
+
+            public class Serializer : BinaryObjectSerializer<StructWithString>
+            {
+                public override void Deserialize(out StructWithString obj)
+                {
+                    var intField = this.reader.ReadInt32();
+                    var stringField = this.reader.ReadString();
+                    obj = new() { intField = intField, stringField = stringField };
+                }
+
+                public override void Serialize(ref StructWithString obj)
+                {
+                    this.writer.Write(obj.intField);
+                    this.writer.Write(obj.stringField);
+                }
+            }
+        }
+
+        internal class StructWithStringTestFunctions : SimpleFunctions<StructWithString, StructWithString>
+        {
+        }
+
+        const int numRecords = 1_000;
+        const string keyPrefix = "key_";
+        string valuePrefix = "value_";
+
+        StructWithStringTestFunctions functions;
+
+        private FasterKV<StructWithString, StructWithString> fht;
+        private ClientSession<StructWithString, StructWithString, StructWithString, StructWithString, Empty, StructWithStringTestFunctions> session;
+        private IDevice log, objlog;
+
+        [SetUp]
+        public void Setup()
+        {
+            // create a string of size 1024 bytes
+            valuePrefix = new string('a', 1024);
+
+            DeleteDirectory(MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
+            objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.obj.log"), deleteOnClose: false);
+            SerializerSettings<StructWithString, StructWithString> serializerSettings = new()
+            {
+                keySerializer = () => new StructWithString.Serializer(),
+                valueSerializer = () => new StructWithString.Serializer()
+            };
+            fht = new FasterKV<StructWithString, StructWithString>(1L << 20,
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, PageSizeBits = 10, MemorySizeBits = 22, SegmentSizeBits = 16 },
+                new CheckpointSettings { CheckpointDir = MethodTestDir },
+                serializerSettings: serializerSettings, comparer: new StructWithString.Comparer());
+
+            functions = new();
+            session = fht.For(functions).NewSession<StructWithStringTestFunctions>();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
+            fht = null;
+            objlog?.Dispose();
+            objlog = null;
+            log?.Dispose();
+            log = null;
+            DeleteDirectory(MethodTestDir);
+        }
+
+        void Populate()
+        {
+            for (int ii = 0; ii < numRecords; ii++)
+            {
+                StructWithString key = new(ii, keyPrefix);
+                StructWithString value = new(ii, valuePrefix);
+                session.Upsert(ref key, ref value);
+                if (ii % 3_000 == 0)
+                {
+                    fht.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).GetAwaiter().GetResult();
+                    fht.Recover();
+                }
+            }
+        }
+
+        [Test]
+        [Category(FasterKVTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void StructWithStringCompactTest([Values] CompactionType compactionType, [Values] bool flush)
+        {
+            void readKey(int keyInt)
+            {
+                StructWithString key = new(keyInt, keyPrefix);
+                var (status, output) = session.Read(key);
+                if (status.IsPending)
+                {
+                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    using (completedOutputs)
+                        (status, output) = GetSinglePendingResult(completedOutputs);
+                }
+                Assert.IsTrue(status.Found, status.ToString());
+                Assert.AreEqual(key.intField, output.intField);
+            }
+
+            Populate();
+            readKey(12);
+            if (flush)
+            { 
+                fht.Log.FlushAndEvict(wait: true);
+                readKey(24);
+            }
+            int count = 0;
+            using var iter = fht.Log.Scan(0, fht.Log.TailAddress);
+            while (iter.GetNext(out var _))
+            {
+                count++;
+            }
+            Assert.AreEqual(count, numRecords);
+
+            fht.Log.Compact<StructWithString, StructWithString, Empty, StructWithStringTestFunctions>(functions, fht.Log.SafeReadOnlyAddress, compactionType);
+            readKey(48);
         }
     }
 }
