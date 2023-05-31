@@ -36,13 +36,6 @@ namespace FASTER.benchmark
         FinalTrimmedOps = 21
     }
 
-    public enum Op : ulong
-    {
-        Upsert = 0,
-        Read = 1,
-        ReadModifyWrite = 2
-    }
-
     public static class YcsbConstants
     {
         internal const string UniformDist = "uniform";    // Uniformly random distribution of keys

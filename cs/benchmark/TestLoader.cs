@@ -7,7 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.CompilerServices;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -35,21 +35,22 @@ namespace FASTER.benchmark
         internal readonly bool RecoverMode;
         internal readonly bool error;
 
+        // RUMD percentages. Delete is not a percent; it will fire automatically if the others do not sum to 100, saving an 'if'.
+        internal readonly int ReadPercent, UpsertPercent, RmwPercent;
 
         internal TestLoader(string[] args)
         {
             error = true;
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
             if (result.Tag == ParserResultType.NotParsed)
-            {
                 return;
-            }
+
             Options = result.MapResult(o => o, xs => new Options());
 
-            static bool verifyOption(bool isValid, string name)
+            static bool verifyOption(bool isValid, string name, string info = null)
             {
                 if (!isValid)
-                    Console.WriteLine($"Invalid {name} argument");
+                    Console.WriteLine($"Invalid {name} argument" + (string.IsNullOrEmpty(info) ? string.Empty : $": {info}"));
                 return isValid;
             }
 
@@ -75,15 +76,23 @@ namespace FASTER.benchmark
             if (!verifyOption(Options.HashPacking > 0, "Iteration Count"))
                 return;
 
-            if (!verifyOption(Options.ReadPercent >= -1 && Options.ReadPercent <= 100, "Read Percent"))
-                return;
-
             this.Distribution = Options.DistributionName.ToLower();
             if (!verifyOption(this.Distribution == YcsbConstants.UniformDist || this.Distribution == YcsbConstants.ZipfDist, "Distribution"))
                 return;
 
             if (!verifyOption(this.Options.RunSeconds >= 0, "RunSeconds"))
                 return;
+
+            var rumdPercents = Options.RumdPercents.ToArray();  // Will be non-null because we specified a default
+            if (!verifyOption(rumdPercents.Length == 4 && Options.RumdPercents.Sum() == 100 && !Options.RumdPercents.Any(x => x < 0), "rmud",
+                    "Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] must be empty or must sum to 100 with no negative elements"))
+                return;
+            else
+            {
+                this.ReadPercent = rumdPercents[0];
+                this.UpsertPercent = this.ReadPercent + rumdPercents[1];
+                this.RmwPercent = this.UpsertPercent + rumdPercents[2];
+            }
 
             this.InitCount = this.Options.UseSmallData ? 2500480 : 250000000;
             this.TxnCount = this.Options.UseSmallData ? 10000000 : 1000000000;
