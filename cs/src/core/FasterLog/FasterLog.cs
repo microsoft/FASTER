@@ -382,11 +382,12 @@ namespace FASTER.core
         /// Enqueue raw pre-formatted bytes with headers to the log (in memory).
         /// </summary>
         /// <param name="entryBytes">Raw bytes to be enqueued to log</param>
+        /// <param name="noCommit">Do not auto-commit</param>
         /// <returns>First logical address of added entries</returns>
-        public long UnsafeEnqueueRaw(ReadOnlySpan<byte> entryBytes)
+        public long UnsafeEnqueueRaw(ReadOnlySpan<byte> entryBytes, bool noCommit = false)
         {
             long logicalAddress;
-            while (!UnsafeTryEnqueueRaw(entryBytes, out logicalAddress))
+            while (!UnsafeTryEnqueueRaw(entryBytes, noCommit, out logicalAddress))
                 Thread.Yield();
             return logicalAddress;
 
@@ -560,9 +561,10 @@ namespace FASTER.core
         /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="entryBytes">Entry bytes to be enqueued to log</param>
+        /// <param name="noCommit">Do not auto-commit</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool UnsafeTryEnqueueRaw(ReadOnlySpan<byte> entryBytes, out long logicalAddress)
+        public unsafe bool UnsafeTryEnqueueRaw(ReadOnlySpan<byte> entryBytes, bool noCommit, out long logicalAddress)
         {
             int length = entryBytes.Length;
 
@@ -589,7 +591,7 @@ namespace FASTER.core
             entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
-            if (AutoCommit) Commit();
+            if (AutoCommit && !noCommit) Commit();
             return true;
         }
 
@@ -1693,8 +1695,9 @@ namespace FASTER.core
         /// <param name="recover">Whether to recover named iterator from latest commit (if exists). If false, iterator starts from beginAddress.</param>
         /// <param name="scanBufferingMode">Use single or double buffering</param>
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
+        /// <param name="logger"></param>
         /// <returns></returns>
-        public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false)
+        public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
@@ -1711,9 +1714,9 @@ namespace FASTER.core
 
             FasterLogScanIterator iter;
             if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
-                iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted);
+                iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
             else
-                iter = new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted);
+                iter = new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
 
             if (name != null)
             {
