@@ -437,13 +437,13 @@ namespace FASTER.devices
                 TimeStamp = DateTime.UtcNow
             });
 
-            // It is up to the allocator to make sure no reads are issued to segments before they are written
+            // Lazily cache the blob entry for the segment being read
             if (!this.blobs.TryGetValue(segmentId, out BlobEntry blobEntry))
             {
-                var nonLoadedBlob = this.pageBlobDirectory.GetPageBlobClient(this.GetSegmentBlobName(segmentId));
-                var exception = new InvalidOperationException("Attempt to read a non-loaded segment");
-                this.BlobManager?.HandleStorageError(nameof(ReadAsync), exception.Message, nonLoadedBlob.Default?.Name, exception, false, true);
-                throw exception;
+                var blobClients = this.pageBlobDirectory.GetPageBlobClient(this.GetSegmentBlobName(segmentId));
+                var entry = new BlobEntry(blobClients, blobClients.Default.GetProperties().Value.ETag, this);
+                this.blobs.TryAdd(segmentId, entry);
+                blobEntry = this.blobs[segmentId];
             }
 
             this.ReadFromBlobUnsafeAsync(blobEntry.PageBlob, (long)sourceAddress, (long)destinationAddress, readLength, id)
