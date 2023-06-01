@@ -132,6 +132,28 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Asynchronously consume the log with given consumer until end of iteration or cancelled
+        /// </summary>
+        /// <param name="consumer"> consumer </param>
+        /// <param name="throttleMs">throttle the iteration speed</param>
+        /// <param name="maxChunkSize">max size of returned chunk</param>
+        /// <param name="token"> cancellation token </param>
+        /// <typeparam name="T"> consumer type </typeparam>
+        public async Task BulkConsumeAllAsync<T>(T consumer, int throttleMs = 0, int maxChunkSize = 0, CancellationToken token = default) where T : IBulkLogEntryConsumer
+        {
+            while (!disposed)
+            {
+                // TryConsumeNext returns false if we have to wait for the next record.
+                while (!TryBulkConsumeNext(consumer, maxChunkSize))
+                {
+                    if (!await WaitAsync(token).ConfigureAwait(false))
+                        return;
+                    if (throttleMs > 0) await Task.Delay(throttleMs, token).ConfigureAwait(false);
+                }
+            }
+        }
+
+        /// <summary>
         /// Wait for iteration to be ready to continue
         /// </summary>
         /// <returns>true if there's more data available to be read; false if there will never be more data (log has been shutdown / iterator has reached endAddress)</returns>
@@ -242,7 +264,7 @@ namespace FASTER.core
                 {
                     var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
                         out nextAddress,
-                        out isCommitRecord);
+                        out isCommitRecord, out _);
                     if (!hasNext)
                     {
                         entry = default;
@@ -337,7 +359,7 @@ namespace FASTER.core
                 {
                     var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
                         out nextAddress,
-                        out isCommitRecord);
+                        out isCommitRecord, out _);
                     if (!hasNext)
                     {
                         entry = default;
@@ -403,7 +425,7 @@ namespace FASTER.core
                 {
                     var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
                         out nextAddress,
-                        out isCommitRecord);
+                        out isCommitRecord, out _);
                     if (!hasNext)
                     {
                         epoch.Suspend();
@@ -431,6 +453,82 @@ namespace FASTER.core
                 epoch.Suspend();
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Consume the next entry in the log with the given consumer
+        /// </summary>
+        /// <param name="consumer">consumer</param>
+        /// <param name="maxChunkSize"></param>
+        /// <typeparam name="T">concrete type of consumer</typeparam>
+        /// <returns>whether a next entry is present</returns>
+        public unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize = 0) where T : IBulkLogEntryConsumer
+        {
+            if (maxChunkSize == 0) maxChunkSize = allocator.PageSize;
+
+            if (disposed)
+            {
+                currentAddress = default;
+                nextAddress = default;
+                return false;
+            }
+
+            bool retVal;
+
+            epoch.Resume();
+
+            // Find a contiguous set of log entries
+            try
+            {
+                while (true)
+                {
+                    var hasNext = GetNextInternal(out long startPhysicalAddress, out int newEntryLength, out long startLogicalAddress, out long endLogicalAddress, out bool isCommitRecord, out bool onFrame);
+
+                    if (!hasNext)
+                    {
+                        retVal = false;
+                        break;
+                    }
+
+                    // GetNextInternal returns only the payload length, so adjust the totalLength
+                    int totalLength = headerSize + Align(newEntryLength);
+
+                    // Expand the records in iteration, as long as as they are on the same physical page
+                    while (ExpandGetNextInternal(startPhysicalAddress, ref totalLength, out long newCurrentAddress, out endLogicalAddress, out isCommitRecord))
+                    {
+                        if (totalLength > maxChunkSize)
+                            break;
+                    }
+
+                    // Consume the chunk
+                    if (onFrame)
+                    {
+                        // Record in frame, so we do no need epoch protection to access it
+                        epoch.Suspend();
+                        try
+                        {
+                            consumer.Consume((byte*)startPhysicalAddress, totalLength, startLogicalAddress, endLogicalAddress);
+                        }
+                        finally
+                        {
+                            epoch.Resume();
+                        }
+                    }
+                    else
+                    {
+                        // Consume the chunk (warning: we are under epoch protection here, as we are consuming directly from main memory log buffer)
+                        consumer.Consume((byte*)startPhysicalAddress, totalLength, startLogicalAddress, endLogicalAddress);
+
+                        // Refresh epoch to maintain liveness of log append
+                        epoch.ProtectAndDrain();
+                    }
+                }
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+            return retVal;
         }
 
         /// <summary>
@@ -463,7 +561,7 @@ namespace FASTER.core
                 {
                     var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
                         out nextAddress,
-                        out isCommitRecord);
+                        out isCommitRecord, out _);
                     if (!hasNext)
                     {
                         entry = default;
@@ -603,7 +701,7 @@ namespace FASTER.core
                 // Continue looping until we find a record that is a commit record
                 while (GetNextInternal(out long physicalAddress, out var entryLength, out long currentAddress,
                     out long nextAddress,
-                    out var isCommitRecord))
+                    out var isCommitRecord, out _))
                 {
                     if (!isCommitRecord) continue;
 
@@ -648,8 +746,9 @@ namespace FASTER.core
         /// <param name="currentAddress"></param>
         /// <param name="outNextAddress"></param>
         /// <param name="commitRecord"></param>
+        /// <param name="onFrame"></param>
         /// <returns></returns>
-        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress, out bool commitRecord)
+        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress, out bool commitRecord, out bool onFrame)
         {
             while (true)
             {
@@ -658,6 +757,7 @@ namespace FASTER.core
                 currentAddress = nextAddress;
                 outNextAddress = currentAddress;
                 commitRecord = false;
+                onFrame = false;
 
                 // Check for boundary conditions
                 if (currentAddress < allocator.BeginAddress)
@@ -692,6 +792,7 @@ namespace FASTER.core
                     if (BufferAndLoad(currentAddress, _currentPage, _currentFrame, _headAddress, _endAddress))
                         continue;
                     physicalAddress = frame.GetPhysicalAddress(_currentFrame, _currentOffset);
+                    onFrame = true;
                 }
                 else
                 {
@@ -752,6 +853,105 @@ namespace FASTER.core
 
                 if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out long oldCurrentAddress))
                 {
+                    outNextAddress = currentAddress;
+                    currentAddress = oldCurrentAddress;
+                    return true;
+                }
+            }
+        }
+
+        private unsafe bool ExpandGetNextInternal(long startPhysicalAddress, ref int totalEntryLength, out long currentAddress, out long outNextAddress, out bool commitRecord)
+        {
+            while (true)
+            {
+                long physicalAddress;
+                int entryLength;
+                currentAddress = nextAddress;
+                outNextAddress = currentAddress;
+                commitRecord = false;
+
+                // Check for boundary conditions
+                if (currentAddress < allocator.BeginAddress)
+                {
+                    Utility.MonotonicUpdate(ref nextAddress, allocator.BeginAddress, out _);
+                    currentAddress = nextAddress;
+                    outNextAddress = currentAddress;
+                }
+
+                var _currentPage = currentAddress >> allocator.LogPageSizeBits;
+                var _currentFrame = _currentPage % frameSize;
+                var _currentOffset = currentAddress & allocator.PageSizeMask;
+                var _headAddress = allocator.HeadAddress;
+
+                if (disposed)
+                    return false;
+
+                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? fasterLog.SafeTailAddress : fasterLog.CommittedUntilAddress)))
+                    return false;
+
+                if (currentAddress < _headAddress)
+                {
+                    var _endAddress = endAddress;
+                    if (fasterLog.readOnlyMode)
+                    {
+                        // Support partial page reads of committed data
+                        var _flush = fasterLog.CommittedUntilAddress;
+                        if (_flush < endAddress)
+                            _endAddress = _flush;
+                    }
+
+                    if (NeedBufferAndLoad(currentAddress, _currentPage, _currentFrame, _headAddress, _endAddress))
+                        return false;
+
+                    physicalAddress = frame.GetPhysicalAddress(_currentFrame, _currentOffset);
+                }
+                else
+                {
+                    physicalAddress = allocator.GetPhysicalAddress(currentAddress);
+                }
+
+                if (physicalAddress != startPhysicalAddress + totalEntryLength)
+                    return false;
+
+                // Get and check entry length
+                entryLength = fasterLog.GetLength((byte*)physicalAddress);
+
+                // We may encounter zeroed out bits at the end of page in a normal log, therefore, we need to check whether that is the case
+                if (entryLength == 0)
+                {
+                    return false;
+                }
+
+                // commit records have negative length fields
+                if (entryLength < 0)
+                {
+                    commitRecord = true;
+                    entryLength = -entryLength;
+                }
+
+                int recordSize = headerSize + Align(entryLength);
+                if (_currentOffset + recordSize > allocator.PageSize)
+                {
+                    return false;
+                }
+
+                // Verify checksum if needed
+                if (currentAddress < _headAddress)
+                {
+                    if (!fasterLog.VerifyChecksum((byte*)physicalAddress, entryLength))
+                    {
+                        return false;
+                    }
+                }
+
+                if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
+                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                else
+                    currentAddress += recordSize;
+
+                if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out long oldCurrentAddress))
+                {
+                    totalEntryLength += recordSize;
                     outNextAddress = currentAddress;
                     currentAddress = oldCurrentAddress;
                     return true;

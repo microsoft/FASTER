@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 
 namespace FASTER.core
 {
@@ -104,7 +105,9 @@ namespace FASTER.core
                 Iterators = new Dictionary<string, long>();
                 for (int i = 0; i < iteratorCount; i++)
                 {
-                    Iterators.Add(reader.ReadString(), reader.ReadInt64());
+                    int len = reader.ReadInt32();
+                    byte[] bytes = reader.ReadBytes(len);
+                    Iterators.Add(Encoding.UTF8.GetString(bytes), reader.ReadInt64());
                 }
             }
 
@@ -185,7 +188,9 @@ namespace FASTER.core
                 {
                     foreach (var kvp in Iterators)
                     {
-                        writer.Write(kvp.Key);
+                        var bytes = Encoding.UTF8.GetBytes(kvp.Key);
+                        writer.Write(bytes.Length);
+                        writer.Write(bytes);
                         writer.Write(kvp.Value);
                     }
                 }
@@ -206,7 +211,7 @@ namespace FASTER.core
             if (Iterators != null)
             {
                 foreach (var kvp in Iterators)
-                    iteratorSize += kvp.Key.Length + sizeof(long);
+                    iteratorSize += sizeof(int) + Encoding.UTF8.GetByteCount(kvp.Key) + sizeof(long);
             }
 
             return sizeof(int) + 4 * sizeof(long) + iteratorSize + sizeof(int) + (Cookie?.Length ?? 0);

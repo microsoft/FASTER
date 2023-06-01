@@ -178,6 +178,35 @@ namespace FASTER.core
             return WaitForFrameLoad(currentAddress, currentFrame);
         }
 
+        /// <summary>
+        /// Whether we need to buffer new page from disk
+        /// </summary>
+        protected unsafe bool NeedBufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
+        {
+            for (int i = 0; i < frameSize; i++)
+            {
+                var nextPage = currentPage + i;
+
+                var pageStartAddress = nextPage << logPageSizeBits;
+
+                // Cannot load page if it is entirely in memory or beyond the end address
+                if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
+                    continue;
+
+                var pageEndAddress = (nextPage + 1) << logPageSizeBits;
+                if (endAddress < pageEndAddress)
+                    pageEndAddress = endAddress;
+                if (headAddress < pageEndAddress)
+                    pageEndAddress = headAddress;
+
+                var nextFrame = (currentFrame + i) % frameSize;
+
+                if (nextLoadedPage[nextFrame] < pageEndAddress || loadedPage[nextFrame] < pageEndAddress)
+                    return true;
+            }
+            return false;
+        }
+
         internal abstract void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
         private bool WaitForFrameLoad(long currentAddress, long currentFrame)

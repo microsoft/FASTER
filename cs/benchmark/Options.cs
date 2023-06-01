@@ -3,6 +3,7 @@
 
 using CommandLine;
 using FASTER.core;
+using System.Collections.Generic;
 
 namespace FASTER.benchmark
 {
@@ -42,10 +43,6 @@ namespace FASTER.benchmark
          HelpText = "Number of iterations of the test to run")]
         public int IterationCount { get; set; }
 
-        [Option('r', "read_percent", Required = false, Default = 50,
-         HelpText = "Percentage of reads (-1 for 100% read-modify-write")]
-        public int ReadPercent { get; set; }
-
         [Option('d', "distribution", Required = false, Default = YcsbConstants.UniformDist,
             HelpText = "Distribution of keys in workload")]
         public string DistributionName { get; set; }
@@ -53,6 +50,10 @@ namespace FASTER.benchmark
         [Option('s', "seed", Required = false, Default = 211,
             HelpText = "Seed for synthetic data distribution")]
         public int RandomSeed { get; set; }
+
+        [Option("rumd", Separator = ',', Required = false, Default = new[] {50,50,0,0},
+         HelpText = "#,#,#,#: Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 100) operations in this run")]
+        public IEnumerable<int> RumdPercents { get; set; }
 
         [Option("synth", Required = false, Default = false,
             HelpText = "Use synthetic data")]
@@ -83,11 +84,11 @@ namespace FASTER.benchmark
         public int PeriodicCheckpointMilliseconds { get; set; }
 
         [Option("chkptsnap", Required = false, Default = false,
-            HelpText = "Use Snapshot checkpoint if doing periodic checkpoints (default is FoldOver")]
+            HelpText = "Use Snapshot checkpoint if doing periodic checkpoints (default is FoldOver)")]
         public bool PeriodicCheckpointUseSnapshot { get; set; }
 
         [Option("chkptincr", Required = false, Default = false,
-            HelpText = "Try incremental checkpoint if doing periodic checkpoints (default is false")]
+            HelpText = "Try incremental checkpoint if doing periodic checkpoints")]
         public bool PeriodicCheckpointTryIncremental { get; set; }
 
         [Option("dumpdist", Required = false, Default = false,
@@ -99,7 +100,7 @@ namespace FASTER.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount}; hp: {HashPacking}"
+            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount}; hp: {HashPacking}"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
                         + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
