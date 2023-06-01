@@ -133,6 +133,25 @@ namespace FASTER.core
         }
     }
 
+    /// <summary>
+    /// Log File info
+    /// </summary>
+    public struct LogFileInfo
+    {
+        /// <summary>
+        /// Snapshot file end address (start address is always 0)
+        /// </summary>
+        public long snapshotFileEndAddress;
+        /// <summary>
+        /// Hybrid log file start address
+        /// </summary>
+        public long hybridLogFileStartAddress;
+        /// <summary>
+        /// Hybrid log file end address
+        /// </summary>
+        public long hybridLogFileEndAddress;
+    }
+
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         /// <summary>
@@ -168,12 +187,18 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
-        public long GetSnapshotFileSizes(Guid token)
+        public LogFileInfo GetLogFileSize(Guid token)
         {
             using var current = new HybridLogCheckpointInfo();
             current.Recover(token, checkpointManager, hlog.LogPageSizeBits,
                 out var _, false);
-            return current.info.finalLogicalAddress;
+            long snapshotDeviceOffset = hlog.GetPage(current.info.snapshotStartFlushedLogicalAddress) << hlog.LogPageSizeBits;
+            return new LogFileInfo
+            {
+                snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
+                hybridLogFileStartAddress = hlog.GetPage(current.info.beginAddress) << hlog.LogPageSizeBits,
+                hybridLogFileEndAddress = current.info.flushedLogicalAddress
+            };
         }
 
         /// <summary>
@@ -185,7 +210,7 @@ namespace FASTER.core
         {
             IndexCheckpointInfo recoveredICInfo = new IndexCheckpointInfo();
             recoveredICInfo.Recover(token, checkpointManager);
-            return (long)recoveredICInfo.info.num_ht_bytes;
+            return (long)(recoveredICInfo.info.num_ht_bytes + recoveredICInfo.info.num_ofb_bytes);
         }
 
         private void GetClosestHybridLogCheckpointInfo(
