@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable CS0162 // Unreachable code detected -- when switching on YcsbConstants 
-
 //#define DASHBOARD
 
 using FASTER.core;
@@ -30,7 +28,7 @@ namespace FASTER.benchmark
         readonly TestLoader testLoader;
         readonly int numaStyle;
         readonly string distribution;
-        readonly int readPercent;
+        readonly int readPercent, upsertPercent, rmwPercent;
         readonly Input[] input_;
 
         readonly Key[] init_keys_;
@@ -50,7 +48,9 @@ namespace FASTER.benchmark
             txn_keys_ = t_keys_;
             numaStyle = testLoader.Options.NumaStyle;
             distribution = testLoader.Distribution;
-            readPercent = testLoader.Options.ReadPercent;
+            readPercent = testLoader.ReadPercent;
+            upsertPercent = testLoader.UpsertPercent;
+            rmwPercent = testLoader.RmwPercent;
 
 #if DASHBOARD
             statsWritten = new AutoResetEvent[threadCount];
@@ -93,6 +93,7 @@ namespace FASTER.benchmark
             Value value = default;
             long reads_done = 0;
             long writes_done = 0;
+            long deletes_done = 0;
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -113,40 +114,27 @@ namespace FASTER.benchmark
 
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
                 {
-                    Op op;
-                    int r = (int)rng.Generate(100);
+                    int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
-                        op = Op.Read;
-                    else if (readPercent >= 0)
-                        op = Op.Upsert;
-                    else
-                        op = Op.ReadModifyWrite;
-
-                    switch (op)
                     {
-                        case Op.Upsert:
-                            {
-                                store[txn_keys_[idx]] = value;
-                                ++writes_done;
-                                break;
-                            }
-                        case Op.Read:
-                            {
-                                if (store.TryGetValue(txn_keys_[idx], out value))
-                                {
-                                    ++reads_done;
-                                }
-                                break;
-                            }
-                        case Op.ReadModifyWrite:
-                            {
-                                store.AddOrUpdate(txn_keys_[idx], *(Value*)(input_ptr + (idx & 0x7)), (k, v) => new Value { value = v.value + (input_ptr + (idx & 0x7))->value });
-                                ++writes_done;
-                                break;
-                            }
-                        default:
-                            throw new InvalidOperationException("Unexpected op: " + op);
+                        if (store.TryGetValue(txn_keys_[idx], out value))
+                            ++reads_done;
+                        continue;
                     }
+                    if (r < upsertPercent)
+                    {
+                        store[txn_keys_[idx]] = value;
+                        ++writes_done;
+                        continue;
+                    }
+                    if (r < rmwPercent)
+                    {
+                        store.AddOrUpdate(txn_keys_[idx], *(Value*)(input_ptr + (idx & 0x7)), (k, v) => new Value { value = v.value + (input_ptr + (idx & 0x7))->value });
+                        ++writes_done;
+                        continue;
+                    }
+                    store.Remove(txn_keys_[idx], out _);
+                    ++deletes_done;
                 }
 
 #if DASHBOARD
@@ -168,9 +156,8 @@ namespace FASTER.benchmark
 
             sw.Stop();
 
-            Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
-                writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
-            Interlocked.Add(ref total_ops_done, reads_done + writes_done);
+            Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
+            Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
         }
 
         internal unsafe (double, double) Run(TestLoader testLoader)
