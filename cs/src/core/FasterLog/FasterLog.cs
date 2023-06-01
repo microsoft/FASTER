@@ -394,6 +394,28 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Commit metadata only (no records added to main log)
+        /// </summary>
+        /// <param name="info"></param>
+        public void UnsafeCommitMetadataOnly(FasterLogRecoveryInfo info)
+        {
+            lock (ongoingCommitRequests)
+            {
+                ongoingCommitRequests.Enqueue((info.UntilAddress, info));
+            }
+            try
+            {
+                epoch.Resume();
+                if (!allocator.ShiftReadOnlyToTail(out _, out _))
+                    CommitMetadataOnly(ref info);
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+        }
+
+        /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
         /// </summary>
         /// <param name="readOnlySpanBatch">Batch of entries to be enqueued to log</param>
