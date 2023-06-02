@@ -865,7 +865,6 @@ namespace FASTER.test.Revivification
             Assert.AreEqual(tailAddress, fht.Log.TailAddress);
             Assert.AreEqual(numRecords, fht.FreeRecordPool.NumberOfRecords, $"Expected numRecords ({numRecords}) free records");
 
-            // Again, allocate at half-size due to "retrieve from next-highest bin".
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
             inputVec.Fill(ByteFills.Input);
@@ -907,17 +906,15 @@ namespace FASTER.test.Revivification
         [Category(SmokeTestCategory)]
         public void BinSelectionTest()
         {
-            int expectedBin = 0, actualBin;
-
-            int size = FreeRecordPool.MinRecordSize;
-            for (; size <= RevivificationBin.MaxInlineRecordSize; size *= 2)
+            int expectedBin = 0, recordSize = FreeRecordPool.MinRecordSize;
+            for (; recordSize <= RevivificationBin.MaxInlineRecordSize; recordSize *= 2)
             {
-                Assert.IsTrue(fht.FreeRecordPool.GetBinIndex(size - 1, out actualBin));
+                Assert.IsTrue(fht.FreeRecordPool.GetBinIndex(recordSize - 1, out int actualBin));
                 Assert.AreEqual(expectedBin, actualBin);
-                Assert.IsTrue(fht.FreeRecordPool.GetBinIndex(size, out actualBin));
+                Assert.IsTrue(fht.FreeRecordPool.GetBinIndex(recordSize, out actualBin));
                 Assert.AreEqual(expectedBin, actualBin);
 
-                Assert.IsTrue(fht.FreeRecordPool.GetBinIndex(size + 1, out actualBin));
+                Assert.IsTrue(fht.FreeRecordPool.GetBinIndex(recordSize + 1, out actualBin));
                 Assert.AreEqual(expectedBin + 1, actualBin);
                 ++expectedBin;
             }
@@ -1093,7 +1090,6 @@ namespace FASTER.test.Revivification
             ref int read = ref FreeRecordBin.GetReadPos(partitionStart);
             ref int write = ref FreeRecordBin.GetWritePos(partitionStart);
 
-            // Smaller input for revivification, due to the next-higher-bin dequeueing
             Span<byte> revivInputVec = stackalloc byte[InitialLength];
             var revivInput = SpanByte.FromFixedSpan(revivInputVec);
             revivInputVec.Fill(ByteFills.RevivInput);
@@ -1166,7 +1162,7 @@ namespace FASTER.test.Revivification
             keyVec.Fill(chainKey);
             var key = SpanByte.FromFixedSpan(keyVec);
 
-            // Oversize records do not go to "next higher" bin (there is no next-higher)
+            // Oversize records do not go to "next higher" bin (there is no next-higher bin in the default PowersOf2 bins we use)
             functions.expectedInputLength = OversizeLength;
             functions.expectedSingleDestLength = OversizeLength;
             functions.expectedConcurrentDestLength = OversizeLength;

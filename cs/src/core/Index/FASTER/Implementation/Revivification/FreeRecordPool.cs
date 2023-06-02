@@ -334,11 +334,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool GetBinIndex(int size, out int binIndex)
         {
-            if (this.IsFixedLength)
-            { 
-                binIndex = 0;
-                return true;
-            }
+            Debug.Assert(!this.IsFixedLength, "Should only search bins if !IsFixedLength");
 
             // Sequential search in the bin for now. TODO: Profile; consider a binary search if we have enough bins.
             for (var ii = 0; ii < this.numBins; ++ii)
@@ -356,10 +352,16 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Enqueue(long address, int size)
         {
-            if (!GetBinIndex(size, out int index))
-                return false;
-            if (!bins[index].Enqueue(address, size))
-                return false;
+            if (this.IsFixedLength)
+            {
+                if (!bins[0].Enqueue(address, size))
+                    return false;
+            }
+            else
+            { 
+                if (!GetBinIndex(size, out int index) || !bins[index].Enqueue(address, size))
+                    return false;
+            }
             Interlocked.Increment(ref this.numberOfRecords);
             return true;
         }
