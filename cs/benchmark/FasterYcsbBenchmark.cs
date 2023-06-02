@@ -21,7 +21,7 @@ namespace FASTER.benchmark
         readonly TestLoader testLoader;
         readonly ManualResetEventSlim waiter = new();
         readonly int numaStyle;
-        readonly int readPercent;
+        readonly int readPercent, upsertPercent, rmwPercent;
         readonly Functions functions;
         readonly Input[] input_;
 
@@ -49,7 +49,9 @@ namespace FASTER.benchmark
             init_keys_ = i_keys_;
             txn_keys_ = t_keys_;
             numaStyle = testLoader.Options.NumaStyle;
-            readPercent = testLoader.Options.ReadPercent;
+            readPercent = testLoader.ReadPercent;
+            upsertPercent = testLoader.UpsertPercent;
+            rmwPercent = testLoader.RmwPercent;
             functions = new Functions();
 
 #if DASHBOARD
@@ -112,6 +114,7 @@ namespace FASTER.benchmark
 
             long reads_done = 0;
             long writes_done = 0;
+            long deletes_done = 0;
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -138,44 +141,33 @@ namespace FASTER.benchmark
 
                     for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
                     {
-                        Op op;
-                        int r = (int)rng.Generate(100);
-                        if (r < readPercent)
-                            op = Op.Read;
-                        else if (readPercent >= 0)
-                            op = Op.Upsert;
-                        else
-                            op = Op.ReadModifyWrite;
-
                         if (idx % 512 == 0)
                         {
                             uContext.Refresh();
                             uContext.CompletePending(false);
                         }
 
-                        switch (op)
+                        int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
+                        if (r < readPercent)
                         {
-                            case Op.Upsert:
-                                {
-                                    uContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
-                                    ++writes_done;
-                                    break;
-                                }
-                            case Op.Read:
-                                {
-                                    uContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
-                                    ++reads_done;
-                                    break;
-                                }
-                            case Op.ReadModifyWrite:
-                                {
-                                    uContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
-                                    ++writes_done;
-                                    break;
-                                }
-                            default:
-                                throw new InvalidOperationException("Unexpected op: " + op);
+                            uContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                            ++reads_done;
+                            continue;
                         }
+                        if (r < upsertPercent)
+                        {
+                            uContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
+                            ++writes_done;
+                            continue;
+                        }
+                        if (r < rmwPercent)
+                        {
+                            uContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                            ++writes_done;
+                            continue;
+                        }
+                        uContext.Delete(ref txn_keys_[idx], Empty.Default, 1);
+                        ++deletes_done;
                     }
 
 #if DASHBOARD
@@ -210,9 +202,8 @@ namespace FASTER.benchmark
             statsWritten[thread_idx].Set();
 #endif
 
-            Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
-                writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
-            Interlocked.Add(ref total_ops_done, reads_done + writes_done);
+            Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
+            Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
         }
 
         private void RunYcsbSafeContext(int thread_idx)
@@ -236,6 +227,7 @@ namespace FASTER.benchmark
 
             long reads_done = 0;
             long writes_done = 0;
+            long deletes_done = 0;
 
             var session = store.For(functions).NewSession<Functions>();
 
@@ -251,15 +243,6 @@ namespace FASTER.benchmark
 
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
                 {
-                    Op op;
-                    int r = (int)rng.Generate(100);
-                    if (r < readPercent)
-                        op = Op.Read;
-                    else if (readPercent >= 0)
-                        op = Op.Upsert;
-                    else
-                        op = Op.ReadModifyWrite;
-
                     if (idx % 512 == 0)
                     {
                         if (!testLoader.Options.UseSafeContext)
@@ -267,29 +250,27 @@ namespace FASTER.benchmark
                         session.CompletePending(false);
                     }
 
-                    switch (op)
+                    int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
+                    if (r < readPercent)
                     {
-                        case Op.Upsert:
-                            {
-                                session.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
-                                ++writes_done;
-                                break;
-                            }
-                        case Op.Read:
-                            {
-                                session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
-                                ++reads_done;
-                                break;
-                            }
-                        case Op.ReadModifyWrite:
-                            {
-                                session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
-                                ++writes_done;
-                                break;
-                            }
-                        default:
-                            throw new InvalidOperationException("Unexpected op: " + op);
+                        session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                        ++reads_done;
+                        continue;
                     }
+                    if (r < upsertPercent)
+                    {
+                        session.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
+                        ++writes_done;
+                        continue;
+                    }
+                    if (r < rmwPercent)
+                    {
+                        session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                        ++writes_done;
+                        continue;
+                    }
+                    session.Delete(ref txn_keys_[idx], Empty.Default, 1);
+                    ++deletes_done;
                 }
             }
 
@@ -298,8 +279,7 @@ namespace FASTER.benchmark
 
             sw.Stop();
 
-            Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
-                writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
+            Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
             Interlocked.Add(ref total_ops_done, reads_done + writes_done);
         }
 

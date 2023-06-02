@@ -64,10 +64,13 @@ namespace FASTER.core
             {
                 foreach (var entry in logHandles)
                 {
-                    entry.Value.Item1.Dispose();
-                    entry.Value.Item2.Dispose();
-                    if (deleteOnClose)
-                        File.Delete(GetSegmentName(entry.Key));
+                    if (logHandles.TryRemove(entry.Key, out _))
+                    {
+                        entry.Value.Item1.Dispose();
+                        entry.Value.Item2.Dispose();
+                        if (deleteOnClose)
+                            File.Delete(GetSegmentName(entry.Key));
+                    }
                 }
             }
         }

@@ -148,6 +148,10 @@ namespace FASTER.core
             {
                 faster._lastSnapshotCheckpoint.Dispose();
             }
+
+            if (next.Phase == Phase.IN_PROGRESS)
+                base.GlobalBeforeEnteringState(next, faster);
+
             if (next.Phase != Phase.WAIT_FLUSH) return;
 
             faster.hlog.ShiftReadOnlyToTail(out var tailAddress,
@@ -186,7 +190,7 @@ namespace FASTER.core
                 if (ctx is not null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
-            
+
             faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
@@ -288,7 +292,7 @@ namespace FASTER.core
                 if (ctx is not null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
-            
+
             faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
@@ -311,6 +315,9 @@ namespace FASTER.core
                     faster._hybridLogCheckpoint = faster._lastSnapshotCheckpoint;
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._hybridLogCheckpoint.prevVersion = next.Version;
+                    break;
+                case Phase.IN_PROGRESS:
+                    base.GlobalBeforeEnteringState(next, faster);
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, faster);
@@ -381,7 +388,7 @@ namespace FASTER.core
                 if (ctx is not null)
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
-            
+
             faster.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
             if (faster.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 faster.GlobalStateMachineStep(current);
