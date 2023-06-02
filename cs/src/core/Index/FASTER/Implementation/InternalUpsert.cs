@@ -115,7 +115,7 @@ namespace FASTER.core
                             bool ok = true;
                             try
                             { 
-                                if (srcRecordInfo.Tombstone && srcRecordInfo.Filler)
+                                if (srcRecordInfo.Tombstone && srcRecordInfo.Filler && this.EnableRevivification)
                                 {
                                     srcRecordInfo.Tombstone = false;
 

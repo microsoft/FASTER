@@ -5,18 +5,20 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+#if !NET5_0_OR_GREATER
 using System.Runtime.InteropServices;
+#endif
 using System.Threading;
+using static FASTER.core.Utility;
 
 namespace FASTER.core
 {
     internal struct FreeRecord
     {
-        const int kSizeBits = 64 - RecordInfo.kPreviousAddressBits;
+        internal const int kSizeBits = 64 - RecordInfo.kPreviousAddressBits;
         const int kSizeShiftInWord = RecordInfo.kPreviousAddressBits;
 
-        internal const int kMaxSize = 1 << kSizeBits;
-        const long kSizeMask = kMaxSize - 1;
+        const long kSizeMask = RevivificationBin.MaxInlineRecordSize - 1;
         const long kSizeMaskInWord = kSizeMask << kSizeShiftInWord;
 
         // This is the empty word we replace the current word with on Reads.
@@ -108,51 +110,48 @@ namespace FASTER.core
 
     internal unsafe class FreeRecordBin : IDisposable
     {
+        internal const int MinimumPartitionSize = 4;    // Make sure we have enough for the initial read/write pointers as well as enough to be useful
+
         private readonly FreeRecord[] recordsArray;
-        internal readonly int maxSize;
-        private readonly int recordCount;
         internal readonly int partitionCount;
         internal readonly int partitionSize;
+        internal readonly int numberOfPartitionsToTraverse;
 
         private readonly FreeRecord* records;
 #if !NET5_0_OR_GREATER
-        private readonly GCHandle handle;
+        private readonly GCHandle recordsHandle;
 #endif
 
         // Used by test also
-        internal static void GetPartitionSizes(int maxRecs, out int partitionCount, out int partitionSize, out int recordCount)
+        internal static int GetRecordCount(RevivificationBin binDef, out int partitionCount, out int partitionSize)
         {
-            partitionCount = Environment.ProcessorCount / 2;
-
-            // If we don't have enough records to make partitions worthwhile, don't use them
-            if (maxRecs <= partitionCount * 4)
-                partitionCount = 1;
-
             // Round up to align partitions to cache boundary.
-            partitionSize = (((maxRecs / partitionCount) * FreeRecord.StructSize + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1)) / FreeRecord.StructSize;
+            var partitionBytes = RoundUp(binDef.NumberOfRecordsPerPartition * FreeRecord.StructSize, Constants.kCacheLineBytes);
+            partitionCount = binDef.NumberOfPartitions;
+            partitionSize = partitionBytes / FreeRecord.StructSize;
 
-            // Overallocate to allow space for cache-aligned start
-            recordCount = partitionSize * partitionCount;
+            // FreeRecord.StructSize is a power of two
+            return RoundUp(partitionBytes * partitionCount, FreeRecord.StructSize) / FreeRecord.StructSize;
         }
 
-        internal FreeRecordBin(int maxRecs, int maxSize)
+        internal FreeRecordBin(ref RevivificationBin binDef)
         {
-            this.maxSize = maxSize;
+            this.numberOfPartitionsToTraverse = binDef.NumberOfPartitionsToTraverse > 0 ? binDef.NumberOfPartitionsToTraverse : binDef.NumberOfPartitions;
 
-            GetPartitionSizes(maxRecs, out this.partitionCount, out this.partitionSize, out this.recordCount);
+            var recordCount = GetRecordCount(binDef, out this.partitionCount, out this.partitionSize);
 
-            // Allocate the GCHandle so we can create a cache-aligned pointer.
+            // Overallocate the GCHandle by one cache line so we have room to offset the returned pointer to make it cache-aligned.
 #if NET5_0_OR_GREATER
-            this.recordsArray = GC.AllocateArray<FreeRecord>(this.recordCount + Constants.kCacheLineBytes / FreeRecord.StructSize, pinned: true);
+            this.recordsArray = GC.AllocateArray<FreeRecord>(recordCount + Constants.kCacheLineBytes / FreeRecord.StructSize, pinned: true);
             long p = (long)Unsafe.AsPointer(ref recordsArray[0]);
 #else
-            this.recordsArray = new FreeRecord[this.recordCount + Constants.kCacheLineBytes / FreeRecord.StructSize];
-            handle = GCHandle.Alloc(this.recordsArray, GCHandleType.Pinned);
-            long p = (long)handle.AddrOfPinnedObject();
+            this.recordsArray = new FreeRecord[recordCount + Constants.kCacheLineBytes / FreeRecord.StructSize];
+            this.recordsHandle = GCHandle.Alloc(this.recordsArray, GCHandleType.Pinned);
+            long p = (long)this.recordsHandle.AddrOfPinnedObject();
 #endif
 
             // Force the pointer to align to cache boundary.
-            long p2 = (p + (Constants.kCacheLineBytes - 1)) & ~(Constants.kCacheLineBytes - 1);
+            long p2 = RoundUp(p, Constants.kCacheLineBytes);
             this.records = (FreeRecord*)p2;
 
             // Initialize read and write pointers to 1, as we will store them as the first items in the partition.
@@ -160,8 +159,7 @@ namespace FASTER.core
             {
                 // Don't use GetReadPos/GetWritePos here; they assert the value is already > 0.
                 int* partitionStart = (int*)GetPartitionStart(ii);
-                *partitionStart = 1;
-                *(partitionStart + 1) = 1;
+                *partitionStart = *(partitionStart + 1) = 1;
             }
         }
 
@@ -170,7 +168,7 @@ namespace FASTER.core
         {
             // Taken from LightEpoch
             var threadId = Environment.CurrentManagedThreadId;
-            var partitionId = (uint)Utility.Murmur3(threadId) % partitionCount;
+            var partitionId = (uint)Murmur3(threadId) % partitionCount;
             return (int)partitionId;
         }
 
@@ -204,7 +202,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Enqueue(long address, int size, int initialPartitionIndex)
         {
-            for (var iPart = 0; iPart < this.partitionCount; ++iPart)
+            for (var iPart = 0; iPart < this.numberOfPartitionsToTraverse; ++iPart)
             {
                 FreeRecord* partitionStart = GetPartitionStart(initialPartitionIndex + iPart);
                 ref int read = ref GetReadPos(partitionStart);
@@ -234,7 +232,7 @@ namespace FASTER.core
             // If this is the oversize bin, we may also skip over records that fail to satisfy the size requirement.
             var initialPartitionIndex = GetInitialPartitionIndex();
 
-            for (var iPart = 0; iPart < this.partitionCount; ++iPart)
+            for (var iPart = 0; iPart < this.numberOfPartitionsToTraverse; ++iPart)
             {
                 FreeRecord* partitionStart = GetPartitionStart(initialPartitionIndex + iPart);
                 ref int read = ref GetReadPos(partitionStart);
@@ -264,144 +262,154 @@ namespace FASTER.core
         public void Dispose()
         {
 #if !NET5_0_OR_GREATER
-            if (handle.IsAllocated)
-                handle.Free();
+            if (this.recordsHandle.IsAllocated)
+                this.recordsHandle.Free();
 #endif
         }
     }
 
-    internal class FreeRecordPool : IDisposable
+    internal unsafe class FreeRecordPool : IDisposable
     {
-        internal const int InitialBinSize = 16;  // RecordInfo + int key/value
-        internal readonly FreeRecordBin[] bins;
-        internal readonly FreeRecordBin overSizeBin;
+        internal const int MinRecordSize = 16;  // RecordInfo + int key/value
 
-        internal bool IsFixedLength => overSizeBin is null;
+        internal readonly FreeRecordBin[] bins;
+
+        internal bool IsFixedLength;
+        internal bool SearchNextHighestBin;
 
         private long numberOfRecords = 0;
         internal bool HasRecords => numberOfRecords > 0;
         internal long NumberOfRecords => numberOfRecords;
 
-        internal FreeRecordPool(int maxRecsPerBin, int fixedRecordLength)
-        {
-            if (maxRecsPerBin <= 0)
-                throw new FasterException($"Invalid number of records per FreeRecordBin {maxRecsPerBin}; must be > 0");
+        internal readonly int[] indexArray;
+        private readonly int* index;
+        private readonly int numBins;
+#if !NET5_0_OR_GREATER
+        private readonly GCHandle indexHandle;
+#endif
 
-            if (fixedRecordLength > 0)
+        internal FreeRecordPool(RevivificationSettings settings, int fixedRecordLength)
+        {
+            this.IsFixedLength = fixedRecordLength > 0;
+            settings.Verify(this.IsFixedLength);
+
+            if (this.IsFixedLength)
             {
-                this.bins = new[] { new FreeRecordBin(maxRecsPerBin, fixedRecordLength) };
+                this.numBins = 1;
+                this.bins = new[] { new FreeRecordBin(ref settings.FreeListBins[0]) };
                 return;
             }
 
+            // First create the "size index": a cache-aligned vector of int bin sizes. This way searching for the bin
+            // for a record size will stay in a single cache line (unless there are more than 16 bins).
+            var indexCount = RoundUp(settings.FreeListBins.Length * sizeof(int), Constants.kCacheLineBytes) / sizeof(int);
+
+            // Overallocate the GCHandle by one cache line so we have room to offset the returned pointer to make it cache-aligned.
+#if NET5_0_OR_GREATER
+            this.indexArray = GC.AllocateArray<int>(indexCount + Constants.kCacheLineBytes / sizeof(int), pinned: true);
+            long p = (long)Unsafe.AsPointer(ref indexArray[0]);
+#else
+            this.indexArray = new int[indexCount + Constants.kCacheLineBytes / sizeof(int)];
+            this.indexHandle = GCHandle.Alloc(this.indexArray, GCHandleType.Pinned);
+            long p = (long)indexHandle.AddrOfPinnedObject();
+#endif
+
+            // Force the pointer to align to cache boundary.
+            long p2 = RoundUp(p, Constants.kCacheLineBytes);
+            this.index = (int*)p2;
+
+            // Initialize the size index.
+            this.numBins = settings.FreeListBins.Length;
+            for (var ii = 0; ii < this.numBins; ++ii)
+                index[ii] = settings.FreeListBins[ii].RecordSize;
+
+            // Create the bins.
             List<FreeRecordBin> binList = new();
-            for (var size = InitialBinSize; size <= FreeRecord.kMaxSize; size *= 2)
-                binList.Add(new FreeRecordBin(maxRecsPerBin, size));
+            for (var ii = 0; ii < this.numBins; ++ii)
+                binList.Add(new FreeRecordBin(ref settings.FreeListBins[ii]));
             this.bins = binList.ToArray();
-
-            this.overSizeBin = new FreeRecordBin(maxRecsPerBin, int.MaxValue);
+            this.SearchNextHighestBin = settings.SearchNextHighestBin;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool GetEnqueueBinIndex(int size, out int index)
+        internal bool GetBinIndex(int size, out int binIndex)
         {
-            if (IsFixedLength)
-            {
-                index = 0;
+            if (this.IsFixedLength)
+            { 
+                binIndex = 0;
                 return true;
             }
 
-            // Enqueue into the highest bin whose maxSize is <= size;
-            var binSize = InitialBinSize / 2;
-            for (var r = 0; r < bins.Length; ++r)
+            // Sequential search in the bin for now. TODO: Profile; consider a binary search if we have enough bins.
+            for (var ii = 0; ii < this.numBins; ++ii)
             {
-                binSize <<= 1;
-                if (size > binSize)
-                    continue;
-                index = r;
-                return true;
+                if (index[ii] >= size)
+                {
+                    binIndex = ii;
+                    return true;
+                }
             }
-
-            // Oversize
-            index = -1;
-            return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool GetDequeueBinIndex(int size, out int index)
-        {
-            // Modified from SectorAlignedBufferPool.Position()
-            if (IsFixedLength)
-            {
-                index = 0;
-                return true;
-            }
-
-            // Stored records' lengths are *between* the lowest and highest sizes of a bin, *not* the highest size of the bin,
-            // so we have to retrieve from the next-highest bin; e.g. 48 will come from the [64-127] bin because the [32-63]
-            // bin might not have anything larger than 42, so we can't satisfy the request.
-            // We only store records of size >= InitialBinSize, so the first bin is always a fit.
-            // The second bin is only retrieved from as a Dequeue overflow bin from the first (see Dequeue), all sizes that
-            // are less than the first bin's max size will stay in the first bin.
-            if (size <= InitialBinSize)
-            {
-                index = 0;
-                return true;
-            }
-
-            var binSize = InitialBinSize / 2;
-
-            // r will be lg(v) - lg(InitialBinSize / 2)
-            for (int r = 0; r < bins.Length - 1; ++r)        // unroll for more speed...
-            {
-                binSize <<= 1;
-                if (size > binSize)
-                    continue;
-
-                index = r + 1;
-                return true;
-            }
-
-            // Oversize
-            index = -1;
+            binIndex = -1;
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Enqueue(long address, int size)
         {
-            var result = GetEnqueueBinIndex(size, out int index)
-                ? bins[index].Enqueue(address, size)
-                : overSizeBin.Enqueue(address, size);
-
-            // If unsuccessful, try the next-highest bin if possible.
-            if (!result && index < bins.Length - 1)
-                result = bins[index + 1].Enqueue(address, size);
-
-            if (result)
-                Interlocked.Increment(ref this.numberOfRecords);
-            return result;
+            if (!GetBinIndex(size, out int index))
+                return false;
+            if (!bins[index].Enqueue(address, size))
+                return false;
+            Interlocked.Increment(ref this.numberOfRecords);
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Dequeue<Key, Value>(int size, long minAddress, FasterKV<Key, Value> fkv, out long address)
         {
-            var result = GetDequeueBinIndex(size, out int index)
-                ? bins[index].Dequeue<Key, Value>(size, minAddress, out address)
-                : overSizeBin.Dequeue(size, minAddress, fkv, out address);
+            address = 0;
 
-            // If unsuccessful, try the next-highest bin if possible.
-            if (!result && index < bins.Length - 1)
-                result = bins[index + 1].Dequeue<Key, Value>(size, minAddress, out address);
+            if (this.IsFixedLength)
+            { 
+                if (!bins[0].Dequeue<Key, Value>(size, minAddress, out address))
+                    return false;
+            }
+            else
+            { 
+                if (!GetBinIndex(size, out int index))
+                    return false;
 
-            if (result)
-                Interlocked.Decrement(ref this.numberOfRecords);
-            return result;
+                // If the bin's max size can't be stored "inline" within the FreeRecord's size storage, then we must pass
+                // the fkv to retrieve the record length.
+                var result = (this.index[index] < RevivificationBin.MaxInlineRecordSize)
+                    ? bins[index].Dequeue<Key, Value>(size, minAddress, out address)
+                    : bins[index].Dequeue(size, minAddress, fkv, out address);
+
+                // If unsuccessful, try the next-highest bin if requested.
+                if (!result && this.SearchNextHighestBin && index < this.numBins - 1)
+                { 
+                    ++index;
+                    result = (this.index[index] < RevivificationBin.MaxInlineRecordSize)
+                        ? bins[index].Dequeue<Key, Value>(size, minAddress, out address)
+                        : bins[index].Dequeue(size, minAddress, fkv, out address);
+                }
+
+                if (!result)
+                    return false;
+            }
+
+            Interlocked.Decrement(ref this.numberOfRecords);
+            return true;
         }
 
         public void Dispose()
         {
             foreach (var bin in this.bins)
                 bin.Dispose();
+#if !NET5_0_OR_GREATER
+            if (this.indexHandle.IsAllocated)
+                this.indexHandle.Free();
+#endif
         }
     }
 }

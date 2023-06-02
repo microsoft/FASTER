@@ -145,11 +145,9 @@ namespace FASTER.core
         public bool CheckpointVersionSwitchBarrier = false;
 
         /// <summary>
-        /// The number of free (deleted) records in the free-record pool (in addition to any in the hash chains).
-        /// If non-zero, we will reuse Tombstoned records encountered in the mutable region during Updates.
-        /// If record are fixed-length, then this applies to the single bin for that length.
+        /// Settings for recycling deleted records on the log.
         /// </summary>
-        public int MaxFreeRecordsInBin = Constants.DefaultMaxFreeRecordsInBin;
+        public RevivificationSettings RevivificationSettings;
 
         /// <summary>
         /// Create default configuration settings for FasterKV. You need to create and specify LogDevice 

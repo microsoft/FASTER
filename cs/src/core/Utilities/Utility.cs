@@ -3,6 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 using System;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -146,6 +147,16 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long AbsoluteAddress(long address) => address & ~Constants.kReadCacheBitMask;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int RoundUp(int value, int alignment) => (value + (alignment - 1)) & ~(alignment - 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long RoundUp(long value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp alignment must be a power of two");
+            return (value + (alignment - 1)) & ~(alignment - 1);
+        }
 
         /// <summary>
         /// Is type blittable

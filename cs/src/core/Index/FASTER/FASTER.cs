@@ -77,7 +77,8 @@ namespace FASTER.core
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
-        internal bool UseFreeRecordPool => FreeRecordPool is not null;
+        internal bool EnableRevivification = false;
+        internal bool UseFreeRecordPool => EnableRevivification && FreeRecordPool is not null;
         internal bool FreeRecordPoolHasRecords => UseFreeRecordPool && FreeRecordPool.HasRecords;
         internal FreeRecordPool FreeRecordPool;
 
@@ -90,7 +91,7 @@ namespace FASTER.core
                 fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(),
                 fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
                 fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
-                fasterKVSettings.TryRecoverLatest, fasterKVSettings.LockingMode, null, maxFreeRecordsInBin: fasterKVSettings.MaxFreeRecordsInBin)
+                fasterKVSettings.TryRecoverLatest, fasterKVSettings.LockingMode, null, revivificationSettings: fasterKVSettings.RevivificationSettings)
         { }
 
         /// <summary>
@@ -106,13 +107,12 @@ namespace FASTER.core
         /// <param name="lockingMode">How FASTER should do record locking</param>
         /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="FasterKVSettings{Key, Value}"/>).</param>
         /// <param name="logger">Logger to use.</param>
-        /// <param name="maxFreeRecordsInBin">The number of free records in the free-record pool (in addition to any in the hash chains).
-        ///     If non-zero, we will revivify and reuse Tombstoned records encountered in the mutable region during Updates.</param>
+        /// <param name="revivificationSettings">Settings for recycling deleted records on the log.</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
             VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, LockingMode lockingMode = LockingMode.Standard,
-            ILoggerFactory loggerFactory = null, ILogger logger = null, int maxFreeRecordsInBin = Constants.DefaultMaxFreeRecordsInBin)
+            ILoggerFactory loggerFactory = null, ILogger logger = null, RevivificationSettings revivificationSettings = null)
         {
             this.loggerFactory = loggerFactory;
             this.logger = logger ?? this.loggerFactory?.CreateLogger("FasterKV Constructor");
@@ -141,8 +141,7 @@ namespace FASTER.core
             this.DoTransientLocking = lockingMode == LockingMode.Standard;
             this.DoEphemeralLocking = lockingMode == LockingMode.Ephemeral;
 
-            if (checkpointSettings is null)
-                checkpointSettings = new CheckpointSettings();
+            checkpointSettings ??= new CheckpointSettings();
 
             this.CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
             this.ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
@@ -241,7 +240,7 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             this.LockTable = new OverflowBucketLockTable<Key, Value>(lockingMode == LockingMode.Standard ? this : null);
-            this.InitializeRevivification(variableLengthStructSettings?.valueLength, maxFreeRecordsInBin, fixedRecordLength: keyLen is null);
+            this.InitializeRevivification(revivificationSettings, variableLengthStructSettings?.valueLength, fixedRecordLength: keyLen is null);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
