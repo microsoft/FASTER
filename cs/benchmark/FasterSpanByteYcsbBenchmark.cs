@@ -75,16 +75,26 @@ namespace FASTER.benchmark
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
+            var revivificationSettings = testLoader.Options.RevivificationLevel switch
+            {
+                RevivificationLevel.None => default,
+                RevivificationLevel.Chain => new RevivificationSettings(),
+                RevivificationLevel.Full => new RevivificationSettings() { FreeListBins = new[] { new RevivificationBin() {
+                    RecordSize = RecordInfo.GetLength() + kKeySize + kValueSize + 8,    // extra to ensure rounding up of value
+                    NumberOfPartitions = testLoader.Options.ThreadCount } } },
+                _ => throw new ApplicationException("Invalid RevivificationLevel")
+            };
+
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<SpanByte, SpanByte>
                     (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode, revivificationSettings: revivificationSettings);
             else
                 store = new FasterKV<SpanByte, SpanByte>
                     (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode, revivificationSettings: revivificationSettings);
         }
 
         internal void Dispose()

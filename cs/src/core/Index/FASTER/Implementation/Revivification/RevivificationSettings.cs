@@ -63,10 +63,13 @@ namespace FASTER.core
         {
             if (!EnableRevivification || FreeListBins?.Length == 0)
                 return;
-            if (isFixedLength && FreeListBins.Length > 1)
+            if (isFixedLength && FreeListBins?.Length > 1)
                 throw new FasterException($"Only 1 bin may be specified with fixed-length datatypes (blittable or object)");
-            foreach (var bin in FreeListBins)
-                bin.Verify(isFixedLength);
+            if (FreeListBins is not null)
+            { 
+                foreach (var bin in FreeListBins)
+                    bin.Verify(isFixedLength);
+            }
         }
     }
 

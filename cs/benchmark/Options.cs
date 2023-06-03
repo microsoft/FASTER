@@ -55,6 +55,13 @@ namespace FASTER.benchmark
          HelpText = "#,#,#,#: Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 100) operations in this run")]
         public IEnumerable<int> RumdPercents { get; set; }
 
+        [Option("reviv", Required = false, Default = RevivificationLevel.None,
+             HelpText = "Revivification of tombstoned records:" +
+                        $"\n    {nameof(RevivificationLevel.None)} = No revivification" +
+                        $"\n    {nameof(RevivificationLevel.Chain)} = Revivify tombstoned records in tag chain only" +
+                        $"\n    {nameof(RevivificationLevel.Full)} = Tag chain and FreeList")]
+        public RevivificationLevel RevivificationLevel { get; set; }
+
         [Option("synth", Required = false, Default = false,
             HelpText = "Use synthetic data")]
         public bool UseSyntheticData { get; set; }
@@ -100,8 +107,8 @@ namespace FASTER.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount}; hp: {HashPacking}"
-                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
+            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount}; "
+                        + $" hp: {HashPacking}; sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
                         + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
         }

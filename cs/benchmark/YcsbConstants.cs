@@ -25,6 +25,13 @@ namespace FASTER.benchmark
         FinalTrimmed = 2
     }
 
+    enum RevivificationLevel
+    {
+        None = 0,
+        Chain = 1,
+        Full = 2
+    }
+
     enum StatsLineNum : int
     {
         Iteration = 3,

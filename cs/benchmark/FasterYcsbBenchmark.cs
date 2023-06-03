@@ -8,6 +8,7 @@ using FASTER.core;
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading;
 
 namespace FASTER.benchmark
@@ -72,6 +73,14 @@ namespace FASTER.benchmark
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
+            var revivificationSettings = testLoader.Options.RevivificationLevel switch
+            {
+                RevivificationLevel.None => default,
+                RevivificationLevel.Chain => new RevivificationSettings(),
+                RevivificationLevel.Full => RevivificationSettings.DefaultFixedLength,
+                _ => throw new ApplicationException("Invalid RevivificationLevel")
+            };
+
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
             if (testLoader.Options.ThreadCount >= 16)
@@ -80,11 +89,11 @@ namespace FASTER.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<Key, Value>
                     (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode, revivificationSettings: revivificationSettings);
             else
                 store = new FasterKV<Key, Value>
                     (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode, revivificationSettings: revivificationSettings);
         }
 
         internal void Dispose()
