@@ -123,7 +123,8 @@ namespace FASTER.common
                 reusableSeaaBuffer.Return(_r);
                 if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
                     throttle.Release();
-                return false;
+                // Rethrow exception as session is not usable
+                throw;
             }
             return true;
         }

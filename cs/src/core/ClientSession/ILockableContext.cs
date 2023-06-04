@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Threading;
+using System;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -112,9 +115,89 @@ namespace FASTER.core
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
         /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
-        /// <param name="start">The starting index to Lock</param>
+        /// <param name="start">The starting key index to Lock</param>
         /// <param name="count">The number of keys to Lock</param>
         void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
+        /// Locks the keys identified in the passed array, with retry limits or cancellation.
+        /// </summary>
+        /// <typeparam name="TLockableKey"></typeparam>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="numRetriesPerKey">Maximum number of retries per key:
+        ///     <list>
+        ///         <li>less than 0: ignored; may be cancelled by <paramref name="cancellationToken"/></li>
+        ///         <li>0: fail if first locking try does not succeed</li>
+        ///         <li>greater than 0: retry up to this many times for each key; may be cancelled early by <paramref name="cancellationToken"/></li>
+        ///     </list>
+        /// </param>
+        /// <param name="cancellationToken">The cancellation token, if any</param>
+        bool TryLock<TLockableKey>(TLockableKey[] keys, int numRetriesPerKey, CancellationToken cancellationToken = default)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
+        /// Locks the keys identified in the passed array, with retry limits or cancellation.
+        /// </summary>
+        /// <typeparam name="TLockableKey"></typeparam>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="start">The starting key index to Lock</param>
+        /// <param name="count">The number of keys to Lock</param>
+        /// <param name="numRetriesPerKey">Maximum number of retries per key:
+        ///     <list>
+        ///         <li>less than 0: ignored; may be cancelled by <paramref name="cancellationToken"/></li>
+        ///         <li>less than or equal to 0: fail if first locking try does not succeed</li>
+        ///         <li>greater than 0: retry up to this many times for each key; may be cancelled early by <paramref name="cancellationToken"/></li>
+        ///     </list>
+        /// </param>
+        /// <param name="cancellationToken">The cancellation token, if any</param>
+        bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, int numRetriesPerKey, CancellationToken cancellationToken = default)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
+        /// Locks the keys identified in the passed array, with retry limits or cancellation.
+        /// </summary>
+        /// <typeparam name="TLockableKey"></typeparam>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
+        /// <param name="cancellationToken">The cancellation token, if any</param>
+        bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout, CancellationToken cancellationToken = default)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
+        /// Locks the keys identified in the passed array, with retry limits or cancellation.
+        /// </summary>
+        /// <typeparam name="TLockableKey"></typeparam>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="start">The starting key index to Lock</param>
+        /// <param name="count">The number of keys to Lock</param>
+        /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
+        /// <param name="cancellationToken">The cancellation token, if any</param>
+        bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken = default)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
+        /// Locks the keys identified in the passed array, with retry limits or cancellation.
+        /// </summary>
+        /// <typeparam name="TLockableKey"></typeparam>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="cancellationToken">The cancellation token</param>
+        bool TryLock<TLockableKey>(TLockableKey[] keys, CancellationToken cancellationToken)
+            where TLockableKey : ILockableKey;
+
+        /// <summary>
+        /// Locks the keys identified in the passed array, with retry limits or cancellation.
+        /// </summary>
+        /// <typeparam name="TLockableKey"></typeparam>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="start">The starting key index to Lock</param>
+        /// <param name="count">The number of keys to Lock</param>
+        /// <param name="cancellationToken">The cancellation token, if any</param>
+        bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, CancellationToken cancellationToken)
+            where TLockableKey : ILockableKey;
+
+        /// <inheritdoc/>
+        bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, int numRetries, TimeSpan timeout, CancellationToken cancellationToken)
             where TLockableKey : ILockableKey;
 
         /// <summary>
@@ -123,7 +206,7 @@ namespace FASTER.core
         /// <typeparam name="TLockableKey"></typeparam>
         /// <param name="keys">keyCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
         void Unlock<TLockableKey>(TLockableKey[] keys)
-            where TLockableKey : ILockableKey;
+        where TLockableKey : ILockableKey;
 
         /// <summary>
         /// Unlocks the keys identified in the passed array.
