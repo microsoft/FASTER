@@ -2,29 +2,23 @@
 
   <PropertyGroup>
     <TargetFrameworks>net7.0;net6.0;netstandard2.1;netstandard2.0</TargetFrameworks>
-  </PropertyGroup>
-
-  <PropertyGroup>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Platforms>AnyCPU</Platforms>
-    <LangVersion>latest</LangVersion>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <DefineConstants>DEBUG</DefineConstants>
-    <DebugType>full</DebugType>
-    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DefineConstants></DefineConstants>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\$(Platform)\Release\</OutputPath>
+  <PropertyGroup>
+    <PackageId>Microsoft.FASTER.Server</PackageId>
+    <Title>Remote Server Extension for FASTER</Title>
+    <Authors>Microsoft</Authors>
+    <PackageProjectUrl>https://github.com/microsoft/FASTER</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <Description>This library allows FASTER to be used as a server, accessible from remote clients using Microsoft.FASTER.Client. FASTER is a fast concurrent persistent log and key-value store with cache for larger-than-memory data.</Description>
+    <PackageReleaseNotes>See the FASTER project website at https://github.com/microsoft/FASTER for more details.</PackageReleaseNotes>
+    <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <PackageTags>FASTER remote key-value store cache log azure storage device microsoft dictionary hashtable concurrent persistent</PackageTags>
+    <RepositoryUrl>https://github.com/microsoft/FASTER</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
