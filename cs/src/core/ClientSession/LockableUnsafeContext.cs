@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -87,6 +88,46 @@ namespace FASTER.core
             Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
             LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLockOp(FasterSession, clientSession, keys, start, count, LockOperationType.Lock);
+        }
+
+        /// <inheritdoc/>
+        public bool TryLock<TLockableKey>(TLockableKey[] keys, int numRetriesPerKey, CancellationToken cancellationToken = default)
+            where TLockableKey : ILockableKey
+            => TryLock(keys, 0, keys.Length, numRetriesPerKey, default, cancellationToken);
+
+        /// <inheritdoc/>
+        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, int numRetriesPerKey, CancellationToken cancellationToken = default)
+            where TLockableKey : ILockableKey
+            => TryLock(keys, start, count, numRetriesPerKey, default, cancellationToken);
+
+        /// <inheritdoc/>
+        public bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout, CancellationToken cancellationToken = default)
+            where TLockableKey : ILockableKey
+            => TryLock(keys, 0, keys.Length, -1, timeout, cancellationToken);
+
+        /// <inheritdoc/>
+        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken = default)
+            where TLockableKey : ILockableKey
+            => TryLock(keys, start, count, -1, timeout, cancellationToken);
+
+        /// <inheritdoc/>
+        public bool TryLock<TLockableKey>(TLockableKey[] keys, CancellationToken cancellationToken)
+            where TLockableKey : ILockableKey
+            => TryLock(keys, 0, keys.Length, -1, default, cancellationToken);
+
+        /// <inheritdoc/>
+        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, CancellationToken cancellationToken)
+            where TLockableKey : ILockableKey
+            => TryLock(keys, start, count, -1, default, cancellationToken);
+
+        /// <inheritdoc/>
+        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, int numRetries, TimeSpan timeout, CancellationToken cancellationToken)
+            where TLockableKey : ILockableKey
+        {
+            clientSession.CheckIsAcquiredLockable();
+            Debug.Assert(clientSession.fht.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
+
+            return LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalTryLock(FasterSession, clientSession, keys, start, count, numRetries, timeout, cancellationToken);
         }
 
         /// <inheritdoc/>
