@@ -18,13 +18,6 @@ namespace FASTER.test.Revivification
 
     public enum CollisionRange { Ten = 10, None = int.MaxValue }
 
-    internal static class ByteFills
-    {
-        internal const byte Populate = 0x31;
-        internal const byte Input = 0x34;
-        internal const byte RevivInput = 0x37;
-    }
-
     static class RevivificationTestUtils
     {
         internal static RMWInfo CopyToRMWInfo(ref UpsertInfo upsertInfo)
@@ -164,6 +157,7 @@ namespace FASTER.test.Revivification
     [TestFixture]
     class RevivificationVarLenTests
     {
+        const int KeyLength = 10;
         const int InitialLength = 50;
         const int GrowLength = InitialLength + 75;      // Must be large enough to go to next bin
         const int ShrinkLength = InitialLength - 25;    // Must be small enough to go to previous bin
@@ -207,6 +201,20 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(this.session.ctx.version, deleteInfo.Version);
             }
 
+            private void VerifyKeyAndValue(ref SpanByte functionsKey, ref SpanByte functionsValue)
+            {
+                int valueOffset = 0, valueLengthRemaining = functionsValue.Length;
+                Assert.Less(functionsKey.Length, valueLengthRemaining);
+                while (valueLengthRemaining > 0)
+                {
+                    var compareLength = Math.Min(functionsKey.Length, valueLengthRemaining);
+                    Span<byte> valueSpan = functionsValue.AsSpan().Slice(valueOffset, compareLength);
+                    Span<byte> keySpan = functionsKey.AsSpan()[..compareLength];
+                    Assert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromFixedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromFixedSpan(keySpan)})");
+                    valueLengthRemaining -= compareLength;
+                }
+            }
+
             public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
@@ -217,6 +225,7 @@ namespace FASTER.test.Revivification
 
             public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
+                VerifyKeyAndValue(ref key, ref dst);
                 var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
                 var result = InPlaceUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
                 upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
@@ -446,12 +455,11 @@ namespace FASTER.test.Revivification
 
         void Populate(int from, int to)
         {
-            Span<byte> keyVec = stackalloc byte[10];
+            Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromFixedSpan(keyVec);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Populate);
 
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
 
@@ -460,6 +468,7 @@ namespace FASTER.test.Revivification
             for (int ii = from; ii < to; ++ii)
             {
                 keyVec.Fill((byte)ii);
+                inputVec.Fill((byte)ii);
                 functions.expectedUsedValueLengths.Enqueue(input.TotalSize);
                 var status = session.Upsert(ref key, ref input, ref input, ref output);
                 Assert.IsTrue(status.Record.Created, status.ToString());
@@ -476,8 +485,9 @@ namespace FASTER.test.Revivification
         {
             Populate();
 
-            Span<byte> keyVec = stackalloc byte[10];
-            keyVec.Fill(42);
+            Span<byte> keyVec = stackalloc byte[KeyLength];
+            byte fillByte = 42;
+            keyVec.Fill(fillByte);
             var key = SpanByte.FromFixedSpan(keyVec);
 
             // Do NOT delete; this is a no-reviv test of lengths
@@ -497,7 +507,7 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[functions.expectedInputLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Input);
+            inputVec.Fill(fillByte);
 
             // For Grow, we won't be able to satisfy the request with a revivification, and the new value length will be GrowLength
             functions.expectedUsedValueLengths.Enqueue(sizeof(int) + InitialLength);
@@ -521,6 +531,8 @@ namespace FASTER.test.Revivification
                 // Now let's see if we have the correct expected extra length in the destination.
                 inputVec = stackalloc byte[InitialLength / 2];  // Grow this from ShrinkLength to InitialLength
                 input = SpanByte.FromFixedSpan(inputVec);
+                inputVec.Fill(fillByte);
+
                 functions.expectedInputLength = InitialLength / 2;
                 functions.expectedConcurrentDestLength = InitialLength / 2;
                 functions.expectedSingleFullValueLength = RoundUpSpanByteFullValueLength(functions.expectedInputLength);
@@ -543,8 +555,9 @@ namespace FASTER.test.Revivification
 
             var tailAddress = fht.Log.TailAddress;
 
-            Span<byte> keyVec = stackalloc byte[10];
-            keyVec.Fill(42);
+            Span<byte> keyVec = stackalloc byte[KeyLength];
+            byte fillByte = 42;
+            keyVec.Fill(fillByte);
             var key = SpanByte.FromFixedSpan(keyVec);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
@@ -555,7 +568,7 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Input);
+            inputVec.Fill(fillByte);
 
             SpanByteAndMemory output = new();
 
@@ -582,8 +595,9 @@ namespace FASTER.test.Revivification
 
             var tailAddress = fht.Log.TailAddress;
 
-            Span<byte> keyVec = stackalloc byte[10];
-            keyVec.Fill(42);
+            Span<byte> keyVec = stackalloc byte[KeyLength];
+            byte fillByte = 42;
+            keyVec.Fill(fillByte);
             var key = SpanByte.FromFixedSpan(keyVec);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
@@ -595,7 +609,7 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Input);
+            inputVec.Fill(fillByte);
 
             SpanByteAndMemory output = new();
 
@@ -628,7 +642,7 @@ namespace FASTER.test.Revivification
                 pool = RevivificationTestUtils.SwapFreeRecordPool(fht, pool);
 
             // Delete key below (what will be) the readonly line. This is for a target for the test; the record should not be revivified.
-            Span<byte> keyVecDelBelowRO = stackalloc byte[10];
+            Span<byte> keyVecDelBelowRO = stackalloc byte[KeyLength];
             keyVecDelBelowRO.Fill(delBelowRO);
             var delKeyBelowRO = SpanByte.FromFixedSpan(keyVecDelBelowRO);
 
@@ -647,7 +661,7 @@ namespace FASTER.test.Revivification
 
             // Delete key above the readonly line. This is the record that will be revivified.
             // If not stayInChain, this also puts two elements in the free list; one should be skipped over on dequeue as it is below readonly.
-            Span<byte> keyVecDelAboveRO = stackalloc byte[10];
+            Span<byte> keyVecDelAboveRO = stackalloc byte[KeyLength];
             keyVecDelAboveRO.Fill(delAboveRO);
             var delKeyAboveRO = SpanByte.FromFixedSpan(keyVecDelAboveRO);
 
@@ -688,11 +702,10 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Input);
 
             SpanByteAndMemory output = new();
 
-            Span<byte> keyVecToTest = stackalloc byte[10];
+            Span<byte> keyVecToTest = stackalloc byte[KeyLength];
             var keyToTest = SpanByte.FromFixedSpan(keyVecToTest);
 
             bool expectReviv;
@@ -702,20 +715,26 @@ namespace FASTER.test.Revivification
                 // CopiedBelowRO should be satisfied from the freelist if !stayInChain, else will allocate a new record as it does not match the key chain
                 //      (but exercises a different code path than Unfound).
                 // CollisionRange.Ten has a valid PreviousAddress so it is not elided from the cache.
-                keyVecToTest.Fill(updateKey == UpdateKey.Unfound ? unfound : copiedBelowRO);
+                byte fillByte = updateKey == UpdateKey.Unfound ? unfound : copiedBelowRO;
+                keyVecToTest.Fill(fillByte);
+                inputVec.Fill(fillByte);
                 expectReviv = !stayInChain && collisionRange != CollisionRange.Ten;
             }
             else if (updateKey == UpdateKey.DeletedBelowRO)
             {
                 // DeletedBelowRO will not match the key for the in-chain above-RO slot, and we cannot reviv below RO or retrieve below-RO from the
                 // freelist, so we will always allocate a new record unless we're using the freelist.
-                keyVecToTest.Fill(delBelowRO);
+                byte fillByte = delBelowRO;
+                keyVecToTest.Fill(fillByte);
+                inputVec.Fill(fillByte);
                 expectReviv = !stayInChain && collisionRange != CollisionRange.Ten;
             }
             else if (updateKey == UpdateKey.DeletedAboveRO)
             {
                 // DeletedAboveRO means we will reuse an in-chain record, or will get it from the freelist if deleteDest is FreeList.
-                keyVecToTest.Fill(delAboveRO);
+                byte fillByte = delAboveRO;
+                keyVecToTest.Fill(fillByte);
+                inputVec.Fill(fillByte);
                 expectReviv = true;
             }
             else
@@ -760,7 +779,7 @@ namespace FASTER.test.Revivification
 
             // This freed record stays in the hash chain.
             byte chainKey = numRecords / 2 - 1;
-            Span<byte> keyVec = stackalloc byte[10];
+            Span<byte> keyVec = stackalloc byte[KeyLength];
             keyVec.Fill(chainKey);
             var key = SpanByte.FromFixedSpan(keyVec);
 
@@ -772,7 +791,7 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Input);
+            inputVec.Fill(chainKey);
 
             SpanByteAndMemory output = new();
 
@@ -796,7 +815,7 @@ namespace FASTER.test.Revivification
 
             // These freed records stay in the hash chain; we even skip the first one to ensure nothing goes into the free list.
             byte chainKey = 5;
-            Span<byte> keyVec = stackalloc byte[10];
+            Span<byte> keyVec = stackalloc byte[KeyLength];
             keyVec.Fill(chainKey);
             var key = SpanByte.FromFixedSpan(keyVec);
             var hash = comparer.GetHashCode64(ref key);
@@ -822,7 +841,7 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Input);
+            inputVec.Fill(chainKey);
 
             SpanByteAndMemory output = new();
 
@@ -850,7 +869,7 @@ namespace FASTER.test.Revivification
 
             long tailAddress = fht.Log.TailAddress;
 
-            Span<byte> keyVec = stackalloc byte[10];
+            Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromFixedSpan(keyVec);
 
             // Delete
@@ -867,7 +886,6 @@ namespace FASTER.test.Revivification
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Input);
 
             SpanByteAndMemory output = new();
 
@@ -882,6 +900,7 @@ namespace FASTER.test.Revivification
             for (var ii = 0; ii < numRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
+                inputVec.Fill((byte)ii);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 if (updateOp == UpdateOp.Upsert)
@@ -1073,12 +1092,11 @@ namespace FASTER.test.Revivification
 
             long tailAddress = fht.Log.TailAddress;
 
-            Span<byte> keyVec = stackalloc byte[10];
+            Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromFixedSpan(keyVec);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Input);
 
             var recordSize = RecordInfo.GetLength() + RoundUp(keyVec.Length, 8) + RoundUp(InitialLength, 8);
             Assert.IsTrue(fht.FreeRecordPool.GetBinIndex(recordSize, out int binIndex));
@@ -1092,7 +1110,6 @@ namespace FASTER.test.Revivification
 
             Span<byte> revivInputVec = stackalloc byte[InitialLength];
             var revivInput = SpanByte.FromFixedSpan(revivInputVec);
-            revivInputVec.Fill(ByteFills.RevivInput);
 
             SpanByteAndMemory output = new();
 
@@ -1106,6 +1123,8 @@ namespace FASTER.test.Revivification
                 for (var ii = 0; ii < numKeys; ++ii)
                 {
                     keyVec.Fill((byte)ii);
+                    inputVec.Fill((byte)ii);
+                    revivInputVec.Fill((byte)ii);
 
                     functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(iter == 0 ? InitialLength : InitialLength));
                     var status = session.Delete(ref key);
@@ -1151,16 +1170,17 @@ namespace FASTER.test.Revivification
             if (stayInChain)
                 pool = RevivificationTestUtils.SwapFreeRecordPool(fht, pool);
 
+            byte chainKey = numRecords + 1;
+            Span<byte> keyVec = stackalloc byte[KeyLength];
+            var key = SpanByte.FromFixedSpan(keyVec);
+
             Span<byte> inputVec = stackalloc byte[OversizeLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Input);
 
             SpanByteAndMemory output = new();
 
-            byte chainKey = numRecords + 1;
-            Span<byte> keyVec = stackalloc byte[10];
             keyVec.Fill(chainKey);
-            var key = SpanByte.FromFixedSpan(keyVec);
+            inputVec.Fill(chainKey);
 
             // Oversize records do not go to "next higher" bin (there is no next-higher bin in the default PowersOf2 bins we use)
             functions.expectedInputLength = OversizeLength;
@@ -1216,7 +1236,7 @@ namespace FASTER.test.Revivification
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
             // Use a different key below RO than we deleted; this will go pending to retrieve it
-            Span<byte> keyVec = stackalloc byte[10];
+            Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromFixedSpan(keyVec);
 
             session.ctx.phase = phase;
@@ -1224,7 +1244,9 @@ namespace FASTER.test.Revivification
             {
                 Span<byte> inputVec = stackalloc byte[InitialLength];
                 var input = SpanByte.FromFixedSpan(inputVec);
-                inputVec.Fill(ByteFills.Input);
+
+                keyVec.Fill(targetRO);
+                inputVec.Fill(targetRO);
 
                 functions.expectedInputLength = InitialLength;
                 functions.expectedSingleDestLength = InitialLength;
@@ -1232,8 +1254,6 @@ namespace FASTER.test.Revivification
 
                 var spanSlice = inputVec[..InitialLength];
                 var inputSlice = SpanByte.FromFixedSpan(spanSlice);
-
-                keyVec.Fill(targetRO);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = session.Read(ref key, ref inputSlice, ref output);
@@ -1245,9 +1265,9 @@ namespace FASTER.test.Revivification
             {
                 Span<byte> inputVec = stackalloc byte[InitialLength];
                 var input = SpanByte.FromFixedSpan(inputVec);
-                inputVec.Fill(ByteFills.Input);
 
                 keyVec.Fill(targetRO);
+                inputVec.Fill(targetRO);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
@@ -1354,13 +1374,46 @@ namespace FASTER.test.Revivification
     [TestFixture]
     class RevivificationVarLenStressTests
     {
+        const int KeyLength = 10;
         const int InitialLength = 50;
 
         internal class RevivificationStressFunctions : SpanByteFunctions<Empty>
         {
+            readonly IFasterEqualityComparer<SpanByte> keyComparer;     // non-null if we are doing key comparisons (and thus expectedKey is non-default)
+            internal SpanByte expectedKey = default;                    // Set for each operation by the calling thread
+
+            internal RevivificationStressFunctions(IFasterEqualityComparer<SpanByte> keyComparer) => this.keyComparer = keyComparer;
+
+            private void VerifyKey(ref SpanByte functionsKey)
+            {
+                if (keyComparer is not null)
+                    Assert.IsTrue(this.keyComparer.Equals(ref this.expectedKey, ref functionsKey));
+            }
+
+            private void VerifyKeyAndValue(ref SpanByte functionsKey, ref SpanByte functionsValue)
+            {
+                if (keyComparer is not null)
+                { 
+                    Assert.IsTrue(this.keyComparer.Equals(ref this.expectedKey, ref functionsKey), "functionsKey does not equal expectedKey");
+                    int valueOffset = 0, valueLengthRemaining = functionsValue.Length;
+                    Assert.Less(functionsKey.Length, valueLengthRemaining);
+                    while (valueLengthRemaining > 0)
+                    {
+                        var compareLength = Math.Min(functionsKey.Length, valueLengthRemaining);
+                        Span<byte> valueSpan = functionsValue.AsSpan().Slice(valueOffset, compareLength);
+                        Span<byte> keySpan = functionsKey.AsSpan()[..compareLength];
+                        Assert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromFixedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromFixedSpan(keySpan)})");
+                        valueOffset += compareLength;
+                        valueLengthRemaining -= compareLength;
+                    }
+                }
+            }
+
             public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
+                VerifyKey(ref key);
                 var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
+
                 // Pass src, not input (which may be empty)
                 var result = InitialUpdater(ref key, ref src, ref dst, ref output, ref rmwInfo);
                 upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
@@ -1369,7 +1422,9 @@ namespace FASTER.test.Revivification
 
             public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
+                VerifyKeyAndValue(ref key, ref dst);
                 var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
+
                 // Pass src, not input (which may be empty)
                 var result = InPlaceUpdater(ref key, ref src, ref dst, ref output, ref rmwInfo);
                 upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
@@ -1378,6 +1433,7 @@ namespace FASTER.test.Revivification
 
             public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
+                VerifyKey(ref key);
                 if (input.Length > newValue.Length)
                     return false;
                 input.CopyTo(ref newValue);
@@ -1388,6 +1444,7 @@ namespace FASTER.test.Revivification
 
             public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
+                VerifyKeyAndValue(ref key, ref oldValue);
                 if (input.Length > newValue.Length)
                     return false;
                 input.CopyTo(ref newValue);
@@ -1398,6 +1455,7 @@ namespace FASTER.test.Revivification
 
             public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
+                VerifyKey(ref key);
                 if (input.Length > value.Length)
                     return false;
                 input.CopyTo(ref value);        // Does not change dst.Length, which is fine for everything except shrinking (we've allocated sufficient space in other cases)
@@ -1417,7 +1475,7 @@ namespace FASTER.test.Revivification
             }
         }
 
-        const int numRecords = 1000;
+        const int numRecords = 200;
         const int DefaultMaxRecsPerBin = 1024;
 
         RevivificationStressFunctions functions;
@@ -1454,7 +1512,7 @@ namespace FASTER.test.Revivification
             fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, lockingMode: lockingMode, revivificationSettings: RevivificationSettings.PowerOf2Bins);
 
             var valueVLS = new RevivificationVLS();
-            functions = new RevivificationStressFunctions();
+            functions = new RevivificationStressFunctions(keyComparer: null);
             session = fht.For(functions).NewSession<RevivificationStressFunctions>(
                     sessionVariableLengthStructSettings: new SessionVariableLengthStructSettings<SpanByte, SpanByte> { valueLength = valueVLS });
         }
@@ -1474,21 +1532,21 @@ namespace FASTER.test.Revivification
 
         unsafe void Populate()
         {
+            Span<byte> keyVec = stackalloc byte[KeyLength];
+            var key = SpanByte.FromFixedSpan(keyVec);
+
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
-            inputVec.Fill(ByteFills.Populate);
 
             SpanByteAndMemory output = new();
 
             for (int ii = 0; ii < numRecords; ++ii)
             {
-                var keyVec = BitConverter.GetBytes(ii);
-                fixed (byte* _ = keyVec)
-                {
-                    var key = SpanByte.FromFixedSpan(keyVec);
-                    var status = session.Upsert(ref key, ref input, ref input, ref output);
-                    Assert.IsTrue(status.Record.Created, status.ToString());
-                }
+                keyVec.Fill((byte)ii);
+                inputVec.Fill((byte)ii);
+
+                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                Assert.IsTrue(status.Record.Created, status.ToString());
             }
         }
 
@@ -1516,7 +1574,7 @@ namespace FASTER.test.Revivification
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-            const int numIterations = 100;
+            const int numIterations = 500;
             const int numItems = 10000;
             var flags = new long[numItems];
             const int size = 42;    // size doesn't matter in this test
@@ -1608,67 +1666,68 @@ namespace FASTER.test.Revivification
         public void LiveFreeListThreadStressTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] CollisionRange collisionRange,
                                              [Values] ThreadingPattern threadingPattern, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
-            int numIterations = 100;
-            int numThreadsEachOp = 1;
+            int numIterations = 500;
+            const int numDeleteThreads = 5, numUpdateThreads = 5;
 
             unsafe void runDeleteThread(int tid)
             {
                 Random rng = new(tid * 101);
 
-                using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
+                using var localSession = fht.For(new RevivificationStressFunctions(keyComparer: null)).NewSession<RevivificationStressFunctions>();
                 localSession.ctx.phase = phase;
+
+                Span<byte> keyVec = stackalloc byte[KeyLength];
+                var key = SpanByte.FromFixedSpan(keyVec);
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numThreadsEachOp)
+                    for (var ii = tid; ii < numRecords; ii += numDeleteThreads)
                     {
                         var kk = threadingPattern == ThreadingPattern.RandomKeys ? rng.Next(numRecords) : ii;
-                        var keyVec = BitConverter.GetBytes(kk);
-                        fixed (byte* _ = keyVec)
-                        {
-                            var key = SpanByte.FromFixedSpan(keyVec);
-                            localSession.Delete(key);
-                        }
+                        keyVec.Fill((byte)kk);
+                        localSession.Delete(key);
                     }
                 }
             }
 
             unsafe void runUpdateThread(int tid)
             {
+                Span<byte> keyVec = stackalloc byte[KeyLength];
+                var key = SpanByte.FromFixedSpan(keyVec);
+
                 Span<byte> inputVec = stackalloc byte[InitialLength];
                 var input = SpanByte.FromFixedSpan(inputVec);
-                inputVec.Fill(ByteFills.Input);
 
                 Random rng = new(tid * 101);
 
-                using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
+                using var localSession = fht.For(new RevivificationStressFunctions(keyComparer: fht.comparer)).NewSession<RevivificationStressFunctions>();
                 localSession.ctx.phase = phase;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numThreadsEachOp)
+                    for (var ii = tid; ii < numRecords; ii += numUpdateThreads)
                     {
                         var kk = threadingPattern == ThreadingPattern.RandomKeys ? rng.Next(numRecords) : ii;
-                        var keyVec = BitConverter.GetBytes(kk);
-                        fixed (byte* _ = keyVec)
-                        {
-                            var key = SpanByte.FromFixedSpan(keyVec);
-                            if (updateOp == UpdateOp.Upsert)
-                                localSession.Upsert(key, input);
-                            else
-                                localSession.RMW(key, input);
-                        }
+                        keyVec.Fill((byte)kk);
+                        inputVec.Fill((byte)kk);
+
+                        localSession.functions.expectedKey = key;
+                        if (updateOp == UpdateOp.Upsert)
+                            localSession.Upsert(key, input);
+                        else
+                            localSession.RMW(key, input);
+                        localSession.functions.expectedKey = default;
                     }
                 }
             }
 
             List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
-            for (int t = 0; t < numThreadsEachOp; t++)
+            for (int t = 0; t < numDeleteThreads; t++)
             {
                 var tid = t + 1;
                 tasks.Add(Task.Factory.StartNew(() => runDeleteThread(tid)));
             }
-            for (int t = 0; t < numThreadsEachOp; t++)
+            for (int t = 0; t < numDeleteThreads; t++)
             {
                 var tid = t + 1;
                 tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
@@ -1684,61 +1743,60 @@ namespace FASTER.test.Revivification
             // Turn off freelist.
             RevivificationTestUtils.SwapFreeRecordPool(fht, null);
 
-            int numIterations = 100;
-            int numThreadsEachOp = 1;
+            const int numIterations = 500;
+            const int numDeleteThreads = 5, numUpdateThreads = 5;
 
             unsafe void runDeleteThread(int tid)
             {
-                using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
+                using var localSession = fht.For(new RevivificationStressFunctions(keyComparer: null)).NewSession<RevivificationStressFunctions>();
                 localSession.ctx.phase = phase;
+
+                Span<byte> keyVec = stackalloc byte[KeyLength];
+                var key = SpanByte.FromFixedSpan(keyVec);
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numThreadsEachOp)
+                    for (var ii = tid; ii < numRecords; ii += numDeleteThreads)
                     {
-                        var keyVec = BitConverter.GetBytes(ii);
-                        fixed (byte* _ = keyVec)
-                        {
-                            var key = SpanByte.FromFixedSpan(keyVec);
-                            localSession.Delete(key);
-                        }
+                        keyVec.Fill((byte)ii);
+                        localSession.Delete(key);
                     }
                 }
             }
 
             unsafe void runUpdateThread(int tid)
             {
+                Span<byte> keyVec = stackalloc byte[KeyLength];
+                var key = SpanByte.FromFixedSpan(keyVec);
+
                 Span<byte> inputVec = stackalloc byte[InitialLength];
                 var input = SpanByte.FromFixedSpan(inputVec);
-                inputVec.Fill(ByteFills.Input);
 
-                using var localSession = fht.For(new RevivificationStressFunctions()).NewSession<RevivificationStressFunctions>();
+                using var localSession = fht.For(new RevivificationStressFunctions(keyComparer: null)).NewSession<RevivificationStressFunctions>();
                 localSession.ctx.phase = phase;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numThreadsEachOp)
+                    for (var ii = tid; ii < numRecords; ii += numUpdateThreads)
                     {
-                        var keyVec = BitConverter.GetBytes(ii);
-                        fixed (byte* _ = keyVec)
-                        {
-                            var key = SpanByte.FromFixedSpan(keyVec);
-                            if (updateOp == UpdateOp.Upsert)
-                                localSession.Upsert(key, input);
-                            else
-                                localSession.RMW(key, input);
-                        }
+                        keyVec.Fill((byte)ii);
+                        inputVec.Fill((byte)ii);
+
+                        if (updateOp == UpdateOp.Upsert)
+                            localSession.Upsert(key, input);
+                        else
+                            localSession.RMW(key, input);
                     }
                 }
             }
 
             List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
-            for (int t = 0; t < numThreadsEachOp; t++)
+            for (int t = 0; t < numDeleteThreads; t++)
             {
                 var tid = t + 1;
                 tasks.Add(Task.Factory.StartNew(() => runDeleteThread(tid)));
             }
-            for (int t = 0; t < numThreadsEachOp; t++)
+            for (int t = 0; t < numUpdateThreads; t++)
             {
                 var tid = t + 1;
                 tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));

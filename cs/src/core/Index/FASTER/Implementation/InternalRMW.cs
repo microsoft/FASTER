@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -146,10 +147,14 @@ namespace FASTER.core
                             }
                             finally
                             {
-                                SetLiveFullValueLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
-                                srcRecordInfo.Unseal();
-                                if (!ok)
+                                if (ok)
+                                    SetLiveFullValueLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                                else
+                                {
+                                    SetTombstonedValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.FullValueLength);
                                     srcRecordInfo.Tombstone = true; // Restore tombstone on inability to update in place
+                                }
+                                srcRecordInfo.Unseal();
                             }
                         }
                         goto CreateNewRecord;

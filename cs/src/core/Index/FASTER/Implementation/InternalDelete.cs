@@ -126,6 +126,7 @@ namespace FASTER.core
                             // Always Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
                             if (srcRecordInfo.TrySeal())
                             {
+                                bool isFree = false;
                                 if (srcRecordInfo.Tombstone)   // If this is false, it was revivified by another session immediately after ConcurrentDeleter completed.
                                 {
                                     // If we CAS out of the hashtable successfully, add it to the free list.
@@ -141,12 +142,13 @@ namespace FASTER.core
                                         *GetTombstonedValueLengthPointer(stackCtx.recSrc.PhysicalAddress) = 0;
                                         SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, fullRecordLength);
                                         FreeRecordPool.Enqueue(stackCtx.recSrc.LogicalAddress, fullRecordLength);
+                                        isFree = true;
                                     }
-                                    else
-                                    { 
-                                        // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
-                                        srcRecordInfo.Unseal();
-                                    }
+                                }
+                                if (!isFree)
+                                {
+                                    // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
+                                    srcRecordInfo.Unseal();
                                 }
                             }
                         }
@@ -289,7 +291,7 @@ namespace FASTER.core
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
 
-            SetTombstonedValueLength(newPhysicalAddress, ref srcRecordInfo, deleteInfo.FullValueLength);
+            SetTombstonedValueLength(ref newValue, ref newRecordInfo, deleteInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             deleteInfo.RecordInfo = newRecordInfo;

@@ -107,7 +107,7 @@ namespace FASTER.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount}; "
+            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount};"
                         + $" hp: {HashPacking}; sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
                         + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";

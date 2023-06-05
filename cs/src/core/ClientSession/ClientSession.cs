@@ -1298,7 +1298,7 @@ namespace FASTER.core
                 if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo))
                     return false;
                 value = default;
-                _clientSession.fht.SetTombstonedValueLength(physicalAddress, ref recordInfo, deleteInfo.FullValueLength);
+                _clientSession.fht.SetTombstonedValueLength(ref value, ref recordInfo, deleteInfo.FullValueLength);
                 recordInfo.SetDirtyAndModified();
                 recordInfo.SetTombstone();
                 return true;

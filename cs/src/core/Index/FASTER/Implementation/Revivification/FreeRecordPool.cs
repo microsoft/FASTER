@@ -192,7 +192,7 @@ namespace FASTER.core
         private unsafe static ref int GetPos(FreeRecord* partitionStart, int offset)
         {
             ref int pos = ref Unsafe.AsRef<int>((int*)partitionStart + offset);
-            Debug.Assert(pos > 0);
+            Debug.Assert(pos > 0, "Read or write position must be > 0, because they start at 1");
             return ref pos;
         }
 
