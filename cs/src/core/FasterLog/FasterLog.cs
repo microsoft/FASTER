@@ -416,6 +416,14 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Get starting address of first record on the next page from given address
+        /// </summary>
+        /// <param name="currentAddress"></param>
+        /// <returns></returns>
+        public long UnsafeGetNextPageAddress(long currentAddress)
+            => (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+
+        /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
         /// </summary>
         /// <param name="readOnlySpanBatch">Batch of entries to be enqueued to log</param>
