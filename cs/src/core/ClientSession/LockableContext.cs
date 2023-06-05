@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -101,65 +100,6 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe bool DoInternalTryLock<FasterSession, TLockableKey>(FasterSession fasterSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
-                                                                   TLockableKey[] keys, int start, int count, int maxRetriesPerKey, TimeSpan timeout, CancellationToken cancellationToken)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
-            where TLockableKey : ILockableKey
-        {
-            // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
-            // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
-            // Unlock has to be done in the reverse order of locking, so we take the *last* occurrence of each key there.
-            var end = start + count - 1;
-            var startTime = timeout.Ticks > 0 ? DateTime.UtcNow : default;
-
-            for (int keyIdx = start; keyIdx <= end; ++keyIdx)
-            {
-                ref var key = ref keys[keyIdx];
-                if (keyIdx == start || clientSession.fht.LockTable.GetBucketIndex(key.LockCode) != clientSession.fht.LockTable.GetBucketIndex(keys[keyIdx - 1].LockCode))
-                { 
-                    for (int numRetriesForKey = 0 ; ; )
-                    { 
-                        OperationStatus status = clientSession.fht.InternalLock(key.LockCode, new(LockOperationType.Lock, key.LockType));
-                        bool fail = false;
-                        if (status == OperationStatus.SUCCESS)
-                        {
-                            if (key.LockType == LockType.Exclusive)
-                                ++clientSession.exclusiveLockCount;
-                            else if (key.LockType == LockType.Shared)
-                                ++clientSession.sharedLockCount;
-
-                            if (keyIdx == end)
-                                goto Success;
-                        }
-                        else
-                            fail = (maxRetriesPerKey >= 0 && ++numRetriesForKey > maxRetriesPerKey);
-
-                        // CancellationToken can accompany either of the other two mechanisms
-                        fail |= (timeout.Ticks > 0 && DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks) || cancellationToken.IsCancellationRequested;
-                        if (!fail && status == OperationStatus.SUCCESS)
-                            break;  // out of the retry loop
-
-                        clientSession.fht.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession);
-
-                        // Failure (including timeout/cancellation after a successful Lock before we've completed all keys). Unlock anything we already locked.
-                        for (int unlockIdx = keyIdx - (status == OperationStatus.SUCCESS ? 0 : 1); unlockIdx >= start; --unlockIdx)
-                        {
-                            var lockType = DoLockOp(fasterSession, clientSession, keys, start, LockOperationType.Unlock, unlockIdx);
-                            if (lockType == LockType.Exclusive)
-                                --clientSession.exclusiveLockCount;
-                            else if (lockType == LockType.Shared)
-                                --clientSession.sharedLockCount;
-                        }
-                        return false;
-                    }
-                }
-            }
-
-        Success:
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe LockType DoLockOp<FasterSession, TLockableKey>(FasterSession fasterSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
                                                                              TLockableKey[] keys, int start, LockOperationType lockOpType, int idx)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
@@ -192,54 +132,6 @@ namespace FASTER.core
             try
             {
                 DoInternalLockOp(FasterSession, clientSession, keys, start, count, LockOperationType.Lock);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int numRetriesPerKey, CancellationToken cancellationToken = default) 
-            where TLockableKey : ILockableKey 
-            => TryLock(keys, 0, keys.Length, numRetriesPerKey, default, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, int numRetriesPerKey, CancellationToken cancellationToken = default)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, start, count, numRetriesPerKey, default, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout, CancellationToken cancellationToken = default)
-            where TLockableKey : ILockableKey 
-            => TryLock(keys, 0, keys.Length, -1, timeout, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken = default)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, start, count, -1, timeout, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, 0, keys.Length, -1, default, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, start, count, -1, default, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, int numRetries, TimeSpan timeout, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.fht.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
-
-            clientSession.UnsafeResumeThread();
-            try
-            {
-                return DoInternalTryLock(FasterSession, clientSession, keys, start, count, numRetries, timeout, cancellationToken);
             }
             finally
             {
