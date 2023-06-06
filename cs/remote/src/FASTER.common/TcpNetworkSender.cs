@@ -159,6 +159,21 @@ namespace FASTER.common
                 socket.Dispose();
         }
 
+        /// <inheritdoc />
+        public override void Throttle()
+        {
+            // Short circuit for common case of no network overload
+            if (throttleCount < ThrottleMax) return;
+
+            // We are throttling, so wait for throttle to be released by some ongoing sender
+            if (Interlocked.Increment(ref throttleCount) > ThrottleMax)
+                throttle.Wait();
+
+            // Release throttle, since we used up one slot
+            if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+                throttle.Release();
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void Send(Socket socket, SeaaBuffer sendObject, int offset, int size)
         {
