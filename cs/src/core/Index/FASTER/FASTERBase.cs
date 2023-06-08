@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -137,8 +138,8 @@ namespace FASTER.core
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
             // X and S latches means an X latch is still trying to drain readers, like this one.
-            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched record");
-            Debug.Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched record");
+            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched bucket");
+            Debug.Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched bucket");
             Interlocked.Add(ref entry_word, -kSharedLatchIncrement);
         }
 
@@ -164,7 +165,7 @@ namespace FASTER.core
                     return false;
             }
 
-            // Wait for readers to drain. Another session may hold an SLock on this record and need an epoch refresh to unlock, so limit this to avoid deadlock.
+            // Wait for readers to drain. Another session may hold an SLock on this bucket and need an epoch refresh to unlock, so limit this to avoid deadlock.
             for (var ii = 0; ii < Constants.kMaxReaderLockDrainSpins; ++ii)
             {
                 if ((entry_word & kSharedLatchBitMask) == 0)
@@ -183,6 +184,52 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryPromoteLatch(HashBucket* bucket)
+        {
+            ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
+            int spinCount = Constants.kMaxLockSpins;
+
+            // Acquire shared lock
+            while (true)
+            {
+                long expected_word = entry_word;
+                if ((expected_word & kExclusiveLatchBitMask) == 0) // not exclusively locked
+                {
+                    var new_word = expected_word | kExclusiveLatchBitMask;
+                    if ((expected_word & kSharedLatchBitMask) != 0) // shared lock is not empty
+                        new_word -= kSharedLatchIncrement;
+                    else
+                    {
+                        Debug.Fail("Trying to promote a bucket that is not S latched to X latch");
+                        return false;
+                    }
+                    if (expected_word == Interlocked.CompareExchange(ref entry_word, new_word, expected_word))
+                        break;
+                }
+                if (spinCount > 0 && --spinCount <= 0) 
+                    return false;
+                Thread.Yield();
+            }
+
+            // Wait for readers to drain. Another session may hold an SLock on this bucket and need an epoch refresh to unlock, so limit this to avoid deadlock.
+            for (var ii = 0; ii < Constants.kMaxReaderLockDrainSpins; ++ii)
+            {
+                if ((entry_word & kSharedLatchBitMask) == 0)
+                    return true;
+                Thread.Yield();
+            }
+
+            // Reverse the shared-to-exclusive bit transition and return false so the caller will retry the operation. Since we still have readers, we must CAS.
+            for (; ; Thread.Yield())
+            {
+                long expected_word = entry_word;
+                if (Interlocked.CompareExchange(ref entry_word, (expected_word & ~kExclusiveLatchBitMask) + kSharedLatchIncrement, expected_word) == expected_word)
+                    break;
+            }
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void ReleaseExclusiveLatch(ref HashEntryInfo hei) => ReleaseExclusiveLatch(hei.firstBucket);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -191,8 +238,8 @@ namespace FASTER.core
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
 
             // We should not be calling this method unless we have successfully acquired the latch (all existing readers were drained).
-            Debug.Assert((entry_word & kSharedLatchBitMask) == 0, "Trying to X unlatch an S latched record");
-            Debug.Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched record");
+            Debug.Assert((entry_word & kSharedLatchBitMask) == 0, "Trying to X unlatch an S latched bucket");
+            Debug.Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched bucket");
 
             // The address in the overflow bucket may change from unassigned to assigned, so retry
             for (; ; Thread.Yield())

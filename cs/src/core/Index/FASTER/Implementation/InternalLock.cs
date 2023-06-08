@@ -40,9 +40,9 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Manual Lock operation for <see cref="HashBucket"/> locking . Locks the buckets corresponding to 'keys'.
+        /// Manual Lock operation for <see cref="HashBucket"/> locking. Locks the buckets corresponding to 'keys'.
         /// </summary>
-        /// <param name="keyLockCode">Lock code of the key (<see cref="HashBucket"/>) to be locked or unlocked.</param>
+        /// <param name="keyLockCode">Lock code of the key to be locked or unlocked.</param>
         /// <param name="lockOp">Lock operation being done.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalLock(long keyLockCode, LockOperation lockOp)
@@ -63,6 +63,21 @@ namespace FASTER.core
                     Debug.Fail($"Unexpected {nameof(LockOperationType)}: {lockOp.LockOperationType}");
                     break;
             }
+            return OperationStatus.SUCCESS;
+        }
+
+        /// <summary>
+        /// Manual Lock promotion for <see cref="HashBucket"/> locking. Promotes the lock for 'key' from Shared to Exclusive.
+        /// </summary>
+        /// <param name="keyLockCode">Lock code of the key to be locked or unlocked.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus InternalPromoteLock(long keyLockCode)
+        {
+            Debug.Assert(epoch.ThisInstanceProtected(), "InternalLock must have protected epoch");
+            Debug.Assert(this.LockTable.IsEnabled, "ManualLockTable must be enabled for InternalLock");
+
+            if (!this.LockTable.TryPromoteLockManual(keyLockCode))
+                return OperationStatus.RETRY_LATER;
             return OperationStatus.SUCCESS;
         }
     }

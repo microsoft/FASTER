@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using static System.Runtime.CompilerServices.RuntimeHelpers;
 
 namespace FASTER.core
 {
@@ -71,6 +72,14 @@ namespace FASTER.core
                 LockType.Exclusive => HashBucket.TryAcquireExclusiveLatch(bucket),
                 _ => throw new FasterException("Attempt to lock with unknown LockType")
             };
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe bool TryPromoteLockManual(long keyCode)
+        {
+            AssertLockAllowed();
+            return HashBucket.TryPromoteLatch(GetBucket(keyCode));
         }
 
         /// <inheritdoc/>

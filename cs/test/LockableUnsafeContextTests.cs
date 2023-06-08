@@ -1532,5 +1532,320 @@ namespace FASTER.test.LockableUnsafeContext
                 luContext.EndUnsafe();
             }
         }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void TryLockRetryLimitTest()
+        {
+            Populate();
+
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            var luContext = session.LockableUnsafeContext;
+
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
+
+            var keyVec = new FixedLengthLockableKeyStruct<long>[]
+            {
+                new(42, LockType.Exclusive, luContext),
+                new(43, LockType.Exclusive, luContext),
+                new(44, LockType.Exclusive, luContext)
+            };
+
+            // First ensure things work with no blocking locks.
+            Assert.IsTrue(luContext.TryLock(keyVec, maxRetriesPerKey: 0));
+            luContext.Unlock(keyVec);
+
+            var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
+
+            try
+            {
+                for (var blockingIdx = 0; blockingIdx < keyVec.Length; ++blockingIdx)
+                {
+                    for (var retries = 0; retries < 2; ++retries)
+                    {
+                        // This key blocks the lock. Test all positions in keyVec to ensure rollback of locks on failure.
+                        blockingVec[0] = keyVec[blockingIdx];
+                        luContext.Lock(blockingVec);
+
+                        // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
+                        Assert.IsFalse(luContext.TryLock(keyVec, retries));
+                        foreach (var k in keyVec)
+                        { 
+                            if (k.Key != blockingVec[0].Key)
+                                OverflowBucketLockTableTests.AssertLockCounts(fht, k.Key, false, 0);
+                        }
+
+                        luContext.Unlock(blockingVec);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(session);
+                throw;
+            }
+            finally
+            {
+                luContext.EndLockable();
+                luContext.EndUnsafe();
+            }
+        }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void TryLockTimeSpanLimitTest()
+        {
+            Populate();
+
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            var luContext = session.LockableUnsafeContext;
+
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
+
+            var keyVec = new FixedLengthLockableKeyStruct<long>[]
+            {
+                new(42, LockType.Exclusive, luContext),
+                new(43, LockType.Exclusive, luContext),
+                new(44, LockType.Exclusive, luContext)
+            };
+
+            // First ensure things work with no blocking locks.
+            Assert.IsTrue(luContext.TryLock(keyVec, maxRetriesPerKey: 0));
+            luContext.Unlock(keyVec);
+
+            var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
+
+            try
+            {
+                for (var blockingIdx = 0; blockingIdx < keyVec.Length; ++blockingIdx)
+                {
+                    // This key blocks the lock. Test all positions in keyVec to ensure rollback of locks on failure.
+                    blockingVec[0] = keyVec[blockingIdx];
+                    luContext.Lock(blockingVec);
+
+                    // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
+                    Assert.IsFalse(luContext.TryLock(keyVec, TimeSpan.FromMilliseconds(20)));
+                    foreach (var k in keyVec)
+                    {
+                        if (k.Key != blockingVec[0].Key)
+                            OverflowBucketLockTableTests.AssertLockCounts(fht, k.Key, false, 0);
+                    }
+
+                    luContext.Unlock(blockingVec);
+                }
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(session);
+                throw;
+            }
+            finally
+            {
+                luContext.EndLockable();
+                luContext.EndUnsafe();
+            }
+        }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void TryLockCancellationTest()
+        {
+            Populate();
+
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            var luContext = session.LockableUnsafeContext;
+
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
+
+            var keyVec = new FixedLengthLockableKeyStruct<long>[]
+            {
+                new(42, LockType.Exclusive, luContext),
+                new(43, LockType.Exclusive, luContext),
+                new(44, LockType.Exclusive, luContext)
+            };
+
+            // First ensure things work with no blocking locks.
+            Assert.IsTrue(luContext.TryLock(keyVec, maxRetriesPerKey: 0));
+            luContext.Unlock(keyVec);
+
+            var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
+
+            try
+            {
+                for (var callIdx = 0; callIdx < 3; ++callIdx)
+                { 
+                    for (var blockingIdx = 0; blockingIdx < keyVec.Length; ++blockingIdx)
+                    {
+                        // This key blocks the lock. Test all positions in keyVec to ensure rollback of locks on failure.
+                        blockingVec[0] = keyVec[blockingIdx];
+                        luContext.Lock(blockingVec);
+
+                        using var cts = new CancellationTokenSource(20);
+
+                        // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
+                        if (callIdx == 0)
+                            Assert.IsFalse(luContext.TryLock(keyVec, int.MaxValue, cts.Token));
+                        else if (callIdx == 1)
+                            Assert.IsFalse(luContext.TryLock(keyVec, TimeSpan.FromMinutes(1701), cts.Token));
+                        else
+                            Assert.IsFalse(luContext.TryLock(keyVec, cts.Token));
+                        foreach (var k in keyVec)
+                        {
+                            if (k.Key != blockingVec[0].Key)
+                                OverflowBucketLockTableTests.AssertLockCounts(fht, k.Key, false, 0);
+                        }
+
+                        luContext.Unlock(blockingVec);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(session);
+                throw;
+            }
+            finally
+            {
+                luContext.EndLockable();
+                luContext.EndUnsafe();
+            }
+        }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void TryPromoteLockRetryLimitTest()
+        {
+            Populate();
+
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            var luContext = session.LockableUnsafeContext;
+
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
+
+            var key = 42;
+
+            var exclusiveVec = new FixedLengthLockableKeyStruct<long>[] { new(key, LockType.Exclusive, luContext) };
+            var sharedVec = new FixedLengthLockableKeyStruct<long>[] { new(key, LockType.Shared, luContext) };
+
+            try
+            {
+                // Lock twice so it is blocked by the second reader
+                Assert.IsTrue(luContext.TryLock(sharedVec, int.MaxValue));
+                Assert.IsTrue(luContext.TryLock(sharedVec, int.MaxValue));
+
+                for (var retries = 0; retries < 2; ++retries)
+                    Assert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], retries));
+
+                // Unlock one of the readers and verify successful promotion
+                luContext.Unlock(sharedVec);
+                Assert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0], int.MaxValue));
+                luContext.Unlock(exclusiveVec);
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(session);
+                throw;
+            }
+            finally
+            {
+                luContext.EndLockable();
+                luContext.EndUnsafe();
+            }
+        }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void TryPromoteLockTimeSpanLimitTest()
+        {
+            Populate();
+
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            var luContext = session.LockableUnsafeContext;
+
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
+
+            var key = 42;
+
+            var exclusiveVec = new FixedLengthLockableKeyStruct<long>[] { new(key, LockType.Exclusive, luContext) };
+            var sharedVec = new FixedLengthLockableKeyStruct<long>[] { new(key, LockType.Shared, luContext) };
+
+            try
+            {
+                // Lock twice so it is blocked by the second reader
+                Assert.IsTrue(luContext.TryLock(sharedVec, int.MaxValue));
+                Assert.IsTrue(luContext.TryLock(sharedVec, int.MaxValue));
+
+                Assert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], TimeSpan.FromMilliseconds(20)));
+
+                // Unlock one of the readers and verify successful promotion
+                luContext.Unlock(sharedVec);
+                Assert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0], int.MaxValue));
+                luContext.Unlock(exclusiveVec);
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(session);
+                throw;
+            }
+            finally
+            {
+                luContext.EndLockable();
+                luContext.EndUnsafe();
+            }
+        }
+
+        [Test]
+        [Category(LockableUnsafeContextTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void TryPromoteLockCancellationTest()
+        {
+            Populate();
+
+            using var session = fht.NewSession(new SimpleFunctions<long, long>());
+            var luContext = session.LockableUnsafeContext;
+
+            luContext.BeginUnsafe();
+            luContext.BeginLockable();
+
+            var key = 42;
+
+            var exclusiveVec = new FixedLengthLockableKeyStruct<long>[] { new(key, LockType.Exclusive, luContext) };
+            var sharedVec = new FixedLengthLockableKeyStruct<long>[] { new(key, LockType.Shared, luContext) };
+
+            try
+            {
+                // Lock twice so it is blocked by the second reader
+                Assert.IsTrue(luContext.TryLock(sharedVec, int.MaxValue));
+                Assert.IsTrue(luContext.TryLock(sharedVec, int.MaxValue));
+
+                using var cts = new CancellationTokenSource(20);
+                Assert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], cts.Token));
+
+                // Unlock one of the readers and verify successful promotion
+                luContext.Unlock(sharedVec);
+                Assert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0], int.MaxValue));
+                luContext.Unlock(exclusiveVec);
+            }
+            catch (Exception)
+            {
+                ClearCountsOnError(session);
+                throw;
+            }
+            finally
+            {
+                luContext.EndLockable();
+                luContext.EndUnsafe();
+            }
+        }
     }
 }
