@@ -95,12 +95,12 @@ namespace FASTER.core
         /// <summary>
         /// Global current epoch value
         /// </summary>
-        long CurrentEpoch;
+        internal long CurrentEpoch;
 
         /// <summary>
         /// Cached value of latest epoch that is safe to reclaim
         /// </summary>
-        long SafeToReclaimEpoch;
+        internal long SafeToReclaimEpoch;
 
         /// <summary>
         /// Static constructor to setup shared cache-aligned space
@@ -224,12 +224,14 @@ namespace FASTER.core
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>
-        long BumpCurrentEpoch()
+        internal long BumpCurrentEpoch()
         {
             long nextEpoch = Interlocked.Increment(ref CurrentEpoch);
 
             if (drainCount > 0)
                 Drain(nextEpoch);
+            else
+                ComputeNewSafeToReclaimEpoch(nextEpoch);
 
             return nextEpoch;
         }

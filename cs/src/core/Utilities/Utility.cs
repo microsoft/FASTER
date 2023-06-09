@@ -360,6 +360,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="h"></param>
         /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int Murmur3(int h)
         {
             uint a = (uint)h;
@@ -378,6 +379,7 @@ namespace FASTER.core
         /// <param name="newValue">The value that replaces the variable if successful</param>
         /// <param name="oldValue">The orignal value in the variable</param>
         /// <returns> if oldValue less than newValue </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool MonotonicUpdate(ref long variable, long newValue, out long oldValue)
         {
             do
@@ -395,6 +397,7 @@ namespace FASTER.core
         /// <param name="newValue">The value that replaces the variable if successful</param>
         /// <param name="oldValue">The orignal value in the variable</param>
         /// <returns>if oldValue less than or equal to newValue</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool MonotonicUpdate(ref int variable, int newValue, out int oldValue)
         {
             do

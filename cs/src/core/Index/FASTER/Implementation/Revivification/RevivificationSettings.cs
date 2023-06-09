@@ -47,7 +47,7 @@ namespace FASTER.core
         /// <summary>
         /// Default bin for fixed-length.
         /// </summary>
-        public static RevivificationSettings DefaultFixedLength { get; } = new() { FreeListBins = new[] { new RevivificationBin() } };
+        public static RevivificationSettings DefaultFixedLength { get; } = new() { FreeListBins = new[] { new RevivificationBin() { RecordSize = int.MaxValue } } };
 
         /// <summary>
         /// Enable only in-tag-chain revivification; do not use FreeList
@@ -126,12 +126,12 @@ namespace FASTER.core
 
         internal void Verify(bool isFixedLength)
         {
-            if (!isFixedLength && RecordSize < FreeRecordPool.MinRecordSize)
-                throw new FasterException($"Invalid RecordSize {RecordSize}; must be >= {FreeRecordPool.MinRecordSize}");
+            if (!isFixedLength && RecordSize < FreeRecordBin.MinRecordSize)
+                throw new FasterException($"Invalid RecordSize {RecordSize}; must be >= {FreeRecordBin.MinRecordSize}");
             if (NumberOfPartitions <= 1)
                 throw new FasterException($"Invalid NumberOfPartitions {NumberOfPartitions}; must be > 1");
-            if (NumberOfRecordsPerPartition <= FreeRecordBin.MinimumPartitionSize)
-                throw new FasterException($"Invalid NumberOfRecordsPerPartition {NumberOfRecordsPerPartition}; must be > {FreeRecordBin.MinimumPartitionSize}");
+            if (NumberOfRecordsPerPartition <= FreeRecordBin.MinPartitionSize)
+                throw new FasterException($"Invalid NumberOfRecordsPerPartition {NumberOfRecordsPerPartition}; must be > {FreeRecordBin.MinPartitionSize}");
             if (NumberOfPartitionsToTraverse < 0 || NumberOfPartitionsToTraverse > NumberOfPartitions)
                 throw new FasterException($"NumberOfPartitionsToTraverse {NumberOfPartitionsToTraverse} must be >= 0 and must not exceed NumberOfPartitions {NumberOfPartitions}; use 0 for 'all'");
         }
@@ -148,7 +148,7 @@ namespace FASTER.core
         public PowerOf2BinsRevivificationSettings() : base()
         {
             List<RevivificationBin> binList = new();
-            for (var size = FreeRecordPool.MinRecordSize; size <= RevivificationBin.MaxInlineRecordSize; size *= 2)
+            for (var size = FreeRecordBin.MinRecordSize; size <= RevivificationBin.MaxInlineRecordSize; size *= 2)
                 binList.Add(new RevivificationBin ()
                     {
                         RecordSize = size,

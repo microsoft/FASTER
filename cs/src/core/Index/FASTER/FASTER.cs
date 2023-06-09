@@ -80,7 +80,7 @@ namespace FASTER.core
         internal bool EnableRevivification = false;
         internal bool UseFreeRecordPool => EnableRevivification && FreeRecordPool is not null;
         internal bool FreeRecordPoolHasRecords => UseFreeRecordPool && FreeRecordPool.HasRecords;
-        internal FreeRecordPool FreeRecordPool;
+        internal FreeRecordPool<Key, Value> FreeRecordPool;
 
         /// <summary>
         /// Create FasterKV instance

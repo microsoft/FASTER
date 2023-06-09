@@ -21,15 +21,25 @@ namespace FASTER.core
         const long kSizeMask = RevivificationBin.MaxInlineRecordSize - 1;
         const long kSizeMaskInWord = kSizeMask << kSizeShiftInWord;
 
-        // This is the empty word we replace the current word with on Reads.
-        private const long emptyWord = 0;
+        // This is the "latch" on the FreeRecord; a thread that is Set()ing or Take()ing will CAS to this to "own" the record
+        // and do the update. No other thread is allowed to touch the record while the epoch is this value.
+        const long Epoch_Latched = -1;
 
-        #region Start of instance data
+        // Marks the record as empty. LightEpoch.CurrentEpoch is initialized to 1, so this is not a valid epoch value (and is the default value for long).
+        const long Epoch_Empty = 0;
+
+        #region Instance data
         // 'word' contains the reclaimable logicalAddress and the size of the record at that address.
         private long word;
 
-        internal const int StructSize = sizeof(long);
-        #endregion Start of instance data
+        // The epoch in which this record was freed; it cannot be reused until all threads are past that epoch.
+        // It may also be one of the Epoch_* constants, for concurrency control.
+        private long freedEpoch;
+
+        internal const int StructSize = sizeof(long) * 2;
+        #endregion Instance data
+
+        private FreeRecord(long word) => this.word = word;
 
         public long Address
         {
@@ -51,66 +61,104 @@ namespace FASTER.core
             }
         }
 
-        private FreeRecord(long word) => this.word = word;
+        internal bool IsSet => IsSetEpoch(this.freedEpoch);
+        internal static bool IsSetEpoch(long epoch) => epoch > 0;
 
-        internal bool Set(long address, long size)
+        private static bool IsLatchedEpoch(long epoch) => epoch == Epoch_Latched;
+
+        internal bool Set(long freedEpoch, long address, long size)
         {
-            // If it's set, that means someone else won a race to set it (we will only be here on the first lap
-            // of the circular buffer, or on a subsequent lap after Read has read/cleared the record).
-            if (this.IsSet)
+            // It may be set; that means we have wrapped around and found an entry that has a record that failed Take() before.
+            // In that case, just overwrite it.
+            var epoch = this.freedEpoch;
+            if (IsLatchedEpoch(epoch) || Interlocked.CompareExchange(ref this.freedEpoch, Epoch_Latched, epoch) != epoch)
                 return false;
 
-            long newWord = (size << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
-            return Interlocked.CompareExchange(ref word, newWord, emptyWord) == emptyWord;
+            // Ignore oversize here--we check for that on Take()
+            this.word = (size << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
+            this.freedEpoch = freedEpoch;
+            return true;
         }
 
-        internal bool Take(long size, long minAddress, out long address)
+        void SetEmpty()
         {
-            FreeRecord old_record = new(this.word);
-            if (old_record.Size >= size && old_record.Address >= minAddress)
+            this.word = 0;  // Must be first
+            this.freedEpoch = Epoch_Empty;
+        }
+
+        internal bool Peek(long safeEpoch)
+        {
+            if (!IsSet)
+                return false; // Enqueue has incremented 'write' but not yet written to it
+            long epoch;
+            while (IsLatchedEpoch(epoch = this.freedEpoch))
+                Thread.Yield();
+            return epoch <= safeEpoch;
+        }
+
+        internal bool Take(long safeEpoch, long size, long minAddress, out long address)
+        {
+            address = 0;
+
+            // This is subject to extremely unlikely ABA--someone else could Set() a new address with the same epoch.
+            // If so, it doesn't matter; we just return the address that's there.
+            var epoch = this.freedEpoch;
+            FreeRecord oldRecord = new(this.word);
+            if (!IsSetEpoch(epoch) || epoch > safeEpoch || oldRecord.Size < size || oldRecord.Address < minAddress
+                || Interlocked.CompareExchange(ref this.freedEpoch, Epoch_Latched, epoch) != epoch)
             {
-                if (Interlocked.CompareExchange(ref word, emptyWord, old_record.word) == old_record.word)
-                {
-                    address = old_record.Address;
-                    return true;
-                }
-                Debug.Assert(this.word == emptyWord, "CAS should only fail if another thread did Take() first, which would leave word==emptyWord");
+                // Failed to CAS the epoch; leave 'word' unchanged
+                return false;
             }
 
-            address = emptyWord;
+            // At this point we must unlatch. Recheck 'word' after the latch.
+            if (this.Size >= size && this.Address >= minAddress)
+            {
+                address = this.Address;
+                SetEmpty();
+                return true;
+            }
+
+            SetEmpty();
             return false;
         }
 
-        internal unsafe bool Take<Key, Value>(long size, long minAddress, FasterKV<Key, Value> fkv, out long address)
+        internal unsafe bool Take<Key, Value>(long safeEpoch, long size, long minAddress, FasterKV<Key, Value> fkv, out long address)
         {
-            FreeRecord old_record = new(this.word);
-            if (old_record.Address >= minAddress)
-            {
-                // Because this is oversize, we need hlog to get the length out of the record's value (it won't fit in FreeRecord.kSizeBits)
-                long physicalAddress = fkv.hlog.GetPhysicalAddress(old_record.Address);
-                long recordSize = fkv.GetFreeRecordSize(physicalAddress, ref fkv.hlog.GetInfo(physicalAddress));
+            address = 0;
 
+            var epoch = this.freedEpoch;
+            FreeRecord oldRecord = new(this.word);
+            if (!IsSetEpoch(epoch) || epoch > safeEpoch || oldRecord.Address < minAddress
+                || Interlocked.CompareExchange(ref this.freedEpoch, Epoch_Latched, epoch) != epoch)
+            {
+                // Failed to CAS the epoch; leave 'word' unchanged
+                return false;
+            }
+
+            // At this point we must unlatch. Recheck 'word' after the latch.
+            if (this.Address >= minAddress)
+            { 
+                // Because this is oversize, we need hlog to get the length out of the record's value (it won't fit in FreeRecord.kSizeBits)
+                long physicalAddress = fkv.hlog.GetPhysicalAddress(this.Address);
+                long recordSize = fkv.GetFreeRecordSize(physicalAddress, ref fkv.hlog.GetInfo(physicalAddress));
                 if (recordSize >= size)
                 {
-                    if (Interlocked.CompareExchange(ref word, emptyWord, old_record.word) == old_record.word)
-                    {
-                        address = old_record.Address;
-                        return true;
-                    }
-                    Debug.Assert(this.word == emptyWord, "CAS should only fail if another thread did Take() first, which would leave word==emptyWord");
+                    address = this.Address;
+                    SetEmpty();
+                    return true;
                 }
             }
 
-            address = emptyWord;
+            SetEmpty();
             return false;
         }
-
-        internal bool IsSet => word != emptyWord;
     }
 
     internal unsafe class FreeRecordBin : IDisposable
     {
-        internal const int MinimumPartitionSize = 4;    // Make sure we have enough for the initial read/write pointers as well as enough to be useful
+        internal const int MinRecordSize = 16;      // RecordInfo + int key/value
+        internal const int MinPartitionSize = 4;    // Make sure we have enough for the initial read/write pointers as well as enough to be useful
 
         private readonly FreeRecord[] recordsArray;
         internal readonly int partitionCount;
@@ -197,10 +245,10 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Enqueue(long address, int size) => Enqueue(address, size, GetInitialPartitionIndex());
+        public bool Enqueue<Key, Value>(long address, int size, FasterKV<Key, Value> fkv) => Enqueue(address, size, fkv, GetInitialPartitionIndex());
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Enqueue(long address, int size, int initialPartitionIndex)
+        public bool Enqueue<Key, Value>(long address, int size, FasterKV<Key, Value> fkv, int initialPartitionIndex)
         {
             for (var iPart = 0; iPart < this.numberOfPartitionsToTraverse; ++iPart)
             {
@@ -216,7 +264,7 @@ namespace FASTER.core
                         break; // The partition is full
                     if (Interlocked.CompareExchange(ref write, nextWrite, currWrite) != currWrite)
                         continue;
-                    if ((partitionStart + nextWrite)->Set(address, size))
+                    if ((partitionStart + nextWrite)->Set(fkv.epoch.CurrentEpoch, address, size))
                         return true;
                 }
             }
@@ -224,9 +272,9 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Dequeue<Key, Value>(int size, long minAddress, out long address) => Dequeue<Key, Value>(size, minAddress, null, out address);
+        public bool Dequeue<Key, Value>(int size, long minAddress, FasterKV<Key, Value> fkv, out long address) => Dequeue(size, minAddress, fkv, oversize: false, out address);
 
-        public bool Dequeue<Key, Value>(int size, long minAddress, FasterKV<Key, Value> fkv, out long address)
+        public bool Dequeue<Key, Value>(int size, long minAddress, FasterKV<Key, Value> fkv, bool oversize, out long address)
         {
             // We skip over records that do not meet the minAddress requirement.
             // If this is the oversize bin, we may also skip over records that fail to satisfy the size requirement.
@@ -244,13 +292,19 @@ namespace FASTER.core
                     if (currRead == write)
                         break; // The partition is empty
                     var nextRead = Increment(currRead);
-                    if (nextRead == write && !(partitionStart + nextRead)->IsSet)
-                        break; // Enqueue has incremented 'write' but not yet written to it.
+                    FreeRecord* record = partitionStart + nextRead;
+
+                    // First peek to see if the first epoch is reclaimable. These being circular buffers, we know the epoch will
+                    // be monotonically non-decreasing; if the first one is too high, all the others in that partition will be.
+                    // We do not want to skip over these.
+                    long safeToReclaimEpoch = fkv.epoch.SafeToReclaimEpoch;
+                    if (!record->Peek(safeToReclaimEpoch))
+                        break; // Skip this partition
+
                     if (Interlocked.CompareExchange(ref read, nextRead, currRead) != currRead)
                         continue;
 
-                    FreeRecord* record = partitionStart + nextRead;
-                    if (fkv is null ? record->Take(size, minAddress, out address) : record->Take(size, minAddress, fkv, out address))
+                    if (oversize ? record->Take(safeToReclaimEpoch, size, minAddress, fkv, out address) : record->Take(safeToReclaimEpoch, size, minAddress, out address))
                         return true;
                 }
             }
@@ -268,10 +322,14 @@ namespace FASTER.core
         }
     }
 
-    internal unsafe class FreeRecordPool : IDisposable
+    internal class FreeRecordPool
     {
-        internal const int MinRecordSize = 16;  // RecordInfo + int key/value
+        internal const int DefaultBumpIntervalMs = 1000;
+    }
 
+    internal unsafe class FreeRecordPool<Key, Value> : FreeRecordPool, IDisposable
+    {
+        private readonly FasterKV<Key, Value> fkv;
         internal readonly FreeRecordBin[] bins;
 
         internal bool IsFixedLength;
@@ -284,12 +342,18 @@ namespace FASTER.core
         internal readonly int[] indexArray;
         private readonly int* index;
         private readonly int numBins;
+
+        readonly System.Timers.Timer timer = new(DefaultBumpIntervalMs);
+        long lastFreedEpoch = 0;        // 0 is invalid epoch
+        long NumberOfRecordsAtLastFreedEpoch;
+
 #if !NET5_0_OR_GREATER
         private readonly GCHandle indexHandle;
 #endif
 
-        internal FreeRecordPool(RevivificationSettings settings, int fixedRecordLength)
+        internal FreeRecordPool(FasterKV<Key, Value> fkv, RevivificationSettings settings, int fixedRecordLength)
         {
+            this.fkv = fkv;
             this.IsFixedLength = fixedRecordLength > 0;
             settings.Verify(this.IsFixedLength);
 
@@ -329,6 +393,14 @@ namespace FASTER.core
                 binList.Add(new FreeRecordBin(ref settings.FreeListBins[ii]));
             this.bins = binList.ToArray();
             this.SearchNextHighestBin = settings.SearchNextHighestBin;
+
+            // Timer will be started manually each time needed.
+            timer.AutoReset = false;
+            timer.Elapsed += (object source, System.Timers.ElapsedEventArgs e) =>
+            {
+                fkv.BumpCurrentEpoch();
+                this.NumberOfRecordsAtLastFreedEpoch = this.NumberOfRecords;
+            };
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -354,26 +426,49 @@ namespace FASTER.core
         {
             if (this.IsFixedLength)
             {
-                if (!bins[0].Enqueue(address, size))
+                if (!bins[0].Enqueue(address, size, this.fkv))
                     return false;
             }
             else
             { 
-                if (!GetBinIndex(size, out int index) || !bins[index].Enqueue(address, size))
+                if (!GetBinIndex(size, out int index) || !bins[index].Enqueue(address, size, this.fkv))
                     return false;
             }
-            Interlocked.Increment(ref this.numberOfRecords);
+
+            var numRec = Interlocked.Increment(ref this.numberOfRecords);
+
+            if (MonotonicUpdate(ref lastFreedEpoch, fkv.epoch.CurrentEpoch, out _))
+            {
+                // We just enqueued the first record of a new epoch; start the timer.
+                this.NumberOfRecordsAtLastFreedEpoch = numRec;
+                this.timer.Interval = DefaultBumpIntervalMs;
+                this.timer.Enabled = true;
+            }
+            else
+            {
+                // See if we have enough records to shorten the interval. Default timer resolution is about 15 ms.
+                var elapsedNumRec = this.numberOfRecords - this.NumberOfRecordsAtLastFreedEpoch;
+                if (elapsedNumRec > 20 && elapsedNumRec % 10 == 0)
+                {
+                    // This could have a race that overwrites a lower value with a greater one, but it's not worth more
+                    // interlocks to avoid it before we get to 1 (0 is invalid) and stop setting it.
+                    var interval = elapsedNumRec >= 100 ? 1 : (100 - elapsedNumRec);
+                    if (timer.Interval > interval)
+                        timer.Interval = interval;
+                }
+            }
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Dequeue<Key, Value>(int size, long minAddress, FasterKV<Key, Value> fkv, out long address)
+        public bool Dequeue(int size, long minAddress, out long address)
         {
             address = 0;
 
             if (this.IsFixedLength)
             { 
-                if (!bins[0].Dequeue<Key, Value>(size, minAddress, out address))
+                // We only have one bin, so pass a minimal record size to make it effectively ignored.
+                if (!bins[0].Dequeue(RecordInfo.GetLength(), minAddress, this.fkv, out address))
                     return false;
             }
             else
@@ -381,19 +476,14 @@ namespace FASTER.core
                 if (!GetBinIndex(size, out int index))
                     return false;
 
-                // If the bin's max size can't be stored "inline" within the FreeRecord's size storage, then we must pass
-                // the fkv to retrieve the record length.
-                var result = (this.index[index] < RevivificationBin.MaxInlineRecordSize)
-                    ? bins[index].Dequeue<Key, Value>(size, minAddress, out address)
-                    : bins[index].Dequeue(size, minAddress, fkv, out address);
+                // If the bin's max size can't be stored "inline" within the FreeRecord's size storage, then it is oversize and uses the fkv to get the record's length.
+                var result = bins[index].Dequeue(size, minAddress, this.fkv, oversize: this.index[index] > RevivificationBin.MaxInlineRecordSize, out address);
 
                 // If unsuccessful, try the next-highest bin if requested.
                 if (!result && this.SearchNextHighestBin && index < this.numBins - 1)
                 { 
                     ++index;
-                    result = (this.index[index] < RevivificationBin.MaxInlineRecordSize)
-                        ? bins[index].Dequeue<Key, Value>(size, minAddress, out address)
-                        : bins[index].Dequeue(size, minAddress, fkv, out address);
+                    result = bins[index].Dequeue(size, minAddress, this.fkv, oversize: this.index[index] > RevivificationBin.MaxInlineRecordSize, out address);
                 }
 
                 if (!result)
@@ -408,6 +498,7 @@ namespace FASTER.core
         {
             foreach (var bin in this.bins)
                 bin.Dispose();
+            timer.Dispose();
 #if !NET5_0_OR_GREATER
             if (this.indexHandle.IsAllocated)
                 this.indexHandle.Free();

@@ -25,6 +25,12 @@ namespace FASTER.core
             pendingContext.version = sessionCtx.version;
         }
 
+        /// <summary>
+        /// Increment global current epoch
+        /// </summary>
+        /// <returns></returns>
+        public long BumpCurrentEpoch() => this.epoch.BumpCurrentEpoch();
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void SpinWaitUntilClosed(long address)
         {

@@ -25,7 +25,7 @@ namespace FASTER.core
             varLenValueOnlyLengthStruct = varLenStruct;
             varLenAllocator = this.hlog as VariableLengthBlittableAllocator<Key, Value>;
             if (settings.FreeListBins?.Length > 0)
-                this.FreeRecordPool = new FreeRecordPool(settings, fixedRecordLength ? hlog.GetAverageRecordSize() : -1);
+                this.FreeRecordPool = new FreeRecordPool<Key, Value>(this, settings, fixedRecordLength ? hlog.GetAverageRecordSize() : -1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -143,7 +143,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int GetFreeRecordSize(long physicalAddress, ref RecordInfo recordInfo)
         {
-            Debug.Assert(recordInfo.Filler, "GetFreeRecordSize: Should have filler set");
+            Debug.Assert(IsFixedLengthReviv || recordInfo.Filler, "GetFreeRecordSize: Varlen should have filler set");
             return IsFixedLengthReviv ? hlog.GetAverageRecordSize() : *GetFreeRecordSizePointer(physicalAddress);
         }
 
@@ -153,7 +153,7 @@ namespace FASTER.core
 
         bool TryDequeueFreeRecord(ref int allocatedSize, HashBucketEntry entry, out long logicalAddress, out long physicalAddress)
         {
-            if (FreeRecordPoolHasRecords && FreeRecordPool.Dequeue(allocatedSize, MinFreeRecordAddress(entry), this, out logicalAddress))
+            if (FreeRecordPoolHasRecords && FreeRecordPool.Dequeue(allocatedSize, MinFreeRecordAddress(entry), out logicalAddress))
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
