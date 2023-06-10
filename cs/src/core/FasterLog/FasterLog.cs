@@ -1706,6 +1706,35 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafely shift the begin address of the log and optionally truncate files on disk, without committing.
+        /// Do not use unless you know what you are doing.
+        /// </summary>
+        /// <param name="untilAddress"></param>
+        /// <param name="snapToPageStart"></param>
+        /// <param name="truncateLog"></param>
+        public void UnsafeShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
+        {
+            if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
+            {
+                if (snapToPageStart)
+                    untilAddress &= ~allocator.PageSizeMask;
+
+                bool epochProtected = epoch.ThisInstanceProtected();
+                try
+                {
+                    if (!epochProtected)
+                        epoch.Resume();
+                    allocator.ShiftBeginAddress(untilAddress, truncateLog);
+                }
+                finally
+                {
+                    if (!epochProtected)
+                        epoch.Suspend();
+                }
+            }
+        }
+
+        /// <summary>
         /// Truncate the log until the start of the page corresponding to untilAddress. This is 
         /// safer than TruncateUntil, as page starts are always a valid truncation point. The
         /// truncation is not persisted until the next commit.
