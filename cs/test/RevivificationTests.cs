@@ -45,15 +45,15 @@ namespace FASTER.test.Revivification
         internal static FreeRecordPool<TKey, TValue> CreateSingleBinFreeRecordPool<TKey, TValue>(FasterKV<TKey, TValue> fkv, RevivificationBin binDef, int fixedRecordLength = 0)
             => new (fkv, new RevivificationSettings() { FreeListBins = new[] { binDef } }, fixedRecordLength);
 
-        internal static void WaitForEpochBump<TKey, TValue>(FasterKV<TKey, TValue> fkv)
-            => WaitForEpochBump(fkv, fkv.epoch.CurrentEpoch + 1);
+        internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv)
+            => WaitForSafeEpoch(fkv, fkv.epoch.CurrentEpoch);
 
-        internal static void WaitForEpochBump<TKey, TValue>(FasterKV<TKey, TValue> fkv, long targetEpoch, int timeoutMs = FreeRecordPool<int, int>.DefaultBumpIntervalMs * 2)
+        internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv, long targetSafeEpoch, int timeoutMs = BumpCurrentEpochTimer.DefaultBumpIntervalMs * 2)
         {
             // Wait until the timer calls BumpCurrentEpoch.
             var sw = new Stopwatch();
             sw.Start();
-            while (fkv.epoch.CurrentEpoch < targetEpoch)
+            while (fkv.epoch.SafeToReclaimEpoch < targetSafeEpoch)
             {
                 Assert.Less(sw.ElapsedMilliseconds, timeoutMs, "Timeout while waiting for BumpCurrentEpoch");
                 Thread.Yield();
@@ -944,7 +944,7 @@ namespace FASTER.test.Revivification
             functions.expectedConcurrentDestLength = InitialLength;
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
-            RevivificationTestUtils.WaitForEpochBump(fkv);
+            RevivificationTestUtils.WaitForSafeEpoch(fkv);
 
             // Revivify
             for (var ii = 0; ii < numRecords; ++ii)
@@ -992,8 +992,12 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        [Repeat(30)]
         public unsafe void ArtificialBinWrappingTest()
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
             Populate();
 
             const int recordSize = 42;
@@ -1029,7 +1033,7 @@ namespace FASTER.test.Revivification
             //   The tail cannot be incremented to be equal to head (or the list would be considered empty), so we lose one element of capacity
             Assert.AreEqual(bin.partitionSize - 2, count);
 
-            RevivificationTestUtils.WaitForEpochBump(fkv);
+            RevivificationTestUtils.WaitForSafeEpoch(fkv);
 
             // Dequeue one to open up a space in the partition.
             Assert.IsTrue(bin.Dequeue(recordSize, minAddress, fkv, out _));
@@ -1261,7 +1265,7 @@ namespace FASTER.test.Revivification
             if (!stayInChain)
             { 
                 Assert.IsTrue(fkv.FreeRecordPoolHasRecords, "Expected a record in the FreeRecordPool for freelist mode");
-                RevivificationTestUtils.WaitForEpochBump(fkv);
+                RevivificationTestUtils.WaitForSafeEpoch(fkv);
             }
 
             var tailAddress = fkv.Log.TailAddress;
@@ -1686,7 +1690,7 @@ namespace FASTER.test.Revivification
                             Assert.IsTrue(freeRecordPool.Enqueue(ii, size));
                         }
 
-                        RevivificationTestUtils.WaitForEpochBump(fkv);
+                        RevivificationTestUtils.WaitForSafeEpoch(fkv);
 
                         // Continue until all are dequeued or we hit the retry limit.
                         List<int> strayFlags = new();

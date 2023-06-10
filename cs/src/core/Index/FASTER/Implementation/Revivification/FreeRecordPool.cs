@@ -32,9 +32,9 @@ namespace FASTER.core
         // 'word' contains the reclaimable logicalAddress and the size of the record at that address.
         private long word;
 
-        // The epoch in which this record was freed; it cannot be reused until all threads are past that epoch.
+        // The epoch in which this record was enqueued; it cannot be reused until all threads are past that epoch.
         // It may also be one of the Epoch_* constants, for concurrency control.
-        private long freedEpoch;
+        private long enqueuedEpoch;
 
         internal const int StructSize = sizeof(long) * 2;
         #endregion Instance data
@@ -61,29 +61,29 @@ namespace FASTER.core
             }
         }
 
-        internal bool IsSet => IsSetEpoch(this.freedEpoch);
+        internal bool IsSet => IsSetEpoch(this.enqueuedEpoch);
         internal static bool IsSetEpoch(long epoch) => epoch > 0;
 
         private static bool IsLatchedEpoch(long epoch) => epoch == Epoch_Latched;
 
-        internal bool Set(long freedEpoch, long address, long size)
+        internal bool Set(long enqueuedEpoch, long address, long size)
         {
             // It may be set; that means we have wrapped around and found an entry that has a record that failed Take() before.
             // In that case, just overwrite it.
-            var epoch = this.freedEpoch;
-            if (IsLatchedEpoch(epoch) || Interlocked.CompareExchange(ref this.freedEpoch, Epoch_Latched, epoch) != epoch)
+            var epoch = this.enqueuedEpoch;
+            if (IsLatchedEpoch(epoch) || Interlocked.CompareExchange(ref this.enqueuedEpoch, Epoch_Latched, epoch) != epoch)
                 return false;
 
             // Ignore oversize here--we check for that on Take()
             this.word = (size << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
-            this.freedEpoch = freedEpoch;
+            this.enqueuedEpoch = enqueuedEpoch;
             return true;
         }
 
         void SetEmpty()
         {
             this.word = 0;  // Must be first
-            this.freedEpoch = Epoch_Empty;
+            this.enqueuedEpoch = Epoch_Empty;
         }
 
         internal bool Peek(long safeEpoch)
@@ -91,7 +91,7 @@ namespace FASTER.core
             if (!IsSet)
                 return false; // Enqueue has incremented 'write' but not yet written to it
             long epoch;
-            while (IsLatchedEpoch(epoch = this.freedEpoch))
+            while (IsLatchedEpoch(epoch = this.enqueuedEpoch))
                 Thread.Yield();
             return epoch <= safeEpoch;
         }
@@ -102,10 +102,10 @@ namespace FASTER.core
 
             // This is subject to extremely unlikely ABA--someone else could Set() a new address with the same epoch.
             // If so, it doesn't matter; we just return the address that's there.
-            var epoch = this.freedEpoch;
+            var epoch = this.enqueuedEpoch;
             FreeRecord oldRecord = new(this.word);
             if (!IsSetEpoch(epoch) || epoch > safeEpoch || oldRecord.Size < size || oldRecord.Address < minAddress
-                || Interlocked.CompareExchange(ref this.freedEpoch, Epoch_Latched, epoch) != epoch)
+                || Interlocked.CompareExchange(ref this.enqueuedEpoch, Epoch_Latched, epoch) != epoch)
             {
                 // Failed to CAS the epoch; leave 'word' unchanged
                 return false;
@@ -127,10 +127,10 @@ namespace FASTER.core
         {
             address = 0;
 
-            var epoch = this.freedEpoch;
+            var epoch = this.enqueuedEpoch;
             FreeRecord oldRecord = new(this.word);
             if (!IsSetEpoch(epoch) || epoch > safeEpoch || oldRecord.Address < minAddress
-                || Interlocked.CompareExchange(ref this.freedEpoch, Epoch_Latched, epoch) != epoch)
+                || Interlocked.CompareExchange(ref this.enqueuedEpoch, Epoch_Latched, epoch) != epoch)
             {
                 // Failed to CAS the epoch; leave 'word' unchanged
                 return false;
@@ -322,12 +322,81 @@ namespace FASTER.core
         }
     }
 
-    internal class FreeRecordPool
+    struct BumpCurrentEpochTimer
     {
+        // We're maxing the timer enqueue count at a value within byte range, leaving 56 bits for epoch.
+        // If we updated the epoch every millisecond, it would overflow 56 bits in 2 million years.
+        internal const uint MaxCountForTimer = 100;    // Must fit in a byte
+        internal const uint IntervalForTimer = 10;
+
+        // Default values are 0 count, 0 epoch (0 is an invalid epoch; they start at 1).
+        private long word;
+
+        private const int kEpochBits = 56;
+        private const long kEpochMaskInWord = (1L << kEpochBits) - 1;
+        private const int kCountShiftInWord = kEpochBits;
+        private const int kCountMaskInWord = 0xFF << kCountShiftInWord;
+
         internal const int DefaultBumpIntervalMs = 1000;
+
+        private readonly Timer timer;
+
+        internal BumpCurrentEpochTimer(Timer timer) => this.timer = timer;
+
+        private uint Count
+        {
+            get => (uint)(word >> kCountShiftInWord);
+            set => word = (word & ~kCountMaskInWord) | (value << kCountShiftInWord);
+        }
+
+        public long Epoch
+        {
+            get => word & kEpochMaskInWord;
+            set => word = (word & ~kEpochMaskInWord) | (value & kEpochMaskInWord);
+        }
+
+        internal void Increment(long currentEpoch)
+        {
+            var oldStruct = this;
+            var newStruct = this;
+            if (oldStruct.Epoch == currentEpoch)
+            {
+                if (oldStruct.Count > MaxCountForTimer)
+                    return;
+                var count = oldStruct.Count + 1;
+                if (count > IntervalForTimer && count % IntervalForTimer == 0)
+                {
+                    // If more than MaxCountForTimer, execute the callback immediately; the Infinite period disables autoReset.
+                    var dueTime = (count == MaxCountForTimer) ? 0 : MaxCountForTimer - count;
+                    newStruct.Count = count;
+                    if (Interlocked.CompareExchange(ref this.word, newStruct.word, oldStruct.word) == oldStruct.word)
+                        this.timer.Change(dueTime, period: Timeout.Infinite);
+                }
+                return;
+            }
+
+            do 
+            {
+                newStruct.Count = 0;
+                newStruct.Epoch = currentEpoch;
+                if (Interlocked.CompareExchange(ref this.word, newStruct.word, oldStruct.word) == oldStruct.word)
+                {
+                    // We just enqueued the first record of a new epoch; start the timer.
+                    this.timer.Change(dueTime: DefaultBumpIntervalMs, period: Timeout.Infinite);
+                    return;
+                }
+                oldStruct = this;   // If we're here, another thread updated this.word
+            } while (oldStruct.Epoch < currentEpoch);
+        }
+
+        internal void Dispose()
+        {
+            this.timer?.Dispose();
+            this = default;
+        }
     }
 
-    internal unsafe class FreeRecordPool<Key, Value> : FreeRecordPool, IDisposable
+    internal unsafe class FreeRecordPool<Key, Value> : IDisposable
     {
         private readonly FasterKV<Key, Value> fkv;
         internal readonly FreeRecordBin[] bins;
@@ -343,9 +412,7 @@ namespace FASTER.core
         private readonly int* index;
         private readonly int numBins;
 
-        readonly System.Timers.Timer timer = new(DefaultBumpIntervalMs);
-        long lastFreedEpoch = 0;        // 0 is invalid epoch
-        long NumberOfRecordsAtLastFreedEpoch;
+        BumpCurrentEpochTimer bumpTimer;
 
 #if !NET5_0_OR_GREATER
         private readonly GCHandle indexHandle;
@@ -356,6 +423,9 @@ namespace FASTER.core
             this.fkv = fkv;
             this.IsFixedLength = fixedRecordLength > 0;
             settings.Verify(this.IsFixedLength);
+
+            // Timer will be started manually each time needed. Create this before "exit if IsFixedLength".
+            bumpTimer = new(timer: new(state => fkv.BumpCurrentEpoch()));
 
             if (this.IsFixedLength)
             {
@@ -393,14 +463,6 @@ namespace FASTER.core
                 binList.Add(new FreeRecordBin(ref settings.FreeListBins[ii]));
             this.bins = binList.ToArray();
             this.SearchNextHighestBin = settings.SearchNextHighestBin;
-
-            // Timer will be started manually each time needed.
-            timer.AutoReset = false;
-            timer.Elapsed += (object source, System.Timers.ElapsedEventArgs e) =>
-            {
-                fkv.BumpCurrentEpoch();
-                this.NumberOfRecordsAtLastFreedEpoch = this.NumberOfRecords;
-            };
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -408,7 +470,7 @@ namespace FASTER.core
         {
             Debug.Assert(!this.IsFixedLength, "Should only search bins if !IsFixedLength");
 
-            // Sequential search in the bin for now. TODO: Profile; consider a binary search if we have enough bins.
+            // Sequential search in the bin for the requested size.
             for (var ii = 0; ii < this.numBins; ++ii)
             {
                 if (index[ii] >= size)
@@ -424,39 +486,18 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Enqueue(long address, int size)
         {
-            if (this.IsFixedLength)
-            {
-                if (!bins[0].Enqueue(address, size, this.fkv))
-                    return false;
-            }
-            else
-            { 
-                if (!GetBinIndex(size, out int index) || !bins[index].Enqueue(address, size, this.fkv))
-                    return false;
-            }
+            int binIndex = 0;
+            if (!this.IsFixedLength && !GetBinIndex(size, out binIndex))
+                return false;
+            if (!bins[binIndex].Enqueue(address, size, this.fkv))
+                return false;
 
-            var numRec = Interlocked.Increment(ref this.numberOfRecords);
+            Interlocked.Increment(ref this.numberOfRecords);
 
-            if (MonotonicUpdate(ref lastFreedEpoch, fkv.epoch.CurrentEpoch, out _))
-            {
-                // We just enqueued the first record of a new epoch; start the timer.
-                this.NumberOfRecordsAtLastFreedEpoch = numRec;
-                this.timer.Interval = DefaultBumpIntervalMs;
-                this.timer.Enabled = true;
-            }
-            else
-            {
-                // See if we have enough records to shorten the interval. Default timer resolution is about 15 ms.
-                var elapsedNumRec = this.numberOfRecords - this.NumberOfRecordsAtLastFreedEpoch;
-                if (elapsedNumRec > 20 && elapsedNumRec % 10 == 0)
-                {
-                    // This could have a race that overwrites a lower value with a greater one, but it's not worth more
-                    // interlocks to avoid it before we get to 1 (0 is invalid) and stop setting it.
-                    var interval = elapsedNumRec >= 100 ? 1 : (100 - elapsedNumRec);
-                    if (timer.Interval > interval)
-                        timer.Interval = interval;
-                }
-            }
+            // We need a separate enqueue count, not just the different # of records; otherwise dequeue/enqueue
+            // could enter a state where we continuously drop below and rise above the same delta, and therefore
+            // continuously extend the timeout.
+            bumpTimer.Increment(fkv.epoch.CurrentEpoch);
             return true;
         }
 
@@ -498,7 +539,7 @@ namespace FASTER.core
         {
             foreach (var bin in this.bins)
                 bin.Dispose();
-            timer.Dispose();
+            bumpTimer.Dispose();
 #if !NET5_0_OR_GREATER
             if (this.indexHandle.IsAllocated)
                 this.indexHandle.Free();
