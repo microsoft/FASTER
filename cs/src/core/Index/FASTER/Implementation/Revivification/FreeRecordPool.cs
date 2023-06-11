@@ -324,10 +324,17 @@ namespace FASTER.core
 
     struct BumpCurrentEpochTimer
     {
+        // This is balanced with Interval* and MaxCountForTimer to divide by 2 until we hit 16, which is the timer
+        // resolution on Windows. If we have >= MaxCountForTimer records, we'll fire the timer immediately.
+        // So (DefaultBumpIntervalMs >> (MaxCountForTimer >> IntervalShift)) should == 8, because we'll set the dueTime
+        // to zero in that case, and any multiple of IntervalForTimer < MaxCountForTimer will result in >= 16ms.
+        internal const int DefaultBumpIntervalMs = 1024;
+
         // We're maxing the timer enqueue count at a value within byte range, leaving 56 bits for epoch.
         // If we updated the epoch every millisecond, it would overflow 56 bits in 2 million years.
-        internal const uint MaxCountForTimer = 100;    // Must fit in a byte
-        internal const uint IntervalForTimer = 10;
+        internal const uint MaxCountForTimer = 112;    // Must fit in a byte, and see comments for DefaultBumpIntervalMs
+        internal const int IntervalShift = 4;
+        internal const uint IntervalForTimer = 1 << IntervalShift;
 
         // Default values are 0 count, 0 epoch (0 is an invalid epoch; they start at 1).
         private long word;
@@ -335,18 +342,16 @@ namespace FASTER.core
         private const int kEpochBits = 56;
         private const long kEpochMaskInWord = (1L << kEpochBits) - 1;
         private const int kCountShiftInWord = kEpochBits;
-        private const int kCountMaskInWord = 0xFF << kCountShiftInWord;
+        private const long kCountMaskInWord = (long)0xFF << kCountShiftInWord;
 
-        internal const int DefaultBumpIntervalMs = 1000;
-
-        private readonly Timer timer;
+        private Timer timer;
 
         internal BumpCurrentEpochTimer(Timer timer) => this.timer = timer;
 
         private uint Count
         {
             get => (uint)(word >> kCountShiftInWord);
-            set => word = (word & ~kCountMaskInWord) | (value << kCountShiftInWord);
+            set => word = (word & ~kCountMaskInWord) | ((long)value << kCountShiftInWord);
         }
 
         public long Epoch
@@ -361,16 +366,21 @@ namespace FASTER.core
             var newStruct = this;
             if (oldStruct.Epoch == currentEpoch)
             {
-                if (oldStruct.Count > MaxCountForTimer)
+                // If the count is == the limit, that means another thread already handled it, so just return.
+                if (oldStruct.Count == MaxCountForTimer)
                     return;
-                var count = oldStruct.Count + 1;
-                if (count > IntervalForTimer && count % IntervalForTimer == 0)
+
+                // Try to set the new count. If it fails, that means another thread already did, so just return.
+                newStruct.Count = oldStruct.Count + 1;
+                if (oldStruct.word != Interlocked.CompareExchange(ref this.word, newStruct.word, oldStruct.word))
+                    return;
+
+                // Shorten the timer period if needed.
+                if (newStruct.Count % IntervalForTimer == 0)
                 {
                     // If more than MaxCountForTimer, execute the callback immediately; the Infinite period disables autoReset.
-                    var dueTime = (count == MaxCountForTimer) ? 0 : MaxCountForTimer - count;
-                    newStruct.Count = count;
-                    if (Interlocked.CompareExchange(ref this.word, newStruct.word, oldStruct.word) == oldStruct.word)
-                        this.timer.Change(dueTime, period: Timeout.Infinite);
+                    var dueTime = (newStruct.Count == MaxCountForTimer) ? 0 : DefaultBumpIntervalMs >> (int)(newStruct.Count >> IntervalShift);
+                    this.timer.Change(dueTime, period: Timeout.Infinite);
                 }
                 return;
             }

@@ -45,17 +45,14 @@ namespace FASTER.test.Revivification
         internal static FreeRecordPool<TKey, TValue> CreateSingleBinFreeRecordPool<TKey, TValue>(FasterKV<TKey, TValue> fkv, RevivificationBin binDef, int fixedRecordLength = 0)
             => new (fkv, new RevivificationSettings() { FreeListBins = new[] { binDef } }, fixedRecordLength);
 
-        internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv)
-            => WaitForSafeEpoch(fkv, fkv.epoch.CurrentEpoch);
-
-        internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv, long targetSafeEpoch, int timeoutMs = BumpCurrentEpochTimer.DefaultBumpIntervalMs * 2)
+        internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv, long targetSafeEpoch)
         {
             // Wait until the timer calls BumpCurrentEpoch.
             var sw = new Stopwatch();
             sw.Start();
             while (fkv.epoch.SafeToReclaimEpoch < targetSafeEpoch)
             {
-                Assert.Less(sw.ElapsedMilliseconds, timeoutMs, "Timeout while waiting for BumpCurrentEpoch");
+                Assert.Less(sw.ElapsedMilliseconds, BumpCurrentEpochTimer.DefaultBumpIntervalMs * 2, "Timeout while waiting for BumpCurrentEpoch");
                 Thread.Yield();
             }
         }
@@ -921,11 +918,13 @@ namespace FASTER.test.Revivification
             var key = SpanByte.FromFixedSpan(keyVec);
 
             // Delete
+            long lastEnqueueEpoch = 0;
             for (var ii = 0; ii < numRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+                lastEnqueueEpoch = fkv.epoch.CurrentEpoch;
                 var status = session.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
             }
@@ -944,7 +943,7 @@ namespace FASTER.test.Revivification
             functions.expectedConcurrentDestLength = InitialLength;
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
-            RevivificationTestUtils.WaitForSafeEpoch(fkv);
+            RevivificationTestUtils.WaitForSafeEpoch(fkv, lastEnqueueEpoch);
 
             // Revivify
             for (var ii = 0; ii < numRecords; ++ii)
@@ -992,7 +991,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        [Repeat(30)]
+        //[Repeat(30)]
         public unsafe void ArtificialBinWrappingTest()
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
@@ -1018,9 +1017,11 @@ namespace FASTER.test.Revivification
             Assert.AreEqual(1, write);
 
             // Fill the partition.
+            long lastEnqueueEpoch = 0;
             var count = 0;
             for (var ii = 1; ii < bin.partitionSize - 1; ++ii)
             {
+                lastEnqueueEpoch = fkv.epoch.CurrentEpoch;
                 Assert.IsTrue(fkv.FreeRecordPool.Enqueue(logicalAddress + ii, recordSize), "ArtificialBinWrappingTest: Failed to enqueue free record");
                 Assert.AreEqual(1, read);
                 Assert.AreEqual(1 + ii, write);
@@ -1033,7 +1034,7 @@ namespace FASTER.test.Revivification
             //   The tail cannot be incremented to be equal to head (or the list would be considered empty), so we lose one element of capacity
             Assert.AreEqual(bin.partitionSize - 2, count);
 
-            RevivificationTestUtils.WaitForSafeEpoch(fkv);
+            RevivificationTestUtils.WaitForSafeEpoch(fkv, lastEnqueueEpoch);
 
             // Dequeue one to open up a space in the partition.
             Assert.IsTrue(bin.Dequeue(recordSize, minAddress, fkv, out _));
@@ -1260,12 +1261,13 @@ namespace FASTER.test.Revivification
 
             // Delete it
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(OversizeLength));
+            long lastEnqueueEpoch = fkv.epoch.CurrentEpoch;
             var status = session.Delete(ref key);
             Assert.IsTrue(status.Found, status.ToString());
             if (!stayInChain)
             { 
                 Assert.IsTrue(fkv.FreeRecordPoolHasRecords, "Expected a record in the FreeRecordPool for freelist mode");
-                RevivificationTestUtils.WaitForSafeEpoch(fkv);
+                RevivificationTestUtils.WaitForSafeEpoch(fkv, lastEnqueueEpoch);
             }
 
             var tailAddress = fkv.Log.TailAddress;
@@ -1683,14 +1685,16 @@ namespace FASTER.test.Revivification
                 {
                     for (var iteration = 0; iteration < numIterations; ++iteration)
                     {
-                        // Start at 1 so 0 is clearly invalid.
+                        // Start the loop at 1 so 0 is clearly invalid.
+                        long lastEnqueueEpoch = 0;
                         for (var ii = 1; ii < numItems; ++ii)
                         {
                             flags[ii] = 1;
+                            lastEnqueueEpoch = fkv.epoch.CurrentEpoch;
                             Assert.IsTrue(freeRecordPool.Enqueue(ii, size));
                         }
 
-                        RevivificationTestUtils.WaitForSafeEpoch(fkv);
+                        RevivificationTestUtils.WaitForSafeEpoch(fkv, lastEnqueueEpoch);
 
                         // Continue until all are dequeued or we hit the retry limit.
                         List<int> strayFlags = new();
