@@ -257,7 +257,7 @@ namespace FASTER.darq
                     // Otherwise, just continue looping
                 }
 
-                Console.WriteLine("Colocated processor has exited");
+                Console.WriteLine($"Colocated processor has exited on worker {darq.Me().guid}");
                 terminationComplete.Set();
             }
             catch (Exception e)

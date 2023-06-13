@@ -114,6 +114,8 @@ namespace FASTER.server
         {
             terminationStart.Set();
             // TODO(Tianyu): this shutdown process is unsafe and may leave things unsent/unprocessed in the queue
+            darq.ForceCheckpoint();
+            Thread.Sleep(2000);
             backgroundWorker?.StopProcessingAsync().GetAwaiter().GetResult();
             backgroundWorker?.Dispose();
             server.Dispose();

@@ -53,7 +53,6 @@ public class HelloTaskProcessor : IDarqProcessor
                         name = new string((sbyte*)b, 2  * sizeof(int), size);
                     }
                 }
-                
 
                 string suffix;
                 switch (++count % 10)
@@ -83,26 +82,21 @@ public class HelloTaskProcessor : IDarqProcessor
                     var serializationBuffer = serializationBufferPool.Checkout();
                     var message = ComposeNextRequest(serializationBuffer, numGreetingsLeft - 1);
                     var nextWorker = workers[random.Next() % workers.Count];
-
                     requestBuilder.AddOutMessage(nextWorker, message);
-                    
+                    Console.WriteLine($"Greetings, {name}! You are the {count}{suffix} user to be greeted on worker {me.guid}!");
                     serializationBufferPool.Return(serializationBuffer);
                 }
                 else
                 {
                     // Send termination sequence to everyone so they exit 
+                    Console.WriteLine($"That's it folks. Bye! (worker {me.guid} terminating workload)");
                     foreach (var w in workers)
                         requestBuilder.AddOutMessage(w, BitConverter.GetBytes(-1));
                 }
-
-                var v = capabilities.Step(requestBuilder.FinishStep());
-                Debug.Assert(v.Result == StepStatus.SUCCESS);
+                
                 m.Dispose();
-                
-                Console.WriteLine($"Greetings, {name}! You are the {count}{suffix} user to be greeted on worker {me.guid}!");
-                if (numGreetingsLeft == 0)
-                    Console.WriteLine("That's it folks. Bye!");
-                
+                var v = capabilities.Step(requestBuilder.FinishStep());
+                Debug.Assert(v.GetAwaiter().GetResult() == StepStatus.SUCCESS);
                 return true;
             }
             case DarqMessageType.SELF:

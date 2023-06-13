@@ -279,9 +279,9 @@ namespace FASTER.libdpr
 
             if (lastCheckpointMilli + checkpointPeriodMilli <= currentTime)
             {
+                // TODO(Tianyu): Should avoid unnecessarily performing a checkpoint when underlying state object has not changed
                 BeginCheckpoint(
                     Math.Max(versionScheme.CurrentState().Version + 1, dprFinder?.GlobalMaxVersion() ?? 0));
-
                 core.Utility.MonotonicUpdate(ref lastCheckpointMilli, currentTime, out _);
             }
 

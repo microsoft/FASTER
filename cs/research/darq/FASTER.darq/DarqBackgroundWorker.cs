@@ -194,7 +194,6 @@ namespace FASTER.client
                     {
                     }
 
-                    // darqServer.StateObject().RefreshSafeReadTail();
                     producerClient.ForceFlush();
                     var iteratorWait = iterator.WaitAsync().AsTask();
                     if (await Task.WhenAny(iteratorWait, Task.Delay(5)) == iteratorWait)
@@ -211,6 +210,7 @@ namespace FASTER.client
             catch (Exception e)
             {
                 // Just restart the failed background thread
+                Console.WriteLine($"Exception {e.Message} was thrown, restarting background worker");
                 terminationComplete.Set();
                 terminationStart = null;
                 await StartProcessing();

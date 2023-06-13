@@ -50,15 +50,12 @@ namespace SimpleStream
                     LogChecksum = LogChecksumType.None,
                     MutableFraction = default,
                     FastCommitMode = true,
-                    DeleteOnClose = false
+                    DeleteOnClose = true
                 },
                 commitIntervalMilli = 5,
                 refreshIntervalMilli = 5
             });
             darqServer.Start();
-
-            if (processor == null) return;
-            
             IDarqProcessorClient processorClient;
             if (remoteProcessor)
                 processorClient = new DarqProcessorClient("127.0.0.1", 15721 + (int)me.guid);
@@ -70,7 +67,6 @@ namespace SimpleStream
             darqServer.Dispose();
         }
 
-        // TODO(Tianyu): WIP
         public static void Main(string[] args)
         {
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
@@ -106,10 +102,7 @@ namespace SimpleStream
                     RunDarqWithProcessor(new WorkerId(1), clusterInfo, new AggregateStreamProcessor(new WorkerId(1), new WorkerId(2)));
                     break;
                 case "detector":
-                    RunDarqWithProcessor(new WorkerId(2), clusterInfo, new TrendDetectionStreamProcessor(new WorkerId(2), new WorkerId(3)));
-                    break;
-                case "sink":
-                    RunDarqWithProcessor(new WorkerId(3), clusterInfo, null);
+                    RunDarqWithProcessor(new WorkerId(2), clusterInfo, new TrendDetectionStreamProcessor(new WorkerId(2)));
                     break;
             }
         }

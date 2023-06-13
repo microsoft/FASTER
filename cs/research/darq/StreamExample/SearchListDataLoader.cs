@@ -71,6 +71,9 @@ namespace SimpleStream.searchlist
                     new ReadOnlySpan<byte>(serializationBuffer, 0, sizeof(int) + m.Length),
                     0, lsn, forceFlush: false);
             }
+            
+            // Send a special termination signal to halt processing and wait until the message has been acked
+            darqClient.EnqueueMessageAsync(destDarq, BitConverter.GetBytes(-1), -1, 0).GetAwaiter().GetResult();
             Console.WriteLine("########## Finished sending messages to DARQ");
         }
     }

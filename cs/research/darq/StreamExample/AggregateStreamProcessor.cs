@@ -13,17 +13,17 @@ namespace SimpleStream.searchlist
         private WorkerId input, output;
         private IDarqProcessorClientCapabilities capabilities;
         private long currentBatchStartTime = -1;
-        public Dictionary<int, long> currentBatchCount;
-        private StepRequestBuilder currentRequest;
-        private StepRequest reusableRequest;
+        private Dictionary<int, long> currentBatchCount;
+        private StepRequestBuilder batchedStepBuilder;
+        private StepRequest reusableStepRequest;
 
         public AggregateStreamProcessor(WorkerId me, WorkerId output)
         {
             this.input = me;
             this.output = output;
             currentBatchCount = new Dictionary<int, long>();
-            reusableRequest = new StepRequest(null);
-            currentRequest = new StepRequestBuilder(reusableRequest, input);
+            reusableStepRequest = new StepRequest(null);
+            batchedStepBuilder = new StepRequestBuilder(reusableStepRequest, input);
         }
         
         public bool ProcessMessage(DarqMessage m)
@@ -34,12 +34,25 @@ namespace SimpleStream.searchlist
                 {
                     int region;
                     long timestamp;
-                    var message = m.GetMessageBody();
                     unsafe
                     {
                         fixed (byte* b = m.GetMessageBody())
                         {
                             region = *(int*)b;
+                            // This is a termination message
+                            if (region == -1)
+                            {
+                                // Forward termination signal downstream
+                                batchedStepBuilder.MarkMessageConsumed(m.GetLsn());
+                                CloseWindow(long.MaxValue);
+                                batchedStepBuilder.AddOutMessage(output, BitConverter.GetBytes(-1));
+                                capabilities.Step(batchedStepBuilder.FinishStep());
+                                m.Dispose();
+                                
+                                Console.WriteLine("########## Aggregate operator has received termination signal");
+                                // Signal for DARQ to break out of the processing loop
+                                return false;
+                            }
                             timestamp = *(long*)(b + sizeof(int));
                         }
                     }
@@ -51,28 +64,15 @@ namespace SimpleStream.searchlist
                         currentBatchCount[region] = 1;
                     else
                         currentBatchCount[region] = c + 1;
-
+                    
+                    batchedStepBuilder.MarkMessageConsumed(m.GetLsn());
                     if (timestamp > currentBatchStartTime + SearchListStreamUtils.WindowSizeMilli)
                     {
-                        unsafe
-                        {
-                            var buffer = stackalloc byte[sizeof(int) + sizeof(long)];
-                            foreach (var (k, count) in currentBatchCount)
-                            {
-                                *(int*)buffer = k;
-                                *(long*)(buffer + sizeof(int)) = count;
-                                currentRequest.AddOutMessage(output,
-                                    new Span<byte>(buffer, sizeof(int) + sizeof(long)));
-                            }
-                        }
-
-                        capabilities.Step(currentRequest.FinishStep());
-                        currentRequest = new StepRequestBuilder(reusableRequest, input);
-                        currentBatchCount.Clear();
-                        currentBatchStartTime = timestamp;
+                        CloseWindow(timestamp);
+                        capabilities.Step(batchedStepBuilder.FinishStep());
+                        batchedStepBuilder = new StepRequestBuilder(reusableStepRequest, input);
                     }
                     
-                    currentRequest.MarkMessageConsumed(m.GetLsn());
                     m.Dispose();
                     return true;
                 }
@@ -84,9 +84,28 @@ namespace SimpleStream.searchlist
         public void OnRestart(IDarqProcessorClientCapabilities capabilities)
         {
             this.capabilities = capabilities;
-            currentRequest = new StepRequestBuilder(reusableRequest, input);
+            batchedStepBuilder = new StepRequestBuilder(reusableStepRequest, input);
             currentBatchCount.Clear();
             currentBatchStartTime = -1;
+        }
+
+        private void CloseWindow(long timestamp)
+        {
+            unsafe
+            {
+                var buffer = stackalloc byte[sizeof(int) + sizeof(long)];
+                foreach (var (k, count) in currentBatchCount)
+                {
+                    *(int*)buffer = k;
+                    *(long*)(buffer + sizeof(int)) = count;
+                    batchedStepBuilder.AddOutMessage(output,
+                        new Span<byte>(buffer, sizeof(int) + sizeof(long)));
+                }
+            }
+            
+            Console.WriteLine($"Closed window at timestamp {timestamp}");
+            currentBatchCount.Clear();
+            currentBatchStartTime = timestamp;
         }
     }
 }

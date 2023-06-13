@@ -215,7 +215,6 @@ namespace FASTER.darq
         private readonly DeduplicationVector dvc;
         private readonly LongValueAttachment incarnation, largestSteppedLsn;
         private WorkQueueLIFO<StepRequestHandle> stepQueue;
-
         private ThreadLocalObjectPool<StepRequestHandle> stepRequestPool;
 
         /// <summary>
@@ -242,7 +241,7 @@ namespace FASTER.darq
         /// </summary>
         public long ReplayEnd => largestSteppedLsn.value;
 
-        /// <summary>
+        /// <summary>   
         /// Whether this DARQ is configured to be speculative
         /// </summary>
         public bool Speculative => dprFinder != null;
@@ -339,7 +338,7 @@ namespace FASTER.darq
                                 StateObject().incompleteMessages.TryAdd(*(long*)rollbackHead, 0);
                             stepRequestHandle.status = StepStatus.INVALID;
                             stepRequestHandle.done.Set();
-                            Console.WriteLine($"step unexpectedly failed on lsn {completedLsn}");
+                            Console.WriteLine($"step failed on lsn {completedLsn}");
                             return;
                         }
                     }

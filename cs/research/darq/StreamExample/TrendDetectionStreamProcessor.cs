@@ -74,7 +74,7 @@ namespace SimpleStream.searchlist
     }
     public class TrendDetectionStreamProcessor : IDarqProcessor
     {
-        private WorkerId input, output;
+        private WorkerId input;
         private IDarqProcessorClientCapabilities capabilities;
         private StepRequest reusableRequest;
         // Emulate some persistent insight stored about each key/entry with an integer hash code
@@ -82,10 +82,9 @@ namespace SimpleStream.searchlist
         private int uncheckpointedSize = 0, checkpointThreshold = 1 << 15; 
 
         
-        public TrendDetectionStreamProcessor(WorkerId me, WorkerId output)
+        public TrendDetectionStreamProcessor(WorkerId me)
         {
             this.input = me;
-            this.output = output;
             reusableRequest = new StepRequest(null);
             state = new TrendDetectorState();
         }
@@ -100,9 +99,20 @@ namespace SimpleStream.searchlist
                     return true;
                 case DarqMessageType.IN:
                 {
-                    var builder = new StepRequestBuilder(reusableRequest, input);
+                    StepRequestBuilder builder;
+                    if (m.GetMessageBody().Length == sizeof(int) && BitConverter.ToInt32(m.GetMessageBody()) == -1)
+                    {
+                        // Exit upon encountering stop signal
+                        m.Dispose();
+                        return false;
+                    }
+                    builder = new StepRequestBuilder(reusableRequest, input);
                     if (state.Update(m, builder))
-                        builder.AddOutMessage(output, m.GetMessageBody());
+                    {
+                        // Output to stdout
+                        Console.WriteLine("Anomaly Detected");
+                    }
+                    
                     builder.MarkMessageConsumed(m.GetLsn());
                     
                     uncheckpointedSize++;
