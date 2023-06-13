@@ -177,8 +177,10 @@ namespace FASTER.core
             if (hlogToken == default)
                 return -1;
             using var current = new HybridLogCheckpointInfo();
+
+            // Make sure we consider delta log in order to compute latest checkpoint version
             current.Recover(hlogToken, checkpointManager, hlog.LogPageSizeBits,
-                out var _, false);
+                out var _, true);
             return current.info.nextVersion;
         }
 

@@ -56,5 +56,10 @@ namespace FASTER.common
         /// Dispose, optionally waiting for ongoing outgoing calls to complete
         /// </summary>
         void Dispose(bool waitForSendCompletion);
+
+        /// <summary>
+        /// Throttle mechanism for preventing too many sends outstanding (blocking)
+        /// </summary>
+        void Throttle();
     }
 }

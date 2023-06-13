@@ -508,6 +508,7 @@ namespace FASTER.core
                         try
                         {
                             consumer.Consume((byte*)startPhysicalAddress, totalLength, startLogicalAddress, endLogicalAddress);
+                            consumer.Throttle();
                         }
                         finally
                         {
@@ -519,8 +520,16 @@ namespace FASTER.core
                         // Consume the chunk (warning: we are under epoch protection here, as we are consuming directly from main memory log buffer)
                         consumer.Consume((byte*)startPhysicalAddress, totalLength, startLogicalAddress, endLogicalAddress);
 
-                        // Refresh epoch to maintain liveness of log append
-                        epoch.ProtectAndDrain();
+                        epoch.Suspend();
+                        try
+                        {
+                            // Throttle the iteration if needed (outside epoch protection)
+                            consumer.Throttle();
+                        }
+                        finally
+                        {
+                            epoch.Resume();
+                        }
                     }
                 }
             }
