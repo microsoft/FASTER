@@ -416,6 +416,14 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Get starting address of first record on the next page from given address
+        /// </summary>
+        /// <param name="currentAddress"></param>
+        /// <returns></returns>
+        public long UnsafeGetNextPageAddress(long currentAddress)
+            => (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+
+        /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
         /// </summary>
         /// <param name="readOnlySpanBatch">Batch of entries to be enqueued to log</param>
@@ -1746,6 +1754,35 @@ namespace FASTER.core
         public void TruncateUntil(long untilAddress)
         {
             Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _);
+        }
+
+        /// <summary>
+        /// Unsafely shift the begin address of the log and optionally truncate files on disk, without committing.
+        /// Do not use unless you know what you are doing.
+        /// </summary>
+        /// <param name="untilAddress"></param>
+        /// <param name="snapToPageStart"></param>
+        /// <param name="truncateLog"></param>
+        public void UnsafeShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
+        {
+            if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
+            {
+                if (snapToPageStart)
+                    untilAddress &= ~allocator.PageSizeMask;
+
+                bool epochProtected = epoch.ThisInstanceProtected();
+                try
+                {
+                    if (!epochProtected)
+                        epoch.Resume();
+                    allocator.ShiftBeginAddress(untilAddress, truncateLog);
+                }
+                finally
+                {
+                    if (!epochProtected)
+                        epoch.Suspend();
+                }
+            }
         }
 
         /// <summary>
