@@ -1712,7 +1712,8 @@ namespace FASTER.core
         /// <param name="untilAddress"></param>
         /// <param name="snapToPageStart"></param>
         /// <param name="truncateLog"></param>
-        public void UnsafeShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
+        /// <param name="noFlush"></param>
+        public void UnsafeShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false, bool noFlush = false)
         {
             if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
             {
@@ -1724,7 +1725,7 @@ namespace FASTER.core
                 {
                     if (!epochProtected)
                         epoch.Resume();
-                    allocator.ShiftBeginAddress(untilAddress, truncateLog);
+                    allocator.ShiftBeginAddress(untilAddress, truncateLog, noFlush);
                 }
                 finally
                 {
