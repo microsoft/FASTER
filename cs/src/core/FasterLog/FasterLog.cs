@@ -72,7 +72,7 @@ namespace FASTER.core
         /// <summary>
         /// Log safe read-only address
         /// </summary>
-        internal long SafeTailAddress;
+        public long SafeTailAddress;
 
         /// <summary>
         /// Dictionary of recovered iterators and their committed until addresses
@@ -1180,6 +1180,43 @@ namespace FASTER.core
             {
                 var linkedCommitInfo = await task.WithCancellationAsync(token).ConfigureAwait(false);
                 task = linkedCommitInfo.NextTask;
+            }
+        }
+
+        /// <summary>
+        /// Wait for more data to get added to the uncommitted tail of the log
+        /// </summary>
+        /// <returns>true if there's more data available to be read; false if there will never be more data (log has been shutdown)</returns>
+        public async ValueTask<bool> WaitUncommittedAsync(long nextAddress, CancellationToken token = default)
+        {
+            Debug.Assert(AutoRefreshSafeTailAddress);
+            if (nextAddress < SafeTailAddress)
+                return true;
+
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+
+                if (LogCompleted && nextAddress == TailAddress) return false;
+
+                var tcs = refreshUncommittedTcs;
+                if (tcs == null)
+                {
+                    var newTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    tcs = Interlocked.CompareExchange(ref refreshUncommittedTcs, newTcs, null);
+                    tcs ??= newTcs; // successful CAS so update the local var
+                }
+
+                if (nextAddress < SafeTailAddress)
+                    return true;
+
+                // Ignore refresh-uncommitted exceptions, except when the token is signaled
+                try
+                {
+                    await tcs.Task.WithCancellationAsync(token).ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException) { return false; }
+                catch when (!token.IsCancellationRequested) { }
             }
         }
         #endregion
