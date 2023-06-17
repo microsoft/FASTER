@@ -146,7 +146,7 @@ the read cache, before being invalidated by aging out of the circular read cache
 ## Managing Hash Index Size
 
 FasterKV consists of a hash index (pure in-memory) that stores pointers to data, and logs that
-store the actual key-value data itself (spanning memory and storage. This document discusses 
+store the actual key-value data itself (spanning memory and storage). This document discusses 
 the hash index size. The number of main hash buckets is set by the constructor 
 argument, called _index size_.
 
@@ -165,7 +165,7 @@ overflow bucket is sized at 8 entries, similar to the main bucket. Each entry it
 
 The invariant is that there will be at most one hash entry in a bucket, per _hash tag_, where hash tag stands
 for the 14 most significant bits in the 64-bit hash code of the key. All colliding keys having the same bucket 
-and hash tag are organized as a (reverse) linked list starting from from the hash entry.
+and hash tag are organized as a (reverse) linked list starting from the hash entry.
 
 This means that one hash bucket may have up to 2^14 = 16384 hash entries (spread across the main and overflow 
 buckets). Thus, when the main hash table is sized too small, we may have lots of overflow buckets because of many
