@@ -429,6 +429,8 @@ namespace FASTER.core
                 throw new FasterException($"Allocator with sector size {sectorSize} cannot flush to device with sector size {device.SectorSize}");
         }
 
+        internal long GetReadOnlyLagAddress() => ReadOnlyLagAddress;
+
         /// <summary>
         /// Delta flush
         /// </summary>
@@ -1473,11 +1475,12 @@ namespace FASTER.core
         /// Used by applications to move read-only forward
         /// </summary>
         /// <param name="newReadOnlyAddress"></param>
-        public bool ShiftReadOnlyAddress(long newReadOnlyAddress)
+        /// <param name="noFlush"></param>
+        public bool ShiftReadOnlyAddress(long newReadOnlyAddress, bool noFlush = false)
         {
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnlyOffset))
             {
-                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress));
+                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress, noFlush));
                 return true;
             }
             return false;
@@ -1488,7 +1491,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="newBeginAddress"></param>
         /// <param name="truncateLog"></param>
-        public void ShiftBeginAddress(long newBeginAddress, bool truncateLog)
+        /// <param name="noFlush"></param>
+        public void ShiftBeginAddress(long newBeginAddress, bool truncateLog, bool noFlush = false)
         {
             // First update the begin address
             if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress))
@@ -1500,7 +1504,7 @@ namespace FASTER.core
 
             // Shift read-only address
             var flushEvent = FlushEvent;
-            ShiftReadOnlyAddress(newBeginAddress);
+            ShiftReadOnlyAddress(newBeginAddress, noFlush);
 
             // Wait for flush to complete
             var spins = 0;
@@ -1578,7 +1582,8 @@ namespace FASTER.core
         /// Flush: send page to secondary store
         /// </summary>
         /// <param name="newSafeReadOnlyAddress"></param>
-        private void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress)
+        /// <param name="noFlush"></param>
+        private void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool noFlush = false)
         {
             if (Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
@@ -1590,7 +1595,7 @@ namespace FASTER.core
                     using var iter = Scan(store:null, oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
                     OnReadOnlyObserver?.OnNext(iter);
                 }
-                AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
+                AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, noFlush);
             }
         }
 
@@ -2014,7 +2019,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fromAddress"></param>
         /// <param name="untilAddress"></param>
-        public void AsyncFlushPages(long fromAddress, long untilAddress)
+        /// <param name="noFlush"></param>
+        public void AsyncFlushPages(long fromAddress, long untilAddress, bool noFlush = false)
         {
             long startPage = fromAddress >> LogPageSizeBits;
             long endPage = untilAddress >> LogPageSizeBits;
@@ -2065,7 +2071,7 @@ namespace FASTER.core
                     continue;
                 }
 
-                if (IsNullDevice)
+                if (IsNullDevice || noFlush)
                 {
                     // Short circuit as no flush needed
                     Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, asyncResult.untilAddress, out _);
