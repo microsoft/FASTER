@@ -126,7 +126,7 @@ namespace FASTER.core
         /// <summary>
         /// ReadOnlyOffset lag (from tail)
         /// </summary>
-        protected long ReadOnlyLagAddress;
+        internal long ReadOnlyLagAddress;
 
         #endregion
 
