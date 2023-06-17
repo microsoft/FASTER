@@ -194,7 +194,19 @@ namespace FASTER.core
         {
             ManualResetEventSlim completionEvent = new(false);
             RemoveSegmentAsync(segment, r => completionEvent.Set(), null);
-            completionEvent.Wait();
+            Debug.Assert(!epoch.ThisInstanceProtected());
+            bool isProtected = epoch.ThisInstanceProtected();
+            if (isProtected)
+                epoch.Suspend();
+            try
+            {
+                completionEvent.Wait();
+            }
+            finally
+            {
+                if (isProtected)
+                    epoch.Resume();
+            }
         }
 
         /// <summary>
@@ -252,7 +264,18 @@ namespace FASTER.core
             using (ManualResetEventSlim completionEvent = new(false))
             {
                 TruncateUntilSegmentAsync(toSegment, r => completionEvent.Set(), null);
-                completionEvent.Wait();
+                bool isProtected = epoch.ThisInstanceProtected();
+                if (isProtected)
+                    epoch.Suspend();
+                try
+                {
+                    completionEvent.Wait();
+                }
+                finally
+                {
+                    if (isProtected)
+                        epoch.Resume();
+                }
             }
         }
 
@@ -285,7 +308,18 @@ namespace FASTER.core
             using (ManualResetEventSlim completionEvent = new(false))
             {
                 TruncateUntilAddressAsync(toAddress, r => completionEvent.Set(), null);
-                completionEvent.Wait();
+                bool isProtected = epoch.ThisInstanceProtected();
+                if (isProtected)
+                    epoch.Suspend();
+                try
+                {
+                    completionEvent.Wait();
+                }
+                finally
+                {
+                    if (isProtected)
+                        epoch.Resume();
+                }
             }
         }
 

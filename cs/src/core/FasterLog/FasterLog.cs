@@ -431,7 +431,7 @@ namespace FASTER.core
         /// Get read only lag address
         /// </summary>
         public long UnsafeGetReadOnlyLagAddress()
-            => allocator.ReadOnlyLagAddress;
+            => allocator.GetReadOnlyLagAddress();
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit

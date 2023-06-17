@@ -126,7 +126,7 @@ namespace FASTER.core
         /// <summary>
         /// ReadOnlyOffset lag (from tail)
         /// </summary>
-        internal long ReadOnlyLagAddress;
+        protected long ReadOnlyLagAddress;
 
         #endregion
 
@@ -428,6 +428,8 @@ namespace FASTER.core
             if (this.sectorSize % device.SectorSize != 0)
                 throw new FasterException($"Allocator with sector size {sectorSize} cannot flush to device with sector size {device.SectorSize}");
         }
+
+        internal long GetReadOnlyLagAddress() => ReadOnlyLagAddress;
 
         /// <summary>
         /// Delta flush
