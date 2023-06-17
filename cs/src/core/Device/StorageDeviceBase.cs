@@ -216,19 +216,31 @@ namespace FASTER.core
             // This action needs to be epoch-protected because readers may be issuing reads to the deleted segment, unaware of the delete.
             // Because of earlier compare-and-swap, the caller has exclusive access to the range [oldStartSegment, newStartSegment), and there will
             // be no double deletes.
-            epoch.BumpCurrentEpoch(() =>
+
+            bool isProtected = epoch.ThisInstanceProtected();
+            if (!isProtected)
+                epoch.Resume();
+            try
             {
-                for (int i = oldStart; i < toSegment; i++)
+                epoch.BumpCurrentEpoch(() =>
                 {
-                    RemoveSegmentAsync(i, r => {
-                        if (countdown.Signal())
+                    for (int i = oldStart; i < toSegment; i++)
+                    {
+                        RemoveSegmentAsync(i, r =>
                         {
-                            callback(r);
-                            countdown.Dispose();
-                        }
-                    }, result);
-                }
-            });
+                            if (countdown.Signal())
+                            {
+                                callback(r);
+                                countdown.Dispose();
+                            }
+                        }, result);
+                    }
+                });
+            }
+            finally
+            {
+                if (!isProtected) epoch.Suspend();
+            }
         }
 
         /// <summary>

@@ -1982,15 +1982,16 @@ namespace FASTER.core
                 var _callback = SafeTailShiftCallback;
                 if (_callback != null)
                 {
-                    Debug.Assert(epoch.ThisInstanceProtected());
-                    epoch.Suspend();
+                    // We invoke callback outside epoch protection
+                    bool isProtected = epoch.ThisInstanceProtected();
+                    if (isProtected) epoch.Suspend();
                     try
                     {
                         _callback.Invoke(oldSafeTailAddress, tailAddress);
                     }
                     finally
                     {
-                        epoch.Resume();
+                        if (isProtected) epoch.Resume();
                     }
                 }
             }
