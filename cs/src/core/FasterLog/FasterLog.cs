@@ -135,6 +135,11 @@ namespace FASTER.core
         readonly bool AutoRefreshSafeTailAddress;
 
         /// <summary>
+        /// Callback when safe tail shifts
+        /// </summary>
+        public Action<long, long> SafeTailShiftCallback;
+
+        /// <summary>
         /// Whether we automatically commit as records are inserted
         /// </summary>
         readonly bool AutoCommit;
@@ -422,6 +427,14 @@ namespace FASTER.core
         /// <returns></returns>
         public long UnsafeGetNextPageAddress(long currentAddress)
             => (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+
+        /// <summary>
+        /// Get page number for given AOF address
+        /// </summary>
+        /// <param name="currentAddress"></param>
+        /// <returns></returns>
+        public long UnsafeGetPage(long currentAddress)
+            => currentAddress >> allocator.LogPageSizeBits;
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
@@ -1961,11 +1974,25 @@ namespace FASTER.core
 
         private void AutoRefreshSafeTailAddressBumpCallback(long tailAddress)
         {
-            if (Utility.MonotonicUpdate(ref SafeTailAddress, tailAddress, out _))
+            if (Utility.MonotonicUpdate(ref SafeTailAddress, tailAddress, out long oldSafeTailAddress))
             {
                 var tcs = refreshUncommittedTcs;
                 if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
                     tcs.SetResult(Empty.Default);
+                var _callback = SafeTailShiftCallback;
+                if (_callback != null)
+                {
+                    Debug.Assert(epoch.ThisInstanceProtected());
+                    epoch.Suspend();
+                    try
+                    {
+                        _callback.Invoke(oldSafeTailAddress, tailAddress);
+                    }
+                    finally
+                    {
+                        epoch.Resume();
+                    }
+                }
             }
             AutoRefreshSafeTailAddressRunner(true);
         }
