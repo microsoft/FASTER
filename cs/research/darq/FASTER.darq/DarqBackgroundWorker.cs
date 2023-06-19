@@ -31,7 +31,7 @@ namespace FASTER.client
         {
             this.darq = darq;
             this.clusterInfo = clusterInfo;
-            messagePool = new SimpleObjectPool<DarqMessage>(() => new DarqMessage(messagePool), null, 1 << 15);
+            messagePool = new SimpleObjectPool<DarqMessage>(() => new DarqMessage(messagePool), 1 << 15);
             this.batchSize = batchSize;
         }
 

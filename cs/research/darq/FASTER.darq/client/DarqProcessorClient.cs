@@ -281,7 +281,7 @@ namespace FASTER.client
             maxSizeSettings = new MaxSizeSettings();
             networkSender = new TcpNetworkSender(GetSendSocket(address, port), maxSizeSettings);
             this.maxBuffered = maxBuffered;
-            messagePool = new SimpleObjectPool<DarqMessage>(() => new DarqMessage(messagePool),  null, 2 * maxBuffered);
+            messagePool = new SimpleObjectPool<DarqMessage>(() => new DarqMessage(messagePool),  2 * maxBuffered);
             pendingMessages = new ElasticCircularBuffer<DarqMessage>();
             this.session = session;
         }

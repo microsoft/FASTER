@@ -58,7 +58,7 @@ namespace FASTER.common
         {
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, 
-                this.serverBufferSize), s => s.Dispose());
+                this.serverBufferSize), 128, s => s.Dispose());
             this.responseObject = null;
         }
 
@@ -74,7 +74,7 @@ namespace FASTER.common
         {
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, 
-                this.serverBufferSize), s => s.Dispose());
+                this.serverBufferSize), 128, s => s.Dispose());
             this.responseObject = null;
         }
 
@@ -157,7 +157,13 @@ namespace FASTER.common
             if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
                 throttle.Release();
         }
-        
+
+        /// <inheritdoc />
+        public override void SendResponse(byte[] buffer, int offset, int count, object context)
+        {
+            throw new NotImplementedException();
+        }
+
         /// <inheritdoc />
         public override void Dispose() => Dispose(false);
 

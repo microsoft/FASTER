@@ -22,12 +22,15 @@ namespace FASTER.common
         /// Constructor
         /// </summary>
         /// <param name="factory"> method used to create new objects of type T </param>
-        /// <param name="destructor"> method used to dispose retained objects when they go out of scope. WARNING: NOT invoked on retained objects before reuse </param>
         /// <param name="maxObjects">
         /// Max number of objects that will be retained and recycled in this object pool.
         /// Objects exceeding this count are created and destroyed on demand
         /// </param>
-        public SimpleObjectPool(Func<T> factory, Action<T> destructor = null, int maxObjects = 128)
+        /// <param name="destructor"> method used to dispose retained objects when they go out of scope.
+        /// WARNING: NOT invoked on retained objects before reuse
+        /// </param>
+
+        public SimpleObjectPool(Func<T> factory, int maxObjects = 128, Action<T> destructor = null)
         {
             this.factory = factory;
             this.destructor = destructor;

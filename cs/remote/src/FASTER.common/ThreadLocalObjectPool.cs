@@ -19,15 +19,15 @@ namespace FASTER.common
         ///     Constructs a new object pool
         /// </summary>
         /// <param name="factory"> method used to create new objects of type T </param>
-        /// <param name="destructor"> method used to dispose retained objects when they go out of scope. WARNING: NOT invoked on retained objects before reuse </param>
         /// <param name="maxObjectsPerThread">
         /// Max number of objects that will be retained and recycled in this object pool per thread.
         /// Objects exceeding this count are created and destroyed on demand
         /// </param>
-        public ThreadLocalObjectPool(Func<T> factory, Action<T> destructor = null, int maxObjectPerThread = 128)
+        /// <param name="destructor"> method used to dispose retained objects when they go out of scope. WARNING: NOT invoked on retained objects before reuse </param>
+        public ThreadLocalObjectPool(Func<T> factory, int maxObjectPerThread = 128, Action<T> destructor = null)
         {
             objects = new ThreadLocal<SimpleObjectPool<T>>(
-                () => new SimpleObjectPool<T>(factory, destructor, maxObjectPerThread), true);
+                () => new SimpleObjectPool<T>(factory, maxObjectPerThread, destructor), true);
         }
         
         /// <summary>
