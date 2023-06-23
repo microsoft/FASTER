@@ -5,7 +5,6 @@ namespace FASTER.core
 {
     using System;
     using System.Runtime.InteropServices;
-    using System.Security;
     using Microsoft.Win32.SafeHandles;
     using System.Threading;
     using System.IO;
@@ -417,6 +416,11 @@ namespace FASTER.core
         {
             return unchecked(((int)0x80070000) | errorCode);
         }
+        #endregion
+
+        #region Other operations
+        [DllImport("kernel32", SetLastError = true)]
+        internal static extern ulong GetTickCount64();
         #endregion
     }
 }

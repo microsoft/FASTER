@@ -79,7 +79,7 @@ namespace FASTER.core
 
         internal bool EnableRevivification = false;
         internal bool UseFreeRecordPool => EnableRevivification && FreeRecordPool is not null;
-        internal bool FreeRecordPoolHasRecords => UseFreeRecordPool && FreeRecordPool.HasRecords;
+        internal bool FreeRecordPoolHasSafeRecords => UseFreeRecordPool && FreeRecordPool.HasSafeRecords;
         internal FreeRecordPool<Key, Value> FreeRecordPool;
 
         /// <summary>

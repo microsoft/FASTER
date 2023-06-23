@@ -37,7 +37,7 @@ namespace FASTER.core
         /// <summary>
         /// By default, when looking for FreeRecords we search only the bin for the specified size. This allows searching the next-highest bin as well.
         /// </summary>
-        public bool SearchNextHighestBin;
+        public bool SearchNextHigherBin;
 
         /// <summary>
         /// Use power-of-2 bins with a single oversize bin.
@@ -47,7 +47,7 @@ namespace FASTER.core
         /// <summary>
         /// Default bin for fixed-length.
         /// </summary>
-        public static RevivificationSettings DefaultFixedLength { get; } = new() { FreeListBins = new[] { new RevivificationBin() { RecordSize = int.MaxValue } } };
+        public static RevivificationSettings DefaultFixedLength { get; } = new() { FreeListBins = new[] { new RevivificationBin() { RecordSize = RevivificationBin.MaxRecordSize } } };
 
         /// <summary>
         /// Enable only in-tag-chain revivification; do not use FreeList
@@ -71,6 +71,10 @@ namespace FASTER.core
                     bin.Verify(isFixedLength);
             }
         }
+
+        /// <inheritdoc/>
+        public override string ToString() 
+            => $"enabled {EnableRevivification}, #bins {FreeListBins?.Length}, searchNextBin {SearchNextHigherBin}";
     }
 
     /// <summary>
@@ -79,15 +83,36 @@ namespace FASTER.core
     public struct RevivificationBin
     {
         /// <summary>
+        /// The minimum size of a record; RecordInfo + int key/value, or any key/value combination below 8 bytes total, as record size is
+        /// a multiple of 8.
+        /// </summary>
+        public const int MinRecordSize = 16;
+
+        /// <summary>
+        /// The maximum size of a record; must fit on a single page.
+        /// </summary>
+        public const int MaxRecordSize = 1 << LogSettings.kMaxPageSizeBits;
+
+        /// <summary>
         /// The maximum size of a record whose size can be stored "inline" in the FreeRecord metadata. This is informational, not a limit;
         /// sizes larger than this are considered "oversize" and require calls to the allocator to determine exact record size, which is slower.
         /// </summary>
         public const int MaxInlineRecordSize = 1 << FreeRecord.kSizeBits;
 
         /// <summary>
-        /// The default number of records per partition.
+        /// Scan all records in the bin for best fit.
         /// </summary>
-        public const int DefaultRecordsPerPartition = 1024;
+        public const int BestFitScanAll = int.MaxValue;
+
+        /// <summary>
+        /// Use first-fit instead of best-fit.
+        /// </summary>
+        public const int UseFirstFit = 0;
+
+        /// <summary>
+        /// The default number of records per bin.
+        /// </summary>
+        public const int DefaultRecordsPerBin = 1024;
 
         /// <summary>
         /// The maximum size of records in this partition. This should be partitioned for your app. Ignored if this is the single bin
@@ -96,26 +121,17 @@ namespace FASTER.core
         public int RecordSize;
 
         /// <summary>
-        /// To avoid conflicts, we can create the bin with multiple partitions; each thread maps to one of those partition
-        /// to start its traversal. Each partition is its own circular buffer.
-        /// </summary>
-        /// <remarks>
-        /// There must be at least one partition.
-        /// </remarks>
-        public int NumberOfPartitions = Environment.ProcessorCount / 2;
-
-        /// <summary>
         /// The number of records for each partition. This count will be adjusted upward so the partition is cache-line aligned.
         /// </summary>
         /// <remarks>
         /// The first record is not available; its space is used to store the circular buffer read and write pointers
         /// </remarks>
-        public int NumberOfRecordsPerPartition = DefaultRecordsPerPartition;
+        public int NumberOfRecords = DefaultRecordsPerBin;
 
         /// <summary>
-        /// The number of partitions to traverse; by default (0), all of them.
+        /// The maximum number of entries to scan for best fit after finding first fit. Ignored for fixed-length datatypes. 
         /// </summary>
-        public int NumberOfPartitionsToTraverse;
+        public int BestFitScanLimit = BestFitScanAll;
 
         /// <summary>
         /// Constructor
@@ -126,14 +142,22 @@ namespace FASTER.core
 
         internal void Verify(bool isFixedLength)
         {
-            if (!isFixedLength && RecordSize < FreeRecordBin.MinRecordSize)
-                throw new FasterException($"Invalid RecordSize {RecordSize}; must be >= {FreeRecordBin.MinRecordSize}");
-            if (NumberOfPartitions <= 1)
-                throw new FasterException($"Invalid NumberOfPartitions {NumberOfPartitions}; must be > 1");
-            if (NumberOfRecordsPerPartition <= FreeRecordBin.MinPartitionSize)
-                throw new FasterException($"Invalid NumberOfRecordsPerPartition {NumberOfRecordsPerPartition}; must be > {FreeRecordBin.MinPartitionSize}");
-            if (NumberOfPartitionsToTraverse < 0 || NumberOfPartitionsToTraverse > NumberOfPartitions)
-                throw new FasterException($"NumberOfPartitionsToTraverse {NumberOfPartitionsToTraverse} must be >= 0 and must not exceed NumberOfPartitions {NumberOfPartitions}; use 0 for 'all'");
+            if (!isFixedLength && (RecordSize < MinRecordSize || RecordSize > MaxRecordSize || (RecordSize & 0x7) != 0))
+                throw new FasterException($"Invalid RecordSize {RecordSize}; must be >= {MinRecordSize} and a multiple of 8");
+            if (NumberOfRecords <= FreeRecordBin.MinRecordsPerBin)
+                throw new FasterException($"Invalid NumberOfRecords {NumberOfRecords}; must be > {FreeRecordBin.MinRecordsPerBin}");
+        }
+
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            string scanStr = this.BestFitScanLimit switch
+            {
+                BestFitScanAll => "ScanAll",
+                UseFirstFit => "FirstFit",
+                _ => this.BestFitScanLimit.ToString()
+            };
+            return $"recSize {RecordSize}, numRecs {NumberOfRecords}, scanLimit {scanStr}";
         }
     }
 
@@ -148,18 +172,20 @@ namespace FASTER.core
         public PowerOf2BinsRevivificationSettings() : base()
         {
             List<RevivificationBin> binList = new();
-            for (var size = FreeRecordBin.MinRecordSize; size <= RevivificationBin.MaxInlineRecordSize; size *= 2)
+
+            // Start with the 16-byte bin
+            for (var size = RevivificationBin.MinRecordSize; size <= RevivificationBin.MaxInlineRecordSize; size *= 2)
                 binList.Add(new RevivificationBin ()
                     {
                         RecordSize = size,
-                        NumberOfRecordsPerPartition = 64
+                        NumberOfRecords = RevivificationBin.DefaultRecordsPerBin
                     });
 
             // Use one oversize bin.
             binList.Add(new RevivificationBin()
             {
-                RecordSize = int.MaxValue,
-                NumberOfRecordsPerPartition = 64
+                RecordSize = RevivificationBin.MaxRecordSize,
+                NumberOfRecords = RevivificationBin.DefaultRecordsPerBin
             });
             this.FreeListBins = binList.ToArray();
         }

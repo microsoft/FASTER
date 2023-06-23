@@ -336,6 +336,12 @@ namespace FASTER.core
         /// <summary>
         /// Looks at all threads and return the latest safe epoch
         /// </summary>
+        /// <returns>Safe epoch</returns>
+        internal long ComputeNewSafeToReclaimEpoch() => ComputeNewSafeToReclaimEpoch(this.CurrentEpoch);
+
+        /// <summary>
+        /// Looks at all threads and return the latest safe epoch
+        /// </summary>
         /// <param name="currentEpoch">Current epoch</param>
         /// <returns>Safe epoch</returns>
         long ComputeNewSafeToReclaimEpoch(long currentEpoch)

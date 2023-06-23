@@ -81,7 +81,7 @@ namespace FASTER.benchmark
                 RevivificationLevel.Chain => new RevivificationSettings(),
                 RevivificationLevel.Full => new RevivificationSettings() { FreeListBins = new[] { new RevivificationBin() {
                     RecordSize = RecordInfo.GetLength() + kKeySize + kValueSize + 8,    // extra to ensure rounding up of value
-                    NumberOfPartitions = testLoader.Options.ThreadCount } } },
+                    BestFitScanLimit = RevivificationBin.UseFirstFit } } },
                 _ => throw new ApplicationException("Invalid RevivificationLevel")
             };
 

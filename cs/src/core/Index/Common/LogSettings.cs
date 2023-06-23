@@ -28,6 +28,21 @@ namespace FASTER.core
     /// </summary>
     public class LogSettings
     {
+        /// <summary>Minimum number of bits for a page size</summary>
+        public const int kMinPageSizeBits = 6;
+        /// <summary>Maximum number of bits for a page size</summary>
+        public const int kMaxPageSizeBits = 30;
+
+        /// <summary>Minimum number of bits for a segment (segments consist of one or more pages)</summary>
+        public const int kMinSegmentSizeBits = kMinPageSizeBits;
+        /// <summary>Maximum number of bits for a page size (segments consist of one or more pages)</summary>
+        public const int kMaxSegmentSizeBits = 62;
+
+        /// <summary>Minimum number of bits for the size of the in-memory portion of the log</summary>
+        public const int kMinMemorySizeBits = kMinSegmentSizeBits;
+        /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>
+        public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
+
         /// <summary>
         /// Device used for main hybrid log
         /// </summary>
