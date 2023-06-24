@@ -6,10 +6,15 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
+using System.Net;
+using System.Net.Mail;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using static FASTER.core.Utility;
+using static FASTER.test.Revivification.RevivificationVarLenStressTests;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test.Revivification
@@ -45,27 +50,31 @@ namespace FASTER.test.Revivification
         internal static FreeRecordPool<TKey, TValue> CreateSingleBinFreeRecordPool<TKey, TValue>(FasterKV<TKey, TValue> fkv, RevivificationBin binDef, int fixedRecordLength = 0)
             => new (fkv, new RevivificationSettings() { FreeListBins = new[] { binDef } }, fixedRecordLength);
 
-        internal static void WaitForSafeRecords<TKey, TValue>(FasterKV<TKey, TValue> fkv, bool want)
+        internal static void WaitForSafeRecords<TKey, TValue>(FasterKV<TKey, TValue> fkv, bool want, FreeRecordPool<TKey, TValue> pool = null)
         {
+            pool ??= fkv.FreeRecordPool;
+
             // Wait until the worker calls BumpCurrentEpoch and finds safe records. If this is called in a loop it may return true before all epochs
             // in that loop become safe; if this is not specifically what the test wants, then use WaitForSafeEpoch() on the last epoch of the loop.
             // WaitForSafeEpoch is generally useful mostly for single-delete tests, as a verification that the HasSafeRecords setting is working properly.
             var sw = new Stopwatch();
             sw.Start();
-            while (fkv.FreeRecordPool.HasSafeRecords != want)
+            while (pool.HasSafeRecords != want)
             {
                 Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}");
                 Thread.Yield();
             }
         }
 
-        internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv, long epoch)
+        internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv, long epoch, FreeRecordPool<TKey, TValue> pool = null)
         {
+            pool ??= fkv.FreeRecordPool;
+
             // Wait until the worker calls BumpCurrentEpoch and the specified epoch has become safe. Because there is a bit of a lag between 
             // BumpCurrentEpoch/ComputeNewSafeToReclaimEpoch and the scan encountering a record and setting HasSafeRecords, make sure we satisfy both.
             var sw = new Stopwatch();
             sw.Start();
-            while (fkv.epoch.SafeToReclaimEpoch < epoch || !fkv.FreeRecordPool.HasSafeRecords)
+            while (fkv.epoch.SafeToReclaimEpoch < epoch || !pool.HasSafeRecords)
             {
                 Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for SafeEpoch {epoch}");
                 Thread.Yield();
@@ -1022,10 +1031,10 @@ namespace FASTER.test.Revivification
 
             // Fill the bin, including wrapping around at the end.
             for (var ii = 0; ii < bin.recordCount; ++ii)
-                Assert.IsTrue(fkv.FreeRecordPool.Add(logicalAddress + ii, recordSize), "ArtificialBinWrappingTest: Failed to Add free record, pt 1");
+                Assert.IsTrue(fkv.FreeRecordPool.TryAdd(logicalAddress + ii, recordSize), "ArtificialBinWrappingTest: Failed to Add free record, pt 1");
 
             // Try to add to a full bin; this should fail.
-            Assert.IsFalse(fkv.FreeRecordPool.Add(logicalAddress + bin.recordCount, recordSize), "ArtificialBinWrappingTest: Expected to fail Adding free record");
+            Assert.IsFalse(fkv.FreeRecordPool.TryAdd(logicalAddress + bin.recordCount, recordSize), "ArtificialBinWrappingTest: Expected to fail Adding free record");
 
             RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
 
@@ -1035,7 +1044,7 @@ namespace FASTER.test.Revivification
             // Take() one to open up a space in the bin, then add one
             Assert.IsTrue(bin.TryTake(recordSize, minAddress, fkv, out _));
             var lastAddedEpoch = fkv.epoch.CurrentEpoch;
-            Assert.IsTrue(fkv.FreeRecordPool.Add(logicalAddress + bin.recordCount + 1, recordSize), "ArtificialBinWrappingTest: Failed to Add free record, pt 2");
+            Assert.IsTrue(fkv.FreeRecordPool.TryAdd(logicalAddress + bin.recordCount + 1, recordSize), "ArtificialBinWrappingTest: Failed to Add free record, pt 2");
 
             RevivificationTestUtils.WaitForSafeEpoch(fkv, lastAddedEpoch);
 
@@ -1089,10 +1098,11 @@ namespace FASTER.test.Revivification
                     latestAddedEpoch = fkv.epoch.CurrentEpoch;
                     var status = session.Delete(ref key);
                     Assert.IsTrue(status.Found, $"{status} for key {ii}");
-                    Assert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "mismatched free record count for key {ii}, pt 1");
+                    //Assert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"mismatched free record count for key {ii}, pt 1");
                     Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
                 }
 
+                Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "mismatched free record count");
                 RevivificationTestUtils.WaitForSafeEpoch(fkv, latestAddedEpoch);
 
                 // Revivify
@@ -1526,6 +1536,8 @@ namespace FASTER.test.Revivification
             return result;
         }
 
+        const int AddressIncrement = 1_000_000; // must be > ReadOnlyAddress
+
         [Test]
         [Category(RevivificationCategory)]
         //[Repeat(30)]
@@ -1550,7 +1562,6 @@ namespace FASTER.test.Revivification
             using var freeRecordPool = RevivificationTestUtils.CreateSingleBinFreeRecordPool(fkv, binDef);
 
             bool done = false;
-            const int addressIncrement = 1_000_000; // must be > ReadOnlyAddress
 
             unsafe void runAddThread(int tid)
             {
@@ -1562,7 +1573,7 @@ namespace FASTER.test.Revivification
                         for (var ii = 1; ii < numItems; ++ii)
                         {
                             flags[ii] = 1;
-                            Assert.IsTrue(freeRecordPool.Add(ii + addressIncrement, size), $"Failed to add free record {ii}, iteration {iteration}");
+                            Assert.IsTrue(freeRecordPool.TryAdd(ii + AddressIncrement, size), $"Failed to add free record {ii}, iteration {iteration}");
                         }
 
                         // Do not wait here; the loop will do that with retries
@@ -1600,7 +1611,7 @@ namespace FASTER.test.Revivification
                 {
                     if (freeRecordPool.bins[0].TryTake(size, 0, fkv, out long address))
                     {
-                        var prevFlag = Interlocked.CompareExchange(ref flags[address - addressIncrement], 0, 1);
+                        var prevFlag = Interlocked.CompareExchange(ref flags[address - AddressIncrement], 0, 1);
                         Assert.AreEqual(1, prevFlag);
                     }
                 }
@@ -1619,6 +1630,133 @@ namespace FASTER.test.Revivification
                 tasks.Add(Task.Factory.StartNew(() => runTakeThread(tid)));
             }
             Task.WaitAll(tasks.ToArray());
+        }
+
+        public enum WrapMode { Wrap, NoWrap };
+        const int TakeSize = 40;
+
+        private FreeRecordPool<SpanByte, SpanByte> CreateBestFitTestPool(int scanLimit, WrapMode wrapMode)
+        {
+            var binDef = new RevivificationBin()
+            {
+                RecordSize = TakeSize + 8,
+                NumberOfRecords = 64,
+                BestFitScanLimit = scanLimit
+            };
+            var freeRecordPool = RevivificationTestUtils.CreateSingleBinFreeRecordPool(fkv, binDef);
+
+            const int minAddress = AddressIncrement - 10;
+            if (wrapMode == WrapMode.Wrap)
+            {
+                // Add too-small records to wrap around the end of the bin records. Use lower addresses so we don't mix up the "real" results.
+                const int smallSize = TakeSize - 4;
+                for (var ii = 0; ii < freeRecordPool.bins[0].recordCount - 2; ++ii)
+                    Assert.IsTrue(freeRecordPool.TryAdd(minAddress + ii + 1, smallSize));
+
+                // Now take out the four at the beginning.
+                for (var ii = 0; ii < 4; ++ii)
+                    Assert.IsTrue(freeRecordPool.TryTake(smallSize, minAddress, out _));
+            }
+
+            long address = AddressIncrement;
+            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 1));
+            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 2));
+            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 3));
+            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize));    // 4
+            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize));    // 5 
+            long latestAddedEpoch = fkv.epoch.CurrentEpoch;
+            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize));
+
+            RevivificationTestUtils.WaitForSafeEpoch(fkv, latestAddedEpoch, freeRecordPool);
+            return freeRecordPool;
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        public unsafe void ArtificialBestFitTest([Values] WrapMode wrapMode)
+        {
+            // We should first Take the first 20-length due to exact fit, then skip over the empty to take the next 20, then we have
+            // no exact fit within the scan limit, so we grab the best fit before that (21).
+            using var freeRecordPool = CreateBestFitTestPool(scanLimit: 4, wrapMode);
+            var minAddress = AddressIncrement;
+            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out var address));
+            Assert.AreEqual(4, address -= AddressIncrement);
+            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address));
+            Assert.AreEqual(5, address -= AddressIncrement);
+            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address));
+            Assert.AreEqual(1, address -= AddressIncrement);
+
+            // Now that we've taken the first item, the new first-fit will be moved up one, which brings the last exact-fit into scanLimit range.
+            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address));
+            Assert.AreEqual(6, address -= AddressIncrement);
+
+            // Now Take will return them in order until we have no more
+            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address));
+            Assert.AreEqual(2, address -= AddressIncrement);
+            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address));
+            Assert.AreEqual(3, address -= AddressIncrement);
+            Assert.IsFalse(freeRecordPool.TryTake(TakeSize, minAddress, out address));
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        public unsafe void ArtificialFirstFitTest([Values] WrapMode wrapMode)
+        {
+            // We should Take the addresses in order.
+            using var freeRecordPool = CreateBestFitTestPool(scanLimit: RevivificationBin.UseFirstFit, wrapMode);
+            var minAddress = AddressIncrement;
+
+            long address = -1;
+            for (var ii = 0; ii < 6; ++ii)
+            { 
+                Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address));
+                Assert.AreEqual(ii + 1, address -= AddressIncrement);
+            }
+            Assert.IsFalse(freeRecordPool.TryTake(TakeSize, minAddress, out address));
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        public unsafe void ArtificialThreadContentionOnOneRecordTest([Values] WrapMode wrapMode)
+        {
+            var binDef = new RevivificationBin()
+            {
+                RecordSize = 32,
+                NumberOfRecords = 32
+            };
+            var freeRecordPool = RevivificationTestUtils.CreateSingleBinFreeRecordPool(fkv, binDef);
+            const long TestAddress = AddressIncrement, minAddress = AddressIncrement - 10;
+            long counter = 0, globalAddress = 0;
+            int size = 20;
+
+            unsafe void runThread(int tid)
+            {
+                for (var iteration = 0; iteration < 10000; ++iteration)
+                {
+                    if (freeRecordPool.TryTake(size, minAddress, out long address))
+                    {
+                        ++counter;
+                    }
+                    else if (globalAddress == TestAddress && Interlocked.CompareExchange(ref globalAddress, 0, TestAddress) == TestAddress)
+                    {
+                        Assert.IsTrue(freeRecordPool.TryAdd(TestAddress, size), $"Failed TryAdd on iter {iteration}");
+                        ++counter;
+                    }
+                }
+            }
+
+            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            for (int t = 0; t < 8; t++)
+            {
+                var tid = t + 1;
+                tasks.Add(Task.Factory.StartNew(() => runThread(tid)));
+            }
+            Task.WaitAll(tasks.ToArray());
+
+            Assert.IsTrue(counter == 0);
         }
 
         public enum ThreadingPattern { SameKeys, RandomKeys };

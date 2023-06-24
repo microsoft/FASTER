@@ -363,7 +363,7 @@ namespace FASTER.core
                     if (bestFitSize != saveBestSize)
                     {
                         bestFitIndex = ii;      // We have a better fit.
-                        if (firstFitIndex < 0)
+                        if (firstFitIndex == int.MaxValue)
                             firstFitIndex = ii;
                     }
                     if (ii - firstFitIndex >= localBestFitScanLimit)
@@ -527,7 +527,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Add(long address, int size)
+        public bool TryAdd(long address, int size)
         {
             int binIndex = 0;
             if (!this.IsFixedLength && !GetBinIndex(size, out binIndex))

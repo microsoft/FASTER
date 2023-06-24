@@ -141,7 +141,7 @@ namespace FASTER.core
                                         // Change from "preserving key and storing full value length" to "not preserving key and storing allocated size".
                                         *GetTombstonedValueLengthPointer(stackCtx.recSrc.PhysicalAddress) = 0;
                                         SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, fullRecordLength);
-                                        FreeRecordPool.Add(stackCtx.recSrc.LogicalAddress, fullRecordLength);
+                                        FreeRecordPool.TryAdd(stackCtx.recSrc.LogicalAddress, fullRecordLength);
                                         isFree = true;
                                     }
                                 }
