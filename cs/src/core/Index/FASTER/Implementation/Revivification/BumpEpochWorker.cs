@@ -9,12 +9,17 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    internal static class BumpEpochWorker
+    {
+        // This is coordinated with BumpEpochWorker<Key, Value> constants to decrease the wait interval as the count of records grows
+        // until we hit 16ms, which is the timer resolution on Windows. If we have more than MaxCountForBump record needing a bump, we'll
+        // bump immediately. Otherwise we shift DefaultBumpIntervalMs by BumpMsShift multiples to determine sleep time (see ScanForBump()).
+        internal const int DefaultBumpIntervalMs = 1024;
+    }
+
     internal class BumpEpochWorker<Key, Value>
     {
-        // These are balanced to decrease the wait interval as the count of records grows until we hit 16ms, which is the
-        // timer resolution on Windows. If we have more than MaxCountForBump record needing a bump, we'll bump immediately.
-        // Otherwise we shift DefaultBumpIntervalMs by BumpMsShift multiples to determine sleep time (see ScanForBump()).
-        internal const int DefaultBumpIntervalMs = 1024;
+        // These are coordinated with BumpEpochWorker.DefaultBumpIntervalMs; see its comments.
         const int MaxCountForBump = 32;
         const int BumpMsShift = 2;
 
@@ -50,10 +55,18 @@ namespace FASTER.core
 
                 // See if more entries were added following the bump.
                 this.state = ScanOrQuiescent;
-                if (!ScanForBumpOrEmpty(startMs, out int waitMs) || !fromAdd)
+                int waitMs;
+                long highestUnsafeEpoch = 0;
+                while (!ScanForBumpOrEmpty(startMs, out waitMs, ref highestUnsafeEpoch) || !fromAdd)
                 {
-                    // No records needing Bump(), or another thread has taken bumpWorkerState, or we're here from Take and just wanted
-                    // to update HasSafeRecords. We're done with this invocation of the worker.
+                    // No records needing Bump(), or another thread has taken bumpWorkerState, or we're here from Take to update HasSafeRecords.
+                    if (fromAdd && highestUnsafeEpoch > 0 && this.state == ScanOrQuiescent)
+                    {
+                        // If we compute a new safe epoch, redo the scan; otherwise, drop down to sleep and retry the bump.
+                        if (recordPool.fkv.epoch.ComputeNewSafeToReclaimEpoch() > highestUnsafeEpoch)
+                            continue;
+                        break;
+                    }
                     return;
                 }
 
@@ -67,27 +80,27 @@ namespace FASTER.core
             }
         }
 
-        bool ScanForBumpOrEmpty(ulong startMs, out int waitMs)
+        bool ScanForBumpOrEmpty(ulong startMs, out int waitMs, ref long highestUnsafeEpoch)
         {
             waitMs = 0;
-            if (!this.recordPool.ScanForBumpOrEmpty(MaxCountForBump, out int count))
+            if (!this.recordPool.ScanForBumpOrEmpty(MaxCountForBump, out int countNeedingBump, ref highestUnsafeEpoch))
                 return false;   // Pool is empty, no bump needed, or we are yielding to another thread
 
-            if (count > 0)
+            if (countNeedingBump > 0)
             {
-                if (count < MaxCountForBump)
+                if (countNeedingBump < MaxCountForBump)
                 {
                     var elapsedMs = Native32.GetTickCount64() - startMs;
 
-                    // Determine sleep interval based on count...           // These are the current sleep times at count intervals, for illustration
-                    if (count > MaxCountForBump / 2)                        // 16-31 records
-                        waitMs = DefaultBumpIntervalMs >> BumpMsShift * 3;  // 16 ms
-                    else if (count > MaxCountForBump / 4)                   // 8-15 records
-                        waitMs = DefaultBumpIntervalMs >> BumpMsShift * 2;  // 64 ms
-                    else if (count > MaxCountForBump / 8)                   // 4-7 records
-                        waitMs = DefaultBumpIntervalMs >> BumpMsShift;      // 256 ms
-                    else                                                    // 1-4 records
-                        waitMs = DefaultBumpIntervalMs;                     // 1024 ms
+                    // Determine sleep interval based on count...                           // These are the current sleep times at count intervals, for illustration
+                    if (countNeedingBump > MaxCountForBump / 2)                             // 16-31 records
+                        waitMs = BumpEpochWorker.DefaultBumpIntervalMs >> BumpMsShift * 3;  // 16 ms
+                    else if (countNeedingBump > MaxCountForBump / 4)                        // 8-15 records
+                        waitMs = BumpEpochWorker.DefaultBumpIntervalMs >> BumpMsShift * 2;  // 64 ms
+                    else if (countNeedingBump > MaxCountForBump / 8)                        // 4-7 records
+                        waitMs = BumpEpochWorker.DefaultBumpIntervalMs >> BumpMsShift;      // 256 ms
+                    else                                                                    // 1-4 records
+                        waitMs = BumpEpochWorker.DefaultBumpIntervalMs;                     // 1024 ms
 
                     // If more time has already elapsed than we just decided to wait, we'll Bump immediately.
                     if (elapsedMs >= (ulong)waitMs)

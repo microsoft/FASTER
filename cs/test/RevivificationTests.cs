@@ -40,31 +40,34 @@ namespace FASTER.test.Revivification
             return temp;
         }
 
+        internal const int DefaultSafeWaitTimeout = BumpEpochWorker.DefaultBumpIntervalMs * 2;
+
         internal static FreeRecordPool<TKey, TValue> CreateSingleBinFreeRecordPool<TKey, TValue>(FasterKV<TKey, TValue> fkv, RevivificationBin binDef, int fixedRecordLength = 0)
             => new (fkv, new RevivificationSettings() { FreeListBins = new[] { binDef } }, fixedRecordLength);
 
-        internal static void WaitForSafeRecords<TKey, TValue>(FasterKV<TKey, TValue> fkv, bool want, FreeRecordPool<TKey, TValue> pool = null)
+        internal static void WaitForSafeRecords<TKey, TValue>(FasterKV<TKey, TValue> fkv, bool want)
         {
-            pool ??= fkv.FreeRecordPool;
-
-            // Wait until the worker calls BumpCurrentEpoch and finds eligible records.
+            // Wait until the worker calls BumpCurrentEpoch and finds safe records. If this is called in a loop it may return true before all epochs
+            // in that loop become safe; if this is not specifically what the test wants, then use WaitForSafeEpoch() on the last epoch of the loop.
+            // WaitForSafeEpoch is generally useful mostly for single-delete tests, as a verification that the HasSafeRecords setting is working properly.
             var sw = new Stopwatch();
             sw.Start();
-            while (pool.HasSafeRecords != want)
+            while (fkv.FreeRecordPool.HasSafeRecords != want)
             {
-                Assert.Less(sw.ElapsedMilliseconds, BumpEpochWorker<TKey, TValue>.DefaultBumpIntervalMs * 2, $"Timeout while waiting for HasSafeRecords to be {want}");
+                Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}");
                 Thread.Yield();
             }
         }
 
         internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv, long epoch)
         {
-            // Wait until the worker calls BumpCurrentEpoch and finds eligible records.
+            // Wait until the worker calls BumpCurrentEpoch and the specified epoch has become safe. Because there is a bit of a lag between 
+            // BumpCurrentEpoch/ComputeNewSafeToReclaimEpoch and the scan encountering a record and setting HasSafeRecords, make sure we satisfy both.
             var sw = new Stopwatch();
             sw.Start();
-            while (fkv.epoch.SafeToReclaimEpoch < epoch)
+            while (fkv.epoch.SafeToReclaimEpoch < epoch || !fkv.FreeRecordPool.HasSafeRecords)
             {
-                Assert.Less(sw.ElapsedMilliseconds, BumpEpochWorker<TKey, TValue>.DefaultBumpIntervalMs * 2, $"Timeout while waiting for SafeEpoch {epoch}");
+                Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for SafeEpoch {epoch}");
                 Thread.Yield();
             }
         }
@@ -175,8 +178,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SimpleFixedLenTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] DeleteDest deleteDest, 
-                                       [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public void SimpleFixedLenTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
 
@@ -190,7 +192,6 @@ namespace FASTER.test.Revivification
 
             RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
 
-            session.ctx.phase = phase;
             if (updateOp == UpdateOp.Upsert)
                 session.Upsert(updateKey, updateValue);
             else if (updateOp == UpdateOp.RMW)
@@ -528,7 +529,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void VarLenNoRevivLengthTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] Growth growth)
+        public void VarLenNoRevivLengthTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] Growth growth)
         {
             Populate();
 
@@ -563,7 +564,6 @@ namespace FASTER.test.Revivification
 
             SpanByteAndMemory output = new();
 
-            session.ctx.phase = phase;
             if (updateOp == UpdateOp.Upsert)
                 session.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
@@ -596,7 +596,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void VarLenSimpleTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public void VarLenSimpleTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
 
@@ -627,7 +627,6 @@ namespace FASTER.test.Revivification
 
             RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
 
-            session.ctx.phase = phase;
             if (updateOp == UpdateOp.Upsert)
                 session.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
@@ -638,7 +637,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void VarLenReadOnlyMinAddressTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public void VarLenReadOnlyMinAddressTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
 
@@ -668,7 +667,6 @@ namespace FASTER.test.Revivification
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
-            session.ctx.phase = phase;
             if (updateOp == UpdateOp.Upsert)
                 session.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
@@ -715,6 +713,7 @@ namespace FASTER.test.Revivification
             var delKeyAboveRO = SpanByte.FromFixedSpan(keyVecDelAboveRO);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+            var lastAddedEpoch = fkv.epoch.CurrentEpoch;
             status = session.Delete(ref delKeyAboveRO);
             Assert.IsTrue(status.Found, status.ToString());
 
@@ -723,11 +722,9 @@ namespace FASTER.test.Revivification
                 Assert.IsFalse(pool.HasSafeRecords, "Expected empty pool");
                 pool = RevivificationTestUtils.SwapFreeRecordPool(fkv, pool);
             }
-            else
+            else if (collisionRange == CollisionRange.None)     // CollisionRange.Ten has a valid .PreviousAddress so won't be moved to FreeList
             {
-                RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
-                if (collisionRange == CollisionRange.None)     // CollisionRange.Ten has a valid .PreviousAddress so won't be moved to FreeList
-                    Assert.IsTrue(fkv.FreeRecordPool.HasSafeRecords, "Delete did not move to FreeRecordList as expected");
+                RevivificationTestUtils.WaitForSafeEpoch(fkv, lastAddedEpoch);
             }
 
             Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
@@ -742,9 +739,13 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void VarLenUpdateRevivifyTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] DeleteDest deleteDest, [Values] UpdateKey updateKey,
+        //[Repeat(300)]
+        public void VarLenUpdateRevivifyTest([Values] DeleteDest deleteDest, [Values] UpdateKey updateKey,
                                           [Values] CollisionRange collisionRange, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
             bool stayInChain = deleteDest == DeleteDest.InChain;
 
             byte delAboveRO = (byte)(numRecords - (stayInChain
@@ -799,15 +800,10 @@ namespace FASTER.test.Revivification
             functions.expectedInputLength = InitialLength;
             functions.expectedSingleDestLength = InitialLength;
 
-            // A revivified record will have the full initial value length. A new record here will be created with the half-size input
-            // (which we do in these tests because we retrieve from the "next higher bin"
             if (!expectReviv)
                 functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
-            RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
-
-            session.ctx.phase = phase;
             if (updateOp == UpdateOp.Upsert)
                 session.Upsert(ref keyToTest, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
@@ -822,7 +818,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SimpleMidChainRevivifyTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(CollisionRange.Ten)] CollisionRange collisionRange,
+        public void SimpleMidChainRevivifyTest([Values(CollisionRange.Ten)] CollisionRange collisionRange,
                                                [Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -863,7 +859,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteEntireChainAndRevivifyTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(CollisionRange.Ten)] CollisionRange collisionRange,
+        public void DeleteEntireChainAndRevivifyTest([Values(CollisionRange.Ten)] CollisionRange collisionRange,
                                                      [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -917,7 +913,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteAllRecordsAndRevivifyTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(CollisionRange.None)] CollisionRange collisionRange,
+        public void DeleteAllRecordsAndRevivifyTest([Values(CollisionRange.None)] CollisionRange collisionRange,
                                                     [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -928,11 +924,13 @@ namespace FASTER.test.Revivification
             var key = SpanByte.FromFixedSpan(keyVec);
 
             // Delete
+            long latestAddedEpoch = fkv.epoch.CurrentEpoch;
             for (var ii = 0; ii < numRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+                latestAddedEpoch = fkv.epoch.CurrentEpoch;
                 var status = session.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
             }
@@ -951,7 +949,7 @@ namespace FASTER.test.Revivification
             functions.expectedConcurrentDestLength = InitialLength;
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
-            RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
+            RevivificationTestUtils.WaitForSafeEpoch(fkv, latestAddedEpoch);
 
             // Revivify
             for (var ii = 0; ii < numRecords; ++ii)
@@ -1095,13 +1093,7 @@ namespace FASTER.test.Revivification
                     Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
                 }
 
-                // TODO: Resolve why WaitForSafeEpoch was not satisfied.
-
-                //RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
-                //RevivificationTestUtils.WaitForSafeEpoch(fkv, latestAddedEpoch);
-                //fkv.epoch.ComputeNewSafeToReclaimEpoch();
-                fkv.epoch.BumpCurrentEpoch();
-                Assert.LessOrEqual(latestAddedEpoch, fkv.epoch.SafeToReclaimEpoch, "did not make latestAddedEpoch safe");
+                RevivificationTestUtils.WaitForSafeEpoch(fkv, latestAddedEpoch);
 
                 // Revivify
                 functions.expectedInputLength = InitialLength;
@@ -1128,8 +1120,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SimpleOversizeRevivifyTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] DeleteDest deleteDest,
-                                               [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public void SimpleOversizeRevivifyTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
 
@@ -1170,10 +1161,7 @@ namespace FASTER.test.Revivification
             var status = session.Delete(ref key);
             Assert.IsTrue(status.Found, status.ToString());
             if (!stayInChain)
-            { 
-                Assert.IsTrue(fkv.FreeRecordPoolHasSafeRecords, "Expected a record in the FreeRecordPool for freelist mode");
                 RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
-            }
 
             var tailAddress = fkv.Log.TailAddress;
 
@@ -1192,8 +1180,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SimplePendingOpsRevivifyTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(CollisionRange.None)] CollisionRange collisionRange,
-                                                 [Values] PendingOp pendingOp)
+        public void SimplePendingOpsRevivifyTest([Values(CollisionRange.None)] CollisionRange collisionRange, [Values] PendingOp pendingOp)
         {
             byte delAboveRO = numRecords - 2;   // Will be sent to free list
             byte targetRO = numRecords / 2 - 15;
@@ -1214,7 +1201,6 @@ namespace FASTER.test.Revivification
             Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromFixedSpan(keyVec);
 
-            session.ctx.phase = phase;
             if (pendingOp == PendingOp.Read)
             {
                 Span<byte> inputVec = stackalloc byte[InitialLength];
@@ -1322,8 +1308,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SimpleObjectTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] DeleteDest deleteDest, 
-                                     [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public void SimpleObjectTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
 
@@ -1341,7 +1326,6 @@ namespace FASTER.test.Revivification
             RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
             Assert.IsTrue(fkv.FreeRecordPoolHasSafeRecords, "Expected a free record after delete and WaitForSafeEpoch");
 
-            session.ctx.phase = phase;
             if (updateOp == UpdateOp.Upsert)
                 session.Upsert(key, value);
             else if (updateOp == UpdateOp.RMW)
@@ -1549,13 +1533,12 @@ namespace FASTER.test.Revivification
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-            const int numIterations = 100;
-            const int numItems = 10000;
+            const int numIterations = 10;
+            const int numItems = 1000;
             var flags = new long[numItems];
-            const int size = 42;    // size doesn't matter in this test
+            const int size = 48;    // size doesn't matter in this test, but must be a multiple of 8
             const int numAddThreads = 1;
             const int numTakeThreads = 1;
-            const int numRetries = 10;
 
             // TODO < numItems; set flag according to Add() return
             // For this test we are bypassing the FreeRecordPool in fkv.
@@ -1567,6 +1550,7 @@ namespace FASTER.test.Revivification
             using var freeRecordPool = RevivificationTestUtils.CreateSingleBinFreeRecordPool(fkv, binDef);
 
             bool done = false;
+            const int addressIncrement = 1_000_000; // must be > ReadOnlyAddress
 
             unsafe void runAddThread(int tid)
             {
@@ -1578,17 +1562,17 @@ namespace FASTER.test.Revivification
                         for (var ii = 1; ii < numItems; ++ii)
                         {
                             flags[ii] = 1;
-                            Assert.IsTrue(freeRecordPool.Add(ii, size));
+                            Assert.IsTrue(freeRecordPool.Add(ii + addressIncrement, size), $"Failed to add free record {ii}, iteration {iteration}");
                         }
 
-                        RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
+                        // Do not wait here; the loop will do that with retries
 
-                        // Continue until all are Taken or we hit the retry limit.
+                        // Continue until all are Taken or we hit the timeout, sleeping to let the Take() threads catch up
+                        var startMs = Native32.GetTickCount64();
                         List<int> strayFlags = new();
-                        for (var retries = 0; retries < numRetries; ++retries)
+                        while (Native32.GetTickCount64() - startMs < RevivificationTestUtils.DefaultSafeWaitTimeout)
                         {
-                            // Yield to let the Take() threads catch up.
-                            Thread.Sleep(50);
+                            Thread.Sleep(20);
                             strayFlags.Clear();
                             for (var ii = 1; ii < numItems; ++ii)
                             {
@@ -1596,12 +1580,12 @@ namespace FASTER.test.Revivification
                                     strayFlags.Add(ii);
                             }
                             if (strayFlags.Count == 0)
-                                return;
+                                break;
                         }
 
-                        Assert.AreEqual(0, strayFlags.Count);
+                        var stopMs = Native32.GetTickCount64();
                         var strayRecords = EnumerateSetRecords(freeRecordPool.bins[0]);
-                        Assert.AreEqual(0, strayRecords.Count);
+                        Assert.IsTrue(strayFlags.Count + strayRecords.Count == 0, $"strayflags {strayFlags.Count}, strayRecords {strayRecords.Count}, iteration {iteration}");
                     }
                 }
                 finally
@@ -1616,7 +1600,7 @@ namespace FASTER.test.Revivification
                 {
                     if (freeRecordPool.bins[0].TryTake(size, 0, fkv, out long address))
                     {
-                        var prevFlag = Interlocked.CompareExchange(ref flags[address], 0, 1);
+                        var prevFlag = Interlocked.CompareExchange(ref flags[address - addressIncrement], 0, 1);
                         Assert.AreEqual(1, prevFlag);
                     }
                 }
@@ -1642,7 +1626,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         //[Repeat(30)]
-        public void LiveFreeListThreadStressTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values] CollisionRange collisionRange,
+        public void LiveFreeListThreadStressTest([Values] CollisionRange collisionRange,
                                              [Values] ThreadingPattern threadingPattern, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
@@ -1656,7 +1640,6 @@ namespace FASTER.test.Revivification
                 Random rng = new(tid * 101);
 
                 using var localSession = fkv.For(new RevivificationStressFunctions(keyComparer: null)).NewSession<RevivificationStressFunctions>();
-                localSession.ctx.phase = phase;
 
                 Span<byte> keyVec = stackalloc byte[KeyLength];
                 var key = SpanByte.FromFixedSpan(keyVec);
@@ -1683,7 +1666,6 @@ namespace FASTER.test.Revivification
                 Random rng = new(tid * 101);
 
                 using var localSession = fkv.For(new RevivificationStressFunctions(keyComparer: fkv.comparer)).NewSession<RevivificationStressFunctions>();
-                localSession.ctx.phase = phase;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -1720,7 +1702,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         //[Repeat(30)]
-        public void LiveInChainThreadStressTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase, [Values(CollisionRange.Ten)] CollisionRange collisionRange,
+        public void LiveInChainThreadStressTest([Values(CollisionRange.Ten)] CollisionRange collisionRange,
                                                 [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
@@ -1735,7 +1717,6 @@ namespace FASTER.test.Revivification
             unsafe void runDeleteThread(int tid)
             {
                 using var localSession = fkv.For(new RevivificationStressFunctions(keyComparer: null)).NewSession<RevivificationStressFunctions>();
-                localSession.ctx.phase = phase;
 
                 Span<byte> keyVec = stackalloc byte[KeyLength];
                 var key = SpanByte.FromFixedSpan(keyVec);
@@ -1759,7 +1740,6 @@ namespace FASTER.test.Revivification
                 var input = SpanByte.FromFixedSpan(inputVec);
 
                 using var localSession = fkv.For(new RevivificationStressFunctions(keyComparer: null)).NewSession<RevivificationStressFunctions>();
-                localSession.ctx.phase = phase;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {

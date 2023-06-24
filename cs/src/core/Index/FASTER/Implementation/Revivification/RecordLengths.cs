@@ -151,7 +151,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe int* GetFreeRecordSizePointer(long physicalAddress) => (int*)Unsafe.AsPointer(ref hlog.GetKey(physicalAddress));
 
-        bool TryDequeueFreeRecord(ref int allocatedSize, HashBucketEntry entry, out long logicalAddress, out long physicalAddress)
+        bool TryTakeFreeRecord(ref int allocatedSize, HashBucketEntry entry, out long logicalAddress, out long physicalAddress)
         {
             if (FreeRecordPoolHasSafeRecords && FreeRecordPool.TryTake(allocatedSize, MinFreeRecordAddress(entry), out logicalAddress))
             {

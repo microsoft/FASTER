@@ -39,17 +39,15 @@ namespace FASTER.core
         internal const int StructSize = sizeof(long) * 2;
         #endregion Instance data
 
-        private FreeRecord(long word) => this.word = word;
-
         public long Address
-        {
-            get => word & RecordInfo.kPreviousAddressMaskInWord;
+        { 
+            readonly get => word & RecordInfo.kPreviousAddressMaskInWord;
             set => word = (word & ~RecordInfo.kPreviousAddressMaskInWord) | (value & RecordInfo.kPreviousAddressMaskInWord);
         }
 
         public int Size
-        {
-            get => (int)((word & kSizeMaskInWord) >> kSizeShiftInWord);
+        { 
+            readonly get => (int)((word & kSizeMaskInWord) >> kSizeShiftInWord);
             set => word &= (word & ~kSizeMaskInWord) | ((long)value & RecordInfo.kPreviousAddressBits);
         }
 
@@ -65,7 +63,7 @@ namespace FASTER.core
             return $"epoch {epochStr}, address {this.Address}, size {this.Size}";
         }
 
-        internal bool IsSet => IsSetEpoch(this.addedEpoch);
+        internal readonly bool IsSet => IsSetEpoch(this.addedEpoch);
         internal static bool IsSetEpoch(long epoch) => epoch > 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -111,6 +109,8 @@ namespace FASTER.core
             {
                 if (oldRecord.Address < fkv.hlog.ReadOnlyAddress)
                     SetEmptyAtomic();
+                else
+                { }
                 return false;
             }
             var thisSize = oversize ? GetRecordSize(fkv, oldRecord.Address) : oldRecord.Size;
@@ -123,7 +123,8 @@ namespace FASTER.core
                 return false;
             }
 
-            bestFitSize = thisSize;
+            if (bestFitSize > thisSize)
+                bestFitSize = thisSize;
             return thisSize == recordSize;
         }
 
@@ -289,7 +290,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private FreeRecord* GetRecord(int recordIndex) => records + (recordIndex >= recordCount ? 0 : recordIndex);
+        private FreeRecord* GetRecord(int recordIndex) => records + (recordIndex >= recordCount ? recordIndex - recordCount : recordIndex);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAdd<Key, Value>(long address, int recordSize, FasterKV<Key, Value> fkv) 
@@ -396,22 +397,30 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool ScanForBumpOrEmpty(long currentEpoch, long safeEpoch, int maxCount, out int count)
+        internal bool ScanForBumpOrEmpty(long currentEpoch, long safeEpoch, int maxCountForBump, out int countNeedingBump, ref long highestUnsafeEpoch)
         {
             var hasSafeRecords = false;
-            count = 0;
+            countNeedingBump = 0;
             for (var ii = 0; ii < this.recordCount; ++ii)
             {
-                FreeRecord* record = records + ii;
-                if (record->IsSet)
+                FreeRecord localRecord = *(records + ii);
+                if (localRecord.IsSet)
                 {
-                    if (record->addedEpoch == currentEpoch)
-                    {
-                        if (++count >= maxCount)
-                            break;
-                    }
-                    else if (record->addedEpoch <= safeEpoch)
+                    if (localRecord.addedEpoch <= safeEpoch)
                         hasSafeRecords = true;
+                    else if (localRecord.addedEpoch <= currentEpoch)
+                    {
+                        if (localRecord.addedEpoch == currentEpoch)
+                        { 
+                            if (++countNeedingBump >= maxCountForBump)
+                                break;
+                        }
+                        else if (highestUnsafeEpoch < localRecord.addedEpoch)
+                        {
+                            // This epoch is not safe but is below currentEpoch, so a bump of CurrentEpoch itself is not needed; track the unsafe epoch.
+                            highestUnsafeEpoch = localRecord.addedEpoch;
+                        }
+                    }
                 }
             }
             return hasSafeRecords;
@@ -551,7 +560,7 @@ namespace FASTER.core
             return result;
         }
 
-        internal bool ScanForBumpOrEmpty(int maxCountForBump, out int totalCountNeedingBump)
+        internal bool ScanForBumpOrEmpty(int maxCountForBump, out int totalCountNeedingBump, ref long highestUnsafeEpoch)
         {
             bool hasSafeRecords;
             for (var currentEpoch = this.fkv.epoch.CurrentEpoch ; ;)
@@ -565,8 +574,8 @@ namespace FASTER.core
                     if (currentEpoch != this.fkv.epoch.CurrentEpoch)
                         goto RedoEpoch; // Epoch was bumped since we started
 
-                    bool binHasRecords = bin.ScanForBumpOrEmpty(currentEpoch, fkv.epoch.SafeToReclaimEpoch, maxCountForBump, out int countNeedingBump);
-                    if (binHasRecords)
+                    bool binHasSafeRecords = bin.ScanForBumpOrEmpty(currentEpoch, fkv.epoch.SafeToReclaimEpoch, maxCountForBump, out int countNeedingBump, ref highestUnsafeEpoch);
+                    if (binHasSafeRecords)
                     {
                         if (!hasSafeRecords)    // Set this.HasRecords as soon as we know we have some, but only write to it once during this loop
                             this.HasSafeRecords = hasSafeRecords = true;
@@ -576,8 +585,12 @@ namespace FASTER.core
                     if (totalCountNeedingBump >= maxCountForBump)
                         break;
                 }
+
+                // Completed all bins
                 break;
-            RedoEpoch:;
+
+            RedoEpoch:
+                currentEpoch = this.fkv.epoch.CurrentEpoch;
             }
 
             if (!hasSafeRecords)
