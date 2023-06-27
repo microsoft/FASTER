@@ -7,7 +7,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using static FASTER.core.Utility;
@@ -1082,7 +1081,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void LiveBinWrappingTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public unsafe void LiveBinWrappingTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] WaitMode waitMode, [Values] DeleteDest deleteDest)
         {
             Populate();
 
@@ -1096,19 +1095,14 @@ namespace FASTER.test.Revivification
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
 
-            // "sizeof(int) +" because SpanByte has an int length prefix
+            // "sizeof(int) +" because SpanByte has an int length prefix.
             var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + keyVec.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
             Assert.IsTrue(fkv.FreeRecordPool.GetBinIndex(recordSize, out int binIndex));
             Assert.AreEqual(3, binIndex);
             var bin = fkv.FreeRecordPool.bins[binIndex];
 
-            Span<byte> revivInputVec = stackalloc byte[InitialLength];
-            var revivInput = SpanByte.FromFixedSpan(revivInputVec);
-
-            SpanByteAndMemory output = new();
-
-            // Pick some number that won't align with the bin size, so we wrap
-            var numKeys = bin.recordCount - 3;
+            // Pick some number that 
+            Assert.AreNotEqual(0, bin.GetSegmentStart(recordSize), "SegmentStart should not be 0, to test wrapping");
 
             for (var iter = 0; iter < 100; ++iter)
             {
@@ -1119,7 +1113,6 @@ namespace FASTER.test.Revivification
                 {
                     keyVec.Fill((byte)ii);
                     inputVec.Fill((byte)ii);
-                    revivInputVec.Fill((byte)ii);
 
                     functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(iter == 0 ? InitialLength : InitialLength));
                     latestAddedEpoch = fkv.epoch.CurrentEpoch;
@@ -1128,8 +1121,11 @@ namespace FASTER.test.Revivification
                     //Assert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"mismatched free record count for key {ii}, pt 1");
                 }
 
-                Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "mismatched free record count");
-                RevivificationTestUtils.WaitForSafeLatestAddedEpoch(fkv, recordSize);
+                if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait)
+                { 
+                    Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "mismatched free record count");
+                    RevivificationTestUtils.WaitForSafeLatestAddedEpoch(fkv, recordSize);
+                }
 
                 // Revivify
                 functions.expectedInputLength = InitialLength;
@@ -1138,14 +1134,18 @@ namespace FASTER.test.Revivification
                 for (var ii = 0; ii < numRecords; ++ii)
                 {
                     keyVec.Fill((byte)ii);
+                    inputVec.Fill((byte)ii);
 
                     functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-                    if (updateOp == UpdateOp.Upsert)
-                        session.Upsert(ref key, ref revivInput, ref input, ref output);
-                    else if (updateOp == UpdateOp.RMW)
-                        session.RMW(ref key, ref revivInput);
 
-                    if (tailAddress != fkv.Log.TailAddress)
+                    SpanByteAndMemory output = new();
+                    if (updateOp == UpdateOp.Upsert)
+                        session.Upsert(ref key, ref input, ref input, ref output);
+                    else if (updateOp == UpdateOp.RMW)
+                        session.RMW(ref key, ref input);
+                    output.Memory?.Dispose();
+
+                    if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait && tailAddress != fkv.Log.TailAddress)
                     {
                         var freeRecs = RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool);
                         Debugger.Launch();
@@ -1153,8 +1153,59 @@ namespace FASTER.test.Revivification
                     }
                 }
 
-                Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "expected no free records remaining");
-                RevivificationTestUtils.WaitForSafeRecords(fkv, want: false);
+                if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait)
+                { 
+                    Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "expected no free records remaining");
+                    RevivificationTestUtils.WaitForSafeRecords(fkv, want: false);
+                }
+            }
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        public unsafe void LiveBinWrappingNoRevivTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        {
+            // For a comparison to the reviv version above.
+            Populate();
+            fkv.EnableRevivification = false;
+
+            Span<byte> keyVec = stackalloc byte[KeyLength];
+            var key = SpanByte.FromFixedSpan(keyVec);
+
+            Span<byte> inputVec = stackalloc byte[InitialLength];
+            var input = SpanByte.FromFixedSpan(inputVec);
+
+            for (var iter = 0; iter < 100; ++iter)
+            {
+                // Delete 
+                functions.expectedInputLength = InitialLength;
+                long latestAddedEpoch = fkv.epoch.CurrentEpoch;
+                for (var ii = 0; ii < numRecords; ++ii)
+                {
+                    keyVec.Fill((byte)ii);
+                    inputVec.Fill((byte)ii);
+
+                    functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(iter == 0 ? InitialLength : InitialLength));
+                    latestAddedEpoch = fkv.epoch.CurrentEpoch;
+                    var status = session.Delete(ref key);
+                    Assert.IsTrue(status.Found, $"{status} for key {ii}");
+                }
+
+                for (var ii = 0; ii < numRecords; ++ii)
+                {
+                    keyVec.Fill((byte)ii);
+                    inputVec.Fill((byte)ii);
+
+                    functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+
+                    SpanByteAndMemory output = new();
+                    if (updateOp == UpdateOp.Upsert)
+                        session.Upsert(ref key, ref input, ref input, ref output);
+                    else if (updateOp == UpdateOp.RMW)
+                        session.RMW(ref key, ref input);
+                    output.Memory?.Dispose();
+                }
             }
         }
 

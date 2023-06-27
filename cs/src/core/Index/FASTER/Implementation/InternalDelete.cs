@@ -124,8 +124,7 @@ namespace FASTER.core
                         //  to return the next-higher record whose .PreviousAddress points to this one, *and* we'd need to make sure that record was not revivified out.
                         //  Also, we do not consider this in-chain reuse for records with different keys; by definition its .PreviousAddress cannot be < BeginAddress
                         //  because it points to this one (or one higher than this one).
-                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking 
-                                && srcRecordInfo.PreviousAddress < hlog.BeginAddress && UseFreeRecordPool)
+                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlog.BeginAddress && UseFreeRecordPool)
                         {
                             // Always Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
                             if (srcRecordInfo.TrySeal())
@@ -134,8 +133,7 @@ namespace FASTER.core
                                 if (srcRecordInfo.Tombstone)   // If this is false, it was revivified by another session immediately after ConcurrentDeleter completed.
                                 {
                                     // If we CAS out of the hashtable successfully, add it to the free list.
-                                    var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
-                                    if (stackCtx.hei.TryCAS(address) && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
+                                    if (stackCtx.hei.TryCAS(srcRecordInfo.PreviousAddress) && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                                     {
                                         // Clear Tombstone, so another session trying to revivify in-place will see that Tombstone is cleared if it manages to Seal.
                                         // Do *not* Unseal() here; the record may be in FasterKVIterator's tempKv, so we do not want to clear both Tombstone and Seal.
