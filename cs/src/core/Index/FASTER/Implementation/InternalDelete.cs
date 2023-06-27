@@ -119,7 +119,11 @@ namespace FASTER.core
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
-                        // Otherwise if there is an earlier record for this key, it would be reachable again. // TODO: Consider this reuse for mid-chain records as well.
+                        // Otherwise if there is an earlier record for this key, it would be reachable again.
+                        // Note: We do not currently consider this reuse for mid-chain records (records past the HashBucket), because TracebackForKeyMatch would need
+                        //  to return the next-higher record whose .PreviousAddress points to this one, *and* we'd need to make sure that record was not revivified out.
+                        //  Also, we do not consider this in-chain reuse for records with different keys; by definition its .PreviousAddress cannot be < BeginAddress
+                        //  because it points to this one (or one higher than this one).
                         if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking 
                                 && srcRecordInfo.PreviousAddress < hlog.BeginAddress && UseFreeRecordPool)
                         {
@@ -285,7 +289,12 @@ namespace FASTER.core
 
             if (!fasterSession.SingleDeleter(ref key, ref newValue, ref newRecordInfo, ref deleteInfo))
             {
-                // Don't save allocation because we did not allocate a full Value. TODO: Track whether we have a filler; if so it was revivified and thus can be reused again.
+                // If we have a filler, then this record was revivified and thus can be revivified again.
+                if (newRecordInfo.Filler && this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
+                    stackCtx.ClearNewRecord();
+                else
+                    stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+
                 if (deleteInfo.Action == DeleteAction.CancelOperation)
                     return OperationStatus.CANCELED;
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord

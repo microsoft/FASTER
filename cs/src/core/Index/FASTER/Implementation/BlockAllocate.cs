@@ -62,8 +62,9 @@ namespace FASTER.core
                     if (newLogicalAddress > stackCtx.recSrc.LatestLogicalAddress)
                         return true;
 
-                    // This allocation is below the necessary address so abandon it and repeat the loop. TODO potential reuse
-                    hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
+                    // This allocation is below the necessary address so put it on the free list or abandon it and repeat the loop.
+                    if (!this.UseFreeRecordPool || !this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
+                        hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
                     continue;
                 }
 

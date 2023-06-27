@@ -5,14 +5,13 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-#if !NET5_0_OR_GREATER
 using System.Runtime.InteropServices;
-#endif
 using System.Threading;
 using static FASTER.core.Utility;
 
 namespace FASTER.core
 {
+    [StructLayout(LayoutKind.Explicit, Size = sizeof(long) * 2)]
     internal struct FreeRecord
     {
         internal const int kSizeBits = 64 - RecordInfo.kPreviousAddressBits;
@@ -30,10 +29,12 @@ namespace FASTER.core
 
         #region Instance data
         // 'word' contains the reclaimable logicalAddress and the size of the record at that address.
+        [FieldOffset(0)]
         private long word;
 
         // The epoch in which this record was Added; it cannot be Taken until all threads are past that epoch.
         // It may also be one of the Epoch_* constants, for concurrency control.
+        [FieldOffset(8)]
         internal long addedEpoch;
 
         internal const int StructSize = sizeof(long) * 2;
@@ -45,11 +46,7 @@ namespace FASTER.core
             set => word = (word & ~RecordInfo.kPreviousAddressMaskInWord) | (value & RecordInfo.kPreviousAddressMaskInWord);
         }
 
-        public int Size
-        { 
-            readonly get => (int)((word & kSizeMaskInWord) >> kSizeShiftInWord);
-            set => word &= (word & ~kSizeMaskInWord) | ((long)value & RecordInfo.kPreviousAddressBits);
-        }
+        public int Size => (int)((word & kSizeMaskInWord) >> kSizeShiftInWord);
 
         /// <inheritdoc/>
         public override string ToString()
@@ -75,7 +72,14 @@ namespace FASTER.core
             // If the record is empty or the address is below mutable, set the new address into it.
             var epoch = this.addedEpoch;
             if ((epoch == Epoch_Empty || (IsSetEpoch(epoch) && this.Address < fkv.hlog.ReadOnlyAddress)) && TryLatch(epoch))
-            { 
+            {
+                // Doublecheck in case another thread in the same epoch wrote into it with a later address than before.
+                if (this.Address >= fkv.hlog.ReadOnlyAddress)
+                {
+                    this.addedEpoch = epoch;   // Unlatches
+                    return false;
+                }
+
                 // Ignore overflow due to oversize here--we check for that on Take()
                 this.word = (recordSize << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
                 this.addedEpoch = fkv.epoch.CurrentEpoch;   // Unlatches
@@ -397,7 +401,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool ScanForBumpOrEmpty(long currentEpoch, long safeEpoch, int maxCountForBump, out int countNeedingBump, ref long highestUnsafeEpoch)
+        internal bool ScanForBumpOrEmpty(long currentEpoch, long safeEpoch, int maxCountForBump, out int countNeedingBump, ref long lowestUnsafeEpoch)
         {
             var hasSafeRecords = false;
             countNeedingBump = 0;
@@ -415,10 +419,10 @@ namespace FASTER.core
                             if (++countNeedingBump >= maxCountForBump)
                                 break;
                         }
-                        else if (highestUnsafeEpoch < localRecord.addedEpoch)
+                        else if (localRecord.addedEpoch < lowestUnsafeEpoch)
                         {
-                            // This epoch is not safe but is below currentEpoch, so a bump of CurrentEpoch itself is not needed; track the unsafe epoch.
-                            highestUnsafeEpoch = localRecord.addedEpoch;
+                            // This epoch is not safe but is below currentEpoch, so a bump of CurrentEpoch itself is not needed; track the lowest unsafe epoch.
+                            lowestUnsafeEpoch = localRecord.addedEpoch;
                         }
                     }
                 }
@@ -540,6 +544,17 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryAdd(long logicalAddress, long physicalAddress, int allocatedSize)
+        {
+            if (logicalAddress < fkv.hlog.ReadOnlyAddress)
+                return false;
+            var recordInfo = fkv.hlog.GetInfo(physicalAddress);
+            recordInfo.TrySeal();
+            fkv.SetFreeRecordSize(physicalAddress, ref recordInfo, allocatedSize);
+            return this.TryAdd(logicalAddress, allocatedSize);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryTake(int recordSize, long minAddress, out long address)
         {
             address = 0;
@@ -560,7 +575,7 @@ namespace FASTER.core
             return result;
         }
 
-        internal bool ScanForBumpOrEmpty(int maxCountForBump, out int totalCountNeedingBump, ref long highestUnsafeEpoch)
+        internal bool ScanForBumpOrEmpty(int maxCountForBump, out int totalCountNeedingBump, ref long lowestUnsafeEpoch)
         {
             bool hasSafeRecords;
             for (var currentEpoch = this.fkv.epoch.CurrentEpoch ; ;)
@@ -574,7 +589,7 @@ namespace FASTER.core
                     if (currentEpoch != this.fkv.epoch.CurrentEpoch)
                         goto RedoEpoch; // Epoch was bumped since we started
 
-                    bool binHasSafeRecords = bin.ScanForBumpOrEmpty(currentEpoch, fkv.epoch.SafeToReclaimEpoch, maxCountForBump, out int countNeedingBump, ref highestUnsafeEpoch);
+                    bool binHasSafeRecords = bin.ScanForBumpOrEmpty(currentEpoch, fkv.epoch.SafeToReclaimEpoch, maxCountForBump, out int countNeedingBump, ref lowestUnsafeEpoch);
                     if (binHasSafeRecords)
                     {
                         if (!hasSafeRecords)    // Set this.HasRecords as soon as we know we have some, but only write to it once during this loop

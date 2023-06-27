@@ -52,8 +52,11 @@ namespace FASTER.core
             if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref newRecordInfo, ref upsertInfo, reason))
             {
-                // No SaveAlloc here as we won't retry, but TODO this record could be reused later.
-                stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+                // Save allocation for revivification (not retry, because we won't retry here), or abandon it if that fails.
+                if (this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
+                    stackCtx.ClearNewRecord();
+                else
+                    stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                 return (upsertInfo.Action == UpsertAction.CancelOperation) ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
             }
             SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);

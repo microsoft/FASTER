@@ -27,15 +27,20 @@ namespace FASTER.core
         long state;
         const long ScanOrQuiescent = 0;     // Any threads in the worker are scanning or quiescent, so a thread may claim BumpOrSleep
         const long BumpOrSleep = 1;         // A thread is either bumping or sleeping before bumping, and after bumping will recheck for more work
+        bool disposed;
 
         readonly FreeRecordPool<Key, Value> recordPool;
+
+        readonly AutoResetEvent autoResetEvent = new(false);
 
         internal BumpEpochWorker(FreeRecordPool<Key, Value> recordPool) => this.recordPool = recordPool;
 
         internal void Start(bool fromAdd)
         {
-            if (!fromAdd || (state == ScanOrQuiescent && Interlocked.CompareExchange(ref state, BumpOrSleep, ScanOrQuiescent) == ScanOrQuiescent))
+            if (!fromAdd || (state == ScanOrQuiescent && Interlocked.CompareExchange(ref this.state, BumpOrSleep, ScanOrQuiescent) == ScanOrQuiescent))
                 Task.Run(() => LaunchWorker(fromAdd));
+            else
+                this.autoResetEvent.Set();  // We must be fromAdd and in BumpOrSleep, so signal this
         }
 
         // Return whether another thread has been launched while we were scanning.
@@ -44,7 +49,7 @@ namespace FASTER.core
         private void LaunchWorker(bool fromAdd)
         {
             ulong startMs;
-            while (true)
+            while (!disposed)
             {
                 // Do the bump if we just added a free record. If this is the first time for this worker we may have only one record
                 // (the one that triggered the worker run), or possibly more that happened at about the same time. Otherwise we've
@@ -56,42 +61,44 @@ namespace FASTER.core
                 // See if more entries were added following the bump.
                 this.state = ScanOrQuiescent;
                 int waitMs;
-                long highestUnsafeEpoch = 0;
-                while (!ScanForBumpOrEmpty(startMs, out waitMs, ref highestUnsafeEpoch) || !fromAdd)
+                long lowestUnsafeEpoch = 0;
+                while (!ScanForBumpOrEmpty(startMs, fromAdd, out waitMs, ref lowestUnsafeEpoch))
                 {
                     // No records needing Bump(), or another thread has taken bumpWorkerState, or we're here from Take to update HasSafeRecords.
-                    if (fromAdd && highestUnsafeEpoch > 0 && this.state == ScanOrQuiescent)
+                    if (fromAdd)
                     {
-                        // If we compute a new safe epoch, redo the scan; otherwise, drop down to sleep and retry the bump.
-                        if (recordPool.fkv.epoch.ComputeNewSafeToReclaimEpoch() > highestUnsafeEpoch)
+                        // If we can create some safe records by recalculating the safe epoch, redo the scan; otherwise, drop down to sleep and retry the bump.
+                        if (lowestUnsafeEpoch > 0 && this.state == ScanOrQuiescent && recordPool.fkv.epoch.ComputeNewSafeToReclaimEpoch() >= lowestUnsafeEpoch)
                             continue;
                         break;
                     }
-                    return;
+                    goto Done;
                 }
 
                 // We need another bump. If another thread has already claimed the BumpOrSleep state, exit.
                 if (Interlocked.CompareExchange(ref state, BumpOrSleep, ScanOrQuiescent) != ScanOrQuiescent)
-                    return;
+                    goto Done;
 
                 // If we don't have many entries, sleep a bit so we don't thrash epoch increments.
                 if (waitMs > 0)
-                    Thread.Sleep(waitMs);
+                    this.autoResetEvent.WaitOne(waitMs);
             }
+        Done:
+            if (disposed)
+                this.state = ScanOrQuiescent;
         }
 
-        bool ScanForBumpOrEmpty(ulong startMs, out int waitMs, ref long highestUnsafeEpoch)
+        bool ScanForBumpOrEmpty(ulong startMs, bool fromAdd, out int waitMs, ref long lowestUnsafeEpoch)
         {
-            waitMs = 0;
-            if (!this.recordPool.ScanForBumpOrEmpty(MaxCountForBump, out int countNeedingBump, ref highestUnsafeEpoch))
+            waitMs = BumpEpochWorker.DefaultBumpIntervalMs;
+            if (!this.recordPool.ScanForBumpOrEmpty(MaxCountForBump, out int countNeedingBump, ref lowestUnsafeEpoch) || !fromAdd)
                 return false;   // Pool is empty, no bump needed, or we are yielding to another thread
 
             if (countNeedingBump > 0)
             {
+                waitMs = 0;
                 if (countNeedingBump < MaxCountForBump)
                 {
-                    var elapsedMs = Native32.GetTickCount64() - startMs;
-
                     // Determine sleep interval based on count...                           // These are the current sleep times at count intervals, for illustration
                     if (countNeedingBump > MaxCountForBump / 2)                             // 16-31 records
                         waitMs = BumpEpochWorker.DefaultBumpIntervalMs >> BumpMsShift * 3;  // 16 ms
@@ -103,7 +110,8 @@ namespace FASTER.core
                         waitMs = BumpEpochWorker.DefaultBumpIntervalMs;                     // 1024 ms
 
                     // If more time has already elapsed than we just decided to wait, we'll Bump immediately.
-                    if (elapsedMs >= (ulong)waitMs)
+                    var elapsedMs = Native32.GetTickCount64() - startMs;
+                     if (elapsedMs >= (ulong)waitMs)
                         waitMs = 0;
                 }
             }
@@ -114,7 +122,17 @@ namespace FASTER.core
         internal void Dispose()
         {
             // Any in-progress thread will stop when it sees this, thinking another thread is taking over.
-            this.state = BumpOrSleep;
+            this.disposed = true;          // This prevents a newly-launched thread from even starting
+            var prevState = Interlocked.CompareExchange(ref this.state, BumpOrSleep, ScanOrQuiescent);
+            this.autoResetEvent.Set();
+
+            // If we were in BumpOrSleep before, wait until the worker thread wakes up and see the disposed state.
+            if (prevState == BumpOrSleep)
+            { 
+                while (this.state == BumpOrSleep)
+                    Thread.Yield();
+            }
+            this.autoResetEvent.Dispose();
         }
 
         /// <inheritdoc/>

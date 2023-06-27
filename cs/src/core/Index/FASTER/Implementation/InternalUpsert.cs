@@ -383,7 +383,12 @@ namespace FASTER.core
 
             if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert))
             {
-                // TODO save allocation for reuse (not retry, because these aren't retry status codes); check other InternalXxx as well
+                // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
+                if (this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
+                    stackCtx.ClearNewRecord();
+                else
+                    stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+
                 if (upsertInfo.Action == UpsertAction.CancelOperation)
                     return OperationStatus.CANCELED;
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord

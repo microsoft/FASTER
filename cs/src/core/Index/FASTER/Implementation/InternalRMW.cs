@@ -489,8 +489,11 @@ namespace FASTER.core
                 }
                 if (rmwInfo.Action == RMWAction.CancelOperation)
                 {
-                    // TODO: Another area where we can stash the record for reuse (not retry; this is canceling of the current operation).
-                    stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+                    // Save allocation for revivification (not retry, because this is canceling of the current operation), or abandon it if that fails.
+                    if (this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
+                        stackCtx.ClearNewRecord();
+                    else
+                        stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                     return OperationStatus.CANCELED;
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
@@ -511,8 +514,11 @@ namespace FASTER.core
                         if (status == OperationStatus.CANCELED)
                             return status;
 
-                        // TODO: Another area where we can stash the record for reuse (not retry; this may have been false because the record was too small).
-                        stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+                        // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails.
+                        if (this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
+                            stackCtx.ClearNewRecord();
+                        else
+                            stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                         goto RetryNow;
                     }
                     goto DoCAS;

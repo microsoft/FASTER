@@ -6,15 +6,11 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Drawing;
 using System.IO;
-using System.Net;
-using System.Net.Mail;
-using System.Reflection;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using static FASTER.core.Utility;
-using static FASTER.test.Revivification.RevivificationVarLenStressTests;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test.Revivification
@@ -66,17 +62,19 @@ namespace FASTER.test.Revivification
             }
         }
 
-        internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv, long epoch, FreeRecordPool<TKey, TValue> pool = null)
+        internal static void WaitForSafeEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv, long targetEpoch, FreeRecordPool<TKey, TValue> pool = null)
         {
+            // Note: For tests that Delete() or TryAdd() in a loop, use WaitForSafeLatestAddedEpoch due to potential race conditions making latestAddedEpoch obsolete.
             pool ??= fkv.FreeRecordPool;
 
             // Wait until the worker calls BumpCurrentEpoch and the specified epoch has become safe. Because there is a bit of a lag between 
             // BumpCurrentEpoch/ComputeNewSafeToReclaimEpoch and the scan encountering a record and setting HasSafeRecords, make sure we satisfy both.
             var sw = new Stopwatch();
             sw.Start();
-            while (fkv.epoch.SafeToReclaimEpoch < epoch || !pool.HasSafeRecords)
+            while (fkv.epoch.SafeToReclaimEpoch < targetEpoch || !pool.HasSafeRecords)
             {
-                Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for SafeEpoch {epoch}");
+                Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout,
+                            $"Timeout while waiting for SafeEpoch and HasSafeRecords: target epoch {targetEpoch}, currentEpoch {fkv.epoch.CurrentEpoch}, safeEpoch {fkv.epoch.SafeToReclaimEpoch}, pool.HasSafeRecords {pool.HasSafeRecords}");
                 Thread.Yield();
             }
         }
@@ -94,6 +92,28 @@ namespace FASTER.test.Revivification
                 }
             }
             return count;
+        }
+
+        internal static unsafe long GetLatestAddedEpoch<TKey, TValue>(FreeRecordPool<TKey, TValue> pool, int recordSize)
+        {
+            Assert.IsTrue(pool.GetBinIndex(recordSize, out var binIndex));
+            var bin = pool.bins[binIndex];
+            long epoch = 0;
+            for (var ii = 0; ii < bin.recordCount; ++ii)
+            {
+                if ((bin.records + ii)->addedEpoch > epoch)
+                    epoch = (bin.records + ii)->addedEpoch;
+            }
+            Assert.Greater(epoch, 0);
+            return epoch;
+        }
+
+        internal static void WaitForSafeLatestAddedEpoch<TKey, TValue>(FasterKV<TKey, TValue> fkv, int recordSize, FreeRecordPool<TKey, TValue> pool = null)
+        {
+            // This is necessary because the epoch may have been bumped after we stored off latestAddedEpoch.
+            pool ??= fkv.FreeRecordPool;
+            long epoch = GetLatestAddedEpoch(pool, recordSize);
+            WaitForSafeEpoch(fkv, epoch, pool);
         }
     }
 
@@ -282,7 +302,6 @@ namespace FASTER.test.Revivification
 
             public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                VerifyKeyAndValue(ref key, ref dst);
                 var rmwInfo = RevivificationTestUtils.CopyToRMWInfo(ref upsertInfo);
                 var result = InPlaceUpdater(ref key, ref input, ref dst, ref output, ref rmwInfo);
                 upsertInfo.UsedValueLength = rmwInfo.UsedValueLength;
@@ -347,6 +366,8 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(expectedInputLength, input.Length);
                 Assert.AreEqual(expectedConcurrentDestLength, value.Length);
                 Assert.AreEqual(expectedConcurrentFullValueLength, rmwInfo.FullValueLength);
+
+                VerifyKeyAndValue(ref key, ref value);
 
                 var expectedUsedValueLength = expectedUsedValueLengths.Dequeue();
                 Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
@@ -932,6 +953,9 @@ namespace FASTER.test.Revivification
             Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromFixedSpan(keyVec);
 
+            // "sizeof(int) +" because SpanByte has an int length prefix
+            var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + keyVec.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
+
             // Delete
             long latestAddedEpoch = fkv.epoch.CurrentEpoch;
             for (var ii = 0; ii < numRecords; ++ii)
@@ -958,7 +982,7 @@ namespace FASTER.test.Revivification
             functions.expectedConcurrentDestLength = InitialLength;
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
-            RevivificationTestUtils.WaitForSafeEpoch(fkv, latestAddedEpoch);
+            RevivificationTestUtils.WaitForSafeLatestAddedEpoch(fkv, recordSize);
 
             // Revivify
             for (var ii = 0; ii < numRecords; ++ii)
@@ -973,6 +997,8 @@ namespace FASTER.test.Revivification
                     session.RMW(ref key, ref input);
                 Assert.AreEqual(tailAddress, fkv.Log.TailAddress, $"unexpected new record for key {ii}");
             }
+
+            Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "expected no free records remaining");
             RevivificationTestUtils.WaitForSafeRecords(fkv, want: false);
 
             // Confirm
@@ -1070,7 +1096,8 @@ namespace FASTER.test.Revivification
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
 
-            var recordSize = RecordInfo.GetLength() + RoundUp(keyVec.Length, 8) + RoundUp(InitialLength, 8);
+            // "sizeof(int) +" because SpanByte has an int length prefix
+            var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + keyVec.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
             Assert.IsTrue(fkv.FreeRecordPool.GetBinIndex(recordSize, out int binIndex));
             Assert.AreEqual(3, binIndex);
             var bin = fkv.FreeRecordPool.bins[binIndex];
@@ -1099,11 +1126,10 @@ namespace FASTER.test.Revivification
                     var status = session.Delete(ref key);
                     Assert.IsTrue(status.Found, $"{status} for key {ii}");
                     //Assert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"mismatched free record count for key {ii}, pt 1");
-                    Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
                 }
 
                 Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "mismatched free record count");
-                RevivificationTestUtils.WaitForSafeEpoch(fkv, latestAddedEpoch);
+                RevivificationTestUtils.WaitForSafeLatestAddedEpoch(fkv, recordSize);
 
                 // Revivify
                 functions.expectedInputLength = InitialLength;
@@ -1119,10 +1145,15 @@ namespace FASTER.test.Revivification
                     else if (updateOp == UpdateOp.RMW)
                         session.RMW(ref key, ref revivInput);
 
-                    Assert.AreEqual(tailAddress, fkv.Log.TailAddress, $"failed to revivify record for key {ii} iter {iter}");
-                    Assert.AreEqual(numRecords - ii - 1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "mismatched free record count for key {ii}, pt 2");
+                    if (tailAddress != fkv.Log.TailAddress)
+                    {
+                        var freeRecs = RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool);
+                        Debugger.Launch();
+                        Assert.AreEqual(tailAddress, fkv.Log.TailAddress, $"failed to revivify record for key {ii} iter {iter}, freeRecs {freeRecs}");
+                    }
                 }
 
+                Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "expected no free records remaining");
                 RevivificationTestUtils.WaitForSafeRecords(fkv, want: false);
             }
         }
@@ -1654,6 +1685,7 @@ namespace FASTER.test.Revivification
                     Assert.IsTrue(freeRecordPool.TryAdd(minAddress + ii + 1, smallSize));
 
                 // Now take out the four at the beginning.
+                RevivificationTestUtils.WaitForSafeLatestAddedEpoch(fkv, TakeSize, freeRecordPool);
                 for (var ii = 0; ii < 4; ++ii)
                     Assert.IsTrue(freeRecordPool.TryTake(smallSize, minAddress, out _));
             }
@@ -1664,10 +1696,9 @@ namespace FASTER.test.Revivification
             Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 3));
             Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize));    // 4
             Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize));    // 5 
-            long latestAddedEpoch = fkv.epoch.CurrentEpoch;
             Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize));
 
-            RevivificationTestUtils.WaitForSafeEpoch(fkv, latestAddedEpoch, freeRecordPool);
+            RevivificationTestUtils.WaitForSafeLatestAddedEpoch(fkv, TakeSize, freeRecordPool);
             return freeRecordPool;
         }
 
@@ -1710,9 +1741,14 @@ namespace FASTER.test.Revivification
 
             long address = -1;
             for (var ii = 0; ii < 6; ++ii)
-            { 
-                Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address));
-                Assert.AreEqual(ii + 1, address -= AddressIncrement);
+            {
+                long epoch = fkv.epoch.CurrentEpoch, safeEpoch = fkv.epoch.SafeToReclaimEpoch;
+                if (!freeRecordPool.TryTake(TakeSize, minAddress, out address))
+                {
+                    Debugger.Launch();
+                    Assert.Fail($"Take failed at ii {ii}: currentEpoch {fkv.epoch.CurrentEpoch}, safeEpoch {fkv.epoch.SafeToReclaimEpoch}, pool.HasSafeRecords {freeRecordPool.HasSafeRecords}");
+                }
+                Assert.AreEqual(ii + 1, address -= AddressIncrement, $"address comparison failed at ii {ii}");
             }
             Assert.IsFalse(freeRecordPool.TryTake(TakeSize, minAddress, out address));
         }
@@ -1720,7 +1756,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void ArtificialThreadContentionOnOneRecordTest([Values] WrapMode wrapMode)
+        public unsafe void ArtificialThreadContentionOnOneRecordTest()
         {
             var binDef = new RevivificationBin()
             {
@@ -1730,11 +1766,12 @@ namespace FASTER.test.Revivification
             var freeRecordPool = RevivificationTestUtils.CreateSingleBinFreeRecordPool(fkv, binDef);
             const long TestAddress = AddressIncrement, minAddress = AddressIncrement - 10;
             long counter = 0, globalAddress = 0;
-            int size = 20;
+            const int size = 20;
+            const int numIterations = 10000;
 
             unsafe void runThread(int tid)
             {
-                for (var iteration = 0; iteration < 10000; ++iteration)
+                for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
                     if (freeRecordPool.TryTake(size, minAddress, out long address))
                     {
@@ -1757,6 +1794,82 @@ namespace FASTER.test.Revivification
             Task.WaitAll(tasks.ToArray());
 
             Assert.IsTrue(counter == 0);
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        //[Repeat(30)]
+        public void LiveThreadContentionOnOneRecordTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
+            const int numIterations = 10000;
+            const int numDeleteThreads = 5, numUpdateThreads = 5;
+            const int keyRange = numDeleteThreads;
+
+            unsafe void runDeleteThread(int tid)
+            {
+                Random rng = new(tid * 101);
+
+                using var localSession = fkv.For(new RevivificationStressFunctions(keyComparer: null)).NewSession<RevivificationStressFunctions>();
+
+                Span<byte> keyVec = stackalloc byte[KeyLength];
+                var key = SpanByte.FromFixedSpan(keyVec);
+
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = tid; ii < numRecords; ii += numDeleteThreads)
+                    {
+                        var kk = rng.Next(keyRange);
+                        keyVec.Fill((byte)kk);
+                        localSession.Delete(key);
+                    }
+                }
+            }
+
+            unsafe void runUpdateThread(int tid)
+            {
+                Span<byte> keyVec = stackalloc byte[KeyLength];
+                var key = SpanByte.FromFixedSpan(keyVec);
+
+                Span<byte> inputVec = stackalloc byte[InitialLength];
+                var input = SpanByte.FromFixedSpan(inputVec);
+
+                Random rng = new(tid * 101);
+
+                using var localSession = fkv.For(new RevivificationStressFunctions(keyComparer: fkv.comparer)).NewSession<RevivificationStressFunctions>();
+
+                for (var iteration = 0; iteration < numIterations; ++iteration)
+                {
+                    for (var ii = tid; ii < numRecords; ii += numUpdateThreads)
+                    {
+                        var kk = rng.Next(keyRange);
+                        keyVec.Fill((byte)kk);
+                        inputVec.Fill((byte)kk);
+
+                        localSession.functions.expectedKey = key;
+                        if (updateOp == UpdateOp.Upsert)
+                            localSession.Upsert(key, input);
+                        else
+                            localSession.RMW(key, input);
+                        localSession.functions.expectedKey = default;
+                    }
+                }
+            }
+
+            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            for (int t = 0; t < numDeleteThreads; t++)
+            {
+                var tid = t + 1;
+                tasks.Add(Task.Factory.StartNew(() => runDeleteThread(tid)));
+            }
+            for (int t = 0; t < numUpdateThreads; t++)
+            {
+                var tid = t + 1;
+                tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
+            }
+            Task.WaitAll(tasks.ToArray());
         }
 
         public enum ThreadingPattern { SameKeys, RandomKeys };
