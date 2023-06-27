@@ -72,7 +72,7 @@ namespace FASTER.core
         /// <summary>
         /// Log safe read-only address
         /// </summary>
-        internal long SafeTailAddress;
+        public long SafeTailAddress;
 
         /// <summary>
         /// Dictionary of recovered iterators and their committed until addresses
@@ -133,6 +133,11 @@ namespace FASTER.core
         /// Whether we refresh safe tail as records are inserted
         /// </summary>
         readonly bool AutoRefreshSafeTailAddress;
+
+        /// <summary>
+        /// Callback when safe tail shifts
+        /// </summary>
+        public Action<long, long> SafeTailShiftCallback;
 
         /// <summary>
         /// Whether we automatically commit as records are inserted
@@ -382,15 +387,51 @@ namespace FASTER.core
         /// Enqueue raw pre-formatted bytes with headers to the log (in memory).
         /// </summary>
         /// <param name="entryBytes">Raw bytes to be enqueued to log</param>
+        /// <param name="noCommit">Do not auto-commit</param>
         /// <returns>First logical address of added entries</returns>
-        public long UnsafeEnqueueRaw(ReadOnlySpan<byte> entryBytes)
+        public long UnsafeEnqueueRaw(ReadOnlySpan<byte> entryBytes, bool noCommit = false)
         {
             long logicalAddress;
-            while (!UnsafeTryEnqueueRaw(entryBytes, out logicalAddress))
+            while (!UnsafeTryEnqueueRaw(entryBytes, noCommit, out logicalAddress))
                 Thread.Yield();
             return logicalAddress;
 
         }
+
+        /// <summary>
+        /// Commit metadata only (no records added to main log)
+        /// </summary>
+        /// <param name="info"></param>
+        public void UnsafeCommitMetadataOnly(FasterLogRecoveryInfo info)
+        {
+            lock (ongoingCommitRequests)
+            {
+                ongoingCommitRequests.Enqueue((info.UntilAddress, info));
+            }
+            try
+            {
+                epoch.Resume();
+                if (!allocator.ShiftReadOnlyToTail(out _, out _))
+                    CommitMetadataOnly(ref info);
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+        }
+
+        /// <summary>
+        /// Get page size in bits
+        /// </summary>
+        /// <returns></returns>
+        public int UnsafeGetLogPageSizeBits()
+            => allocator.LogPageSizeBits;
+
+        /// <summary>
+        /// Get read only lag address
+        /// </summary>
+        public long UnsafeGetReadOnlyLagAddress()
+            => allocator.GetReadOnlyLagAddress();
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
@@ -560,9 +601,10 @@ namespace FASTER.core
         /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="entryBytes">Entry bytes to be enqueued to log</param>
+        /// <param name="noCommit">Do not auto-commit</param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool UnsafeTryEnqueueRaw(ReadOnlySpan<byte> entryBytes, out long logicalAddress)
+        public unsafe bool UnsafeTryEnqueueRaw(ReadOnlySpan<byte> entryBytes, bool noCommit, out long logicalAddress)
         {
             int length = entryBytes.Length;
 
@@ -589,7 +631,7 @@ namespace FASTER.core
             entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
-            if (AutoCommit) Commit();
+            if (AutoCommit && !noCommit) Commit();
             return true;
         }
 
@@ -1150,6 +1192,43 @@ namespace FASTER.core
                 task = linkedCommitInfo.NextTask;
             }
         }
+
+        /// <summary>
+        /// Wait for more data to get added to the uncommitted tail of the log
+        /// </summary>
+        /// <returns>true if there's more data available to be read; false if there will never be more data (log has been shutdown)</returns>
+        public async ValueTask<bool> WaitUncommittedAsync(long nextAddress, CancellationToken token = default)
+        {
+            Debug.Assert(AutoRefreshSafeTailAddress);
+            if (nextAddress < SafeTailAddress)
+                return true;
+
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+
+                if (LogCompleted && nextAddress == TailAddress) return false;
+
+                var tcs = refreshUncommittedTcs;
+                if (tcs == null)
+                {
+                    var newTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    tcs = Interlocked.CompareExchange(ref refreshUncommittedTcs, newTcs, null);
+                    tcs ??= newTcs; // successful CAS so update the local var
+                }
+
+                if (nextAddress < SafeTailAddress)
+                    return true;
+
+                // Ignore refresh-uncommitted exceptions, except when the token is signaled
+                try
+                {
+                    await tcs.Task.WithCancellationAsync(token).ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException) { return false; }
+                catch when (!token.IsCancellationRequested) { }
+            }
+        }
         #endregion
 
         #region Commit and CommitAsync
@@ -1674,6 +1753,36 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Unsafely shift the begin address of the log and optionally truncate files on disk, without committing.
+        /// Do not use unless you know what you are doing.
+        /// </summary>
+        /// <param name="untilAddress"></param>
+        /// <param name="snapToPageStart"></param>
+        /// <param name="truncateLog"></param>
+        /// <param name="noFlush"></param>
+        public void UnsafeShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false, bool noFlush = false)
+        {
+            if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
+            {
+                if (snapToPageStart)
+                    untilAddress &= ~allocator.PageSizeMask;
+
+                bool epochProtected = epoch.ThisInstanceProtected();
+                try
+                {
+                    if (!epochProtected)
+                        epoch.Resume();
+                    allocator.ShiftBeginAddress(untilAddress, truncateLog, noFlush);
+                }
+                finally
+                {
+                    if (!epochProtected)
+                        epoch.Suspend();
+                }
+            }
+        }
+
+        /// <summary>
         /// Truncate the log until the start of the page corresponding to untilAddress. This is 
         /// safer than TruncateUntil, as page starts are always a valid truncation point. The
         /// truncation is not persisted until the next commit.
@@ -1693,8 +1802,9 @@ namespace FASTER.core
         /// <param name="recover">Whether to recover named iterator from latest commit (if exists). If false, iterator starts from beginAddress.</param>
         /// <param name="scanBufferingMode">Use single or double buffering</param>
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
+        /// <param name="logger"></param>
         /// <returns></returns>
-        public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false)
+        public FasterLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
@@ -1711,9 +1821,9 @@ namespace FASTER.core
 
             FasterLogScanIterator iter;
             if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
-                iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted);
+                iter = new FasterLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
             else
-                iter = new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted);
+                iter = new FasterLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
 
             if (name != null)
             {
@@ -1861,11 +1971,26 @@ namespace FASTER.core
 
         private void AutoRefreshSafeTailAddressBumpCallback(long tailAddress)
         {
-            if (Utility.MonotonicUpdate(ref SafeTailAddress, tailAddress, out _))
+            if (Utility.MonotonicUpdate(ref SafeTailAddress, tailAddress, out long oldSafeTailAddress))
             {
                 var tcs = refreshUncommittedTcs;
                 if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
                     tcs.SetResult(Empty.Default);
+                var _callback = SafeTailShiftCallback;
+                if (_callback != null)
+                {
+                    // We invoke callback outside epoch protection
+                    bool isProtected = epoch.ThisInstanceProtected();
+                    if (isProtected) epoch.Suspend();
+                    try
+                    {
+                        _callback.Invoke(oldSafeTailAddress, tailAddress);
+                    }
+                    finally
+                    {
+                        if (isProtected) epoch.Resume();
+                    }
+                }
             }
             AutoRefreshSafeTailAddressRunner(true);
         }
