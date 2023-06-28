@@ -163,7 +163,8 @@ namespace FASTER.core
             for (; ; Thread.Yield())
             {
                 long expected_word = word;
-                Debug.Assert(!IsClosedWord(expected_word), "Should not be X locking closed records, pt 1");
+                if (IsClosedWord(expected_word))
+                    break;
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
@@ -179,7 +180,8 @@ namespace FASTER.core
                 if ((word & kSharedLockMaskInWord) == 0)
                 {
                     // Someone else may have closed the record while we were draining reads.
-                    Debug.Assert(!IsClosedWord(this.word), "Should not be X locking readcache records, pt 2");
+                    if (IsClosedWord(this.word))
+                        break;
                     return true;
                 }
                 Thread.Yield();
@@ -220,7 +222,8 @@ namespace FASTER.core
             for (; ; Thread.Yield())
             {
                 long expected_word = word;
-                Debug.Assert(!IsClosedWord(expected_word), "Should not be S locking closed records");
+                if (IsClosedWord(expected_word))
+                    return false;
                 if (((expected_word & kExclusiveLockBitMask) == 0) // not exclusively locked
                     && (expected_word & kSharedLockMaskInWord) != kSharedLockMaskInWord) // shared lock is not full
                 {

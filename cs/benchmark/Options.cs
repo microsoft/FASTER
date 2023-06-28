@@ -33,11 +33,12 @@ namespace FASTER.benchmark
                         "\n    (Checkpoints are stored in directories under " + TestLoader.DataPath + " in directories named by distribution, ycsb vs. synthetic data, and key counts)")]
         public bool BackupAndRestore { get; set; }
 
-        [Option('z', "locking", Required = false, Default = 0,
+        [Option('z', "locking", Required = false, Default = LockingMode.None,
              HelpText = "Locking Implementation:" +
-                        "\n    0 = None (default)" +
-                        "\n    1 = Mixed-mode locking using main HashTable buckets")]
-        public int LockingMode { get; set; }
+                        "\n    None = No locking (default)" +
+                        "\n    Standard = Locking using main HashTable buckets" +
+                        "\n    Ephemeral = Locking only within concurrent IFunctions callbacks")]
+        public LockingMode LockingMode { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
          HelpText = "Number of iterations of the test to run")]
