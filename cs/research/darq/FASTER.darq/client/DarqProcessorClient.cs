@@ -97,7 +97,7 @@ namespace FASTER.client
                 Flush();
             }
 
-            *curr = (byte) MessageType.DarqStep;
+            *curr = (byte) DarqCommandType.DarqStep;
             curr += sizeof(byte);
 
             *(long*) curr = incarnation;
@@ -128,7 +128,7 @@ namespace FASTER.client
                 Flush();
             }
 
-            *curr = (byte) MessageType.DarqRegisterProcessor;
+            *curr = (byte) DarqCommandType.DarqRegisterProcessor;
             curr += sizeof(byte);
 
             offset = (int) (curr - networkSender.GetResponseObjectHead());
@@ -158,11 +158,11 @@ namespace FASTER.client
                 // TODO(Tianyu): Handle consumer id  mismatch cases
                 for (var i = 0; i < batchHeader.NumMessages; i++)
                 {
-                    var type = *(MessageType*) src;
-                    src += sizeof(MessageType);
+                    var type = *(DarqCommandType*) src;
+                    src += sizeof(DarqCommandType);
                     switch (type)
                     {
-                        case MessageType.DarqStep:
+                        case DarqCommandType.DarqStep:
                             var stepStatus = *(StepStatus*) src;
                             src += sizeof(StepStatus);
                             if (stepStatus == StepStatus.REINCARNATED)
@@ -172,7 +172,7 @@ namespace FASTER.client
                             Interlocked.Decrement(ref numOutstanding);
                             request.SetResult(stepStatus);
                             break;
-                        case MessageType.DarqRegisterProcessor:
+                        case DarqCommandType.DarqRegisterProcessor:
                             Debug.Assert(outstandingRegistrationRequest != null);
                             outstandingRegistrationRequest.SetResult(*(long*) src);
                             outstandingRegistrationRequest = null;
@@ -298,7 +298,7 @@ namespace FASTER.client
             var numMessages = 0;
             networkSender.GetResponseObject();
             var curr = networkSender.GetResponseObjectHead() + offset;
-            *curr = (byte) MessageType.DarqStartPush;
+            *curr = (byte) DarqCommandType.DarqStartPush;
             curr += sizeof(byte);
             *curr = 1;
             curr += sizeof(byte);

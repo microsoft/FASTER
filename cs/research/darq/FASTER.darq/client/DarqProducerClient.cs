@@ -319,7 +319,7 @@ namespace FASTER.client
                 Flush();
             }
 
-            *curr = (byte)MessageType.DarqEnqueue;
+            *curr = (byte) DarqCommandType.DarqEnqueue;
             curr += sizeof(byte);
 
             *(long*)curr = id;
@@ -363,10 +363,10 @@ namespace FASTER.client
 
                 for (int i = 0; i < count; i++)
                 {
-                    var messageType = (MessageType)(*src++);
+                    var messageType = (DarqCommandType)(*src++);
                     switch (messageType)
                     {
-                        case MessageType.DarqEnqueue:
+                        case DarqCommandType.DarqEnqueue:
                             // Pretty sure don't actually need to check for Math.Max here because requests are serviced in order?
                             callbackQueue.Dequeue()(wv.Version);
                             break;

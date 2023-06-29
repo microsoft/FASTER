@@ -71,25 +71,5 @@ namespace FASTER.common
         /// Pending result
         /// </summary>
         PendingResult,
-        
-        /// <summary>
-        /// DARQ Enqueue
-        /// </summary>
-        DarqEnqueue,
-        
-        /// <summary>
-        /// DARQ Step
-        /// </summary>
-        DarqStep,
-        
-        /// <summary>
-        /// DARQ Register Processor
-        /// </summary>
-        DarqRegisterProcessor,
-        
-        /// <summary>
-        ///  DARQ start push
-        /// </summary>
-        DarqStartPush,
     }
 }

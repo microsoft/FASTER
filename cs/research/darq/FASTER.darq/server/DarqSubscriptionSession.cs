@@ -75,10 +75,10 @@ namespace FASTER.server
             src += BatchHeader.Size;
             for (msgnum = 0; msgnum < num; msgnum++)
             {
-                var m = (MessageType) (*src++);
+                var m = (DarqCommandType) (*src++);
                 switch (m)
                 {
-                    case MessageType.DarqStartPush:
+                    case DarqCommandType.DarqStartPush:
                     {
                         var speculative = (*src++) == 1;
                         var t = new ManualResetEventSlim();

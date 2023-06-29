@@ -109,8 +109,8 @@ namespace FASTER.server
 
                 for (msgnum = 0; msgnum < num; msgnum++)
                 {
-                    var message = (MessageType)(*src++);
-                    Debug.Assert(message == MessageType.DarqEnqueue);
+                    var message = (DarqCommandType)(*src++);
+                    Debug.Assert(message == DarqCommandType.DarqEnqueue);
                     var worker = new WorkerId(*(long*)src);
                     src += sizeof(long);
                     var lsn = *(long*)src;
@@ -119,7 +119,7 @@ namespace FASTER.server
 
                     darq.EnqueueInputBatch(batch, worker, lsn);
                     src += batch.TotalSize();
-                    hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                    hrw.Write((byte) message, ref dcurr, (int)(dend - dcurr));
                 }
 
                 response.version = darq.Version();

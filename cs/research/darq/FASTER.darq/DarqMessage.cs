@@ -7,6 +7,32 @@ using FASTER.core;
 namespace FASTER.libdpr
 {
     /// <summary>
+    /// DARQ Command Type
+    /// </summary>
+    public enum DarqCommandType : byte
+    {
+        /// <summary>
+        /// DARQ Enqueue
+        /// </summary>
+        DarqEnqueue,
+        
+        /// <summary>
+        /// DARQ Step
+        /// </summary>
+        DarqStep,
+        
+        /// <summary>
+        /// DARQ Register Processor
+        /// </summary>
+        DarqRegisterProcessor,
+        
+        /// <summary>
+        ///  DARQ start push
+        /// </summary>
+        DarqStartPush,
+    }
+    
+    /// <summary>
     /// DARQ Message Type
     /// </summary>
     public enum DarqMessageType : byte

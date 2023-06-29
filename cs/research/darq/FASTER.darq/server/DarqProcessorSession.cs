@@ -79,25 +79,25 @@ namespace FASTER.server
 
             for (msgnum = 0; msgnum < num; msgnum++)
             {
-                var message = (MessageType)(*src++);
+                var message = (DarqCommandType)(*src++);
                 switch (message)
                 {
-                    case MessageType.DarqStep:
+                    case DarqCommandType.DarqStep:
                     {
                         var processorId = *(long*)src;
                         src += sizeof(long);
 
                         var batch = new SerializedDarqEntryBatch(src);
                         var response = darq.Step(processorId, batch);
-                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        hrw.Write((byte) message, ref dcurr, (int)(dend - dcurr));
                         *(StepStatus*)dcurr = response;
                         dcurr += sizeof(StepStatus);
                         break;
                     }
-                    case MessageType.DarqRegisterProcessor:
+                    case DarqCommandType.DarqRegisterProcessor:
                     {
                         var consumerId = darq.RegisterNewProcessor();
-                        hrw.Write(message, ref dcurr, (int)(dend - dcurr));
+                        hrw.Write((byte) message, ref dcurr, (int)(dend - dcurr));
                         *(long*)dcurr = consumerId;
                         dcurr += sizeof(long);
                         break;
