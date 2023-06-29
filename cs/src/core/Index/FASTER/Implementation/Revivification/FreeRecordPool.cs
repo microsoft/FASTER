@@ -236,22 +236,23 @@ namespace FASTER.core
         internal FreeRecordBin(ref RevivificationBin binDef, int prevBinRecordSize, bool isFixedLength = false)
         {
             // If the size range is too much for the number of records in the bin, we must allow multiple sizes per segment.
-            // prevBinRecordSize and binDef.RecordSize are already verified to be a multiple of 8.
-            if (isFixedLength || RoundUp(binDef.RecordSize, 8) == prevBinRecordSize + 8)
+            // prevBinRecordSize is already verified to be a multiple of 8.
+            var bindefRecordSize = RoundUp(binDef.RecordSize, 8);
+            if (isFixedLength || bindefRecordSize == prevBinRecordSize + 8)
             {
                 this.bestFitScanLimit = RevivificationBin.UseFirstFit;
 
                 this.segmentSize = RoundUp(binDef.NumberOfRecords, MinSegmentSize);
                 this.segmentCount = 1;
                 this.segmentRecordSizeIncrement = 1;  // For the division and multiplication in GetSegmentStart
-                this.minRecordSize = this.maxRecordSize = isFixedLength ? prevBinRecordSize : RoundUp(binDef.RecordSize, 8);
+                this.minRecordSize = this.maxRecordSize = isFixedLength ? prevBinRecordSize : bindefRecordSize;
             }
             else
             {
                 this.bestFitScanLimit = binDef.BestFitScanLimit;
 
                 // minRecordSize is already verified to be a multiple of 8.
-                var sizeRange = binDef.RecordSize - prevBinRecordSize;
+                var sizeRange = bindefRecordSize - prevBinRecordSize;
 
                 this.segmentCount = sizeRange / 8;
                 this.segmentSize = (int)Math.Ceiling(binDef.NumberOfRecords / (double)this.segmentCount);

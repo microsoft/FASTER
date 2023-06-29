@@ -328,7 +328,7 @@ namespace FASTER.benchmark
             Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
         }
 
-        internal unsafe (double, double) Run(TestLoader testLoader)
+        internal unsafe (double insPerSec, double opsPerSec, long tailAddress) Run(TestLoader testLoader)
         {
 #if DASHBOARD
             var dash = new Thread(() => DoContinuousMeasurements());
@@ -453,7 +453,7 @@ namespace FASTER.benchmark
             double opsPerSecond = total_ops_done / seconds;
             Console.WriteLine(TestStats.GetTotalOpsString(total_ops_done, seconds));
             Console.WriteLine(TestStats.GetStatsLine(StatsLineNum.Iteration, YcsbConstants.OpsPerSec, opsPerSecond));
-            return (insertsPerSecond, opsPerSecond);
+            return (insertsPerSecond, opsPerSecond, store.Log.TailAddress);
         }
 
         private void SetupYcsbUnsafeContext(int thread_idx)

@@ -37,10 +37,13 @@ namespace FASTER.benchmark
         Iteration = 3,
         RunningIns = 4,
         RunningOps = 5,
+        RunningTail = 6,
         FinalFullIns = 10,
         FinalFullOps = 11,
+        FinalFullTail = 11,
         FinalTrimmedIns = 20,
-        FinalTrimmedOps = 21
+        FinalTrimmedOps = 21,
+        FinalTrimmedTail = 22
     }
 
     public static class YcsbConstants

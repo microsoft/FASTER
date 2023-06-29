@@ -142,8 +142,8 @@ namespace FASTER.core
 
         internal void Verify(bool isFixedLength)
         {
-            if (!isFixedLength && (RecordSize < MinRecordSize || RecordSize > MaxRecordSize || (RecordSize & 0x7) != 0))
-                throw new FasterException($"Invalid RecordSize {RecordSize}; must be >= {MinRecordSize} and a multiple of 8");
+            if (!isFixedLength && (RecordSize < MinRecordSize || RecordSize > MaxRecordSize))
+                throw new FasterException($"Invalid RecordSize {RecordSize}; must be >= {MinRecordSize} and <= {MaxRecordSize}");
             if (NumberOfRecords <= FreeRecordBin.MinRecordsPerBin)
                 throw new FasterException($"Invalid NumberOfRecords {NumberOfRecords}; must be > {FreeRecordBin.MinRecordsPerBin}");
         }
