@@ -77,7 +77,7 @@ namespace FASTER.core
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
-        internal bool EnableRevivification = false;
+        internal readonly bool EnableRevivification = false;
         internal bool UseFreeRecordPool => EnableRevivification && FreeRecordPool is not null;
         internal bool FreeRecordPoolHasSafeRecords => UseFreeRecordPool && FreeRecordPool.HasSafeRecords;
         internal FreeRecordPool<Key, Value> FreeRecordPool;
@@ -240,7 +240,7 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             this.LockTable = new OverflowBucketLockTable<Key, Value>(lockingMode == LockingMode.Standard ? this : null);
-            this.InitializeRevivification(revivificationSettings, variableLengthStructSettings?.valueLength, fixedRecordLength: keyLen is null);
+            this.EnableRevivification = this.InitializeRevivification(revivificationSettings, variableLengthStructSettings?.valueLength, fixedRecordLength: keyLen is null);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

@@ -10,38 +10,38 @@ namespace FASTER.benchmark
     class Options
     {
         [Option('b', "benchmark", Required = false, Default = 0,
-        HelpText = "Benchmark to run:" +
+            HelpText = "Benchmark to run:" +
                         "\n    0 = YCSB" +
                         "\n    1 = YCSB with SpanByte" +
                         "\n    2 = ConcurrentDictionary")]
         public int Benchmark { get; set; }
 
         [Option('t', "threads", Required = false, Default = 8,
-         HelpText = "Number of threads to run the workload on")]
+            HelpText = "Number of threads to run the workload on")]
         public int ThreadCount { get; set; }
 
         [Option('n', "numa", Required = false, Default = 0,
-             HelpText = "NUMA options (Windows only):" +
+            HelpText = "NUMA options (Windows only):" +
                         "\n    0 = No sharding across NUMA sockets" +
                         "\n    1 = Sharding across NUMA sockets")]
         public int NumaStyle { get; set; }
 
         [Option('k', "recover", Required = false, Default = false,
-             HelpText = "Enable Backup and Restore of FasterKV for fast test startup." +
+            HelpText = "Enable Backup and Restore of FasterKV for fast test startup." +
                         "\n    True = Recover FasterKV if a Checkpoint is available, else populate FasterKV from data and Checkpoint it so it can be Restored in a subsequent run" +
                         "\n    False = Populate FasterKV from data and do not Checkpoint a backup" +
                         "\n    (Checkpoints are stored in directories under " + TestLoader.DataPath + " in directories named by distribution, ycsb vs. synthetic data, and key counts)")]
         public bool BackupAndRestore { get; set; }
 
         [Option('z', "locking", Required = false, Default = LockingMode.None,
-             HelpText = "Locking Implementation:" +
-                        "\n    None = No locking (default)" +
-                        "\n    Standard = Locking using main HashTable buckets" +
-                        "\n    Ephemeral = Locking only within concurrent IFunctions callbacks")]
+            HelpText = "Locking Implementation:" +
+                        $"\n    {nameof(LockingMode.None)} = No locking (default)" +
+                        $"\n    {nameof(LockingMode.Standard)} = Locking using main HashTable buckets" +
+                        $"\n    {nameof(LockingMode.Ephemeral)} = Locking only within concurrent IFunctions callbacks")]
         public LockingMode LockingMode { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
-         HelpText = "Number of iterations of the test to run")]
+            HelpText = "Number of iterations of the test to run")]
         public int IterationCount { get; set; }
 
         [Option('d', "distribution", Required = false, Default = YcsbConstants.UniformDist,
@@ -53,11 +53,11 @@ namespace FASTER.benchmark
         public int RandomSeed { get; set; }
 
         [Option("rumd", Separator = ',', Required = false, Default = new[] {50,50,0,0},
-         HelpText = "#,#,#,#: Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 100) operations in this run")]
+            HelpText = "#,#,#,#: Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 100) operations in this run")]
         public IEnumerable<int> RumdPercents { get; set; }
 
         [Option("reviv", Required = false, Default = RevivificationLevel.None,
-             HelpText = "Revivification of tombstoned records:" +
+            HelpText = "Revivification of tombstoned records:" +
                         $"\n    {nameof(RevivificationLevel.None)} = No revivification" +
                         $"\n    {nameof(RevivificationLevel.Chain)} = Revivify tombstoned records in tag chain only" +
                         $"\n    {nameof(RevivificationLevel.Full)} = Tag chain and FreeList")]

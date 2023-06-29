@@ -14,18 +14,18 @@ namespace FASTER.core
         private IVariableLengthStruct<Value> varLenValueOnlyLengthStruct;
         internal VariableLengthBlittableAllocator<Key, Value> varLenAllocator;
 
-        private void InitializeRevivification(RevivificationSettings settings, IVariableLengthStruct<Value> varLenStruct, bool fixedRecordLength)
+        private bool InitializeRevivification(RevivificationSettings settings, IVariableLengthStruct<Value> varLenStruct, bool fixedRecordLength)
         {
             if (settings is null) 
-                return;
+                return false;
             settings.Verify(fixedRecordLength);
             if (!settings.EnableRevivification)
-                return;
-            this.EnableRevivification = true;
+                return false;
             varLenValueOnlyLengthStruct = varLenStruct;
             varLenAllocator = this.hlog as VariableLengthBlittableAllocator<Key, Value>;
             if (settings.FreeListBins?.Length > 0)
                 this.FreeRecordPool = new FreeRecordPool<Key, Value>(this, settings, fixedRecordLength ? hlog.GetAverageRecordSize() : -1);
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -151,6 +151,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe int* GetFreeRecordSizePointer(long physicalAddress) => (int*)Unsafe.AsPointer(ref hlog.GetKey(physicalAddress));
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryTakeFreeRecord(ref int allocatedSize, HashBucketEntry entry, out long logicalAddress, out long physicalAddress)
         {
             if (FreeRecordPoolHasSafeRecords && FreeRecordPool.TryTake(allocatedSize, MinFreeRecordAddress(entry), out logicalAddress))
