@@ -146,9 +146,9 @@ namespace FASTER.core
                 // TryConsumeNext returns false if we have to wait for the next record.
                 while (!TryBulkConsumeNext(consumer, maxChunkSize))
                 {
+                    if (throttleMs > 0) await Task.Delay(throttleMs, token).ConfigureAwait(false);
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         return;
-                    if (throttleMs > 0) await Task.Delay(throttleMs, token).ConfigureAwait(false);
                 }
             }
         }
