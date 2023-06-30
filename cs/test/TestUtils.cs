@@ -192,7 +192,7 @@ namespace FASTER.test
             Generic
         }
 
-        internal enum SyncMode { Sync, Async };
+        internal enum SyncMode { Sync, Async }
 
         public enum ReadCopyDestination { Tail, ReadCache }
 
@@ -202,19 +202,19 @@ namespace FASTER.test
 
         public enum ReadCacheMode { UseReadCache, NoReadCache }
 
-        public enum KeyContentionMode { Contention, NoContention };
+        public enum KeyContentionMode { Contention, NoContention }
 
-        public enum BatchMode { Batch, NoBatch };
+        public enum BatchMode { Batch, NoBatch }
 
         public enum UpdateOp { Upsert, RMW, Delete }
 
         public enum HashModulo { NoMod = 0, Hundred = 100, Thousand = 1000 }
 
-        public enum ScanIteratorType { Pull, Push };
+        public enum ScanIteratorType { Pull, Push }
 
-        public enum ScanMode { Scan, Iterate };
+        public enum ScanMode { Scan, Iterate }
 
-        public enum WaitMode { Wait, NoWait };
+        public enum WaitMode { Wait, NoWait }
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);

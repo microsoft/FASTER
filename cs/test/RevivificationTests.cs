@@ -14,9 +14,11 @@ using static FASTER.test.TestUtils;
 
 namespace FASTER.test.Revivification
 {
-    public enum DeleteDest { FreeList, InChain };
+    public enum DeleteDest { FreeList, InChain }
 
     public enum CollisionRange { Ten = 10, None = int.MaxValue }
+
+    public enum RevivificationEnabled { Reviv, NoReviv }
 
     static class RevivificationTestUtils
     {
@@ -486,6 +488,7 @@ namespace FASTER.test.Revivification
             CollisionRange collisionRange = CollisionRange.None;
             LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySizeBits = 22 };
             var lockingMode = LockingMode.Standard;
+            var revivificationSettings = RevivificationSettings.PowerOf2Bins;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is CollisionRange cr)
@@ -503,10 +506,16 @@ namespace FASTER.test.Revivification
                     logSettings.ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog);
                     continue;
                 }
+                if (arg is RevivificationEnabled revivEnabled)
+                {
+                    if (revivEnabled == RevivificationEnabled.NoReviv)
+                        revivificationSettings = default;
+                    continue;
+                }
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            fkv = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, lockingMode: lockingMode, revivificationSettings: RevivificationSettings.PowerOf2Bins);
+            fkv = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, lockingMode: lockingMode, revivificationSettings: revivificationSettings);
 
             valueVLS = new RevivificationVarLenStruct();
             functions = new RevivificationSpanByteFunctions(fkv);
@@ -1164,11 +1173,10 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void LiveBinWrappingNoRevivTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public unsafe void LiveBinWrappingNoRevivTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, RevivificationEnabled revivEnabled = RevivificationEnabled.NoReviv)
         {
             // For a comparison to the reviv version above.
             Populate();
-            fkv.EnableRevivification = false;
 
             Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromFixedSpan(keyVec);
