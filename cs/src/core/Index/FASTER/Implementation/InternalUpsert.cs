@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 
 namespace FASTER.core
@@ -362,7 +361,7 @@ namespace FASTER.core
                                                                                              ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref input, ref value, fasterSession);
+            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);   // Input is not included in record-length calculations for Upsert
             if (!TryAllocateRecord(ref pendingContext, ref stackCtx, ref allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 

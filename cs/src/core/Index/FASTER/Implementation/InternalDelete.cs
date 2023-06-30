@@ -126,9 +126,14 @@ namespace FASTER.core
                         //  because it points to this one (or one higher than this one).
                         if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlog.BeginAddress && UseFreeRecordPool)
                         {
-                            // Always Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
-                            if (srcRecordInfo.TrySeal())
+                            if (!EnableRevivification)
                             {
+                                // Ignore the result here; this is just tidying up the HashBucket.
+                                stackCtx.hei.TryCAS(srcRecordInfo.PreviousAddress);
+                            }
+                            else if (srcRecordInfo.TrySeal())
+                            {   
+                                // Always Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
                                 bool isFree = false;
                                 if (srcRecordInfo.Tombstone)   // If this is false, it was revivified by another session immediately after ConcurrentDeleter completed.
                                 {
