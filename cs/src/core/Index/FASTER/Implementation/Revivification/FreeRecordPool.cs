@@ -288,8 +288,12 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int GetSegmentStart(int recordSize)
         {
-            // recordSize and segmentSizeIncrement are rounded up to 8, unless IsFixedLength in which case segmentSizeIncrement is 1
-            var segmentIndex = (recordSize - this.minRecordSize) / this.segmentRecordSizeIncrement;
+            // recordSize and segmentSizeIncrement are rounded up to 8, unless IsFixedLength in which case segmentSizeIncrement is 1.
+            // sizeOffset will be negative if we are searching the next-highest bin.
+            var sizeOffset = recordSize - this.minRecordSize;
+            if (sizeOffset < 0)
+                sizeOffset = 0;
+            var segmentIndex = sizeOffset / this.segmentRecordSizeIncrement;
             Debug.Assert(segmentIndex >= 0 && segmentIndex < this.segmentCount, $"Internal error: Segment index ({segmentIndex}) must be >= 0 && < segmentCount ({this.segmentCount})");
             return this.segmentSize * segmentIndex;
         }

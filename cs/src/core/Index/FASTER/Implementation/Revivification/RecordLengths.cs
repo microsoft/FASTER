@@ -16,13 +16,15 @@ namespace FASTER.core
 
         private bool InitializeRevivification(RevivificationSettings settings, IVariableLengthStruct<Value> varLenStruct, bool fixedRecordLength)
         {
+            // Set these first in case revivification is not enabled; they still tell us not to expect fixed-length.
+            varLenValueOnlyLengthStruct = varLenStruct;
+            varLenAllocator = this.hlog as VariableLengthBlittableAllocator<Key, Value>;
+
             if (settings is null) 
                 return false;
             settings.Verify(fixedRecordLength);
             if (!settings.EnableRevivification)
                 return false;
-            varLenValueOnlyLengthStruct = varLenStruct;
-            varLenAllocator = this.hlog as VariableLengthBlittableAllocator<Key, Value>;
             if (settings.FreeListBins?.Length > 0)
                 this.FreeRecordPool = new FreeRecordPool<Key, Value>(this, settings, fixedRecordLength ? hlog.GetAverageRecordSize() : -1);
             return true;
@@ -134,7 +136,10 @@ namespace FASTER.core
         internal void SetFreeRecordSize(long physicalAddress, ref RecordInfo recordInfo, int allocatedSize)
         {
             if (IsFixedLengthReviv || allocatedSize < RecordInfo.GetLength() + sizeof(int))
+            {
+                recordInfo.Filler = false;
                 return;
+            }
             Debug.Assert(RoundUp(allocatedSize, sizeof(int)) == allocatedSize, "SetFreeRecordSize: VarLen GetRecordSize() should have ensured nonzero int-aligned length");
             *GetFreeRecordSizePointer(physicalAddress) = allocatedSize;
             recordInfo.Filler = true;

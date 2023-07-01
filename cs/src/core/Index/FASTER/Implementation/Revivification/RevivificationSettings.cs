@@ -188,6 +188,8 @@ namespace FASTER.core
                 NumberOfRecords = RevivificationBin.DefaultRecordsPerBin
             });
             this.FreeListBins = binList.ToArray();
+
+            this.SearchNextHigherBin = true;
         }
     }
 }

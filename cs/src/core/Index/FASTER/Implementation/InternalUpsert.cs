@@ -124,8 +124,8 @@ namespace FASTER.core
                                     {
                                         upsertInfo.FullValueLength = GetTombstonedValueLength(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
 
-                                        // Upsert uses GetRecordSize because it has both the initial Input and Value
-                                        var (actualSize, _) = hlog.GetRecordSize(ref key, ref input, ref value, fasterSession);
+                                        // Input is not included in record-length calculations for Upsert
+                                        var (actualSize, _) = hlog.GetRecordSize(ref key, ref value);
                                         (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue(stackCtx.recSrc.PhysicalAddress, actualSize, ref srcRecordInfo, ref recordValue, upsertInfo.FullValueLength);
                                     }
 
