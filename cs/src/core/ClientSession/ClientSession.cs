@@ -960,8 +960,6 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
         {
-            recordInfo.SetDirty();
-
             // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
             if (this.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo))
             {
