@@ -58,7 +58,7 @@ namespace FASTER.client
                 *(int*) head = -(offset - sizeof(int));
                 head += sizeof(int);
 
-                ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, WireFormat.DarqProcessor);
+                ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, (WireFormat) DarqProtocolType.DarqProcessor);
                 head += sizeof(BatchHeader);
 
                 // Set DprHeader size
@@ -310,7 +310,7 @@ namespace FASTER.client
             *(int*) head = -(offset - sizeof(int));
             head += sizeof(int);
 
-            ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, WireFormat.DarqSubscribe);
+            ((BatchHeader*) head)->SetNumMessagesProtocol(numMessages, (WireFormat) DarqProtocolType.DarqSubscribe);
 
             networkSender.SendResponse(0, offset);
         }

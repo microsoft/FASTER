@@ -23,11 +23,6 @@ namespace FASTER.common
         /// Similar to DefaultVarLenKV but with WebSocket headers (binary)
         /// </summary>
         WebSocket = 2,
-        
-        DarqSubscribe,
-        DarqProducer,
-        DarqProcessor,
-
         /// <summary>
         /// ASCII wire format (non-binary protocol)
         /// </summary>

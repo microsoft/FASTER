@@ -235,7 +235,7 @@ namespace FASTER.client
                 *(int*)head = -(offset - sizeof(int));
                 head += sizeof(int);
 
-                ((BatchHeader*)head)->SetNumMessagesProtocol(numMessages, WireFormat.DarqProducer);
+                ((BatchHeader*)head)->SetNumMessagesProtocol(numMessages, (WireFormat) DarqProtocolType.DarqProducer);
                 head += sizeof(BatchHeader);
 
                 // Set DprHeader size

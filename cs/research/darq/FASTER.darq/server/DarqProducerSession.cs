@@ -133,7 +133,7 @@ namespace FASTER.server
         private void Send(byte* d, byte* dcurr, ProducerResponseBuffer response)
         {
             var dstart = d + sizeof(int);
-            ((BatchHeader*)dstart)->SetNumMessagesProtocol(msgnum - start, WireFormat.DarqProducer);
+            ((BatchHeader*)dstart)->SetNumMessagesProtocol(msgnum - start, (WireFormat) DarqProtocolType.DarqProducer);
             ((BatchHeader*)dstart)->SeqNo = seqNo++;
             var payloadSize = response.size = (int)(dcurr - d);
             // Set packet size in header

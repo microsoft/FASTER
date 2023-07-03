@@ -117,7 +117,7 @@ namespace FASTER.server
         private void Send(byte* d, byte* dcurr)
         {
             var dstart = d + sizeof(int);
-            ((BatchHeader*)dstart)->SetNumMessagesProtocol(msgnum - start, WireFormat.DarqProcessor);
+            ((BatchHeader*)dstart)->SetNumMessagesProtocol(msgnum - start, (WireFormat) DarqProtocolType.DarqProcessor);
             ((BatchHeader*)dstart)->SeqNo = seqNo++;
             int payloadSize = (int)(dcurr - d);
             // Set packet size in header

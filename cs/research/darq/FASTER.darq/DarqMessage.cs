@@ -6,6 +6,13 @@ using FASTER.core;
 
 namespace FASTER.libdpr
 {
+    public enum DarqProtocolType : byte
+    {
+        DarqSubscribe = 125,
+        DarqProcessor = 126,
+        DarqProducer = 127
+    }
+    
     /// <summary>
     /// DARQ Command Type
     /// </summary>

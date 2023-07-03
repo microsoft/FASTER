@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using FASTER.client;
 using FASTER.common;
 using FASTER.darq;
+using FASTER.libdpr;
 
 namespace FASTER.server
 {
@@ -19,13 +21,13 @@ namespace FASTER.server
 
         public IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
         {
-            switch (wireFormat)
+            switch ((DarqProtocolType) wireFormat)
             {
-                case WireFormat.DarqSubscribe:
+                case DarqProtocolType.DarqSubscribe:
                     return new DarqSubscriptionSession(networkSender, backend);
-                case WireFormat.DarqProducer:
+                case DarqProtocolType.DarqProducer:
                     return new DarqProducerSession(networkSender, backend, responseQueue);
-                case WireFormat.DarqProcessor:
+                case DarqProtocolType.DarqProcessor:
                     return new DarqProcessorSession(networkSender, backend);
                 default:
                     throw new NotSupportedException();
@@ -58,9 +60,14 @@ namespace FASTER.server
             responseQueue = darq.Speculative ? new() : null;
             provider = new DarqProvider(darq, responseQueue);
             server = new FasterServerTcp(options.Address, options.Port);
-            server.Register(WireFormat.DarqSubscribe, provider);
-            server.Register(WireFormat.DarqProcessor, provider);
-            server.Register(WireFormat.DarqProducer, provider);
+            // Check that our custom defined wire format is not clashing with anything implemented by FASTER
+            Debug.Assert(!Enum.IsDefined(typeof(WireFormat), DarqProtocolType.DarqSubscribe));
+            Debug.Assert(!Enum.IsDefined(typeof(WireFormat), DarqProtocolType.DarqProcessor));
+            Debug.Assert(!Enum.IsDefined(typeof(WireFormat), DarqProtocolType.DarqProducer));
+
+            server.Register((WireFormat) DarqProtocolType.DarqSubscribe, provider);
+            server.Register((WireFormat) DarqProtocolType.DarqProcessor, provider);
+            server.Register((WireFormat) DarqProtocolType.DarqProducer, provider);
         }
 
         public Darq GetDarq() => darq;

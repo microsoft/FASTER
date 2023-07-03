@@ -156,7 +156,7 @@ namespace FASTER.server
 
             var d = networkSender.GetResponseObjectHead();
             var dstart = d + sizeof(int);
-            ((BatchHeader*) dstart)->SetNumMessagesProtocol(msgnum - start, WireFormat.DarqSubscribe);
+            ((BatchHeader*) dstart)->SetNumMessagesProtocol(msgnum - start, (WireFormat) DarqProtocolType.DarqSubscribe);
             ((BatchHeader*) dstart)->SeqNo = seqNo++;
             int payloadSize = (int) (dcurr - d);
             // Set packet size in header
