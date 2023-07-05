@@ -269,6 +269,7 @@ namespace FASTER.server
         {
             bool ret = false;
             var start = key;
+            keySerializer.ReadKeyByRef(ref key);
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             if (subscriptions != null)
             {
@@ -297,6 +298,7 @@ namespace FASTER.server
         public unsafe void PUnsubscribe(byte* key, ServerSessionBase session)
         {
             var start = key;
+            keySerializer.ReadKeyByRef(ref key);
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             if (prefixSubscriptions != null)
             {
