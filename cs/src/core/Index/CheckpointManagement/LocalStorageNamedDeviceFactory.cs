@@ -14,21 +14,24 @@ namespace FASTER.core
     /// </summary>
     public class LocalStorageNamedDeviceFactory : INamedDeviceFactory
     {
-        private string baseName;
-        private readonly bool deleteOnClose;
-        private readonly int? throttleLimit;
-        private readonly bool preallocateFile;
+        string baseName;
+        readonly bool deleteOnClose;
+        readonly int? throttleLimit;
+        readonly bool preallocateFile;
+        readonly bool disableFileBuffering;
 
         /// <summary>
         /// Create instance of factory
         /// </summary>
         /// <param name="preallocateFile">Whether files should be preallocated</param>
         /// <param name="deleteOnClose">Whether file should be deleted on close</param>
+        /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance</param>
-        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, int? throttleLimit = null)
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
+            this.disableFileBuffering = disableFileBuffering;
             this.throttleLimit = throttleLimit;
         }
 
@@ -41,7 +44,7 @@ namespace FASTER.core
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
-            var device = Devices.CreateLogDevice(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName), preallocateFile: preallocateFile, deleteOnClose: deleteOnClose);
+            var device = Devices.CreateLogDevice(Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName), preallocateFile: preallocateFile, deleteOnClose: deleteOnClose, disableFileBuffering: disableFileBuffering);
             if (this.throttleLimit.HasValue)
             {
                 device.ThrottleLimit = this.throttleLimit.Value;
