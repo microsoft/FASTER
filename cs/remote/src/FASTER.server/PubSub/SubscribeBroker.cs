@@ -271,13 +271,14 @@ namespace FASTER.server
             var start = key;
             keySerializer.ReadKeyByRef(ref key);
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            if (subscriptions != null)
+            if (subscriptions == null) return ret;
+            if (subscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
             {
-                if (subscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
+                foreach (var sid in subscriptionDict.Keys)
                 {
-                    foreach (var sid in subscriptionDict.Keys)
+                    if (subscriptionDict.TryGetValue(sid, out var _session))
                     {
-                        if (subscriptionDict[sid] == session)
+                        if (_session == session)
                         {
                             subscriptionDict.TryRemove(sid, out _);
                             ret = true;
@@ -300,15 +301,16 @@ namespace FASTER.server
             var start = key;
             keySerializer.ReadKeyByRef(ref key);
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            if (prefixSubscriptions != null)
+            if (prefixSubscriptions == null) return;
+            if (prefixSubscriptions.ContainsKey(subscriptionKey))
             {
-                if (prefixSubscriptions.ContainsKey(subscriptionKey))
+                if (prefixSubscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
                 {
+                    foreach (var sid in subscriptionDict.Item2.Keys)
                     {
-                        prefixSubscriptions.TryGetValue(subscriptionKey, out var subscriptionDict);
-                        foreach (var sid in subscriptionDict.Item2.Keys)
+                        if (subscriptionDict.Item2.TryGetValue(sid, out var _session))
                         {
-                            if (subscriptionDict.Item2[sid] == session)
+                            if (_session != session)
                             {
                                 subscriptionDict.Item2.TryRemove(sid, out _);
                                 break;
