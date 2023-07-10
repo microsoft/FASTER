@@ -124,7 +124,7 @@ namespace FASTER.core
                 return;
             }
 
-            *GetFreeRecordSizePointer(physicalAddress) = allocatedSize;
+            SetFreeRecordSize(physicalAddress, ref recordInfo, allocatedSize);
             pendingContext.retryNewLogicalAddress = logicalAddress;
         }
 
@@ -140,9 +140,8 @@ namespace FASTER.core
                 return false;
             }
             newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            int* len_ptr = GetFreeRecordSizePointer(newPhysicalAddress);
-            int recordSize = *len_ptr;
-            *len_ptr = 0;
+
+            int recordSize = GetFreeRecordSize(newPhysicalAddress, ref hlog.GetInfo(newPhysicalAddress));
             if (recordSize < allocatedSize)
                 return false;
             allocatedSize = recordSize;

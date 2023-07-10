@@ -536,12 +536,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd(long address, int size)
+        public bool TryAdd(long logicalAddress, int size)
         {
             int binIndex = 0;
-            if (!this.IsFixedLength && !GetBinIndex(size, out binIndex))
+            if (logicalAddress < fkv.hlog.ReadOnlyAddress || (!this.IsFixedLength && !GetBinIndex(size, out binIndex)))
                 return false;
-            if (!bins[binIndex].TryAdd(address, size, this.fkv))
+            if (!bins[binIndex].TryAdd(logicalAddress, size, this.fkv))
                 return false;
             
             bumpEpochWorker.Start(fromAdd: true);

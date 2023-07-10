@@ -145,8 +145,6 @@ namespace FASTER.core
                                         // Therefore, delay Unseal() to when it's dequeued from the free record pool.
                                         srcRecordInfo.Tombstone = false;
 
-                                        // Change from "preserving key and storing full value length" to "not preserving key and storing allocated size".
-                                        *GetTombstonedValueLengthPointer(stackCtx.recSrc.PhysicalAddress) = 0;
                                         SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, fullRecordLength);
                                         FreeRecordPool.TryAdd(stackCtx.recSrc.LogicalAddress, fullRecordLength);
                                         isFree = true;
@@ -303,7 +301,8 @@ namespace FASTER.core
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
 
-            SetTombstonedValueLength(ref newValue, ref newRecordInfo, deleteInfo.FullValueLength);
+            // We've already set tombstone and default value and calculated UsedValueLength, so no need to call SetTombstoneAndFullValueLength.
+            SetFullValueLength(ref newValue, ref newRecordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             deleteInfo.RecordInfo = newRecordInfo;

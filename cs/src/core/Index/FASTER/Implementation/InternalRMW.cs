@@ -127,7 +127,7 @@ namespace FASTER.core
                                         rmwInfo.UsedValueLength = rmwInfo.FullValueLength = FixedLengthStruct<Value>.Length;
                                     else
                                     {
-                                        rmwInfo.FullValueLength = GetTombstonedValueLength(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
+                                        rmwInfo.FullValueLength = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo).fullValueLength;
 
                                         // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
                                         var (actualSize, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
@@ -148,12 +148,9 @@ namespace FASTER.core
                             finally
                             {
                                 if (ok)
-                                    SetLiveFullValueLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                                    SetFullValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                                 else
-                                {
-                                    SetTombstonedValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.FullValueLength);
-                                    srcRecordInfo.Tombstone = true; // Restore tombstone on inability to update in place
-                                }
+                                    SetTombstoneAndFullValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
                                 srcRecordInfo.Unseal();
                             }
                         }
@@ -467,7 +464,7 @@ namespace FASTER.core
             {
                 if (fasterSession.InitialUpdater(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo, ref rmwInfo))
                 {
-                    SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                    SetFullValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = forExpiration
                         ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired)
                         : OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
@@ -483,7 +480,7 @@ namespace FASTER.core
             {
                 if (fasterSession.CopyUpdater(ref key, ref input, ref value, ref newRecordValue, ref output, ref newRecordInfo, ref rmwInfo))
                 {
-                    SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                    SetFullValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
                     goto DoCAS;
                 }
@@ -566,7 +563,7 @@ namespace FASTER.core
             else
                 fasterSession.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref newRecordInfo, ref rmwInfo);
 
-            SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+            SetFullValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }

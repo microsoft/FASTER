@@ -122,7 +122,7 @@ namespace FASTER.core
                                         upsertInfo.UsedValueLength = upsertInfo.FullValueLength = FixedLengthStruct<Value>.Length;
                                     else
                                     {
-                                        upsertInfo.FullValueLength = GetTombstonedValueLength(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo);
+                                        upsertInfo.FullValueLength = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo).fullValueLength;
 
                                         // Input is not included in record-length calculations for Upsert
                                         var (actualSize, _) = hlog.GetRecordSize(ref key, ref value);
@@ -142,10 +142,11 @@ namespace FASTER.core
                             }
                             finally
                             {
-                                SetLiveFullValueLength(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+                                if (ok)
+                                    SetFullValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+                                else
+                                    SetTombstoneAndFullValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
                                 srcRecordInfo.Unseal();
-                                if (!ok)
-                                    srcRecordInfo.Tombstone = true; // Restore tombstone on inability to update in place
                             }
                         }
                         goto CreateNewRecord;
@@ -393,7 +394,7 @@ namespace FASTER.core
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
 
-            SetLiveFullValueLength(newPhysicalAddress, ref newRecordValue, ref newRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+            SetFullValueLength(ref newRecordValue, ref newRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             upsertInfo.RecordInfo = newRecordInfo;
