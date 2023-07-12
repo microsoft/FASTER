@@ -74,10 +74,10 @@ namespace FASTER.core
             if (IsFixedLengthReviv)
                 return (FixedLengthStruct<Value>.Length, FixedLengthStruct<Value>.Length, hlog.GetAverageRecordSize());
 
-            int fullValueLength, allocatedSize, valueOffset = GetValueOffset(physicalAddress, ref recordValue);
-            int usedValueLength = varLenValueOnlyLengthStruct.GetLength(ref recordValue);
+            int usedValueLength, fullValueLength, allocatedSize, valueOffset = GetValueOffset(physicalAddress, ref recordValue);
             if (recordInfo.Filler)
             {
+                usedValueLength = varLenValueOnlyLengthStruct.GetLength(ref recordValue);
                 fullValueLength = *GetFullValueLengthPointer(ref recordValue, RoundUp(usedValueLength, sizeof(int))); // Get the length from the Value space after usedValueLength
                 Debug.Assert(fullValueLength >= usedValueLength, $"GetLengthsFromFiller: fullValueLength {fullValueLength} should be >= usedValueLength {usedValueLength}");
                 allocatedSize = valueOffset + fullValueLength;
@@ -173,7 +173,7 @@ namespace FASTER.core
         #endregion FreeRecords
 
         // TombstonedRecords are in the tag chain with the tombstone bit set (they are not in the freelist). They preserve the key (they mark that key as deleted,
-        // which is important if there is a subsequent record for that key), and thus stores the full Value length after the used value data (if there is room).
+        // which is important if there is a subsequent record for that key), and store the full Value length after the used value data (if there is room).
         #region TombstonedRecords
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

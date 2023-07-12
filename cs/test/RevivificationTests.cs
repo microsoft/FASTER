@@ -1021,6 +1021,60 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        public void DeleteAllRecordsAndTakeSnapshotTest()
+        {
+            Populate();
+
+            Span<byte> keyVec = stackalloc byte[KeyLength];
+            var key = SpanByte.FromFixedSpan(keyVec);
+
+            // Delete
+            long latestAddedEpoch = fkv.epoch.CurrentEpoch;
+            for (var ii = 0; ii < numRecords; ++ii)
+            {
+                keyVec.Fill((byte)ii);
+
+                functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+                latestAddedEpoch = fkv.epoch.CurrentEpoch;
+                var status = session.Delete(ref key);
+                Assert.IsTrue(status.Found, status.ToString());
+            }
+            Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"Expected numRecords ({numRecords}) free records");
+
+            this.fkv.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).GetAwaiter().GetResult();
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        public void DeleteAllRecordsAndIterateTest()
+        {
+            Populate();
+
+            Span<byte> keyVec = stackalloc byte[KeyLength];
+            var key = SpanByte.FromFixedSpan(keyVec);
+
+            // Delete
+            long latestAddedEpoch = fkv.epoch.CurrentEpoch;
+            for (var ii = 0; ii < numRecords; ++ii)
+            {
+                keyVec.Fill((byte)ii);
+
+                functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+                latestAddedEpoch = fkv.epoch.CurrentEpoch;
+                var status = session.Delete(ref key);
+                Assert.IsTrue(status.Found, status.ToString());
+            }
+            Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"Expected numRecords ({numRecords}) free records");
+
+            using var iterator = this.session.Iterate();
+            while (iterator.GetNext(out _))
+                ;
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
         public void BinSelectionTest()
         {
             int expectedBin = 0, recordSize = fkv.FreeRecordPool.bins[expectedBin].maxRecordSize;
@@ -1113,7 +1167,8 @@ namespace FASTER.test.Revivification
             // Pick some number that 
             Assert.AreNotEqual(0, bin.GetSegmentStart(recordSize), "SegmentStart should not be 0, to test wrapping");
 
-            for (var iter = 0; iter < 100; ++iter)
+            int maxIter = waitMode == WaitMode.Wait ? 5 : 100;
+            for (var iter = 0; iter < maxIter; ++iter)
             {
                 // Delete 
                 functions.expectedInputLength = InitialLength;

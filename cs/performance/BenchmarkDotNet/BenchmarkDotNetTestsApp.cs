@@ -12,6 +12,7 @@ namespace BenchmarkDotNetTests
 
         public static void Main(string[] args)
         {
+            // Run with: <path>\<exename> --filter ClassName (or *<ClassName substring>*)
             BenchmarkSwitcher.FromAssembly(typeof(BenchmarkDotNetTestsApp).Assembly).Run(args);
         }
     }

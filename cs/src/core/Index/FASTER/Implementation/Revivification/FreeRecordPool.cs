@@ -113,8 +113,6 @@ namespace FASTER.core
             {
                 if (oldRecord.Address < fkv.hlog.ReadOnlyAddress)
                     SetEmptyAtomic();
-                else
-                { }
                 return false;
             }
             var thisSize = oversize ? GetRecordSize(fkv, oldRecord.Address) : oldRecord.Size;

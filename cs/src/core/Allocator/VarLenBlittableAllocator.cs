@@ -171,14 +171,14 @@ namespace FASTER.core
                 return (l, l);
             }
 
-            var valueLen = recordInfo.Tombstone && recordInfo.Filler
-                ? *(int*)ValueOffset(physicalAddress)
-                : ValueSize(physicalAddress);
-            var size = (RecordInfo.GetLength() + AlignedKeySize(physicalAddress)) + valueLen;
+            var valueLen = ValueSize(physicalAddress);
+            if (recordInfo.Filler)
+                valueLen += *(int*)(ValueOffset(physicalAddress) + Utility.RoundUp(valueLen, sizeof(int)));
+            var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + valueLen;
             return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
-        public override (int, int) GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public override (int, int) GetCopyDestinationRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
         {
             ref var recordInfo = ref GetInfo(physicalAddress);
             if (recordInfo.IsNull())
@@ -187,31 +187,37 @@ namespace FASTER.core
                 return (l, l);
             }
 
+            // Used by RMW to determine the length of copy destination (taking Input into account), so does not need to get filler length.
             var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + fasterSession.GetLength(ref GetValue(physicalAddress), ref input);
             return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
         public override int GetRequiredRecordSize(long physicalAddress, int availableBytes)
         {
-            // We need at least [record size] + [average key size] + [average value size]
+            // We need at least [average record size]...
             var reqBytes = GetAverageRecordSize();
             if (availableBytes < reqBytes)
-            {
                 return reqBytes;
-            }
 
-            // We need at least [record size] + [actual key size] + [average value size]
+            // We need at least [RecordInfo size] + [actual key size]...
             reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + ValueLength.GetInitialLength();
             if (availableBytes < reqBytes)
-            {
                 return reqBytes;
+
+            // We need at least [RecordInfo size] + [actual key size] + [actual value size]
+            var recordInfo = GetInfo(physicalAddress);
+            var valueLen = ValueSize(physicalAddress);
+            if (recordInfo.Filler)
+            {
+                // We have a filler, so the valueLen we have now is the usedValueLength; we need to offset to where the fullValueLength is and read that int
+                var alignedUsedValueLength = Utility.RoundUp(valueLen, sizeof(int));
+                reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + alignedUsedValueLength + sizeof(int);
+                if (availableBytes < reqBytes)
+                    return reqBytes;
+                valueLen = *(int*)(ValueOffset(physicalAddress) + alignedUsedValueLength);
             }
 
-            // We need at least [record size] + [actual key size] + [actual value size]
-            var recordInfo = GetInfo(physicalAddress);
-            var valueLen = recordInfo.Tombstone && recordInfo.Filler
-                ? *(int*)(ValueOffset(physicalAddress))
-                : ValueSize(physicalAddress);
+            // Now we know the full record length.
             reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + valueLen;
             reqBytes = (reqBytes + kRecordAlignment - 1) & (~(kRecordAlignment - 1));
             return reqBytes;

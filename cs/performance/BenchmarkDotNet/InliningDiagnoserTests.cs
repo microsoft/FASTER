@@ -14,7 +14,7 @@ namespace BenchmarkDotNetTests
 {
     [InliningDiagnoser(logFailuresOnly: false, allowedNamespaces: new[] { "FASTER.core" })]
     [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory, BenchmarkLogicalGroupRule.ByParams)]
-    public class InliningTests
+    public class InliningDiagnoserTests
     {
         [Params(1_000_000)]
         public int NumRecords;

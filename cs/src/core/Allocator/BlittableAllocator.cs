@@ -122,7 +122,7 @@ namespace FASTER.core
             return (recordSize, recordSize);
         }
 
-        public override (int, int) GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public override (int, int) GetCopyDestinationRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
         {
             return (recordSize, recordSize);
         }

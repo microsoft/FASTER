@@ -1,9 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#if !NET5_0_OR_GREATER
-using System.Runtime.InteropServices;
-#endif
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -35,12 +32,14 @@ namespace FASTER.core
 
         internal BumpEpochWorker(FreeRecordPool<Key, Value> recordPool) => this.recordPool = recordPool;
 
+        private bool ClaimBumpOrSleepState() => state == ScanOrQuiescent && Interlocked.CompareExchange(ref this.state, BumpOrSleep, ScanOrQuiescent) == ScanOrQuiescent;
+
         internal void Start(bool fromAdd)
         {
-            if (!fromAdd || (state == ScanOrQuiescent && Interlocked.CompareExchange(ref this.state, BumpOrSleep, ScanOrQuiescent) == ScanOrQuiescent))
+            if (state == ScanOrQuiescent && (!fromAdd || ClaimBumpOrSleepState()))
                 Task.Run(() => LaunchWorker(fromAdd));
             else
-                this.autoResetEvent.Set();  // We must be fromAdd and in BumpOrSleep, so signal this
+                this.autoResetEvent.Set();  // We must be in BumpOrSleep, so signal this
         }
 
         // Return whether another thread has been launched while we were scanning.
@@ -55,28 +54,29 @@ namespace FASTER.core
                 // (the one that triggered the worker run), or possibly more that happened at about the same time. Otherwise we've
                 // looped up from below and already slept if needed. If not fromAdd, then we are here to update HasSafeRecords.
                 if (fromAdd)
+                { 
                     recordPool.fkv.epoch.BumpCurrentEpoch();
+                    this.state = ScanOrQuiescent;   // Only set this if fromAdd, since we did not take BumpOrSleep state on entry in the non-fromAdd case
+                }
                 startMs = Native32.GetTickCount64();
 
                 // See if more entries were added following the bump.
-                this.state = ScanOrQuiescent;
                 int waitMs;
                 long lowestUnsafeEpoch = 0;
                 while (!ScanForBumpOrEmpty(startMs, fromAdd, out waitMs, ref lowestUnsafeEpoch))
                 {
-                    // No records needing Bump(), or another thread has taken bumpWorkerState, or we're here from Take to update HasSafeRecords.
-                    if (fromAdd)
-                    {
-                        // If we can create some safe records by recalculating the safe epoch, redo the scan; otherwise, drop down to sleep and retry the bump.
-                        if (lowestUnsafeEpoch > 0 && this.state == ScanOrQuiescent && recordPool.fkv.epoch.ComputeNewSafeToReclaimEpoch() >= lowestUnsafeEpoch)
-                            continue;
-                        break;
-                    }
-                    goto Done;
+                    // No records needing Bump(), or another thread has taken BumpOrSleep state, or we're here from Take to update HasSafeRecords.
+                    if (!fromAdd)
+                        goto Done;
+
+                    // If we can create some safe records by recalculating the safe epoch, redo the scan; otherwise break out of this loop to sleep and retry the bump.
+                    if (lowestUnsafeEpoch > 0 && this.state == ScanOrQuiescent && recordPool.fkv.epoch.ComputeNewSafeToReclaimEpoch() >= lowestUnsafeEpoch)
+                        continue;
+                    break;
                 }
 
                 // We need another bump. If another thread has already claimed the BumpOrSleep state, exit.
-                if (Interlocked.CompareExchange(ref state, BumpOrSleep, ScanOrQuiescent) != ScanOrQuiescent)
+                if (!ClaimBumpOrSleepState())
                     goto Done;
 
                 // If we don't have many entries, sleep a bit so we don't thrash epoch increments.

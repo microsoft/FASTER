@@ -349,7 +349,7 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="fasterSession"></param>
         /// <returns></returns>
-        public abstract (int, int) GetRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public abstract (int, int) GetCopyDestinationRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
             where FasterSession : IVariableLengthStruct<Value, Input>;
 
         /// <summary>
