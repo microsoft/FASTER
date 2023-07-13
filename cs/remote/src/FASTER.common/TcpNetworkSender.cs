@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -42,6 +43,8 @@ namespace FASTER.common
         /// </summary>
         protected const int ThrottleMax = 8;
 
+        readonly string remoteEndpoint;
+
         /// <summary>
         /// 
         /// </summary>
@@ -55,6 +58,12 @@ namespace FASTER.common
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
             this.responseObject = null;
+
+            var endpoint = socket.RemoteEndPoint as IPEndPoint;
+            if (endpoint != null)
+                remoteEndpoint = $"{endpoint.Address}:{endpoint.Port}";
+            else
+                remoteEndpoint = "";
         }
 
         /// <summary>
@@ -70,8 +79,17 @@ namespace FASTER.common
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, this.serverBufferSize));
             this.responseObject = null;
+
+            var endpoint = socket.RemoteEndPoint as IPEndPoint;
+            if (endpoint != null)
+                remoteEndpoint = $"{endpoint.Address}:{endpoint.Port}";
+            else
+                remoteEndpoint = "";
         }
 
+
+        /// <inheritdoc />
+        public override string RemoteEndpointName => remoteEndpoint;
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
