@@ -10,23 +10,22 @@ namespace FASTER.core
 
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        private bool IsFixedLengthReviv => varLenValueOnlyLengthStruct is null;
-        private IVariableLengthStruct<Value> varLenValueOnlyLengthStruct;
+        private bool IsFixedLengthReviv => valueLengthStruct is null;
+        private IVariableLengthStruct<Value> valueLengthStruct;
         internal VariableLengthBlittableAllocator<Key, Value> varLenAllocator;
 
-        private bool InitializeRevivification(RevivificationSettings settings, IVariableLengthStruct<Value> varLenStruct, bool fixedRecordLength)
+        private bool InitializeRevivification(RevivificationSettings settings)
         {
             // Set these first in case revivification is not enabled; they still tell us not to expect fixed-length.
-            varLenValueOnlyLengthStruct = varLenStruct;
-            varLenAllocator = this.hlog as VariableLengthBlittableAllocator<Key, Value>;
+            valueLengthStruct = (this.hlog as VariableLengthBlittableAllocator<Key, Value>)?.ValueLength;
 
             if (settings is null) 
                 return false;
-            settings.Verify(fixedRecordLength);
+            settings.Verify(IsFixedLengthReviv);
             if (!settings.EnableRevivification)
                 return false;
             if (settings.FreeListBins?.Length > 0)
-                this.FreeRecordPool = new FreeRecordPool<Key, Value>(this, settings, fixedRecordLength ? hlog.GetAverageRecordSize() : -1);
+                this.FreeRecordPool = new FreeRecordPool<Key, Value>(this, settings, IsFixedLengthReviv ? hlog.GetAverageRecordSize() : -1);
             return true;
         }
 
@@ -57,8 +56,7 @@ namespace FASTER.core
         {
             usedValueLength = RoundUp(usedValueLength, sizeof(int));
             Debug.Assert(fullValueLength >= usedValueLength, $"SetFullValueLength: usedValueLength {usedValueLength} cannot be > fullValueLength {fullValueLength}");
-            int availableLength = fullValueLength - usedValueLength;
-            if (availableLength >= sizeof(int))
+            if (fullValueLength - usedValueLength >= sizeof(int))
             {
                 *GetFullValueLengthPointer(ref recordValue, usedValueLength) = fullValueLength;
                 recordInfo.Filler = true;
@@ -77,7 +75,7 @@ namespace FASTER.core
             int usedValueLength, fullValueLength, allocatedSize, valueOffset = GetValueOffset(physicalAddress, ref recordValue);
             if (recordInfo.Filler)
             {
-                usedValueLength = varLenValueOnlyLengthStruct.GetLength(ref recordValue);
+                usedValueLength = valueLengthStruct.GetLength(ref recordValue);
                 fullValueLength = *GetFullValueLengthPointer(ref recordValue, RoundUp(usedValueLength, sizeof(int))); // Get the length from the Value space after usedValueLength
                 Debug.Assert(fullValueLength >= usedValueLength, $"GetLengthsFromFiller: fullValueLength {fullValueLength} should be >= usedValueLength {usedValueLength}");
                 allocatedSize = valueOffset + fullValueLength;
@@ -130,7 +128,7 @@ namespace FASTER.core
                 return;
             }
 
-            int usedValueLength = varLenValueOnlyLengthStruct.GetLength(ref recordValue);
+            int usedValueLength = valueLengthStruct.GetLength(ref recordValue);
             int fullValueLength = allocatedSize - GetValueOffset(physicalAddress, ref recordValue);
             SetFullVarLenValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
         }
@@ -187,20 +185,21 @@ namespace FASTER.core
                 return;
             }
 
-            var usedValueLength = RoundUp(varLenValueOnlyLengthStruct.GetLength(ref recordValue), sizeof(int));
+            var usedValueLength = RoundUp(valueLengthStruct.GetLength(ref recordValue), sizeof(int));
             SetFullValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue(long physicalAddress, int actualSize, ref RecordInfo srcRecordInfo, ref Value recordValue, int fullValueLength)
         {
-            srcRecordInfo.Filler = false;
+            // Don't change Filler if we don't have enough room to use the record; we need it to remain there for record traversal.
             var recordLength = GetValueOffset(physicalAddress, ref recordValue) + fullValueLength;
             if (recordLength < actualSize)
                 return (false, 0);
 
+            srcRecordInfo.Filler = false;
             hlog.GetAndInitializeValue(physicalAddress, physicalAddress + actualSize);
-            return (true, varLenValueOnlyLengthStruct.GetLength(ref recordValue));
+            return (true, valueLengthStruct.GetLength(ref recordValue));
         }
 
         #endregion TombstonedRecords

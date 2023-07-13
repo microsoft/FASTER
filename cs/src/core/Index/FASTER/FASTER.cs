@@ -240,7 +240,7 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             this.LockTable = new OverflowBucketLockTable<Key, Value>(lockingMode == LockingMode.Standard ? this : null);
-            this.EnableRevivification = this.InitializeRevivification(revivificationSettings, variableLengthStructSettings?.valueLength, fixedRecordLength: keyLen is null);
+            this.EnableRevivification = this.InitializeRevivification(revivificationSettings);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

@@ -173,7 +173,7 @@ namespace FASTER.core
 
             var valueLen = ValueSize(physicalAddress);
             if (recordInfo.Filler)
-                valueLen += *(int*)(ValueOffset(physicalAddress) + Utility.RoundUp(valueLen, sizeof(int)));
+                valueLen = *(int*)(ValueOffset(physicalAddress) + Utility.RoundUp(valueLen, sizeof(int)));
             var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + valueLen;
             return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }

@@ -59,16 +59,16 @@ namespace FASTER.core
         /// </summary>
         public static RevivificationSettings None { get; } = new() { EnableRevivification = false };
 
-        internal void Verify(bool isFixedLength)
+        internal void Verify(bool isFixedRecordLength)
         {
             if (!EnableRevivification || FreeListBins?.Length == 0)
                 return;
-            if (isFixedLength && FreeListBins?.Length > 1)
+            if (isFixedRecordLength && FreeListBins?.Length > 1)
                 throw new FasterException($"Only 1 bin may be specified with fixed-length datatypes (blittable or object)");
             if (FreeListBins is not null)
             { 
                 foreach (var bin in FreeListBins)
-                    bin.Verify(isFixedLength);
+                    bin.Verify(isFixedRecordLength);
             }
         }
 
