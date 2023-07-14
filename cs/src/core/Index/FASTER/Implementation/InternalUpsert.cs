@@ -143,7 +143,7 @@ namespace FASTER.core
                             finally
                             {
                                 if (ok)
-                                    SetFullValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+                                    SetExtraValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
                                 else
                                     SetTombstoneAndFullValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
                                 srcRecordInfo.Unseal();
@@ -394,7 +394,7 @@ namespace FASTER.core
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
 
-            SetFullValueLength(ref newRecordValue, ref newRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+            SetExtraValueLength(ref newRecordValue, ref newRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             upsertInfo.RecordInfo = newRecordInfo;

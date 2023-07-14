@@ -302,7 +302,7 @@ namespace FASTER.core
             }
 
             // We've already set tombstone and default value and calculated UsedValueLength, so no need to call SetTombstoneAndFullValueLength.
-            SetFullValueLength(ref newValue, ref newRecordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
+            SetExtraValueLength(ref newValue, ref newRecordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             deleteInfo.RecordInfo = newRecordInfo;

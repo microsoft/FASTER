@@ -594,7 +594,7 @@ namespace FASTER.core
                 (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.fht.GetRecordLengths(physicalAddress, ref dst, ref recordInfo);
                 if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo))
                     return false;
-                _clientSession.fht.SetFullValueLength(ref dst, ref recordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+                _clientSession.fht.SetExtraValueLength(ref dst, ref recordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
                 recordInfo.SetDirtyAndModified();
                 return true;
             }
@@ -643,7 +643,7 @@ namespace FASTER.core
                 (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.fht.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
                 if (!_clientSession.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
                     return false;
-                _clientSession.fht.SetFullValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                _clientSession.fht.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                 recordInfo.SetDirtyAndModified();
                 return true;
             }

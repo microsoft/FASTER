@@ -148,7 +148,7 @@ namespace FASTER.core
                             finally
                             {
                                 if (ok)
-                                    SetFullValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                                    SetExtraValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                                 else
                                     SetTombstoneAndFullValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
                                 srcRecordInfo.Unseal();
@@ -464,7 +464,7 @@ namespace FASTER.core
             {
                 if (fasterSession.InitialUpdater(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo, ref rmwInfo))
                 {
-                    SetFullValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                    SetExtraValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = forExpiration
                         ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired)
                         : OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
@@ -480,7 +480,7 @@ namespace FASTER.core
             {
                 if (fasterSession.CopyUpdater(ref key, ref input, ref value, ref newRecordValue, ref output, ref newRecordInfo, ref rmwInfo))
                 {
-                    SetFullValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                    SetExtraValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
                     goto DoCAS;
                 }
@@ -563,7 +563,7 @@ namespace FASTER.core
             else
                 fasterSession.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref newRecordInfo, ref rmwInfo);
 
-            SetFullValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+            SetExtraValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }

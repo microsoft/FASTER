@@ -84,6 +84,7 @@ namespace FASTER.core
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <returns>True if the value was written, else false</returns>
+        /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
         bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo);
         #endregion Upserts
 
@@ -165,6 +166,7 @@ namespace FASTER.core
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         /// <returns>True if the value was successfully updated, else false (e.g. the value was expired)</returns>
+        /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
         bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo);
         #endregion InPlaceUpdater
 

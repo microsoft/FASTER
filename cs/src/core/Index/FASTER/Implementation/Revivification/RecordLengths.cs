@@ -36,29 +36,29 @@ namespace FASTER.core
         private static int GetValueOffset(long physicalAddress, ref Value recordValue) => (int)((long)Unsafe.AsPointer(ref recordValue) - physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe int* GetFullValueLengthPointer(ref Value value, int usedValueLength)
+        private static unsafe int* GetExtraValueLengthPointer(ref Value value, int usedValueLength)
         {
             Debug.Assert(RoundUp(usedValueLength, sizeof(int)) == usedValueLength, "GetLiveFullValueLengthPointer: usedValueLength should have int-aligned length");
             return (int*)((long)Unsafe.AsPointer(ref value) + usedValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void SetFullValueLength(ref Value recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
+        internal unsafe void SetExtraValueLength(ref Value recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
         {
             if (IsFixedLengthReviv)
                 recordInfo.Filler = false;
             else
-                SetFullVarLenValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
+                SetExtraVarLenValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void SetFullVarLenValueLength(ref Value recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
+        internal unsafe void SetExtraVarLenValueLength(ref Value recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
         {
             usedValueLength = RoundUp(usedValueLength, sizeof(int));
             Debug.Assert(fullValueLength >= usedValueLength, $"SetFullValueLength: usedValueLength {usedValueLength} cannot be > fullValueLength {fullValueLength}");
             if (fullValueLength - usedValueLength >= sizeof(int))
             {
-                *GetFullValueLengthPointer(ref recordValue, usedValueLength) = fullValueLength;
+                *GetExtraValueLengthPointer(ref recordValue, usedValueLength) = fullValueLength - usedValueLength;
                 recordInfo.Filler = true;
                 return;
             }
@@ -76,7 +76,8 @@ namespace FASTER.core
             if (recordInfo.Filler)
             {
                 usedValueLength = valueLengthStruct.GetLength(ref recordValue);
-                fullValueLength = *GetFullValueLengthPointer(ref recordValue, RoundUp(usedValueLength, sizeof(int))); // Get the length from the Value space after usedValueLength
+                var alignedUsedValueLength = RoundUp(usedValueLength, sizeof(int));
+                fullValueLength = alignedUsedValueLength + *GetExtraValueLengthPointer(ref recordValue, alignedUsedValueLength);
                 Debug.Assert(fullValueLength >= usedValueLength, $"GetLengthsFromFiller: fullValueLength {fullValueLength} should be >= usedValueLength {usedValueLength}");
                 allocatedSize = valueOffset + fullValueLength;
             }
@@ -130,7 +131,7 @@ namespace FASTER.core
 
             int usedValueLength = valueLengthStruct.GetLength(ref recordValue);
             int fullValueLength = allocatedSize - GetValueOffset(physicalAddress, ref recordValue);
-            SetFullVarLenValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
+            SetExtraVarLenValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -186,7 +187,7 @@ namespace FASTER.core
             }
 
             var usedValueLength = RoundUp(valueLengthStruct.GetLength(ref recordValue), sizeof(int));
-            SetFullValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
+            SetExtraValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

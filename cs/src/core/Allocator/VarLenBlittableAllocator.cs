@@ -172,8 +172,8 @@ namespace FASTER.core
             }
 
             var valueLen = ValueSize(physicalAddress);
-            if (recordInfo.Filler)
-                valueLen = *(int*)(ValueOffset(physicalAddress) + Utility.RoundUp(valueLen, sizeof(int)));
+            if (recordInfo.Filler)  // Get the extraValueLength
+                valueLen += *(int*)(ValueOffset(physicalAddress) + Utility.RoundUp(valueLen, sizeof(int)));
             var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + valueLen;
             return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
@@ -209,12 +209,12 @@ namespace FASTER.core
             var valueLen = ValueSize(physicalAddress);
             if (recordInfo.Filler)
             {
-                // We have a filler, so the valueLen we have now is the usedValueLength; we need to offset to where the fullValueLength is and read that int
+                // We have a filler, so the valueLen we have now is the usedValueLength; we need to offset to where the extraValueLength is and read that int
                 var alignedUsedValueLength = Utility.RoundUp(valueLen, sizeof(int));
                 reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + alignedUsedValueLength + sizeof(int);
                 if (availableBytes < reqBytes)
                     return reqBytes;
-                valueLen = *(int*)(ValueOffset(physicalAddress) + alignedUsedValueLength);
+                valueLen += *(int*)(ValueOffset(physicalAddress) + alignedUsedValueLength);
             }
 
             // Now we know the full record length.
