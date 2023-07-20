@@ -45,7 +45,7 @@ namespace FASTER.common
         /// <summary>
         /// Max concurrent sends (per session) for throttling
         /// </summary>
-        protected const int ThrottleMax = 8;
+        protected readonly int ThrottleMax = 8;
 
         readonly string remoteEndpoint;
 
@@ -54,15 +54,18 @@ namespace FASTER.common
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="maxSizeSettings"></param>
+        /// <param name="throttleMax"></param>
         public TcpNetworkSender(
             Socket socket,
-            MaxSizeSettings maxSizeSettings)
+            MaxSizeSettings maxSizeSettings,
+            int throttleMax = 8)
             : base(maxSizeSettings)
         {
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, 
                 this.serverBufferSize), 128, s => s.Dispose());
             this.responseObject = null;
+            this.ThrottleMax = throttleMax;
 
             var endpoint = socket.RemoteEndPoint as IPEndPoint;
             if (endpoint != null)
@@ -76,15 +79,18 @@ namespace FASTER.common
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="serverBufferSize"></param>
+        /// <param name="throttleMax"></param>
         public TcpNetworkSender(
             Socket socket,
-            int serverBufferSize)
+            int serverBufferSize,
+            int throttleMax = 8)
             : base(serverBufferSize)
         {
             this.socket = socket;
             this.reusableSeaaBuffer = new SimpleObjectPool<SeaaBuffer>(() => new SeaaBuffer(SeaaBuffer_Completed, 
                 this.serverBufferSize), 128, s => s.Dispose());
             this.responseObject = null;
+            this.ThrottleMax = throttleMax;
 
             var endpoint = socket.RemoteEndPoint as IPEndPoint;
             if (endpoint != null)
