@@ -17,6 +17,11 @@ namespace FASTER.common
         MaxSizeSettings GetMaxSizeSettings { get; }
 
         /// <summary>
+        /// Remote endpoint name
+        /// </summary>
+        string RemoteEndpointName { get; }
+
+        /// <summary>
         /// Allocate a new response object
         /// </summary>
         void GetResponseObject();

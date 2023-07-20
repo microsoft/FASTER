@@ -43,6 +43,9 @@ namespace FASTER.common
         public MaxSizeSettings GetMaxSizeSettings => this.maxSizeSettings;
 
         /// <inheritdoc />
+        public abstract string RemoteEndpointName { get; }
+
+        /// <inheritdoc />
         public abstract void GetResponseObject();
 
         /// <inheritdoc />

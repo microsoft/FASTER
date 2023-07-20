@@ -192,8 +192,9 @@ namespace FASTER.core
         public LogFileInfo GetLogFileSize(Guid token)
         {
             using var current = new HybridLogCheckpointInfo();
+            // We find the latest checkpoint metadata for the given token, including scanning the delta log for the latest metadata
             current.Recover(token, checkpointManager, hlog.LogPageSizeBits,
-                out var _, false);
+                out var _, true);
             long snapshotDeviceOffset = hlog.GetPage(current.info.snapshotStartFlushedLogicalAddress) << hlog.LogPageSizeBits;
             return new LogFileInfo
             {
