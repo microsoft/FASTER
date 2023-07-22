@@ -61,9 +61,9 @@ namespace FASTER.server
             provider = new DarqProvider(darq, responseQueue);
             server = new FasterServerTcp(options.Address, options.Port);
             // Check that our custom defined wire format is not clashing with anything implemented by FASTER
-            Debug.Assert(!Enum.IsDefined(typeof(WireFormat), DarqProtocolType.DarqSubscribe));
-            Debug.Assert(!Enum.IsDefined(typeof(WireFormat), DarqProtocolType.DarqProcessor));
-            Debug.Assert(!Enum.IsDefined(typeof(WireFormat), DarqProtocolType.DarqProducer));
+            Debug.Assert(!Enum.IsDefined(typeof(WireFormat), (WireFormat) (int) DarqProtocolType.DarqSubscribe));
+            Debug.Assert(!Enum.IsDefined(typeof(WireFormat), (WireFormat) (int)DarqProtocolType.DarqProcessor));
+            Debug.Assert(!Enum.IsDefined(typeof(WireFormat), (WireFormat) (int)DarqProtocolType.DarqProducer));
 
             server.Register((WireFormat) DarqProtocolType.DarqSubscribe, provider);
             server.Register((WireFormat) DarqProtocolType.DarqProcessor, provider);
