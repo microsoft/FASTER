@@ -68,7 +68,7 @@
         public abstract void Dispose();
 
         /// <inheritdoc />
-        public abstract void Dispose(bool waitForSendCompletion);
+        public abstract void DisposeNetworkSender(bool waitForSendCompletion);
 
         /// <inheritdoc />
         public abstract void Throttle();
