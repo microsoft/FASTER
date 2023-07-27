@@ -49,6 +49,7 @@ namespace FASTER.core
         /// </summary>
         protected readonly LightEpoch epoch;
         private readonly bool ownedEpoch;
+        bool outOfMemory;
 
         /// <summary>
         /// Comparer
@@ -1343,6 +1344,22 @@ namespace FASTER.core
             return sectorSize;
         }
 
+        void ThrowOutOfMemory()
+            => throw new OutOfMemoryException();
+
+        void AllocatePageWithException(int pageIndex)
+        {
+            try
+            {
+                AllocatePage(pageIndex % BufferSize);
+            }
+            catch
+            {
+                outOfMemory = true;
+                throw;
+            }
+        }
+
         /// <summary>
         /// Try allocate, no thread spinning allowed
         /// </summary>
@@ -1363,6 +1380,7 @@ namespace FASTER.core
             {
                 if (NeedToWait(localTailPageOffset.Page + 1))
                     return 0; // RETRY_LATER
+                if (outOfMemory) ThrowOutOfMemory();
                 return -1; // RETRY_NOW
             }
 
@@ -1408,11 +1426,11 @@ namespace FASTER.core
 
                 // Allocate this page, if needed
                 if (!IsAllocated(pageIndex % BufferSize))
-                    AllocatePage(pageIndex % BufferSize);
+                    AllocatePageWithException(pageIndex);
 
                 // Allocate next page in advance, if needed
                 if (!IsAllocated((pageIndex + 1) % BufferSize))
-                    AllocatePage((pageIndex + 1) % BufferSize);
+                    AllocatePageWithException(pageIndex + 1);
 
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = numSlots;

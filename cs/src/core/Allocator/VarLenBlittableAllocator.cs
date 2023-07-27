@@ -283,6 +283,8 @@ namespace FASTER.core
             throw new NotSupportedException();
         }
 
+        int count;
+
         /// <summary>
         /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
         /// </summary>
@@ -301,6 +303,7 @@ namespace FASTER.core
                 return;
             }
 
+            if (Interlocked.Increment(ref count) == 3) throw new OutOfMemoryException();
             var adjustedSize = PageSize + 2 * sectorSize;
 
 #if NET5_0_OR_GREATER
