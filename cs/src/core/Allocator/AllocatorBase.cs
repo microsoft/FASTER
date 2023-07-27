@@ -1347,11 +1347,11 @@ namespace FASTER.core
         void ThrowOutOfMemory()
             => throw new OutOfMemoryException();
 
-        void AllocatePageWithException(int pageIndex)
+        void AllocatePageWithException(int index)
         {
             try
             {
-                AllocatePage(pageIndex % BufferSize);
+                AllocatePage(index);
             }
             catch
             {
@@ -1426,11 +1426,11 @@ namespace FASTER.core
 
                 // Allocate this page, if needed
                 if (!IsAllocated(pageIndex % BufferSize))
-                    AllocatePageWithException(pageIndex);
+                    AllocatePageWithException(pageIndex % BufferSize);
 
                 // Allocate next page in advance, if needed
                 if (!IsAllocated((pageIndex + 1) % BufferSize))
-                    AllocatePageWithException(pageIndex + 1);
+                    AllocatePageWithException((pageIndex + 1) % BufferSize);
 
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = numSlots;
