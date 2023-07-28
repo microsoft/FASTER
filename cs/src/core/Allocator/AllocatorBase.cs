@@ -49,7 +49,6 @@ namespace FASTER.core
         /// </summary>
         protected readonly LightEpoch epoch;
         private readonly bool ownedEpoch;
-        bool outOfMemory;
 
         /// <summary>
         /// Comparer
@@ -1344,18 +1343,22 @@ namespace FASTER.core
             return sectorSize;
         }
 
-        void ThrowOutOfMemory()
-            => throw new OutOfMemoryException();
-
-        void AllocatePageWithException(int index)
+        void AllocatePagesWithException(int pageIndex, PageOffset localTailPageOffset)
         {
             try
             {
-                AllocatePage(index);
+                // Allocate this page, if needed
+                if (!IsAllocated(pageIndex % BufferSize))
+                    AllocatePage(pageIndex % BufferSize);
+
+                // Allocate next page in advance, if needed
+                if (!IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePage((pageIndex + 1) % BufferSize);
             }
             catch
             {
-                outOfMemory = true;
+                localTailPageOffset.Offset = PageSize;
+                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
                 throw;
             }
         }
@@ -1380,7 +1383,6 @@ namespace FASTER.core
             {
                 if (NeedToWait(localTailPageOffset.Page + 1))
                     return 0; // RETRY_LATER
-                if (outOfMemory) ThrowOutOfMemory();
                 return -1; // RETRY_NOW
             }
 
@@ -1400,6 +1402,8 @@ namespace FASTER.core
                 PageAlignedShiftReadOnlyAddress(shiftAddress);
                 PageAlignedShiftHeadAddress(shiftAddress);
 
+                // This thread is trying to allocate at an offset past where one or more previous threads
+                // already overflowed; exit and allow the first overflow thread to proceed
                 if (offset > PageSize)
                 {
                     if (NeedToWait(pageIndex))
@@ -1424,13 +1428,8 @@ namespace FASTER.core
                     return -1; // RETRY_NOW
                 }
 
-                // Allocate this page, if needed
-                if (!IsAllocated(pageIndex % BufferSize))
-                    AllocatePageWithException(pageIndex % BufferSize);
-
-                // Allocate next page in advance, if needed
-                if (!IsAllocated((pageIndex + 1) % BufferSize))
-                    AllocatePageWithException((pageIndex + 1) % BufferSize);
+                if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePagesWithException(pageIndex, localTailPageOffset);
 
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = numSlots;
