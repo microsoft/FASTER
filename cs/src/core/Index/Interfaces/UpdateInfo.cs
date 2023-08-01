@@ -1,6 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using static FASTER.core.Utility;
+using System.Runtime.CompilerServices;
+using System;
+using System.Diagnostics;
+
 namespace FASTER.core
 {
     /// <summary>
@@ -47,7 +52,7 @@ namespace FASTER.core
         /// <summary>
         /// The header of the record.
         /// </summary>
-        public RecordInfo RecordInfo { get; internal set; }
+        public readonly unsafe RecordInfo RecordInfo => *(RecordInfo*)recordInfoPtr;
 
         /// <summary>
         /// The length of data in the value that is in use. Incoming, it is set by FASTER to the result of <see cref="IVariableLengthStruct{T, Input}.GetLength(ref T, ref Input)"/>.
@@ -65,6 +70,12 @@ namespace FASTER.core
         /// </summary>
         public UpsertAction Action { get; set; }
 
+        // The physical address of the RecordInfo start. Do not use as a basis for key or value address; used only to produce 'ref recordInfo' for managing dynamic lengths,
+        // and therefore must be a log address (with epoch protection), allocator-controlled, IO-record address, or pinned.
+        internal IntPtr recordInfoPtr;
+        internal readonly unsafe ref RecordInfo RecordInfoRef => ref Unsafe.AsRef<RecordInfo>((void*)recordInfoPtr);
+        internal unsafe void SetRecordInfoAddress(ref RecordInfo recordInfo) => this.recordInfoPtr = (IntPtr)Unsafe.AsPointer(ref recordInfo);
+
         /// <summary>
         /// Utility ctor
         /// </summary>
@@ -74,8 +85,67 @@ namespace FASTER.core
             this.SessionID = rmwInfo.SessionID;
             this.Address = rmwInfo.Address;
             this.KeyHash = rmwInfo.KeyHash;
-            this.RecordInfo = default;
+            this.recordInfoPtr = rmwInfo.recordInfoPtr;
             this.Action = UpsertAction.Default;
+        }
+
+        /// <summary>
+        /// Retrieve the extra value length from the record, if present, and then clear it to ensure consistent log scan during in-place update.
+        /// </summary>
+        /// <param name="recordValue">Reference to the record value</param>
+        /// <param name="usedValueLength">The currently-used length of the record value</param>
+        /// <typeparam name="TValue">The type of the value</typeparam>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe readonly void ClearExtraValueLength<TValue>(ref TValue recordValue, int usedValueLength) 
+            => ClearExtraValueLength(recordInfoPtr, ref recordValue, usedValueLength);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void ClearExtraValueLength<TValue>(IntPtr recordInfoPtr, ref TValue recordValue, int usedValueLength) 
+            => ClearExtraValueLength(ref Unsafe.AsRef<RecordInfo>((void*)recordInfoPtr), ref recordValue, usedValueLength);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void ClearExtraValueLength<TValue>(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength)
+        {
+            if (!recordInfo.Filler)
+                return;
+
+            var valueAddress = (long)Unsafe.AsPointer(ref recordValue);
+            usedValueLength = RoundUp(usedValueLength, sizeof(int));
+
+            int* extraLengthPtr = (int*)(valueAddress + usedValueLength);
+            int fullValueLength = usedValueLength + *extraLengthPtr;
+
+            *extraLengthPtr = 0;
+            recordInfo.Filler = false;
+        }
+
+        /// <summary>
+        /// Set the extra value length, if any, into the record past the used value length.
+        /// </summary>
+        /// <param name="recordValue">Reference to the record value</param>
+        /// <param name="usedValueLength">The currently-used length of the record value</param>
+        /// <typeparam name="TValue">The type of the value</typeparam>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe void SetUsedValueLength<TValue>(ref TValue recordValue, int usedValueLength)
+        {
+            SetUsedValueLength(recordInfoPtr, (long)Unsafe.AsPointer(ref recordValue), usedValueLength, this.FullValueLength);
+            this.UsedValueLength = usedValueLength;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void SetUsedValueLength(IntPtr recordInfoPtr, long valueAddress, int usedValueLength, int fullValueLength)
+        {
+            Debug.Assert(!((RecordInfo*)recordInfoPtr)->Filler, "Filler should have been cleared by ClearExtraValueLength()");
+
+            usedValueLength = RoundUp(usedValueLength, sizeof(int));
+            int extraValueLength = fullValueLength - usedValueLength;
+            if (extraValueLength >= sizeof(int))
+            {
+                int* extraValueLengthPtr = (int*)(valueAddress + usedValueLength);
+                Debug.Assert(*extraValueLengthPtr == 0 || *extraValueLengthPtr == extraValueLength, "existing ExtraValueLength should be 0 or the same value");
+                *extraValueLengthPtr = extraValueLength;
+                ((RecordInfo*)recordInfoPtr)->Filler = true;
+            }
         }
     }
 
@@ -134,7 +204,7 @@ namespace FASTER.core
         /// <summary>
         /// The header of the record.
         /// </summary>
-        public RecordInfo RecordInfo { get; internal set; }
+        public readonly unsafe RecordInfo RecordInfo => *(RecordInfo*)recordInfoPtr;
 
         /// <summary>
         /// The length of data in the value that is in use. Incoming, it is set by FASTER to the result of <see cref="IVariableLengthStruct{T, Input}.GetLength(ref T, ref Input)"/>.
@@ -151,6 +221,35 @@ namespace FASTER.core
         /// What actions FASTER should perform on a false return from the IFunctions method
         /// </summary>
         public RMWAction Action { get; set; }
+
+        // The physical address of the RecordInfo start. See UpsertInfo for detailed comments.
+        internal IntPtr recordInfoPtr;
+        internal readonly unsafe ref RecordInfo RecordInfoRef => ref Unsafe.AsRef<RecordInfo>((void*)recordInfoPtr);
+        internal unsafe void SetRecordInfoAddress(ref RecordInfo recordInfo) => this.recordInfoPtr = (IntPtr)Unsafe.AsPointer(ref recordInfo);
+        internal void ClearRecordInfoAddress() => this.recordInfoPtr = IntPtr.Zero;
+
+        /// <summary>
+        /// Retrieve the extra value length from the record, if present, and then clear it to ensure consistent log scan during in-place update.
+        /// </summary>
+        /// <param name="recordValue">Reference to the record value</param>
+        /// <param name="usedValueLength">The currently-used length of the record value</param>
+        /// <typeparam name="TValue">The type of the value</typeparam>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe readonly void ClearExtraValueLength<TValue>(ref TValue recordValue, int usedValueLength)
+            => UpsertInfo.ClearExtraValueLength(recordInfoPtr, ref recordValue, usedValueLength);
+
+        /// <summary>
+        /// Set the extra value length, if any, into the record past the used value length.
+        /// </summary>
+        /// <param name="recordValue">Reference to the record value</param>
+        /// <param name="usedValueLength">The currently-used length of the record value</param>
+        /// <typeparam name="TValue">The type of the value</typeparam>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe void SetUsedValueLength<TValue>(ref TValue recordValue, int usedValueLength)
+        {
+            UpsertInfo.SetUsedValueLength(recordInfoPtr, (long)Unsafe.AsPointer(ref recordValue), usedValueLength, this.FullValueLength);
+            this.UsedValueLength = usedValueLength;
+        }
     }
 
     /// <summary>
@@ -196,7 +295,7 @@ namespace FASTER.core
         /// <summary>
         /// The header of the record.
         /// </summary>
-        public RecordInfo RecordInfo { get; internal set; }
+        public readonly unsafe RecordInfo RecordInfo => *(RecordInfo*)recordInfoPtr;
 
         /// <summary>
         /// The length of data in the value that is in use. Incoming, it is set by FASTER to the result of <see cref="IVariableLengthStruct{T, Input}.GetLength(ref T, ref Input)"/>.
@@ -213,6 +312,11 @@ namespace FASTER.core
         /// What actions FASTER should perform on a false return from the IFunctions method
         /// </summary>
         public DeleteAction Action { get; set; }
+
+        // The physical address of the RecordInfo start. See UpsertInfo for detailed comments.
+        private IntPtr recordInfoPtr;
+        internal readonly unsafe ref RecordInfo RecordInfoRef => ref Unsafe.AsRef<RecordInfo>((void*)recordInfoPtr);
+        internal unsafe void SetRecordInfoAddress(ref RecordInfo recordInfo) => this.recordInfoPtr = (IntPtr)Unsafe.AsPointer(ref recordInfo);
     }
 
     /// <summary>
@@ -254,11 +358,16 @@ namespace FASTER.core
         /// <summary>
         /// The header of the record.
         /// </summary>
-        public RecordInfo RecordInfo { get; internal set; }
+        public readonly unsafe RecordInfo RecordInfo => *(RecordInfo*)recordInfoPtr;
 
         /// <summary>
         /// What actions FASTER should perform on a false return from the IFunctions method
         /// </summary>
         public ReadAction Action { get; set; }
+
+        // The physical address of the RecordInfo start. See UpsertInfo for detailed comments.
+        private IntPtr recordInfoPtr;
+        internal readonly unsafe ref RecordInfo RecordInfoRef => ref Unsafe.AsRef<RecordInfo>((void*)recordInfoPtr);
+        internal unsafe void SetRecordInfoAddress(ref RecordInfo recordInfo) => this.recordInfoPtr = (IntPtr)Unsafe.AsPointer(ref recordInfo);
     }
 }

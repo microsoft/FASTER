@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static FASTER.core.Utility;
 
@@ -18,11 +17,12 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static ref RecordInfo WriteNewRecordInfo(ref Key key, AllocatorBase<Key, Value> log, long newPhysicalAddress, bool inNewVersion, bool tombstone, long previousAddress)
+        static ref RecordInfo WriteNewRecordInfo(ref Key key, AllocatorBase<Key, Value> log, long newPhysicalAddress, bool inNewVersion, bool tombstone, long previousAddress, RecycleMode recycleMode)
         {
             ref RecordInfo recordInfo = ref log.GetInfo(newPhysicalAddress);
             recordInfo.WriteInfo(inNewVersion, tombstone, previousAddress);
-            log.Serialize(ref key, newPhysicalAddress);
+            if (recycleMode != RecycleMode.Retry)
+                log.Serialize(ref key, newPhysicalAddress);
             return ref recordInfo;
         }
 

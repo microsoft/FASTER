@@ -367,6 +367,34 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Try to copy to given pre-allocated SpanByte, checking if space permits at destination SpanByte
+        /// </summary>
+        /// <param name="dst">The target of the copy</param>
+        /// <param name="fullDestSize">The size available at the destination (e.g. dst.TotalSize or the log-space Value allocation size)</param>
+        public bool TrySafeCopyTo(ref SpanByte dst, int fullDestSize)
+        {
+            if (fullDestSize < this.TotalSize)
+                return false;
+
+            if (dst.Length < this.Length)
+            {
+                // dst is shorter than src, but we have already verified there is enough extra value space to grow dst to store src.
+                dst.Length = this.Length;
+                this.CopyTo(ref dst);
+            }
+            else
+            {
+                // dst length is equal or longer than src. We can adjust the length header on the serialized log, if we wish (here, we do).
+                // This method will also zero out the extra space to retain log scan correctness.
+                dst.UnmarkExtraMetadata();
+                dst.ShrinkSerializedLength(this.Length);
+                this.CopyTo(ref dst);
+                dst.Length = this.Length;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Shrink the length header of the in-place allocated buffer on
         /// FASTER hybrid log, pointed to by the given SpanByte.
         /// Zeroes out the extra space to retain log scan correctness.
@@ -377,7 +405,7 @@ namespace FASTER.core
         {
             if (newLength > Length) return false;
 
-            // Zero-fill extra space - needed so log scan does not see spurious data
+            // Zero-fill extra space - needed so log scan does not see spurious data - *before* setting length to 0.
             if (newLength < Length)
             {
                 AsSpanWithMetadata().Slice(newLength).Clear();
@@ -385,6 +413,12 @@ namespace FASTER.core
             }
             return true;
         }
+
+        /// <summary>
+        /// Utility to zero out an arbitrary span of bytes. 
+        /// One use is to zero extra space after in-place update shrinks a value, to retain log scan correctness.
+        /// </summary>
+        public static void Clear(byte* pointer, int length) => new Span<byte>(pointer, length).Clear();
 
         /// <summary>
         /// Copy to given SpanByteAndMemory (only payload copied to actual span/memory)
@@ -463,7 +497,7 @@ namespace FASTER.core
         {
             var bytes = AsSpan();
             var len = Math.Min(this.Length, 8);
-            StringBuilder sb = new();
+            StringBuilder sb = new($"len: {this.Length}, md: {(length & kExtraMetadataBitMask) != 0}, ");
             for (var ii = 0; ii < len; ++ii)
                 sb.Append(bytes[ii].ToString("x2"));
             if (bytes.Length > len)

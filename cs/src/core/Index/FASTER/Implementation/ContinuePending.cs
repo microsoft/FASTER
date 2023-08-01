@@ -77,15 +77,14 @@ namespace FASTER.core
                         {
                             Version = fasterSession.Ctx.version,
                             Address = request.logicalAddress,
-                            RecordInfo = srcRecordInfo
                         };
+                        readInfo.SetRecordInfoAddress(ref srcRecordInfo);
 
                         bool success = false;
                         if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                         {
                             // If this succeeds, we don't need to copy to tail or readcache, so return success.
-                            if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref value,
-                                    ref pendingContext.output, ref srcRecordInfo, ref readInfo, out EphemeralLockResult lockResult))
+                            if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref readInfo, out EphemeralLockResult lockResult))
                                 return OperationStatus.SUCCESS;
                             if (lockResult == EphemeralLockResult.Failed)
                             {
@@ -96,7 +95,7 @@ namespace FASTER.core
                         else
                         {
                             // This may be in the immutable region, which means it may be an updated version of the record.
-                            success = fasterSession.SingleReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref srcRecordInfo, ref readInfo);
+                            success = fasterSession.SingleReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref readInfo);
                         }
 
                         if (!success)

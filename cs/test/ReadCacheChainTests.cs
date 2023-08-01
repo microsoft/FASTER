@@ -1018,10 +1018,12 @@ namespace FASTER.test.ReadCacheTests
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
                             Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
                         }
-                        Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {wasPending}");
+                        Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {wasPending}, pt 1");
 
+                        Assert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {wasPending}, pt 2");
+                        Assert.IsNotNull(output.Memory.Memory, $"tid {tid}, key {ii}, wasPending {wasPending}, pt 3");
                         long value = BitConverter.ToInt64(output.Memory.Memory.Span);
-                        Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}, wasPending {wasPending}");
+                        Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}, wasPending {wasPending}, pt 4");
 
                         output.Memory.Dispose();
                     }

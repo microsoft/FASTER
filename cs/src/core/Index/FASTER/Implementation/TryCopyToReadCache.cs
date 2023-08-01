@@ -30,7 +30,7 @@ namespace FASTER.core
 
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return false;
-            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
+            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address, RecycleMode.None);
             stackCtx.SetNewRecord(newLogicalAddress | Constants.kReadCacheBitMask);
 
             UpsertInfo upsertInfo = new()
@@ -39,12 +39,12 @@ namespace FASTER.core
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = Constants.kInvalidAddress,        // We do not expose readcache addresses
                 KeyHash = stackCtx.hei.hash,
-                RecordInfo = newRecordInfo
             };
+            upsertInfo.SetRecordInfoAddress(ref newRecordInfo);
 
             Output output = default;
             if (!fasterSession.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                            ref output, ref newRecordInfo, ref upsertInfo, WriteReason.CopyToReadCache))
+                                            ref output, ref upsertInfo, WriteReason.CopyToReadCache))
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                 return false;
@@ -77,7 +77,7 @@ namespace FASTER.core
                 {
                     // Let user dispose similar to a deleted record, and save for retry, *only* if CAS failed; otherwise we must preserve it in the chain.
                     fasterSession.DisposeSingleWriter(ref readcache.GetKey(newPhysicalAddress), ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress),
-                                                      ref output, ref newRecordInfo, ref upsertInfo, WriteReason.CopyToReadCache);
+                                                      ref output, ref upsertInfo, WriteReason.CopyToReadCache);
                     newRecordInfo.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
                 }
                 return false;
@@ -87,7 +87,7 @@ namespace FASTER.core
             pendingContext.recordInfo = newRecordInfo;
             pendingContext.logicalAddress = upsertInfo.Address;
             fasterSession.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                    ref newRecordInfo, ref upsertInfo, WriteReason.CopyToReadCache);
+                                    ref upsertInfo, WriteReason.CopyToReadCache);
             stackCtx.ClearNewRecord();
             return true;
             #endregion

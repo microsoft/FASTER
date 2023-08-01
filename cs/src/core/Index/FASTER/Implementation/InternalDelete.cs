@@ -109,11 +109,11 @@ namespace FASTER.core
                 if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
                 {
                     // Mutable Region: Update the record in-place
-                    deleteInfo.RecordInfo = srcRecordInfo;
+                    deleteInfo.SetRecordInfoAddress(ref srcRecordInfo);
                     ref Value recordValue = ref stackCtx.recSrc.GetValue();
 
                     // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside ConcurrentDeleter, in the ephemeral lock
-                    if (fasterSession.ConcurrentDeleter(stackCtx.recSrc.PhysicalAddress, ref stackCtx.recSrc.GetKey(), ref recordValue, ref srcRecordInfo, 
+                    if (fasterSession.ConcurrentDeleter(stackCtx.recSrc.PhysicalAddress, ref stackCtx.recSrc.GetKey(), ref recordValue, 
                             ref deleteInfo, out int fullRecordLength, out stackCtx.recSrc.ephemeralLockResult))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
@@ -270,10 +270,11 @@ namespace FASTER.core
         {
             var value = default(Value);
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
-            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, ref allocatedSize, recycle: false, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+            if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, recycle: false, 
+                    out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out var recycleMode))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: true, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: true, stackCtx.recSrc.LatestLogicalAddress, recycleMode);
             stackCtx.SetNewRecord(newLogicalAddress);
 
             DeleteInfo deleteInfo = new()
@@ -282,16 +283,17 @@ namespace FASTER.core
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
-                RecordInfo = newRecordInfo
             };
+            deleteInfo.SetRecordInfoAddress(ref newRecordInfo);
 
             ref Value newValue = ref hlog.GetValue(newPhysicalAddress);     // No endAddress arg, so no varlen Initialize() is done (since we're deleting the record)
             (deleteInfo.UsedValueLength, deleteInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newValue);
 
-            if (!fasterSession.SingleDeleter(ref key, ref newValue, ref newRecordInfo, ref deleteInfo))
+            if (!fasterSession.SingleDeleter(ref key, ref newValue, ref deleteInfo))
             {
-                // If we have a filler, then this record was revivified and thus can be revivified again.
-                if (newRecordInfo.Filler && this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
+                // This record was allocated with a minimal Value size (unless it was a revivified larger record), so there's no room for a Filler,
+                // but we may want it for a later Delete, or for insert with a smaller Key.
+                if (this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
                     stackCtx.ClearNewRecord();
                 else
                     stackCtx.SetNewRecordInvalid(ref newRecordInfo);
@@ -305,7 +307,6 @@ namespace FASTER.core
             SetExtraValueLength(ref newValue, ref newRecordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
-            deleteInfo.RecordInfo = newRecordInfo;
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
@@ -313,7 +314,7 @@ namespace FASTER.core
 
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
-                fasterSession.PostSingleDeleter(ref key, ref newRecordInfo, ref deleteInfo);
+                fasterSession.PostSingleDeleter(ref key, ref deleteInfo);
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;
@@ -322,12 +323,9 @@ namespace FASTER.core
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-            deleteInfo.RecordInfo = newRecordInfo;
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
-            ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
-            fasterSession.DisposeSingleDeleter(ref insertedKey, ref insertedValue, ref newRecordInfo, ref deleteInfo);
-            insertedKey = default;
-            insertedValue = default;
+            ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress); 
+            fasterSession.DisposeSingleDeleter(ref insertedKey, ref insertedValue, ref deleteInfo);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

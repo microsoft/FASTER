@@ -103,58 +103,59 @@ namespace FASTER.core
                 if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress && latchDestination == LatchDestination.NormalProcessing)
                 {
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
+                    upsertInfo.SetRecordInfoAddress(ref srcRecordInfo);
                     ref Value recordValue = ref stackCtx.recSrc.GetValue();
+
                     if (srcRecordInfo.Tombstone)
                     {
+                        if (!this.EnableRevivification)
+                            goto CreateNewRecord;
+
                         // Try in-place revivification of the record.
-                        if (srcRecordInfo.Filler)
-                        {
-                            if (!this.LockTable.IsEnabled && !srcRecordInfo.TrySeal())
-                                return OperationStatus.RETRY_NOW;
-                            bool ok = true;
-                            try
-                            { 
-                                if (srcRecordInfo.Tombstone && srcRecordInfo.Filler && this.EnableRevivification)
+                        if (!this.LockTable.IsEnabled && !srcRecordInfo.TrySeal())
+                            return OperationStatus.RETRY_NOW;
+                        bool ok = true;
+                        try
+                        { 
+                            if (srcRecordInfo.Tombstone)
+                            {
+                                srcRecordInfo.Tombstone = false;
+
+                                if (IsFixedLengthReviv)
+                                    upsertInfo.UsedValueLength = upsertInfo.FullValueLength = FixedLengthStruct<Value>.Length;
+                                else
                                 {
-                                    srcRecordInfo.Tombstone = false;
+                                    var (usedValueLength, fullValueLength, fullRecordLength) = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
+                                    upsertInfo.FullValueLength = fullValueLength;
 
-                                    if (IsFixedLengthReviv)
-                                        upsertInfo.UsedValueLength = upsertInfo.FullValueLength = FixedLengthStruct<Value>.Length;
-                                    else
-                                    {
-                                        upsertInfo.FullValueLength = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo).fullValueLength;
+                                    // Input is not included in record-length calculations for Upsert
+                                    var (requiredSize, _) = hlog.GetRecordSize(ref key, ref value);
+                                    (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue<Input, Output, Context, FasterSession>(fasterSession, 
+                                            ref srcRecordInfo, ref key, ref recordValue, requiredSize, usedValueLength, fullRecordLength);
+                                }
 
-                                        // Input is not included in record-length calculations for Upsert
-                                        var (actualSize, _) = hlog.GetRecordSize(ref key, ref value);
-                                        (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue(stackCtx.recSrc.PhysicalAddress, actualSize, ref srcRecordInfo, ref recordValue, upsertInfo.FullValueLength);
-                                    }
-
-                                    upsertInfo.RecordInfo = srcRecordInfo;
-                                    if (ok && fasterSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, ref upsertInfo, WriteReason.Upsert))
-                                    {
-                                        this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
-                                        pendingContext.recordInfo = srcRecordInfo;
-                                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                                        goto LatchRelease;
-                                    }
+                                if (ok && fasterSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, WriteReason.Upsert))
+                                {
+                                    this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
+                                    pendingContext.recordInfo = srcRecordInfo;
+                                    pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                                    goto LatchRelease;
                                 }
                             }
-                            finally
-                            {
-                                if (ok)
-                                    SetExtraValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
-                                else
-                                    SetTombstoneAndFullValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
-                                srcRecordInfo.Unseal();
-                            }
+                        }
+                        finally
+                        {
+                            if (ok)
+                                SetExtraValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+                            else
+                                SetTombstoneAndExtraValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
+                            srcRecordInfo.Unseal();
                         }
                         goto CreateNewRecord;
                     }
 
-                    upsertInfo.RecordInfo = srcRecordInfo;
-                    if (fasterSession.ConcurrentWriter(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref value, ref recordValue, ref output, ref srcRecordInfo, 
-                                                       ref upsertInfo, out stackCtx.recSrc.ephemeralLockResult))
+                    if (fasterSession.ConcurrentWriter(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, out stackCtx.recSrc.ephemeralLockResult))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
@@ -363,10 +364,11 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);   // Input is not included in record-length calculations for Upsert
-            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, ref allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+            if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, recycle: true, 
+                    out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out var recycleMode))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress, recycleMode);
             stackCtx.SetNewRecord(newLogicalAddress);
 
             UpsertInfo upsertInfo = new()
@@ -375,13 +377,13 @@ namespace FASTER.core
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
-                RecordInfo = newRecordInfo
             };
+            upsertInfo.SetRecordInfoAddress(ref newRecordInfo);
 
             ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
             (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
-            if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert))
+            if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert))
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
                 if (this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
@@ -397,13 +399,12 @@ namespace FASTER.core
             SetExtraValueLength(ref newRecordValue, ref newRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
-            upsertInfo.RecordInfo = newRecordInfo;
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
                 PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
 
-                fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
+                fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert);
                 if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal)
                     srcRecordInfo.UnlockExclusiveAndSeal();
                 stackCtx.ClearNewRecord();
@@ -414,12 +415,9 @@ namespace FASTER.core
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-            upsertInfo.RecordInfo = newRecordInfo;
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
-            fasterSession.DisposeSingleWriter(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
-            insertedKey = default;
-            insertedValue = default;
+            fasterSession.DisposeSingleWriter(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref upsertInfo, WriteReason.Upsert);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

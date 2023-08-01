@@ -264,6 +264,14 @@ namespace FASTER.core
         /// <param name="key">The key for the record</param>
         /// <param name="value">The value for the record</param>
         void DisposeDeserializedFromDisk(ref Key key, ref Value value);
+
+        /// <summary>
+        /// Called when a record is being revivified from the freelist, which will likely be for a different key. The previous Key must therefore be disposed; the Value probably already has been, at Delete() time.
+        /// </summary>
+        /// <param name="key">The key for the record</param>
+        /// <param name="value">The value for the record</param>
+        /// <param name="disposeKey">If true, dispose the key as well as value (it is false when revivifying a record in the hash chain or when doing a RETRY; for these the key does not change)</param>
+        void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey);
         #endregion Dispose
 
         #region Checkpointing

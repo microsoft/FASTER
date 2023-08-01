@@ -29,7 +29,7 @@ namespace FASTER.test.Revivification
                 SessionID = upsertInfo.SessionID,
                 Address = upsertInfo.Address,
                 KeyHash = upsertInfo.KeyHash,
-                RecordInfo = default,
+                recordInfoPtr = upsertInfo.recordInfoPtr,
                 UsedValueLength = upsertInfo.UsedValueLength,
                 FullValueLength = upsertInfo.FullValueLength,
                 Action = RMWAction.Default,
@@ -328,11 +328,7 @@ namespace FASTER.test.Revivification
                     Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
                     Assert.GreaterOrEqual(rmwInfo.Address, fkv.hlog.ReadOnlyAddress);
                 }
-                if (input.Length > value.Length)
-                    return false;
-                input.CopyTo(ref value);
-                rmwInfo.UsedValueLength = input.TotalSize;
-                return true;
+                return base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
             }
 
             public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -354,11 +350,7 @@ namespace FASTER.test.Revivification
                     Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
                     Assert.GreaterOrEqual(rmwInfo.Address, fkv.hlog.ReadOnlyAddress);
                 }
-                if (input.Length > newValue.Length)
-                    return false;
-                input.CopyTo(ref newValue);
-                rmwInfo.UsedValueLength = input.TotalSize;
-                return true;
+                return base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
             }
 
             public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -374,13 +366,8 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
 
                 Assert.GreaterOrEqual(rmwInfo.Address, fkv.hlog.ReadOnlyAddress);
-                if (input.Length > value.Length)
-                    return false;
-                input.CopyTo(ref value);      // Does not change dst.Length, which is fine for everything except shrinking (we've allocated sufficient space in other cases)
-                if (input.Length < value.Length)
-                    value.Length = input.Length;
-                rmwInfo.UsedValueLength = input.TotalSize;
-                return true;
+
+               return base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
             }
 
             public override bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo)
@@ -393,8 +380,8 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(expectedUsedValueLength, deleteInfo.UsedValueLength);
 
                 Assert.GreaterOrEqual(deleteInfo.Address, fkv.hlog.ReadOnlyAddress);
-                value = default;
-                return true;
+
+                return base.SingleDeleter(ref key, ref value, ref deleteInfo);
             }
 
             public override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo)
@@ -407,8 +394,8 @@ namespace FASTER.test.Revivification
                 Assert.AreEqual(expectedUsedValueLength, deleteInfo.UsedValueLength);
 
                 Assert.GreaterOrEqual(deleteInfo.Address, fkv.hlog.ReadOnlyAddress);
-                value = default;
-                return true;
+
+                return base.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
             }
 
             public override void PostCopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -1172,14 +1159,12 @@ namespace FASTER.test.Revivification
             {
                 // Delete 
                 functions.expectedInputLength = InitialLength;
-                long latestAddedEpoch = fkv.epoch.CurrentEpoch;
                 for (var ii = 0; ii < numRecords; ++ii)
                 {
                     keyVec.Fill((byte)ii);
                     inputVec.Fill((byte)ii);
 
                     functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(iter == 0 ? InitialLength : InitialLength));
-                    latestAddedEpoch = fkv.epoch.CurrentEpoch;
                     var status = session.Delete(ref key);
                     Assert.IsTrue(status.Found, $"{status} for key {ii}");
                     //Assert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"mismatched free record count for key {ii}, pt 1");
@@ -1243,16 +1228,14 @@ namespace FASTER.test.Revivification
             {
                 // Delete 
                 functions.expectedInputLength = InitialLength;
-                long latestAddedEpoch = fkv.epoch.CurrentEpoch;
                 for (var ii = 0; ii < numRecords; ++ii)
                 {
                     keyVec.Fill((byte)ii);
                     inputVec.Fill((byte)ii);
 
                     functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(iter == 0 ? InitialLength : InitialLength));
-                    latestAddedEpoch = fkv.epoch.CurrentEpoch;
                     var status = session.Delete(ref key);
-                    Assert.IsTrue(status.Found, $"{status} for key {ii}");
+                    Assert.IsTrue(status.Found, $"{status} for key {ii}, iter {iter}");
                 }
 
                 for (var ii = 0; ii < numRecords; ++ii)
@@ -1554,45 +1537,26 @@ namespace FASTER.test.Revivification
             public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 VerifyKey(ref key);
-                if (input.Length > newValue.Length)
-                    return false;
-                input.CopyTo(ref newValue);
-                newValue.Length = input.Length;
-                rmwInfo.UsedValueLength = input.TotalSize;
-                return true;
+                return base.InitialUpdater(ref key, ref input, ref newValue, ref output, ref rmwInfo);
             }
 
             public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 VerifyKeyAndValue(ref key, ref oldValue);
-                if (input.Length > newValue.Length)
-                    return false;
-                input.CopyTo(ref newValue);
-                newValue.Length = input.Length;
-                rmwInfo.UsedValueLength = input.TotalSize;
-                return true;
+                return base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
             }
 
             public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 VerifyKey(ref key);
-                if (input.Length > value.Length)
-                    return false;
-                input.CopyTo(ref value);        // Does not change dst.Length, which is fine for everything except shrinking (we've allocated sufficient space in other cases)
-                value.Length = input.Length;    // We must ensure that the value length on the log is the same as the UsedValueLength we return
-                rmwInfo.UsedValueLength = input.TotalSize;
-                return true;
+                return base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
             }
 
             public override bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo)
-                => ConcurrentDeleter(ref key, ref value, ref deleteInfo);
+                => base.SingleDeleter(ref key, ref value, ref deleteInfo);
 
             public unsafe override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo)
-            {
-                value = default;
-                deleteInfo.UsedValueLength = value.TotalSize;
-                return true;
-            }
+                => base.ConcurrentDeleter(ref key, ref value, ref deleteInfo);
         }
 
         const int numRecords = 200;

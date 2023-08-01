@@ -12,51 +12,51 @@ namespace FASTER.core
     {
         /// <inheritdoc />
         public override bool SingleWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
-        {
-            src.CopyTo(ref dst);
-            return true;
-        }
+            => DoSafeCopy(ref src, ref dst, ref upsertInfo);
 
         /// <inheritdoc />
-        public override bool ConcurrentWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo)
+        public override bool ConcurrentWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo) 
+            => DoSafeCopy(ref src, ref dst, ref upsertInfo);
+
+        private static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref UpsertInfo upsertInfo)
         {
-            if (dst.Length < src.Length)
-            {
-                return false;
-            }
+            // First get the full record length and clear it from the extra value space (if there is any). 
+            // This ensures all bytes after the used value space are 0, which retains log-scan correctness.
 
-            // We can adjust the length header on the serialized log, if we wish.
-            // This method will also zero out the extra space to retain log scan correctness.
-            dst.UnmarkExtraMetadata();
-            dst.ShrinkSerializedLength(src.Length);
+            // For non-in-place operations, the new record may have been revivified, so standard copying procedure must be done;
+            // For SpanByte we don't implement DisposeForRevivification, so any previous value is still there, and thus we must
+            // zero unused value space to ensure log-scan correctness, just like in in-place updates.
 
-            // Write the source data, leaving the destination size unchanged. You will need
-            // to manage the actual space used by the value if you stop here.
-            src.CopyTo(ref dst);
+            // IMPORTANT: usedValueLength and fullValueLength use .TotalSize, not .Length, to account for extra int.
+            //            This is also consistent with SpanByteVarLenStruct.Length.
+            upsertInfo.ClearExtraValueLength(ref dst, dst.TotalSize);
 
-            return true;
+            // We want to set the used and extra lengths and Filler whether we succeed (to the new length) or fail (to the original length).
+            var result = src.TrySafeCopyTo(ref dst, upsertInfo.FullValueLength);
+            upsertInfo.SetUsedValueLength(ref dst, dst.TotalSize);
+            return result;
         }
 
         /// <inheritdoc/>
         public override bool InitialUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output, ref RMWInfo rmwInfo)
-        {
-            input.CopyTo(ref value);
-            return true;
-        }
+            => DoSafeCopy(ref input, ref value, ref rmwInfo);
 
         /// <inheritdoc/>
         public override bool CopyUpdater(ref Key key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref Output output, ref RMWInfo rmwInfo)
-        {
-            oldValue.CopyTo(ref newValue);
-            return true;
-        }
+            => DoSafeCopy(ref oldValue, ref newValue, ref rmwInfo);
 
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output, ref RMWInfo rmwInfo)
-        {
             // The default implementation of IPU simply writes input to destination, if there is space
-            UpsertInfo upsertInfo = new(ref rmwInfo);
-            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref upsertInfo);
+            => DoSafeCopy(ref input, ref value, ref rmwInfo);
+
+        private static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref RMWInfo rmwInfo)
+        {
+            // See comments in upsertInfo overload of this function.
+            rmwInfo.ClearExtraValueLength(ref dst, dst.TotalSize);
+            var result = src.TrySafeCopyTo(ref dst, rmwInfo.FullValueLength);
+            rmwInfo.SetUsedValueLength(ref dst, dst.TotalSize);
+            return result;
         }
 
         /// <inheritdoc/>

@@ -32,9 +32,10 @@ namespace FASTER.core
         where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
-            if (!TryAllocateRecord(ref pendingContext, ref stackCtx, ref allocatedSize, recycle: true, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+            if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, recycle: true, 
+                    out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out var recycleMode))
                 return status;
-            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress, recycleMode);
             stackCtx.SetNewRecord(newLogicalAddress);
 
             UpsertInfo upsertInfo = new()
@@ -43,14 +44,14 @@ namespace FASTER.core
                 SessionID = fasterSession.Ctx.sessionID,
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
-                RecordInfo = newRecordInfo
             };
+            upsertInfo.SetRecordInfoAddress(ref newRecordInfo);
 
             ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
             (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
             if (!fasterSession.SingleWriter(ref key, ref input, ref value, ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
-                                            ref output, ref newRecordInfo, ref upsertInfo, reason))
+                                            ref output, ref upsertInfo, reason))
             {
                 // Save allocation for revivification (not retry, because we won't retry here), or abandon it if that fails.
                 if (this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
@@ -86,7 +87,7 @@ namespace FASTER.core
 
                 // CAS failed, so let the user dispose similar to a deleted record, and save for retry.
                 fasterSession.DisposeSingleWriter(ref hlog.GetKey(newPhysicalAddress), ref input, ref value, ref hlog.GetValue(newPhysicalAddress),
-                                                    ref output, ref newRecordInfo, ref upsertInfo, reason);
+                                                    ref output, ref upsertInfo, reason);
                 SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
                 return failStatus;
             }
@@ -95,7 +96,7 @@ namespace FASTER.core
             pendingContext.recordInfo = newRecordInfo;
             pendingContext.logicalAddress = upsertInfo.Address;
             fasterSession.PostSingleWriter(ref key, ref input, ref value, ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize), ref output,
-                                           ref newRecordInfo, ref upsertInfo, reason);
+                                           ref upsertInfo, reason);
             stackCtx.ClearNewRecord();
             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);
         }

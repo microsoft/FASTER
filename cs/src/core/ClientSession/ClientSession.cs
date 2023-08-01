@@ -1008,21 +1008,21 @@ namespace FASTER.core
             public FasterKV<Key, Value> Store => _clientSession.fht;
 
             #region IFunctions - Reads
-            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo)
+            public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo)
                 => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out EphemeralLockResult lockResult)
             {
                 lockResult = EphemeralLockResult.Success;
                 return _clientSession.fht.DoEphemeralLocking
-                    ? ConcurrentReaderLockEphemeral(ref key, ref input, ref value, ref dst, ref recordInfo, ref readInfo, out lockResult)
+                    ? ConcurrentReaderLockEphemeral(ref key, ref input, ref value, ref dst, ref readInfo, out lockResult)
                     : _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
             }
 
-            public bool ConcurrentReaderLockEphemeral(ref Key key, ref Input input, ref Value value, ref Output dst, ref RecordInfo recordInfo, ref ReadInfo readInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentReaderLockEphemeral(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out EphemeralLockResult lockResult)
             {
-                lockResult = recordInfo.TryLockShared() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
+                lockResult = readInfo.RecordInfoRef.TryLockShared() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
                 if (lockResult == EphemeralLockResult.Failed)
                     return false;
                 try
@@ -1031,7 +1031,7 @@ namespace FASTER.core
                 }
                 finally
                 {
-                    recordInfo.UnlockShared();
+                    readInfo.RecordInfoRef.UnlockShared();
                 }
             }
 
@@ -1042,68 +1042,69 @@ namespace FASTER.core
 
             #region IFunctions - Upserts
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) 
+            public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) 
                 => _clientSession.functions.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason) 
+            public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) 
             {
                 if (_clientSession.fht.DoEphemeralLocking)
-                    PostSingleWriterLockEphemeral(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, reason);
+                    PostSingleWriterLockEphemeral(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
                 else
-                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, reason);
+                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public void PostSingleWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
-                recordInfo.SetDirtyAndModified();
+                upsertInfo.RecordInfoRef.SetDirtyAndModified();
                 _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
             }
 
-            public void PostSingleWriterLockEphemeral(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public void PostSingleWriterLockEphemeral(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
+                // Note: Ephemeral XLock was taken by CASRecordIntoChain().
                 try
                 {
-                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, reason);
+                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
                 }
                 finally
                 {
                     if (reason == WriteReason.Upsert)
-                        recordInfo.UnlockExclusive();
-                    else if (recordInfo.IsLockedShared) // readcache records are not locked
-                        recordInfo.UnlockShared();
+                        upsertInfo.RecordInfoRef.UnlockExclusive();
+                    else if (upsertInfo.RecordInfoRef.IsLockedShared) // readcache records are not locked
+                        upsertInfo.RecordInfoRef.UnlockShared();
                 }
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult)
             {
                 lockResult = EphemeralLockResult.Success;
                 return _clientSession.fht.DoEphemeralLocking
-                    ? ConcurrentWriterLockEphemeral(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo, out lockResult)
-                    : ConcurrentWriterNoLock(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo);
+                    ? ConcurrentWriterLockEphemeral(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, out lockResult)
+                    : ConcurrentWriterNoLock(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private bool ConcurrentWriterNoLock(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo)
+            private bool ConcurrentWriterNoLock(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo)
             {
-                (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.fht.GetRecordLengths(physicalAddress, ref dst, ref recordInfo);
+                (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.fht.GetRecordLengths(physicalAddress, ref dst, ref upsertInfo.RecordInfoRef);
                 if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo))
                     return false;
-                _clientSession.fht.SetExtraValueLength(ref dst, ref recordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
-                recordInfo.SetDirtyAndModified();
+                _clientSession.fht.SetExtraValueLength(ref dst, ref upsertInfo.RecordInfoRef, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+                upsertInfo.RecordInfoRef.SetDirtyAndModified();
                 return true;
             }
 
-            public bool ConcurrentWriterLockEphemeral(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult)
+            private bool ConcurrentWriterLockEphemeral(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult)
             {
-                lockResult = recordInfo.TryLockExclusive() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
+                lockResult = upsertInfo.RecordInfoRef.TryLockExclusive() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
                 if (lockResult == EphemeralLockResult.Failed)
                     return false;
                 try
                 {
-                    if (ConcurrentWriterNoLock(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref recordInfo, ref upsertInfo))
+                    if (ConcurrentWriterNoLock(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref upsertInfo))
                         return true;
                     if (upsertInfo.Action != UpsertAction.CancelOperation)
                         lockResult = EphemeralLockResult.HoldForSeal;
@@ -1112,7 +1113,7 @@ namespace FASTER.core
                 finally
                 {
                     if (lockResult != EphemeralLockResult.HoldForSeal)
-                        recordInfo.UnlockExclusive();
+                        upsertInfo.RecordInfoRef.UnlockExclusive();
                 }
             }
             #endregion IFunctions - Upserts
@@ -1124,35 +1125,36 @@ namespace FASTER.core
                 => _clientSession.functions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
+            public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) 
                 => _clientSession.functions.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
+            public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) 
             {
                 if (_clientSession.fht.DoEphemeralLocking)
-                    PostInitialUpdaterLockEphemeral(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+                    PostInitialUpdaterLockEphemeral(ref key, ref input, ref value, ref output, ref rmwInfo);
                 else
-                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref rmwInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            private void PostInitialUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
             {
-                recordInfo.SetDirtyAndModified();
+                rmwInfo.RecordInfoRef.SetDirtyAndModified();
                 _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostInitialUpdaterLockEphemeral(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            private void PostInitialUpdaterLockEphemeral(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
             {
+                // Note: Ephemeral XLock was taken by CASRecordIntoChain().
                 try
                 { 
-                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo);
+                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref rmwInfo);
                 }
                 finally
                 {
-                    recordInfo.UnlockExclusive();
+                    rmwInfo.RecordInfoRef.UnlockExclusive();
                 }
             }
             #endregion InitialUpdater
@@ -1163,65 +1165,65 @@ namespace FASTER.core
                 => _clientSession.functions.NeedCopyUpdate(ref key, ref input, ref oldValue, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
+            public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) 
                 => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
+            public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) 
             {
                 if (_clientSession.fht.DoEphemeralLocking)
-                    PostCopyUpdaterLockEphemeral(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref rmwInfo);
+                    PostCopyUpdaterLockEphemeral(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
                 else
-                    PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref rmwInfo);
+                    PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public void PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
             {
-                recordInfo.SetDirtyAndModified();
+                rmwInfo.RecordInfoRef.SetDirtyAndModified();
                 _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdaterLockEphemeral(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public void PostCopyUpdaterLockEphemeral(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
             {
+                // Note: Ephemeral XLock was taken by CASRecordIntoChain().
                 try
                 {
-                    PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref recordInfo, ref rmwInfo);
+                    PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
                 }
                 finally
                 {
-                    recordInfo.UnlockExclusive();
+                    rmwInfo.RecordInfoRef.UnlockExclusive();
                 }
             }
             #endregion CopyUpdater
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status,
+            public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status,
                                        out EphemeralLockResult lockResult)
             {
                 lockResult = EphemeralLockResult.Success;
                 return _clientSession.fht.DoEphemeralLocking
-                                ? InPlaceUpdaterLockEphemeral(physicalAddress, ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status, out lockResult)
-                                : InPlaceUpdaterNoLock(physicalAddress, ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status);
+                                ? InPlaceUpdaterLockEphemeral(physicalAddress, ref key, ref input, ref value, ref output, ref rmwInfo, out status, out lockResult)
+                                : InPlaceUpdaterNoLock(physicalAddress, ref key, ref input, ref value, ref output, ref rmwInfo, out status);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdaterNoLock(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
+            public bool InPlaceUpdaterNoLock(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status)
             {
-                (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.fht.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
-                if (!_clientSession.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
+                (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.fht.GetRecordLengths(physicalAddress, ref value, ref rmwInfo.RecordInfoRef);
+                if (!_clientSession.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo.RecordInfoRef, ref rmwInfo, out status))
                     return false;
-                _clientSession.fht.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
-                recordInfo.SetDirtyAndModified();
+                _clientSession.fht.SetExtraValueLength(ref value, ref rmwInfo.RecordInfoRef, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                rmwInfo.RecordInfoRef.SetDirtyAndModified();
                 return true;
             }
 
-            public bool InPlaceUpdaterLockEphemeral(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status,
-                                                    out EphemeralLockResult lockResult)
+            public bool InPlaceUpdaterLockEphemeral(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, out EphemeralLockResult lockResult)
             {
-                lockResult = recordInfo.TryLockExclusive() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
+                lockResult = rmwInfo.RecordInfoRef.TryLockExclusive() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
                 if (lockResult == EphemeralLockResult.Failed)
                 {
                     status = OperationStatus.RETRY_LATER;
@@ -1229,7 +1231,7 @@ namespace FASTER.core
                 }
                 try
                 { 
-                    if (InPlaceUpdaterNoLock(physicalAddress, ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
+                    if (InPlaceUpdaterNoLock(physicalAddress, ref key, ref input, ref value, ref output, ref rmwInfo, out status))
                         return true;
                     // Expiration sets additional bits beyond SUCCESS, and Cancel does not set SUCCESS.
                     if (status == OperationStatus.SUCCESS)
@@ -1239,7 +1241,7 @@ namespace FASTER.core
                 finally
                 {
                     if (lockResult != EphemeralLockResult.HoldForSeal)
-                        recordInfo.UnlockExclusive();
+                        rmwInfo.RecordInfoRef.UnlockExclusive();
                 }
             }
             #endregion InPlaceUpdater
@@ -1251,60 +1253,60 @@ namespace FASTER.core
 
             #region IFunctions - Deletes
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool SingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo) 
+            public bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) 
                 => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo) 
+            public void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) 
             {
                 if (_clientSession.fht.DoEphemeralLocking)
-                    PostSingleDeleterLockEphemeral(ref key, ref recordInfo, ref deleteInfo);
+                    PostSingleDeleterLockEphemeral(ref key, ref deleteInfo);
                 else
-                    PostSingleDeleterNoLock(ref key, ref recordInfo, ref deleteInfo);
+                    PostSingleDeleterNoLock(ref key, ref deleteInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleterNoLock(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+            public void PostSingleDeleterNoLock(ref Key key, ref DeleteInfo deleteInfo)
             {
-                recordInfo.SetDirtyAndModified();
+                deleteInfo.RecordInfoRef.SetDirtyAndModified();
                 _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleterLockEphemeral(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+            public void PostSingleDeleterLockEphemeral(ref Key key, ref DeleteInfo deleteInfo)
             {
                 try
                 {
-                    PostSingleDeleterNoLock(ref key, ref recordInfo, ref deleteInfo);
+                    PostSingleDeleterNoLock(ref key, ref deleteInfo);
                 }
                 finally
                 {
-                    recordInfo.UnlockExclusive();
+                    deleteInfo.RecordInfoRef.UnlockExclusive();
                 }
             }
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out int fullRecordLength, out EphemeralLockResult lockResult)
+            public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int fullRecordLength, out EphemeralLockResult lockResult)
             {
                 lockResult = EphemeralLockResult.Success;
                 return _clientSession.fht.DoEphemeralLocking
-                    ? ConcurrentDeleterLockEphemeral(physicalAddress, ref key, ref value, ref recordInfo, ref deleteInfo, out fullRecordLength, out lockResult)
-                    : ConcurrentDeleterNoLock(physicalAddress, ref key, ref value, ref recordInfo, ref deleteInfo, out fullRecordLength);
+                    ? ConcurrentDeleterLockEphemeral(physicalAddress, ref key, ref value, ref deleteInfo, out fullRecordLength, out lockResult)
+                    : ConcurrentDeleterNoLock(physicalAddress, ref key, ref value, ref deleteInfo, out fullRecordLength);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleterNoLock(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out int allocatedSize)
+            public bool ConcurrentDeleterNoLock(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int allocatedSize)
             {
-                (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.fht.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
+                (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.fht.GetRecordLengths(physicalAddress, ref value, ref deleteInfo.RecordInfoRef);
                 if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo))
                     return false;
-                _clientSession.fht.SetTombstoneAndFullValueLength(ref value, ref recordInfo, deleteInfo.FullValueLength);
-                recordInfo.SetDirtyAndModified();
+                _clientSession.fht.SetTombstoneAndExtraValueLength(ref value, ref deleteInfo.RecordInfoRef, deleteInfo.FullValueLength);
+                deleteInfo.RecordInfoRef.SetDirtyAndModified();
                 return true;
             }
 
-            public bool ConcurrentDeleterLockEphemeral(long physicalAddress, ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo, out int fullRecordLength, out EphemeralLockResult lockResult)
+            public bool ConcurrentDeleterLockEphemeral(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int fullRecordLength, out EphemeralLockResult lockResult)
             {
-                lockResult = recordInfo.TryLockExclusive() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
+                lockResult = deleteInfo.RecordInfoRef.TryLockExclusive() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
                 if (lockResult == EphemeralLockResult.Failed)
                 { 
                     fullRecordLength = 0;
@@ -1312,26 +1314,28 @@ namespace FASTER.core
                 }
                 try
                 {
-                    return ConcurrentDeleterNoLock(physicalAddress, ref key, ref value, ref recordInfo, ref deleteInfo, out fullRecordLength);
+                    return ConcurrentDeleterNoLock(physicalAddress, ref key, ref value, ref deleteInfo, out fullRecordLength);
                 }
                 finally
                 {
-                    recordInfo.UnlockExclusive();
+                    deleteInfo.RecordInfoRef.UnlockExclusive();
                 }
             }
             #endregion IFunctions - Deletes
 
             #region IFunctions - Dispose
-            public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref RecordInfo recordInfo, ref UpsertInfo upsertInfo, WriteReason reason)
+            public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
                 => _clientSession.functions.DisposeSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
-            public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
                 => _clientSession.functions.DisposeCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
-            public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+            public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
                 => _clientSession.functions.DisposeInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-            public void DisposeSingleDeleter(ref Key key, ref Value value, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
+            public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo)
                 => _clientSession.functions.DisposeSingleDeleter(ref key, ref value, ref deleteInfo);
             public void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo)
                 => _clientSession.functions.DisposeDeserializedFromDisk(ref key, ref value);
+            public void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey, ref RecordInfo recordInfo)
+                => _clientSession.functions.DisposeForRevivification(ref key, ref value, disposeKey);
             #endregion IFunctions - Dispose
 
             #region IFunctions - Checkpointing

@@ -59,7 +59,8 @@ namespace FASTER.core
         public virtual void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
         /// <inheritdoc/>
         public virtual void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
-
+        /// <inheritdoc/>
+        public virtual void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey) { }
         /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>

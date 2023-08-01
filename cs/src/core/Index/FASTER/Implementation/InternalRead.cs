@@ -187,8 +187,8 @@ namespace FASTER.core
                 {
                     Version = fasterSession.Ctx.version,
                     Address = Constants.kInvalidAddress,    // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
-                    RecordInfo = srcRecordInfo
                 };
+                readInfo.SetRecordInfoAddress(ref srcRecordInfo);
 
                 if (!TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
                     return false;
@@ -202,7 +202,7 @@ namespace FASTER.core
                         return false;
                     }
 
-                    if (fasterSession.SingleReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo))
+                    if (fasterSession.SingleReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref readInfo))
                         return true;
                     status = readInfo.Action == ReadAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
                     return false;
@@ -229,13 +229,12 @@ namespace FASTER.core
             {
                 Version = fasterSession.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
-                RecordInfo = srcRecordInfo
             };
+            readInfo.SetRecordInfoAddress(ref srcRecordInfo);
 
             // If we are starting from a specified address in the immutable region, we may have a Sealed record from a previous RCW.
             // For this case, do not try to lock, TransientSUnlock will see that we do not have a lock so will not try to update it.
-            OperationStatus status = OperationStatus.SUCCESS;
-            if (!useStartAddress && !TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
+            if (!useStartAddress && !TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
                 return status;
 
             try
@@ -247,7 +246,7 @@ namespace FASTER.core
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
-                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref srcRecordInfo, ref readInfo, out stackCtx.recSrc.ephemeralLockResult))
+                if (fasterSession.ConcurrentReader(ref key, ref input, ref stackCtx.recSrc.GetValue(), ref output, ref readInfo, out stackCtx.recSrc.ephemeralLockResult))
                     return OperationStatus.SUCCESS;
                 if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
                     return OperationStatus.RETRY_LATER;
@@ -277,13 +276,12 @@ namespace FASTER.core
             {
                 Version = fasterSession.Ctx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
-                RecordInfo = srcRecordInfo
             };
+            readInfo.SetRecordInfoAddress(ref srcRecordInfo);
 
             // If we are starting from a specified address in the immutable region, we may have a Sealed record from a previous RCW.
             // For this case, do not try to lock, TransientSUnlock will see that we do not have a lock so will not try to update it.
-            OperationStatus status = OperationStatus.SUCCESS;
-            if (!useStartAddress && !TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out status))
+            if (!useStartAddress && !TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
                 return status;
 
             try
@@ -296,7 +294,7 @@ namespace FASTER.core
                     return OperationStatus.NOTFOUND;
                 ref Value recordValue = ref stackCtx.recSrc.GetValue();
 
-                if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo))
+                if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref readInfo))
                 {
                     if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable)
                         return OperationStatus.SUCCESS;

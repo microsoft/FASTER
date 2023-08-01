@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -39,16 +40,27 @@ namespace FASTER.core
             return false;
         }
 
+        internal enum RecycleMode { None, Retry, Revivification }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryAllocateRecord<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, ref OperationStackContext<Key, Value> stackCtx,
-                                                       ref int allocatedSize, bool recycle, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
+        bool TryAllocateRecord<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref PendingContext<Input, Output, Context> pendingContext, 
+                                                       ref OperationStackContext<Key, Value> stackCtx, int actualSize, ref int allocatedSize, bool recycle,
+                                                       out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out RecycleMode recycleMode)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-            if (recycle && GetAllocationForRetry(ref pendingContext, stackCtx.hei.Address, ref allocatedSize, out newLogicalAddress, out newPhysicalAddress))
+            recycleMode = RecycleMode.None;
+            if (recycle && GetAllocationForRetry(fasterSession, ref pendingContext, stackCtx.hei.Address, ref allocatedSize, out newLogicalAddress, out newPhysicalAddress))
+            {
+                recycleMode = RecycleMode.Retry;
                 return true;
+            }
 
-            if (TryTakeFreeRecord(ref allocatedSize, stackCtx.hei.entry, out newLogicalAddress, out newPhysicalAddress))
+            if (TryTakeFreeRecord<Input, Output, Context, FasterSession>(fasterSession, ref allocatedSize, stackCtx.hei.entry, out newLogicalAddress, out newPhysicalAddress))
+            {
+                recycleMode = RecycleMode.Revivification;
                 return true;
+            }
 
             // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
             for (; ; Thread.Yield() )
@@ -62,17 +74,24 @@ namespace FASTER.core
                     if (newLogicalAddress > stackCtx.recSrc.LatestLogicalAddress)
                         return true;
 
-                    // This allocation is below the necessary address so put it on the free list or abandon it and repeat the loop.
+                    // This allocation is below the necessary address so put it on the free list or abandon it, then repeat the loop.
                     if (!this.UseFreeRecordPool || !this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
                         hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
                     continue;
                 }
 
                 // In-memory source dropped below HeadAddress during BlockAllocate.
+                ref var newRecordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 if (recycle)
+                {
+                    ref var newValue = ref hlog.GetValue(newPhysicalAddress);
+                    hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+                    int valueOffset = (int)((long)Unsafe.AsPointer(ref newValue) - newPhysicalAddress);
+                    SetExtraValueLength(ref hlog.GetValue(newPhysicalAddress), ref newRecordInfo, actualSize, allocatedSize - valueOffset);
                     SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
+                }
                 else
-                    hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
+                    newRecordInfo.SetInvalid();  // Skip on log scan
                 status = OperationStatus.RETRY_LATER;
                 break;
             }
@@ -116,7 +135,12 @@ namespace FASTER.core
         void SaveAllocationForRetry<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, long logicalAddress, long physicalAddress, int allocatedSize)
         {
             ref var recordInfo = ref hlog.GetInfo(physicalAddress);
-            recordInfo.SetInvalid();    // so log scan will skip it
+
+            // TryAllocateRecord may stash this before WriteRecordInfo is called, leaving .PreviousAddress set to kInvalidAddress.
+            // This is zero, and setting Invalid will result in recordInfo.IsNull being true, which will cause log-scan problems.
+            // We don't need whatever .PreviousAddress was there, so set it to kTempInvalidAddress (which is nonzero).
+            recordInfo.PreviousAddress = Constants.kTempInvalidAddress;
+            recordInfo.SetInvalid();    // so log scan will skip
 
             if (logicalAddress < hlog.HeadAddress || allocatedSize < sizeof(RecordInfo) + sizeof(int))
             {
@@ -124,12 +148,14 @@ namespace FASTER.core
                 return;
             }
 
-            SetFreeRecordSize(physicalAddress, ref recordInfo, allocatedSize);
+            // ExtraValueLength has been set by caller.
             pendingContext.retryNewLogicalAddress = logicalAddress;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool GetAllocationForRetry<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, long minAddress, ref int allocatedSize, out long newLogicalAddress, out long newPhysicalAddress)
+        bool GetAllocationForRetry<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref PendingContext<Input, Output, Context> pendingContext, long minAddress,
+                ref int allocatedSize, out long newLogicalAddress, out long newPhysicalAddress)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // Use an earlier allocation from a failed operation, if possible.
             newLogicalAddress = pendingContext.retryNewLogicalAddress;
@@ -139,12 +165,20 @@ namespace FASTER.core
                 newPhysicalAddress = 0;
                 return false;
             }
-            newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
 
-            int recordSize = GetFreeRecordSize(newPhysicalAddress, ref hlog.GetInfo(newPhysicalAddress));
-            if (recordSize < allocatedSize)
+            newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+            Debug.Assert(!hlog.GetInfo(newPhysicalAddress).IsNull(), "RecordInfo should not be IsNull");
+            ref var recordInfo = ref hlog.GetInfo(newPhysicalAddress);
+            ref var recordValue = ref hlog.GetValue(newPhysicalAddress);
+
+            (int usedValueLength, int _, int fullRecordLength) = GetRecordLengths(newPhysicalAddress, ref recordValue, ref recordInfo);
+            if (fullRecordLength < allocatedSize)
                 return false;
-            allocatedSize = recordSize;
+
+            ClearExtraValueLength(ref recordInfo, ref recordValue, usedValueLength);
+            fasterSession.DisposeForRevivification(ref hlog.GetKey(newPhysicalAddress), ref recordValue, disposeKey: false, ref recordInfo);
+
+            allocatedSize = fullRecordLength;
             return true;
         }
     }
