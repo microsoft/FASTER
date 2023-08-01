@@ -1373,6 +1373,26 @@ namespace FASTER.core
             return sectorSize;
         }
 
+        void AllocatePagesWithException(int pageIndex, PageOffset localTailPageOffset)
+        {
+            try
+            {
+                // Allocate this page, if needed
+                if (!IsAllocated(pageIndex % BufferSize))
+                    AllocatePage(pageIndex % BufferSize);
+
+                // Allocate next page in advance, if needed
+                if (!IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePage((pageIndex + 1) % BufferSize);
+            }
+            catch
+            {
+                localTailPageOffset.Offset = PageSize;
+                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+                throw;
+            }
+        }
+
         /// <summary>
         /// Try allocate, no thread spinning allowed
         /// </summary>
@@ -1412,6 +1432,8 @@ namespace FASTER.core
                 PageAlignedShiftReadOnlyAddress(shiftAddress);
                 PageAlignedShiftHeadAddress(shiftAddress);
 
+                // This thread is trying to allocate at an offset past where one or more previous threads
+                // already overflowed; exit and allow the first overflow thread to proceed
                 if (offset > PageSize)
                 {
                     if (NeedToWait(pageIndex))
@@ -1436,13 +1458,8 @@ namespace FASTER.core
                     return -1; // RETRY_NOW
                 }
 
-                // Allocate this page, if needed
-                if (!IsAllocated(pageIndex % BufferSize))
-                    AllocatePage(pageIndex % BufferSize);
-
-                // Allocate next page in advance, if needed
-                if (!IsAllocated((pageIndex + 1) % BufferSize))
-                    AllocatePage((pageIndex + 1) % BufferSize);
+                if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePagesWithException(pageIndex, localTailPageOffset);
 
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = numSlots;

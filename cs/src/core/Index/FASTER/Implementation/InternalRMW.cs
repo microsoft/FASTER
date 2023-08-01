@@ -194,6 +194,9 @@ namespace FASTER.core
                 }
                 else if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
                 {
+                    if (hlog.IsNullDevice)
+                        goto CreateNewRecord;
+
                     // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
                     status = OperationStatus.RECORD_ON_DISK;
                     latchDestination = LatchDestination.CreatePendingContext;
