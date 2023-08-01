@@ -113,8 +113,6 @@ namespace FASTER.core
             int fullValueLength = allocatedSize - valueOffset;
             Debug.Assert(usedValueLength >= 0, $"GetNewValueLengths: usedValueLength {usedValueLength}");
             Debug.Assert(fullValueLength >= 0, $"GetNewValueLengths: fullValueLength {fullValueLength}");
-            Debug.Assert(fullValueLength >= usedValueLength, $"GetNewValueLengths: usedValueLength {usedValueLength} cannot be > fullValueLength {fullValueLength}");
-
             Debug.Assert(fullValueLength >= RoundUp(usedValueLength, sizeof(int)), $"GetNewValueLengths: usedValueLength {usedValueLength} cannot be > fullValueLength {fullValueLength}");
 
             return (usedValueLength, fullValueLength);

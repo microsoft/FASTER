@@ -291,7 +291,7 @@ namespace FASTER.core
 
             if (!fasterSession.SingleDeleter(ref key, ref newValue, ref deleteInfo))
             {
-                // This record was allocated with a minimal Value size (unless it was a revivified larger record), so there's no room for a Filler,
+                // This record was allocated with a minimal Value size (unless it was a revivified larger record) so there's no room for a Filler,
                 // but we may want it for a later Delete, or for insert with a smaller Key.
                 if (this.UseFreeRecordPool && this.FreeRecordPool.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize))
                     stackCtx.ClearNewRecord();
