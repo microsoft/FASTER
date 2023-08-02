@@ -228,6 +228,13 @@ namespace FASTER.core
 
                 if (entryLength == 0)
                 {
+                    if (_currentOffset == 0)
+                    {
+                        // We found a hole at beginning of page, this must imply end of delta log
+                        return false;
+                    }
+
+                    // Hole at end of page, skip to next page
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
                     if (!Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         return false;
