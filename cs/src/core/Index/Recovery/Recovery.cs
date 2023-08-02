@@ -172,7 +172,7 @@ namespace FASTER.core
         /// <returns></returns>
         public long GetLatestCheckpointVersion()
         {
-            GetClosestHybridLogCheckpointInfo(-1, out var hlogToken, out var hlcInfo, out var _);
+            GetClosestHybridLogCheckpointInfo(-1, out var hlogToken, out var hlcInfo, out var _, true);
             hlcInfo.Dispose();
             if (hlogToken == default)
                 return -1;
@@ -220,7 +220,7 @@ namespace FASTER.core
             long requestedVersion,
             out Guid closestToken,
             out HybridLogCheckpointInfo closest,
-            out byte[] cookie)
+            out byte[] cookie, bool scanDelta = false)
         {
             HybridLogCheckpointInfo current;
             long closestVersion = long.MaxValue;
@@ -237,7 +237,7 @@ namespace FASTER.core
                 {
                     current = new HybridLogCheckpointInfo();
                     current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits,
-                        out var currCookie, false);
+                        out var currCookie, scanDelta);
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
                     // This is larger than intended version, cannot recover to this.
                     if (distanceToTarget < 0) continue;
