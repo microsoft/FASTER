@@ -19,7 +19,8 @@ namespace FASTER.core
         /// <param name="untilAddress">Address committed until (for information only, not necessary to persist)</param>
         /// <param name="commitMetadata">Commit metadata - should be persisted</param>
         /// <param name="commitNum">commit num</param>
-        void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum);
+        /// <param name="forceWriteMetadata">force writing of metadata in case of fast commit</param>
+        void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata);
 
         /// <summary>
         /// Return commit metadata
