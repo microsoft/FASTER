@@ -229,7 +229,7 @@ namespace FASTER.core
                 if (entryLength == 0)
                 {
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
-                    if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
+                    if (!Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         return false;
                     else
                         continue;
@@ -239,7 +239,7 @@ namespace FASTER.core
                 if (entryLength < 0 || (_currentOffset + recordSize > PageSize))
                 {
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
-                    if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
+                    if (!Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         return false;
                     else
                         continue;
@@ -249,7 +249,7 @@ namespace FASTER.core
                 if (!VerifyBlockChecksum((byte*)physicalAddress, entryLength))
                 {
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
-                    if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
+                    if (!Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         return false;
                     else
                         continue;
