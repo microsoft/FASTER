@@ -109,9 +109,9 @@ namespace FASTER.core
         #region ILogCommitManager
 
         /// <inheritdoc />
-        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum)
+        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
         {
-            if (fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0)) return;
+            if (!forceWriteMetadata && fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0)) return;
 
             using var device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
 
