@@ -114,7 +114,7 @@ namespace FASTER.core
                         {
                             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
                                 status = ConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
-                                                               ref pendingContext.userContext, pendingContext.serialNum, ref stackCtx, WriteReason.CopyToTail);
+                                                               ref pendingContext.userContext, pendingContext.serialNum, ref stackCtx, WriteReason.CopyToTail, callerHasLock: true);
                             else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
                                     && TryCopyToReadCache(fasterSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref stackCtx))
                                 status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;

@@ -12,7 +12,7 @@ namespace FASTER.core
         private OperationStatus ConditionalCopyToTail<Input, Output, Context, FasterSession>(FasterSession fasterSession,
                 ref PendingContext<Input, Output, Context> pendingContext,
                 ref Key key, ref Input input, ref Value value, ref Output output, ref Context userContext, long lsn,
-                ref OperationStackContext<Key, Value> stackCtx, WriteReason writeReason)
+                ref OperationStackContext<Key, Value> stackCtx, WriteReason writeReason, bool callerHasLock = false)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // We are called by one of ReadFromImmutable, CompactionConditionalCopyToTail, or ContinueConditionalCopyToTail, and stackCtx is set up for the first try.
@@ -22,7 +22,7 @@ namespace FASTER.core
             {
                 // ConditionalCopyToTail is different in regard to locking from the usual procedures, in that if we find a source record we don't lock--we exit with success.
                 // So we only do LockTable-based locking and only when we are about to insert at the tail.
-                if (TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
+                if (callerHasLock || TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out OperationStatus status))
                 {
                     try
                     {
@@ -32,7 +32,8 @@ namespace FASTER.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
+                        if (!callerHasLock)
+                            TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
                     }
                 }
                 if (!HandleImmediateRetryStatus(status, fasterSession, ref pendingContext))
