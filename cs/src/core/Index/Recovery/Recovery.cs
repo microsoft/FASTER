@@ -237,7 +237,7 @@ namespace FASTER.core
                 {
                     current = new HybridLogCheckpointInfo();
                     current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits,
-                        out var currCookie, true);
+                        out var currCookie, false);
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
                     // This is larger than intended version, cannot recover to this.
                     if (distanceToTarget < 0) continue;
