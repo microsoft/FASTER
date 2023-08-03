@@ -189,10 +189,10 @@ namespace FASTER.common
         }
 
         /// <inheritdoc />
-        public override void Dispose() => Dispose(false);
+        public override void Dispose() => DisposeNetworkSender(false);
 
         /// <inheritdoc />
-        public override void Dispose(bool waitForSendCompletion)
+        public override void DisposeNetworkSender(bool waitForSendCompletion)
         {
             if (!waitForSendCompletion)
                 socket.Dispose();
