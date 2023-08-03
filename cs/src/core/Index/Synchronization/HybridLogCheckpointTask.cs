@@ -322,7 +322,6 @@ namespace FASTER.core
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, faster);
                     faster._hybridLogCheckpoint.info.finalLogicalAddress = faster.hlog.GetTailAddress();
-                    faster._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = faster.hlog.FlushedUntilAddress;
 
                     if (faster._hybridLogCheckpoint.deltaLog == null)
                     {
@@ -337,7 +336,7 @@ namespace FASTER.core
                     // resuming epoch protection if necessary. Correctness is not affected as we will
                     // only read safe pages during recovery.
                     faster.hlog.AsyncFlushDeltaToDevice(
-                        faster._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress,
+                        faster.hlog.FlushedUntilAddress,
                         faster._hybridLogCheckpoint.info.finalLogicalAddress,
                         faster._lastSnapshotCheckpoint.info.finalLogicalAddress,
                         faster._hybridLogCheckpoint.prevVersion,
@@ -346,8 +345,6 @@ namespace FASTER.core
                         faster.ThrottleCheckpointFlushDelayMs);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
-                    // Set actual FlushedUntil to the latest possible data in main log that is on disk
-                    faster._hybridLogCheckpoint.info.flushedLogicalAddress = faster.hlog.FlushedUntilAddress;
                     CollectMetadata(next, faster);
                     faster.WriteHybridLogIncrementalMetaInfo(faster._hybridLogCheckpoint.deltaLog);
                     faster._hybridLogCheckpoint.info.deltaTailAddress = faster._hybridLogCheckpoint.deltaLog.TailAddress;
