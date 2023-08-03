@@ -31,6 +31,8 @@ namespace FASTER.core
                                     ref RecordInfo srcRecordInfo, FasterSession fasterSession, WriteReason reason)
         where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
+            var fizzAdd = stackCtx.recSrc.PhysicalAddress;
+
             var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
             if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, recycle: true, 
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out var recycleMode))

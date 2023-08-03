@@ -80,7 +80,7 @@ namespace FASTER.core
                     continue;
                 }
 
-                // In-memory source dropped below HeadAddress during BlockAllocate.
+                // In-memory source dropped below HeadAddress during BlockAllocate. Save the record for retry if we can.
                 ref var newRecordInfo = ref hlog.GetInfo(newPhysicalAddress);
                 if (recycle)
                 {
@@ -140,16 +140,10 @@ namespace FASTER.core
             // This is zero, and setting Invalid will result in recordInfo.IsNull being true, which will cause log-scan problems.
             // We don't need whatever .PreviousAddress was there, so set it to kTempInvalidAddress (which is nonzero).
             recordInfo.PreviousAddress = Constants.kTempInvalidAddress;
-            recordInfo.SetInvalid();    // so log scan will skip
-
-            if (logicalAddress < hlog.HeadAddress || allocatedSize < sizeof(RecordInfo) + sizeof(int))
-            {
-                pendingContext.retryNewLogicalAddress = Constants.kInvalidAddress;
-                return;
-            }
+            recordInfo.SetInvalid();    // Skip on log scan
 
             // ExtraValueLength has been set by caller.
-            pendingContext.retryNewLogicalAddress = logicalAddress;
+            pendingContext.retryNewLogicalAddress = logicalAddress < hlog.HeadAddress ? Constants.kInvalidAddress : logicalAddress;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -167,9 +161,9 @@ namespace FASTER.core
             }
 
             newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
-            Debug.Assert(!hlog.GetInfo(newPhysicalAddress).IsNull(), "RecordInfo should not be IsNull");
             ref var recordInfo = ref hlog.GetInfo(newPhysicalAddress);
             ref var recordValue = ref hlog.GetValue(newPhysicalAddress);
+            Debug.Assert(!recordInfo.IsNull(), "RecordInfo should not be IsNull");
 
             (int usedValueLength, int _, int fullRecordLength) = GetRecordLengths(newPhysicalAddress, ref recordValue, ref recordInfo);
             if (fullRecordLength < allocatedSize)

@@ -18,12 +18,11 @@ namespace FASTER.core
 
         /// <summary>
         /// Whether a new record for a previously non-existent key was appended to the log.
-        /// Indicates that an existing record was updated in place.
         /// </summary>
         public bool Created => (statusCode & StatusCode.AdvancedMask) == StatusCode.CreatedRecord;
 
         /// <summary>
-        /// Whether existing record was updated in place.
+        /// Whether an existing record was updated in place.
         /// </summary>
         public bool InPlaceUpdated => (statusCode & StatusCode.AdvancedMask) == StatusCode.InPlaceUpdatedRecord;
 

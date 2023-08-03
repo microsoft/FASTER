@@ -126,11 +126,11 @@ namespace FASTER.core
                             if (srcRecordInfo.Tombstone)
                             {
                                 srcRecordInfo.Tombstone = false;
+
                                 if (IsFixedLengthReviv)
                                     rmwInfo.UsedValueLength = rmwInfo.FullValueLength = FixedLengthStruct<Value>.Length;
                                 else
                                 {
-                                    //rmwInfo.FullValueLength = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo).fullValueLength;
                                     var (usedValueLength, fullValueLength, fullRecordLength) = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
                                     rmwInfo.FullValueLength = fullValueLength;
 

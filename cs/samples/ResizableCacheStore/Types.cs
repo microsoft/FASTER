@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using FASTER.core;
-using System;
 using System.Threading;
 
 namespace ResizableCacheStore
@@ -111,10 +110,48 @@ namespace ResizableCacheStore
         {
             sizeTracker.AddTrackedSize(-value.GetSize);
 
-            // Record is marked invalid (failed to insert), dispose key as well
+            // If the record is marked invalid (failed to insert), dispose key as well
             if (deleteInfo.RecordInfo.Invalid)
                 sizeTracker.AddTrackedSize(-key.GetSize);
             return true;
+        }
+
+        public override void PostSingleDeleter(ref CacheKey key, ref DeleteInfo deleteInfo)
+        {
+            sizeTracker.AddTrackedSize(-key.GetSize);
+        }
+
+        public override void PostInitialUpdater(ref CacheKey key, ref CacheValue input, ref CacheValue value, ref CacheValue output, ref RMWInfo rmwInfo)
+        {
+            value = input;
+            sizeTracker.AddTrackedSize(key.GetSize + input.GetSize);
+        }
+
+        public override void PostCopyUpdater(ref CacheKey key, ref CacheValue input, ref CacheValue oldValue, ref CacheValue newValue, ref CacheValue output, ref RMWInfo rmwInfo)
+        {
+            newValue = oldValue;
+            sizeTracker.AddTrackedSize(key.GetSize + oldValue.GetSize);
+        }
+
+        public override bool InPlaceUpdater(ref CacheKey key, ref CacheValue input, ref CacheValue value, ref CacheValue output, ref RMWInfo rmwInfo)
+        {
+            var old = Interlocked.Exchange(ref value, input);
+            sizeTracker.AddTrackedSize(value.GetSize - old.GetSize);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override void DisposeDeserializedFromDisk(ref CacheKey key, ref CacheValue value)
+        {
+            sizeTracker.AddTrackedSize(-key.GetSize - value.GetSize);
+        }
+
+        public override void DisposeForRevivification(ref CacheKey key, ref CacheValue value, bool disposeKey)
+        {
+            if (disposeKey)
+                sizeTracker.AddTrackedSize(-key.GetSize);
+            if (value is not null)
+                sizeTracker.AddTrackedSize(-value.GetSize);
         }
     }
 }

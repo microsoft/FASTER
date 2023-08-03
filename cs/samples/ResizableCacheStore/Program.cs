@@ -76,7 +76,7 @@ namespace ResizableCacheStore
         /// </summary>
         static int DeletePercent = 0;
 
-        const string OpPercentArg = "--op-rmud%";
+        const string OpPercentArg = "--op-rumd";
 
         /// <summary>
         /// Uniform random distribution (true) or Zipf distribution (false) of requests
@@ -114,10 +114,10 @@ namespace ResizableCacheStore
         static int CacheMissRmwPercent = 0;
 
         /// <summary>
-        /// Percentage of Cache-miss Upserts
+        /// Percentage of Cache-miss Upserts/Rmws
         /// </summary>
         static int CacheMissUpsertPercent = 100;
-        const string CacheMissInsertPercentArg = "--cm-mu%";
+        const string CacheMissInsertPercentArg = "--cachemiss-um";
 
         /// <summary>
         /// Number of seconds to run
@@ -126,13 +126,19 @@ namespace ResizableCacheStore
         const string RunTimeArg = "--runtime";
 
         /// <summary>
+        /// Number of seconds to run
+        /// </summary>
+        static int RevivificationLevel = 0;
+        const string RevivArg = "--reviv";
+
+        /// <summary>
         /// Skew factor (theta) of Zipf distribution
         /// </summary>
         const double Theta = 0.99;
 
         static FasterKV<CacheKey, CacheValue> h;
         static CacheSizeTracker sizeTracker;
-        static long totalReads = 0;
+        static long totalOperations = 0;
         static long targetSize = 1L << 30; // target size for FASTER, we vary this during the run
 
         // Cache hit stats
@@ -156,11 +162,12 @@ namespace ResizableCacheStore
             Console.WriteLine($"  {MemorySizeBitsArg} #: In-memory size of the log, in bits. Default = {MemorySizeBits}");
             Console.WriteLine($"  {PageSizeBitsArg} #: Page size, in bits. Default = {PageSizeBits}");
             Console.WriteLine($"  {HashSizeBitsArg} #: Number of bits in the hash table (recordSize is 24, so '{nameof(MemorySizeBitsArg)}' - '{nameof(HashSizeBitsArg)}' - 5, if positive, is a rough log2 of average tag chain length). Default = {HashSizeBits}");
-            Console.WriteLine($"  {OpPercentArg} #,#,#,#: Percentage of [(r)eads,r(m)ws,(u)pserts,(d)eletes] (summing to 0 or 100) operations in incoming workload requests. Default = {ReadPercent},{RmwPercent},{UpsertPercent},{DeletePercent}");
+            Console.WriteLine($"  {OpPercentArg} #,#,#,#: Percentage of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 0 or 100) operations in incoming workload requests. Default = {ReadPercent},{UpsertPercent},{RmwPercent},{DeletePercent}");
             Console.WriteLine($"  {NoReadCTTArg}: Turn off (true) or allow (false) copying of reads from the Immutable region of the log to the tail of log. Default = {!UseReadCTT}");
             Console.WriteLine($"  {UseReadCacheArg}: Whether to use the ReadCache. Default = {UseReadCache}");
-            Console.WriteLine($"  {CacheMissInsertPercentArg} #,#: Whether to insert the key on a cache miss, and if so, the percentage of [r(m)ws,(u)pserts] (summing to 0 or 100) operations to do so. Default = {CacheMissRmwPercent},{CacheMissUpsertPercent}");
+            Console.WriteLine($"  {CacheMissInsertPercentArg} #,#: Whether to insert the key on a cache miss, and if so, the percentage of [(u)pserts,r(m)ws] (summing to 0 or 100) operations to do so. Default = {CacheMissUpsertPercent},{CacheMissRmwPercent}");
             Console.WriteLine($"  {RunTimeArg} #: If nonzero, limits the run to this many seconds. Default = {RunTime}");
+            Console.WriteLine($"  {RevivArg} #: If zero, does not enable revivification; if 1, revivifies in the tag chain only; if 2, revivifies from free list. Default = {RevivificationLevel}");
             Console.WriteLine($"  {NumThreadsArg} #: Number of threads accessing FASTER instances. Default = {NumThreads}");
             Console.WriteLine($"  {UseUniformArg}: Uniform random distribution (true) or Zipf distribution (false) of requests. Default = {UseUniform}");
             Console.WriteLine($"  {UseLogFileArg}: Use log file (true; written to '{GetLogPath()}') instead of NullDevice (false). Default = {UseLogFile}");
@@ -262,15 +269,15 @@ namespace ResizableCacheStore
                         if (success)
                         {
                             ReadPercent = int.Parse(percents[0]);
-                            RmwPercent = int.Parse(percents[1]);
-                            UpsertPercent = int.Parse(percents[2]);
+                            UpsertPercent = int.Parse(percents[1]);
+                            RmwPercent = int.Parse(percents[2]);
                             DeletePercent = int.Parse(percents[3]);
                             var total = ReadPercent + RmwPercent + UpsertPercent + DeletePercent;
                             success = total == 0 || total == 100;
                         }
                         if (!success)
                         {
-                            Console.WriteLine($"{arg} requires 4 values summing to 0 or 100: Percentage of [(r)eads,r(m)ws,(u)pserts,(d)eletes]");
+                            Console.WriteLine($"{arg} requires 4 values summing to 0 or 100: Percentage of [(r)eads,(u)pserts,r(m)ws,(d)eletes]");
                             return false;
                         }
                         continue;
@@ -281,14 +288,14 @@ namespace ResizableCacheStore
                         var success = percents.Length == 2;
                         if (success)
                         {
-                            CacheMissRmwPercent = int.Parse(percents[0]);
-                            CacheMissUpsertPercent = int.Parse(percents[1]);
+                            CacheMissUpsertPercent = int.Parse(percents[0]);
+                            CacheMissRmwPercent = int.Parse(percents[1]);
                             var total = CacheMissRmwPercent + CacheMissUpsertPercent;
                             success = total == 0 || total == 100;
                         }
                         if (!success)
                         {
-                            Console.WriteLine($"{arg} requires 2 values summing to 0 or 100: Percentage of [r(m)ws,(u)pserts]");
+                            Console.WriteLine($"{arg} requires 2 values summing to 0 or 100: Percentage of [(u)pserts,r(m)ws]");
                             return false;
                         }
                         continue;
@@ -355,7 +362,15 @@ namespace ResizableCacheStore
             const int recordSize = 24;
             int numRecords = (int)(Math.Pow(2, logSettings.MemorySizeBits) / recordSize);
 
-            h = new FasterKV<CacheKey, CacheValue>(1L << HashSizeBits, logSettings, serializerSettings: serializerSettings, comparer: new CacheKey());
+            var revivificationSettings = RevivificationLevel switch
+            {
+                0 => default,
+                1 => new RevivificationSettings(),
+                2 => RevivificationSettings.DefaultFixedLength,
+                _ => throw new ApplicationException("Invalid RevivificationLevel")
+            };
+
+            h = new FasterKV<CacheKey, CacheValue>(1L << HashSizeBits, logSettings, serializerSettings: serializerSettings, comparer: new CacheKey(), revivificationSettings: revivificationSettings);
             sizeTracker = new CacheSizeTracker(h, targetSize);
 
             // Initially populate store
@@ -408,20 +423,22 @@ namespace ResizableCacheStore
 
             Stopwatch sw = new();
             sw.Start();
-            var _lastReads = totalReads;
+            var _lastOperations = totalOperations;
             var _lastTimeMs = sw.ElapsedMilliseconds;
             int count = 0;
             while (RunTime == 0 || (_lastTimeMs / 1000) < RunTime)
             {
                 Thread.Sleep(1500);
-                var currentReads = totalReads;
+                var currentOperations = totalOperations;
                 var currentTimeMs = sw.ElapsedMilliseconds;
                 var currentElapsed = currentTimeMs - _lastTimeMs;
                 var ts = TimeSpan.FromSeconds(currentTimeMs / 1000);
                 var totalElapsed = ts.ToString();
 
+                // Note: If the Hit Rate is NaN, it is because the RandomWorkload thread is tied up in OnPagesClosed
+                // so statusFound and statusNotFound remain 0.
                 Console.WriteLine("Throughput: {0,8:0.00}K ops/sec; Hit rate: {1:N2}; elapsed: {2:c}", 
-                                (currentReads - _lastReads) / (double)(currentElapsed),
+                                (currentOperations - _lastOperations) / (double)(currentElapsed),
                                 statusFound / (double)(statusFound + statusNotFound),
                                 totalElapsed);
                 sizeTracker.PrintStats();
@@ -450,7 +467,7 @@ namespace ResizableCacheStore
                     Console.WriteLine("**** Setting target memory: {0,11:N2}KB", targetSize / 1024.0);
                 }
 
-                _lastReads = currentReads;
+                _lastOperations = currentOperations;
                 _lastTimeMs = currentTimeMs;
             }
 
@@ -471,16 +488,19 @@ namespace ResizableCacheStore
             CacheValue output = default;
             int localStatusFound = 0, localStatusNotFound = 0;
 
-            int i = 0;
+            int iter = 0;
             while (!done)
             {
-                if ((i % 256 == 0) && (i > 0))
+                if ((iter % 256 == 0) && (iter > 0))
                 {
                     Interlocked.Add(ref statusFound, localStatusFound);
                     Interlocked.Add(ref statusNotFound, localStatusNotFound);
-                    Interlocked.Add(ref totalReads, 256);
+                    Interlocked.Add(ref totalOperations, 256);
                     localStatusFound = localStatusNotFound = 0;
                 }
+
+                if (iter == 6100000)  // 6115000
+                    ;
 
                 var wantValue = RmwPercent + UpsertPercent > 0;
 
@@ -489,7 +509,7 @@ namespace ResizableCacheStore
 
                 var key = new CacheKey(k, 1 + rng.Next(MaxKeySize - 1));
 
-                CacheValue createValue() => new CacheValue(1 + rng.Next(MaxValueSize - 1), (byte)key.key);
+                CacheValue createValue() => new(1 + rng.Next(MaxValueSize - 1), (byte)key.key);
                 CacheValue value = wantValue ? createValue() : null;
 
                 if (op < ReadPercent)
@@ -527,17 +547,29 @@ namespace ResizableCacheStore
                 {
                     var status = session.RMW(ref key, ref value);
                     if (status.IsPending)
-                        session.CompletePending(wait: true);
+                        (status, output) = GetSinglePendingResult(session);
+                    if (status.Found)
+                        localStatusFound++;
+                    else
+                        localStatusNotFound++;
                 }
                 else if (op < ReadPercent + RmwPercent + UpsertPercent)
                 {
-                    session.Upsert(ref key, ref value);
+                    var status = session.Upsert(ref key, ref value);
+                    if (status.Found)
+                        localStatusFound++;
+                    else
+                        localStatusNotFound++;
                 }
                 else
                 {
-                    session.Delete(ref key);
+                    var status = session.Delete(ref key);
+                    if (status.Found)
+                        localStatusFound++;
+                    else
+                        localStatusNotFound++;
                 }
-                i++;
+                iter++;
             }
         }
 

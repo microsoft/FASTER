@@ -86,7 +86,7 @@ namespace ResizableCacheStore
             const long Delta = 1L << 15;
             if (TotalSizeBytes > TargetSizeBytes + Delta)
             {
-                while (TotalSizeBytes > TargetSizeBytes + Delta)
+                while (TotalSizeBytes > TargetSizeBytes + Delta && Log.EmptyPageCount < Log.MaxEmptyPageCount)
                 {
                     if (Log.AllocatedPageCount > Log.BufferSize - Log.EmptyPageCount + 1)
                     {
@@ -99,7 +99,7 @@ namespace ResizableCacheStore
             }
             else if (TotalSizeBytes < TargetSizeBytes - Delta)
             {
-                while (TotalSizeBytes < TargetSizeBytes - Delta)
+                while (TotalSizeBytes < TargetSizeBytes - Delta && Log.EmptyPageCount > 0)
                 {
                     if (Log.AllocatedPageCount < Log.BufferSize - Log.EmptyPageCount - 1)
                     {
