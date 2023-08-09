@@ -17,12 +17,11 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static ref RecordInfo WriteNewRecordInfo(ref Key key, AllocatorBase<Key, Value> log, long newPhysicalAddress, bool inNewVersion, bool tombstone, long previousAddress, RecycleMode recycleMode)
+        static ref RecordInfo WriteNewRecordInfo(ref Key key, AllocatorBase<Key, Value> log, long newPhysicalAddress, bool inNewVersion, bool tombstone, long previousAddress)
         {
             ref RecordInfo recordInfo = ref log.GetInfo(newPhysicalAddress);
             recordInfo.WriteInfo(inNewVersion, tombstone, previousAddress);
-            if (recycleMode != RecycleMode.Retry)
-                log.Serialize(ref key, newPhysicalAddress);
+            log.Serialize(ref key, newPhysicalAddress);
             return ref recordInfo;
         }
 

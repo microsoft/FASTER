@@ -270,10 +270,10 @@ namespace FASTER.core
             var value = default(Value);
             var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);
             if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, recycle: false, 
-                    out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out var recycleMode))
+                    out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: true, stackCtx.recSrc.LatestLogicalAddress, recycleMode);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: true, stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);
 
             DeleteInfo deleteInfo = new()

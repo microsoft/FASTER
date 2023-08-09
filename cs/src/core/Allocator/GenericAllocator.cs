@@ -20,6 +20,17 @@ namespace FASTER.core
         public RecordInfo info;
         public Key key;
         public Value value;
+
+        public override string ToString()
+        {
+            var keyString = key?.ToString() ?? "null";
+            if (keyString.Length > 20)
+                keyString = keyString.Substring(0, 20) + "...";
+            var valueString = value?.ToString() ?? "null"; ;
+            if (valueString.Length > 20)
+                valueString = valueString.Substring(0, 20) + "...";
+            return $"{keyString} | {valueString} | {info}";
+        }
     }
 
     internal unsafe sealed class GenericAllocator<Key, Value> : AllocatorBase<Key, Value>
@@ -58,7 +69,7 @@ namespace FASTER.core
             if (typeof(Key) == typeof(SpanByte))
                 throw new FasterException("SpanByte Keys cannot be mixed with object Values");
             if (typeof(Value) == typeof(SpanByte))
-                throw new FasterException("SpanByte Values cannot be mixed with object Key");
+                throw new FasterException("SpanByte Values cannot be mixed with object Keys");
 
             SerializerSettings = serializerSettings ?? new SerializerSettings<Key, Value>();
 

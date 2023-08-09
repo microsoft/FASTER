@@ -28,7 +28,7 @@ namespace FASTER.core
 
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return false;
-            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address, RecycleMode.None);
+            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
             stackCtx.SetNewRecord(newLogicalAddress | Constants.kReadCacheBitMask);
 
             UpsertInfo upsertInfo = new()

@@ -452,10 +452,10 @@ namespace FASTER.core
                 hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
 
             if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, recycle: true,
-                    out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out var recycleMode))
+                    out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress, recycleMode);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
 
             stackCtx.SetNewRecord(newLogicalAddress);
             rmwInfo.Address = newLogicalAddress;

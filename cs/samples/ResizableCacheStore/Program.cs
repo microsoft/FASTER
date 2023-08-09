@@ -36,7 +36,7 @@ namespace ResizableCacheStore
         /// Total in-memory size bits
         /// </summary>
         static int MemorySizeBits = 25; // (2^25 / 24) = ~1.39M key-value pairs (log uses 24 bytes per KV pair)
-        const string MemorySizeBitsArg = "--memsizebits";
+        const string MemorySizeBitsArg = "--memorysizebits";
 
         /// <summary>
         /// Page size bits
