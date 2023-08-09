@@ -146,9 +146,9 @@ namespace ResizableCacheStore
             sizeTracker.AddTrackedSize(-key.GetSize - value.GetSize);
         }
 
-        public override void DisposeForRevivification(ref CacheKey key, ref CacheValue value, bool disposeKey)
+        public override void DisposeForRevivification(ref CacheKey key, ref CacheValue value, int newKeySize)
         {
-            if (disposeKey)
+            if (newKeySize >= 0)
                 sizeTracker.AddTrackedSize(-key.GetSize);
             if (value is not null)
                 sizeTracker.AddTrackedSize(-value.GetSize);

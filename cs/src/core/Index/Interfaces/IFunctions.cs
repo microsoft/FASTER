@@ -270,8 +270,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="key">The key for the record</param>
         /// <param name="value">The value for the record</param>
-        /// <param name="disposeKey">If true, dispose the key as well as value (it is false when revivifying a record in the hash chain or when doing a RETRY; for these the key does not change)</param>
-        void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey);
+        /// <param name="newKeySize">If > 0, this is a record from the freelist and we are disposing the key as well as value (it is -1 when revivifying a record in the hash chain or when doing a RETRY; for these the key does not change)</param>
+        void DisposeForRevivification(ref Key key, ref Value value, int newKeySize);
         #endregion Dispose
 
         #region Checkpointing

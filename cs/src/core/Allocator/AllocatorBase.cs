@@ -340,16 +340,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="physicalAddress"></param>
         /// <returns></returns>
-        public abstract (int, int) GetRecordSize(long physicalAddress);
+        public abstract (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress);
 
         /// <summary>
-        /// Get record size
+        /// Get copy destination size for RMW, taking Input into account
         /// </summary>
-        /// <param name="physicalAddress"></param>
-        /// <param name="input"></param>
-        /// <param name="fasterSession"></param>
         /// <returns></returns>
-        public abstract (int, int) GetCopyDestinationRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public abstract (int actualSize, int allocatedSize, int keySize) GetCopyDestinationRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, FasterSession fasterSession)
             where FasterSession : IVariableLengthStruct<Value, Input>;
 
         /// <summary>
@@ -379,7 +376,7 @@ namespace FASTER.core
         /// <param name="input"></param>
         /// <param name="fasterSession"></param>
         /// <returns></returns>
-        public abstract (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
+        public abstract (int actualSize, int allocatedSize, int keySize) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
             where FasterSession : IVariableLengthStruct<Value, Input>;
 
         /// <summary>
@@ -388,18 +385,7 @@ namespace FASTER.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public abstract (int, int) GetRecordSize(ref Key key, ref Value value);
-
-        /// <summary>
-        /// Get record size
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="value"></param>
-        /// <param name="fasterSession"></param>
-        /// <returns></returns>
-        public abstract (int, int) GetRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, FasterSession fasterSession)
-            where FasterSession : IVariableLengthStruct<Value, Input>;
+        public abstract (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value);
 
         /// <summary>
         /// Allocate page

@@ -125,13 +125,13 @@ namespace FASTER.core
                                     upsertInfo.UsedValueLength = upsertInfo.FullValueLength = FixedLengthStruct<Value>.Length;
                                 else
                                 {
-                                    var (usedValueLength, fullValueLength, fullRecordLength) = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
-                                    upsertInfo.FullValueLength = fullValueLength;
+                                    var recordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
+                                    upsertInfo.FullValueLength = recordLengths.fullValueLength;
 
                                     // Input is not included in record-length calculations for Upsert
-                                    var (requiredSize, _) = hlog.GetRecordSize(ref key, ref value);
+                                    var (requiredSize, _, _) = hlog.GetRecordSize(ref key, ref value);
                                     (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue<Input, Output, Context, FasterSession>(fasterSession, 
-                                            ref srcRecordInfo, ref key, ref recordValue, requiredSize, usedValueLength, fullRecordLength);
+                                            ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
                                 }
 
                                 if (ok && fasterSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, WriteReason.Upsert))
@@ -363,8 +363,8 @@ namespace FASTER.core
                                                                                              ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);   // Input is not included in record-length calculations for Upsert
-            if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, recycle: true, 
+            var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);   // Input is not included in record-length calculations for Upsert
+            if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, recycle: true, 
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out var recycleMode))
                 return status;
 

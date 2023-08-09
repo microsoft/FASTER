@@ -55,20 +55,24 @@ namespace FASTER.test
             }
         }
 
+        class SpanByteKey_LongValue_TestFunctions : SpanByteFunctions_SimpleValue<long, Empty>
+        {
+        }
+
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public unsafe void MultiReadSpanByteKeyTest()
+        public unsafe void MultiRead_SpanByteKey_LongValue_Test()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             try
             {
-                using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/MultiReadSpanByteKeyTest.log", deleteOnClose: true);
+                using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/test.log", deleteOnClose: true);
                 using var fht = new FasterKV<SpanByte, long>(
                     size: 1L << 10,
                     new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
-                using var session = fht.For(new MultiReadSpanByteKeyTestFunctions()).NewSession<MultiReadSpanByteKeyTestFunctions>();
+                using var session = fht.For(new SpanByteKey_LongValue_TestFunctions()).NewSession<SpanByteKey_LongValue_TestFunctions>();
 
                 for (int i = 0; i < 200; i++)
                 {
@@ -77,42 +81,118 @@ namespace FASTER.test
                         session.Upsert(SpanByte.FromFixedSpan(key), i);
                 }
 
-                // Evict all records to disk
+                // Read, evict all records to disk, read again
+                MultiRead(evicted: false);
                 fht.Log.FlushAndEvict(true);
+                MultiRead(evicted: true);
 
-                for (long key = 0; key < 50; key++)
-                {
-                    // read each key multiple times
-                    for (int i = 0; i < 10; i++)
-                        Assert.AreEqual(key, ReadKey($"{key}"));
+                void MultiRead(bool evicted)
+                { 
+                    for (long key = 0; key < 50; key++)
+                    {
+                        // read each key multiple times
+                        for (int i = 0; i < 10; i++)
+                            Assert.AreEqual(key, ReadKey($"{key}", evicted));
+                    }
                 }
 
-                long ReadKey(string keyString)
+                long ReadKey(string keyString, bool evicted)
                 {
                     Status status;
+                    long output;
 
                     var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
                     fixed (byte* _ = key)
-                        status = session.Read(key: SpanByte.FromFixedSpan(key), out var unused);
+                        status = session.Read(key: SpanByte.FromFixedSpan(key), out output);
+                    Assert.AreEqual(evicted, status.IsPending, "evicted/pending mismatch");
 
-                    // All keys need to be fetched from disk
-                    Assert.IsTrue(status.IsPending);
-
-                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-
-                    var count = 0;
-                    var value = 0L;
-                    using (completedOutputs)
-                    {
-                        while (completedOutputs.Next())
+                    if (!evicted)
+                        Assert.IsTrue(status.Found, $"expected to find key; status = {status}");
+                    else    // needs to be fetched from disk
+                    { 
+                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        using (completedOutputs)
                         {
-                            count++;
-                            Assert.IsTrue(completedOutputs.Current.Status.Found);
-                            value = completedOutputs.Current.Output;
+                            for (var count = 0; completedOutputs.Next(); ++count)
+                            {
+                                Assert.AreEqual(0, count, "should only have one record returned");
+                                Assert.IsTrue(completedOutputs.Current.Status.Found);
+                                output = completedOutputs.Current.Output;
+                            }
                         }
                     }
-                    Assert.AreEqual(1, count);
-                    return value;
+                    return output;
+                }
+            }
+            finally
+            {
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            }
+        }
+
+        class LongKey_SpanByteValue_TestFunctions : SpanByteFunctions<long, Empty>
+        {
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public unsafe void MultiRead_LongKey_SpanByteValue_Test()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+
+            try
+            {
+                using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/test.log", deleteOnClose: true);
+                using var fht = new FasterKV<long, SpanByte>(
+                    size: 1L << 10,
+                    new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
+                using var session = fht.For(new LongKey_SpanByteValue_TestFunctions()).NewSession<LongKey_SpanByteValue_TestFunctions>();
+
+                for (long key = 0; key < 200; key++)
+                {
+                    var value = MemoryMarshal.Cast<char, byte>($"{key}".AsSpan());
+                    fixed (byte* _ = value)
+                        session.Upsert(key, SpanByte.FromFixedSpan(value));
+                }
+
+                // Read, evict all records to disk, read again
+                MultiRead(evicted: false);
+                fht.Log.FlushAndEvict(true);
+                MultiRead(evicted: true);
+
+                void MultiRead(bool evicted)
+                {
+                    for (long key = 0; key < 50; key++)
+                    {
+                        // read each key multiple times
+                        for (int i = 0; i < 10; i++)
+                            Assert.AreEqual(key, ReadKey(key, evicted));
+                    }
+                }
+
+                long ReadKey(long key, bool evicted)
+                {
+                    Status status = session.Read(key, out SpanByteAndMemory output);
+                    Assert.AreEqual(evicted, status.IsPending, "evicted/pending mismatch");
+
+                    if (!evicted)
+                        Assert.IsTrue(status.Found, $"expected to find key; status = {status}");
+                    else    // needs to be fetched from disk
+                    {
+                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        using (completedOutputs)
+                        {
+                            for (var count = 0; completedOutputs.Next(); ++count)
+                            {
+                                Assert.AreEqual(0, count, "should only have one record returned");
+                                Assert.IsTrue(completedOutputs.Current.Status.Found);
+                                output = completedOutputs.Current.Output;
+                            }
+                        }
+                    }
+                    var valueChars = MemoryMarshal.Cast<byte, char>(output.Memory.Memory.Span);
+                    return long.Parse(valueChars);
                 }
             }
             finally
@@ -173,21 +253,6 @@ namespace FASTER.test
             Assert.AreEqual(20 - 8, ssb.AsSpan().Length);
             Assert.AreEqual(20 - 8, ssb.AsReadOnlySpan().Length);
             Assert.AreEqual(31337, ssb.ExtraMetadata);
-        }
-
-        class MultiReadSpanByteKeyTestFunctions : FunctionsBase<SpanByte, long, long, long, Empty>
-        {
-            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref ReadInfo readInfo)
-            {
-                dst = value;
-                return true;
-            }
-
-            public override bool ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref ReadInfo readInfo)
-            {
-                dst = value;
-                return true;
-            }
         }
     }
 }

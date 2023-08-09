@@ -170,7 +170,6 @@ namespace FASTER.core
                 this.ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
 
             UpdateVarLen(ref variableLengthStructSettings);
-            IVariableLengthStruct<Key> keyLen = null;
 
             if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength is null) ||
                 (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength is null))
@@ -195,7 +194,6 @@ namespace FASTER.core
             }
             else if (variableLengthStructSettings != null)
             {
-                keyLen = variableLengthStructSettings.keyLength;
                 hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,
                     this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("VariableLengthAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);

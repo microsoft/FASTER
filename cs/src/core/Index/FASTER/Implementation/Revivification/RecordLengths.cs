@@ -145,19 +145,21 @@ namespace FASTER.core
                 : GetRecordLengths(physicalAddress, ref hlog.GetValue(physicalAddress), ref recordInfo).fullRecordLength;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ClearExtraValueLength(ref RecordInfo recordInfo, ref Value recordValue, int usedValueLength)
+        void ClearExtraValueSpace(ref RecordInfo recordInfo, ref Value recordValue, int usedValueLength, int fullValueLength)
         {
-            if (recordInfo.Filler)
-            {
-                // Clear out the extraValueLength from the record before DisposeForRevivification. We must zero the length first so
-                // log-scan traversal does not see nonzero values past Value (it's fine if we see the Filler and extra length is 0).
-                *GetExtraValueLengthPointer(ref recordValue, RoundUp(usedValueLength, sizeof(int))) = 0;
-                recordInfo.Filler = false;
-            }
-        }
+            // SpanByte's implementation of GetAndInitializeValue does not clear the space after usedValueLength. This may be
+            // considerably less than the previous value length, so we clear it here before DisposeForRevivification. This space
+            // includes the extra value length if Filler is set, so we must clear the space before clearing the Filler bit so
+            // log-scan traversal does not see nonzero values past Value (it's fine if we see the Filler and extra length is 0).
+            int extraValueLength = fullValueLength - usedValueLength;
+            if (extraValueLength > 0)
+                SpanByte.Clear((byte*)Unsafe.AsPointer(ref recordValue) + usedValueLength, extraValueLength);
+            recordInfo.Filler = false;
+        } 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryTakeFreeRecord<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref int allocatedSize, HashBucketEntry entry, out long logicalAddress, out long physicalAddress)
+        bool TryTakeFreeRecord<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref int allocatedSize, int newKeySize, HashBucketEntry entry, 
+                    out long logicalAddress, out long physicalAddress)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             if (FreeRecordPoolHasSafeRecords && FreeRecordPool.TryTake(allocatedSize, MinFreeRecordAddress(entry), out logicalAddress))
@@ -169,16 +171,16 @@ namespace FASTER.core
                 // If IsFixedLengthReviv, the allocatedSize will be unchanged
                 if (!IsFixedLengthReviv)
                 {
-                    var (usedValueLength, _, fullRecordLength) = GetRecordLengths(physicalAddress, ref hlog.GetValue(physicalAddress), ref recordInfo);
+                    var (usedValueLength, fullValueLength, fullRecordLength) = GetRecordLengths(physicalAddress, ref hlog.GetValue(physicalAddress), ref recordInfo);
 
                     ref var recordValue = ref hlog.GetValue(physicalAddress);
-                    ClearExtraValueLength(ref recordInfo, ref recordValue, usedValueLength);
+                    ClearExtraValueSpace(ref recordInfo, ref recordValue, usedValueLength, fullValueLength);
                     
                     // Dispose any existing key and value. We defer this to here, at record retrieval time, because that is when we know it is needed
                     // (the record may never be Taken before it falls below ReadOnlyAddress, for example). We don't want the app to know about Filler
                     // (except for non-SpanByte varlens, which will have to copy the logic in SpanByteFunctions and UpsertInfo to manage shrinking lengths),
                     // so we've cleared out any extraValueLength entry to ensure the space beyond usedValueLength is zero'd for log-scan correctness.
-                    fasterSession.DisposeForRevivification(ref hlog.GetKey(physicalAddress), ref recordValue, disposeKey: true, ref recordInfo);
+                    fasterSession.DisposeForRevivification(ref hlog.GetKey(physicalAddress), ref recordValue, newKeySize, ref recordInfo);
 
                     Debug.Assert(fullRecordLength >= allocatedSize, $"TryTakeFreeRecord: fullRecordLength {fullRecordLength} should be >= allocatedSize {allocatedSize}");
                     allocatedSize = fullRecordLength;
@@ -216,15 +218,15 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue<Input, Output, Context, FasterSession>(FasterSession fasterSession, 
-                ref RecordInfo srcRecordInfo, ref Key key, ref Value recordValue, int requiredSize, int usedValueLength, int allocatedSize)
+                ref RecordInfo srcRecordInfo, ref Key key, ref Value recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             // Don't change Filler if we don't have enough room to use the record; we need it to remain there for record traversal.
-            if (allocatedSize < requiredSize)
-                return (false, usedValueLength);
+            if (recordLengths.allocatedSize < requiredSize)
+                return (false, recordLengths.usedValueLength);
 
-            ClearExtraValueLength(ref srcRecordInfo, ref recordValue, usedValueLength);
-            fasterSession.DisposeForRevivification(ref key, ref recordValue, disposeKey: false, ref srcRecordInfo);
+            ClearExtraValueSpace(ref srcRecordInfo, ref recordValue, recordLengths.usedValueLength, recordLengths.fullValueLength);
+            fasterSession.DisposeForRevivification(ref key, ref recordValue, newKeySize: -1, ref srcRecordInfo);
             srcRecordInfo.Tombstone = false;
             return (true, valueLengthStruct.GetLength(ref recordValue));
         }

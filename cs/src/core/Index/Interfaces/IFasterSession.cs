@@ -73,7 +73,7 @@ namespace FASTER.core
         void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo);
         void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo);
         void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo);
-        void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey, ref RecordInfo recordInfo);
+        void DisposeForRevivification(ref Key key, ref Value value, int newKeySize, ref RecordInfo recordInfo);
         #endregion Disposal
 
         #region Transient locking

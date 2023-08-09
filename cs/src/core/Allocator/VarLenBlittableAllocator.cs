@@ -9,8 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 #endif
 using System.Threading;
-
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+using static FASTER.core.Utility;
 
 namespace FASTER.core
 {
@@ -162,7 +161,7 @@ namespace FASTER.core
             return ValueLength.GetLength(ref GetValue(physicalAddress));
         }
 
-        public override (int, int) GetRecordSize(long physicalAddress)
+        public override (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
         {
             ref var recordInfo = ref GetInfo(physicalAddress);
             if (recordInfo.IsNull())
@@ -173,23 +172,17 @@ namespace FASTER.core
 
             var valueLen = ValueSize(physicalAddress);
             if (recordInfo.Filler)  // Get the extraValueLength
-                valueLen += *(int*)(ValueOffset(physicalAddress) + Utility.RoundUp(valueLen, sizeof(int)));
+                valueLen += *(int*)(ValueOffset(physicalAddress) + RoundUp(valueLen, sizeof(int)));
             var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + valueLen;
             return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
         }
 
-        public override (int, int) GetCopyDestinationRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetCopyDestinationRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, FasterSession fasterSession)
         {
-            ref var recordInfo = ref GetInfo(physicalAddress);
-            if (recordInfo.IsNull())
-            {
-                var l = RecordInfo.GetLength();
-                return (l, l);
-            }
-
             // Used by RMW to determine the length of copy destination (taking Input into account), so does not need to get filler length.
-            var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + fasterSession.GetLength(ref GetValue(physicalAddress), ref input);
-            return (size, (size + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
+            var keySize = KeyLength.GetLength(ref key);
+            var size = RecordInfo.GetLength() + RoundUp(keySize, kRecordAlignment) + fasterSession.GetLength(ref value, ref input);
+            return (size, RoundUp(size, kRecordAlignment), keySize);
         }
 
         public override int GetRequiredRecordSize(long physicalAddress, int availableBytes)
@@ -210,7 +203,7 @@ namespace FASTER.core
             if (recordInfo.Filler)
             {
                 // We have a filler, so the valueLen we have now is the usedValueLength; we need to offset to where the extraValueLength is and read that int
-                var alignedUsedValueLength = Utility.RoundUp(valueLen, sizeof(int));
+                var alignedUsedValueLength = RoundUp(valueLen, sizeof(int));
                 reqBytes = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + alignedUsedValueLength + sizeof(int);
                 if (availableBytes < reqBytes)
                     return reqBytes;
@@ -237,30 +230,18 @@ namespace FASTER.core
                 + (fixedSizeValue ? ValueLength.GetInitialLength() : 0);
         }
 
-        public override (int, int) GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetInitialRecordSize<TInput, FasterSession>(ref Key key, ref TInput input, FasterSession fasterSession)
         {
-            var actualSize = RecordInfo.GetLength() +
-                ((KeyLength.GetLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
-                fasterSession.GetInitialLength(ref input);
-
-            return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
+            int keySize = KeyLength.GetLength(ref key);
+            var actualSize = RecordInfo.GetLength() + RoundUp(keySize, kRecordAlignment) + fasterSession.GetInitialLength(ref input);
+            return (actualSize, RoundUp(actualSize, kRecordAlignment), keySize);
         }
 
-        public override (int, int) GetRecordSize(ref Key key, ref Value value)
+        public override (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value)
         {
-            var actualSize = RecordInfo.GetLength() +
-                ((KeyLength.GetLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
-                ValueLength.GetLength(ref value);
-
-            return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
-        }
-
-        public override (int, int) GetRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, FasterSession fasterSession)
-        {
-            var actualSize = RecordInfo.GetLength() +
-                ((KeyLength.GetLength(ref key) + kRecordAlignment - 1) & (~(kRecordAlignment - 1))) +
-                fasterSession.GetLength(ref value, ref input);
-            return (actualSize, (actualSize + kRecordAlignment - 1) & (~(kRecordAlignment - 1)));
+            int keySize = KeyLength.GetLength(ref key);
+            var actualSize = RecordInfo.GetLength() + RoundUp(keySize, kRecordAlignment) + ValueLength.GetLength(ref value);
+            return (actualSize, RoundUp(actualSize, kRecordAlignment), keySize);
         }
 
         public override void Serialize(ref Key src, long physicalAddress)

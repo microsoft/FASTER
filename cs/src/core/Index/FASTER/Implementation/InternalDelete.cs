@@ -122,8 +122,7 @@ namespace FASTER.core
                         // Otherwise if there is an earlier record for this key, it would be reachable again.
                         // Note: We do not currently consider this reuse for mid-chain records (records past the HashBucket), because TracebackForKeyMatch would need
                         //  to return the next-higher record whose .PreviousAddress points to this one, *and* we'd need to make sure that record was not revivified out.
-                        //  Also, we do not consider this in-chain reuse for records with different keys; by definition its .PreviousAddress cannot be < BeginAddress
-                        //  because it points to this one (or one higher than this one).
+                        //  Also, we do not consider this in-chain reuse for records with different keys, because we don't get here if the keys don't match.
                         if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlog.BeginAddress && UseFreeRecordPool)
                         {
                             if (!EnableRevivification)
@@ -269,8 +268,8 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var value = default(Value);
-            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref value);
-            if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, recycle: false, 
+            var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);
+            if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, recycle: false, 
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out var recycleMode))
                 return status;
 

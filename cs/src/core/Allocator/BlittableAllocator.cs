@@ -8,8 +8,6 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
-
 namespace FASTER.core
 {
     internal unsafe sealed class BlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
@@ -42,7 +40,6 @@ namespace FASTER.core
                 p.handle.Free()
 #endif
             );
-
 
             if (BufferSize > 0)
             {
@@ -117,14 +114,14 @@ namespace FASTER.core
             return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
         }
 
-        public override (int, int) GetRecordSize(long physicalAddress)
+        public override (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
         {
             return (recordSize, recordSize);
         }
 
-        public override (int, int) GetCopyDestinationRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetCopyDestinationRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, FasterSession fasterSession)
         {
-            return (recordSize, recordSize);
+            return (recordSize, recordSize, keySize);
         }
 
         public override int GetAverageRecordSize()
@@ -134,19 +131,14 @@ namespace FASTER.core
 
         public override int GetFixedRecordSize() => recordSize;
 
-        public override (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
         {
-            return (recordSize, recordSize);
+            return (recordSize, recordSize, keySize);
         }
 
-        public override (int, int) GetRecordSize(ref Key key, ref Value value)
+        public override (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value)
         {
-            return (recordSize, recordSize);
-        }
-
-        public override (int, int) GetRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, FasterSession fasterSession)
-        {
-            return (recordSize, recordSize);
+            return (recordSize, recordSize, keySize);
         }
 
         /// <summary>
@@ -484,5 +476,3 @@ namespace FASTER.core
         }
     }
 }
-
-

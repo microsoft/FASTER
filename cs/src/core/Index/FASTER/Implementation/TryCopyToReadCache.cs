@@ -22,7 +22,7 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             #region Create new copy in mutable region
-            var (actualSize, allocatedSize) = hlog.GetRecordSize(ref key, ref recordValue);
+            var (actualSize, allocatedSize, _) = hlog.GetRecordSize(ref key, ref recordValue);
 
             #region Allocate new record and call SingleWriter
 

@@ -131,13 +131,13 @@ namespace FASTER.core
                                     rmwInfo.UsedValueLength = rmwInfo.FullValueLength = FixedLengthStruct<Value>.Length;
                                 else
                                 {
-                                    var (usedValueLength, fullValueLength, fullRecordLength) = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
-                                    rmwInfo.FullValueLength = fullValueLength;
+                                    var recordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
+                                    rmwInfo.FullValueLength = recordLengths.fullValueLength;
 
                                     // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
-                                    var (requiredSize, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+                                    var (requiredSize, _, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
                                     (ok, rmwInfo.UsedValueLength) = TryReinitializeTombstonedValue<Input, Output, Context, FasterSession>(fasterSession, 
-                                            ref srcRecordInfo, ref key, ref recordValue, requiredSize, usedValueLength, fullRecordLength);
+                                            ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
                                 }
 
                                 if (ok && fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo))
@@ -447,11 +447,11 @@ namespace FASTER.core
             }
 
             // Allocate and initialize the new record
-            var (actualSize, allocatedSize) = doingCU ?
-                stackCtx.recSrc.Log.GetCopyDestinationRecordSize(stackCtx.recSrc.PhysicalAddress, ref input, fasterSession) :
+            var (actualSize, allocatedSize, keySize) = doingCU ?
+                stackCtx.recSrc.Log.GetCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, fasterSession) :
                 hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
 
-            if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, recycle: true,
+            if (!TryAllocateRecord(fasterSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, recycle: true,
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out var recycleMode))
                 return status;
 
@@ -593,8 +593,8 @@ namespace FASTER.core
             }
 
             // Try to reinitialize in place
-            (var currentSize, _) = hlog.GetRecordSize(ref key, ref value);
-            (var requiredSize, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+            (var currentSize, _, _) = hlog.GetRecordSize(ref key, ref value);
+            (var requiredSize, _, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
 
             if (currentSize >= requiredSize)
             {

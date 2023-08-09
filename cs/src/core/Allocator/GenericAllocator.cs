@@ -39,6 +39,9 @@ namespace FASTER.core
         private readonly bool keyBlittable = Utility.IsBlittable<Key>();
         private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
+        // We do not support variable-length keys in GenericAllocator
+        private int keySize = Utility.GetSize(default(Key));
+
         private readonly OverflowPool<Record<Key, Value>[]> overflowPagePool;
 
         public GenericAllocator(LogSettings settings, SerializerSettings<Key, Value> serializerSettings, IFasterEqualityComparer<Key> comparer, 
@@ -51,6 +54,11 @@ namespace FASTER.core
             {
                 throw new FasterException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
             }
+
+            if (typeof(Key) == typeof(SpanByte))
+                throw new FasterException("SpanByte Keys cannot be mixed with object Values");
+            if (typeof(Value) == typeof(SpanByte))
+                throw new FasterException("SpanByte Values cannot be mixed with object Key");
 
             SerializerSettings = serializerSettings ?? new SerializerSettings<Key, Value>();
 
@@ -178,14 +186,14 @@ namespace FASTER.core
             return ref values[pageIndex][offset / recordSize].value;
         }
 
-        public override (int, int) GetRecordSize(long physicalAddress)
+        public override (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
         {
             return (recordSize, recordSize);
         }
 
-        public override (int, int) GetCopyDestinationRecordSize<Input, FasterSession>(long physicalAddress, ref Input input, FasterSession fasterSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetCopyDestinationRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, FasterSession fasterSession)
         {
-            return (recordSize, recordSize);
+            return (recordSize, recordSize, keySize);
         }
 
         public override int GetAverageRecordSize()
@@ -195,19 +203,14 @@ namespace FASTER.core
 
         public override int GetFixedRecordSize() => recordSize;
 
-        public override (int, int) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetInitialRecordSize<Input, FasterSession>(ref Key key, ref Input input, FasterSession fasterSession)
         {
-            return (recordSize, recordSize);
+            return (recordSize, recordSize, keySize);
         }
 
-        public override (int, int) GetRecordSize(ref Key key, ref Value value)
+        public override (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value)
         {
-            return (recordSize, recordSize);
-        }
-
-        public override (int, int) GetRecordSize<Input, FasterSession>(ref Key key, ref Input input, ref Value value, FasterSession fasterSession)
-        {
-            return (recordSize, recordSize);
+            return (recordSize, recordSize, keySize);
         }
 
         internal override bool TryComplete()

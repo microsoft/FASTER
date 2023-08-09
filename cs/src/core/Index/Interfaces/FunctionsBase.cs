@@ -60,7 +60,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         public virtual void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
         /// <inheritdoc/>
-        public virtual void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey) { }
+        public virtual void DisposeForRevivification(ref Key key, ref Value value, int newKeySize) { }
         /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>

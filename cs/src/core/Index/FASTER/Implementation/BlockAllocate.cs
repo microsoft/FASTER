@@ -44,7 +44,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecord<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref PendingContext<Input, Output, Context> pendingContext, 
-                                                       ref OperationStackContext<Key, Value> stackCtx, int actualSize, ref int allocatedSize, bool recycle,
+                                                       ref OperationStackContext<Key, Value> stackCtx, int actualSize, ref int allocatedSize, int newKeySize, bool recycle,
                                                        out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status, out RecycleMode recycleMode)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -56,7 +56,7 @@ namespace FASTER.core
                 return true;
             }
 
-            if (TryTakeFreeRecord<Input, Output, Context, FasterSession>(fasterSession, ref allocatedSize, stackCtx.hei.entry, out newLogicalAddress, out newPhysicalAddress))
+            if (TryTakeFreeRecord<Input, Output, Context, FasterSession>(fasterSession, ref allocatedSize, newKeySize, stackCtx.hei.entry, out newLogicalAddress, out newPhysicalAddress))
             {
                 recycleMode = RecycleMode.Revivification;
                 return true;
@@ -165,12 +165,12 @@ namespace FASTER.core
             ref var recordValue = ref hlog.GetValue(newPhysicalAddress);
             Debug.Assert(!recordInfo.IsNull(), "RecordInfo should not be IsNull");
 
-            (int usedValueLength, int _, int fullRecordLength) = GetRecordLengths(newPhysicalAddress, ref recordValue, ref recordInfo);
+            (int usedValueLength, int fullValueLength, int fullRecordLength) = GetRecordLengths(newPhysicalAddress, ref recordValue, ref recordInfo);
             if (fullRecordLength < allocatedSize)
                 return false;
 
-            ClearExtraValueLength(ref recordInfo, ref recordValue, usedValueLength);
-            fasterSession.DisposeForRevivification(ref hlog.GetKey(newPhysicalAddress), ref recordValue, disposeKey: false, ref recordInfo);
+            ClearExtraValueSpace(ref recordInfo, ref recordValue, usedValueLength, fullValueLength);
+            fasterSession.DisposeForRevivification(ref hlog.GetKey(newPhysicalAddress), ref recordValue, newKeySize: -1, ref recordInfo);
 
             allocatedSize = fullRecordLength;
             return true;

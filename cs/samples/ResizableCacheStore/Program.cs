@@ -488,7 +488,7 @@ namespace ResizableCacheStore
             CacheValue output = default;
             int localStatusFound = 0, localStatusNotFound = 0;
 
-            int iter = 0;
+            long iter = 0;
             while (!done)
             {
                 if ((iter % 256 == 0) && (iter > 0))
@@ -498,9 +498,6 @@ namespace ResizableCacheStore
                     Interlocked.Add(ref totalOperations, 256);
                     localStatusFound = localStatusNotFound = 0;
                 }
-
-                if (iter == 6100000)  // 6115000
-                    ;
 
                 var wantValue = RmwPercent + UpsertPercent > 0;
 

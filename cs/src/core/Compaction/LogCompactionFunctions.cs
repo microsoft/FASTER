@@ -5,7 +5,6 @@ namespace FASTER.core
 {
     internal sealed class LogCompactionFunctions<Key, Value, Input, Output, Context, Functions> : IFunctions<Key, Value, Input, Output, Context>
         where Functions : IFunctions<Key, Value, Input, Output, Context>
-
     {
         readonly Functions _functions;
 
@@ -71,6 +70,6 @@ namespace FASTER.core
         public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
         public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
         public void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
-        public void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey) { }
+        public void DisposeForRevivification(ref Key key, ref Value value, int newKeySize) { }
     }
 }

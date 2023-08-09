@@ -1334,8 +1334,8 @@ namespace FASTER.core
                 => _clientSession.functions.DisposeSingleDeleter(ref key, ref value, ref deleteInfo);
             public void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo)
                 => _clientSession.functions.DisposeDeserializedFromDisk(ref key, ref value);
-            public void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey, ref RecordInfo recordInfo)
-                => _clientSession.functions.DisposeForRevivification(ref key, ref value, disposeKey);
+            public void DisposeForRevivification(ref Key key, ref Value value, int newKeySize, ref RecordInfo recordInfo)
+                => _clientSession.functions.DisposeForRevivification(ref key, ref value, newKeySize);
             #endregion IFunctions - Dispose
 
             #region IFunctions - Checkpointing
