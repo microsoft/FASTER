@@ -564,6 +564,11 @@ namespace FASTER.core
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
+            if (scanDelta && deltaLog != null && deltaTailAddress > 0)
+            {
+                // Adjust delta tail address to include the metadata record
+                deltaTailAddress = deltaLog.NextAddress;
+            }
             var cookie = s.ReadToEnd();
             commitCookie =  cookie.Length == 0 ? null : Convert.FromBase64String(cookie);
         }

@@ -346,6 +346,7 @@ namespace FASTER.core
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     CollectMetadata(next, faster);
+                    faster._hybridLogCheckpoint.info.deltaTailAddress = faster._hybridLogCheckpoint.deltaLog.TailAddress;
                     faster.WriteHybridLogIncrementalMetaInfo(faster._hybridLogCheckpoint.deltaLog);
                     faster._hybridLogCheckpoint.info.deltaTailAddress = faster._hybridLogCheckpoint.deltaLog.TailAddress;
                     faster._lastSnapshotCheckpoint = faster._hybridLogCheckpoint.Transfer();
