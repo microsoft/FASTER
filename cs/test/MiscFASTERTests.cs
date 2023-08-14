@@ -136,13 +136,13 @@ namespace FASTER.test
                 var recordCount = 0;
                 using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
                 {
-                    // We should get both the old and the new records.
+                    // We should only get the new record.
                     while (iterator.GetNext(out var info))
                         recordCount++;
                 }
 
                 Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
-                Assert.AreEqual(2, recordCount);
+                Assert.AreEqual(1, recordCount);
             }
             finally
             {

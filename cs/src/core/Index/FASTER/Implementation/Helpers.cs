@@ -94,9 +94,12 @@ namespace FASTER.core
             if (DoEphemeralLocking)
                 newRecordInfo.InitializeLockExclusive();
 
-            return stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
+            var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
                 : SpliceIntoHashChainAtReadCacheBoundary(ref key, ref stackCtx, newLogicalAddress);
+            if (result)
+                newRecordInfo.UnsealAndValidate();
+            return result;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

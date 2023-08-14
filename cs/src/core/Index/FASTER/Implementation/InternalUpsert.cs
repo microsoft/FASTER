@@ -112,7 +112,7 @@ namespace FASTER.core
                             goto CreateNewRecord;
 
                         // Try in-place revivification of the record.
-                        if (!this.LockTable.IsEnabled && !srcRecordInfo.TrySeal())
+                        if (!this.LockTable.IsEnabled && !srcRecordInfo.TrySeal(invalidate: false))
                             return OperationStatus.RETRY_NOW;
                         bool ok = true;
                         try
@@ -150,7 +150,7 @@ namespace FASTER.core
                                 SetExtraValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
                             else
                                 SetTombstoneAndExtraValueLength(ref recordValue, ref srcRecordInfo, upsertInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
-                            srcRecordInfo.Unseal();
+                            srcRecordInfo.Unseal(makeValid: false);
                         }
                         goto CreateNewRecord;
                     }
@@ -405,8 +405,10 @@ namespace FASTER.core
                 PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert);
-                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal)
-                    srcRecordInfo.UnlockExclusiveAndSeal();
+
+                // Success should always Seal the old record.
+                srcRecordInfo.UnlockExclusiveAndSeal();
+
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;

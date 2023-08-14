@@ -240,7 +240,7 @@ namespace FASTER.core
             try
             {
                 // Revivification or some other operation may have sealed the record while we waited for the lock.
-                if (srcRecordInfo.IsClosed)
+                if (srcRecordInfo.IsClosed && !useStartAddress)
                     return OperationStatus.RETRY_LATER;
 
                 if (srcRecordInfo.Tombstone)
@@ -287,7 +287,7 @@ namespace FASTER.core
             try
             {
                 // Revivification or some other operation may have sealed the record while we waited for the lock.
-                if (srcRecordInfo.IsSealed)
+                if (srcRecordInfo.IsClosed && !useStartAddress)
                     return OperationStatus.RETRY_LATER;
 
                 if (srcRecordInfo.Tombstone)

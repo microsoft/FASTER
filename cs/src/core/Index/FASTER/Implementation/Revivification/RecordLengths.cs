@@ -186,8 +186,7 @@ namespace FASTER.core
                     allocatedSize = fullRecordLength;
                 }
 
-                // Now we can unseal; epoch management guarantees nobody is still executing who saw this record before it went into the free record pool.
-                recordInfo.Unseal();
+                // Preserve the Sealed bit due to checkpoint/recovery; see RecordInfo.WriteInfo.
                 return true;
             }
 

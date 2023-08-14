@@ -552,7 +552,7 @@ namespace FASTER.core
             if (logicalAddress < fkv.hlog.ReadOnlyAddress)
                 return false;
             var recordInfo = fkv.hlog.GetInfo(physicalAddress);
-            recordInfo.TrySeal();
+            recordInfo.TrySeal(invalidate: true );
             fkv.SetFreeRecordSize(physicalAddress, ref recordInfo, allocatedSize);
             return this.TryAdd(logicalAddress, allocatedSize);
         }

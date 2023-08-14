@@ -156,6 +156,13 @@ For fixed-length Key and Value datatypes there is only one bin and of course no 
 #### Epoch management
 As noted above, each `FreeRecord` contains an `addedEpoch` field which is the epoch during which the record was added to the pool. The record will not be eligible to Take() for revivification until BumpCurrentEpoch() and ComputeNewSafeToReclaimEpoch() have made that addedEpoch safe.
 
+Epoch protection is needed because otherwise we could have a situation where, for example:
+- A thread gets the first record of a `HashBucketEntry` that matches the key (note: Revivification does not freelist any deletion that is not the item in the `HashBucketEntry`).
+- Another thread deletes and freelists the record.
+- Another thread immediately revivifies the record with a different key.
+- Now the first thread resumes and thinks it's still on a record of the same key, but it's not. 
+    - We could mitigate this by having the first thread recheck the key after it acquires the lock, but this would be a performance penalty in the non-revivification case.
+
 ##### Bumping Epochs
 We do not want to maintain a per-operation counter of records in the `FreeRecordPool` or each `FreeRecordBin` because this would be an additional interlock per `Add` or `Take`. We therefore need a worker thread that periodically iterates the bins looking for records whose addedEpoch == epoch.CurrentEpoch; these records will not be eligible for revivification until BumpCurrentEpoch() and ComputeNewSafeToReclaimEpoch() have made that addedEpoch safe.
 

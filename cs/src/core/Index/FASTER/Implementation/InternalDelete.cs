@@ -130,20 +130,17 @@ namespace FASTER.core
                                 // Ignore the result here; this is just tidying up the HashBucket.
                                 stackCtx.hei.TryCAS(srcRecordInfo.PreviousAddress);
                             }
-                            else if (srcRecordInfo.TrySeal())
+                            else if (srcRecordInfo.TrySeal(invalidate: true))
                             {   
                                 // Always Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
+                                // We invalidate it also for checkpoint/recovery consistency (this removes Sealed bit so Scan would enumerate
+                                // records that would be in the freelist if the freelist survived Recovery).
                                 bool isFree = false;
                                 if (srcRecordInfo.Tombstone)   // If this is false, it was revivified by another session immediately after ConcurrentDeleter completed.
                                 {
                                     // If we CAS out of the hashtable successfully, add it to the free list.
                                     if (stackCtx.hei.TryCAS(srcRecordInfo.PreviousAddress) && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                                     {
-                                        // Clear Tombstone, so another session trying to revivify in-place will see that Tombstone is cleared if it manages to Seal.
-                                        // Do *not* Unseal() here; the record may be in FasterKVIterator's tempKv, so we do not want to clear both Tombstone and Seal.
-                                        // Therefore, delay Unseal() to when it's dequeued from the free record pool.
-                                        srcRecordInfo.Tombstone = false;
-
                                         SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, fullRecordLength);
                                         FreeRecordPool.TryAdd(stackCtx.recSrc.LogicalAddress, fullRecordLength);
                                         isFree = true;
@@ -152,7 +149,7 @@ namespace FASTER.core
                                 if (!isFree)
                                 {
                                     // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
-                                    srcRecordInfo.Unseal();
+                                    srcRecordInfo.Unseal(makeValid: true);
                                 }
                             }
                         }
