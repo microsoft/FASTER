@@ -180,7 +180,7 @@ namespace FASTER.core
             {
                 long expected_word = word;
                 if (IsClosedWord(expected_word))
-                    break;
+                    return false;
                 if ((expected_word & kExclusiveLockBitMask) == 0)
                 {
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))

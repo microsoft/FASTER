@@ -2072,8 +2072,13 @@ namespace FASTER.core
         private void WriteCommitMetadata(FasterLogRecoveryInfo recoveryInfo)
         {
             // TODO: can change to write this in separate thread for fast commit
+
+            // If we are in fast-commit, we may not write every metadata to disk. However, when we are deleting files
+            // on disk, we have to write metadata for the new start location on disk so we know where to scan forward from.
+            bool forceWriteMetadata = fastCommitMode && (allocator.BeginAddress < recoveryInfo.BeginAddress);
             logCommitManager.Commit(recoveryInfo.BeginAddress, recoveryInfo.UntilAddress,
-                recoveryInfo.ToByteArray(), recoveryInfo.CommitNum);
+                recoveryInfo.ToByteArray(), recoveryInfo.CommitNum, forceWriteMetadata);
+
             // If not fast committing, set committed state as we commit metadata explicitly only after metadata commit
             if (!fastCommitMode)
                 UpdateCommittedState(recoveryInfo);
