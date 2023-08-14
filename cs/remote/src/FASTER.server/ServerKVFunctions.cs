@@ -89,7 +89,7 @@ namespace FASTER.server
         public void DisposeDeserializedFromDisk(ref Key key, ref Value value)
             => functions.DisposeDeserializedFromDisk(ref key, ref value);
 
-        public void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey)
-            => functions.DisposeForRevivification(ref key, ref value, disposeKey);
+        public void DisposeForRevivification(ref Key key, ref Value value, int newKeyLength)
+            => functions.DisposeForRevivification(ref key, ref value, newKeyLength);
     }
 }

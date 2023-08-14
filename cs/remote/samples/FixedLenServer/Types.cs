@@ -139,6 +139,6 @@ namespace FasterFixedLenServer
         public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
         public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
         public void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
-        public void DisposeForRevivification(ref Key key, ref Value value, bool disposeKey) { }
+        public void DisposeForRevivification(ref Key key, ref Value value, int newKeyLength) { }
     }
 }
