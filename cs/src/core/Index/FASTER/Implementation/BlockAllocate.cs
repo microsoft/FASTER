@@ -78,7 +78,7 @@ namespace FASTER.core
                     ref var newValue = ref hlog.GetValue(newPhysicalAddress);
                     hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
                     int valueOffset = (int)((long)Unsafe.AsPointer(ref newValue) - newPhysicalAddress);
-                    SetExtraValueLength(ref hlog.GetValue(newPhysicalAddress), ref newRecordInfo, actualSize, allocatedSize - valueOffset);
+                    SetExtraValueLength(ref hlog.GetValue(newPhysicalAddress), ref newRecordInfo, actualSize - valueOffset, allocatedSize - valueOffset);
                     SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
                 }
                 else

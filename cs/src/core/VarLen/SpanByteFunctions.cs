@@ -20,7 +20,10 @@ namespace FASTER.core
         public override bool ConcurrentWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo) 
             => DoSafeCopy(ref src, ref dst, ref upsertInfo);
 
-        private static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref UpsertInfo upsertInfo)
+        /// <summary>
+        /// Utility function for SpanByte copying, Upsert version.
+        /// </summary>
+        public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref UpsertInfo upsertInfo)
         {
             // First get the full record length and clear it from the extra value space (if there is any). 
             // This ensures all bytes after the used value space are 0, which retains log-scan correctness.
@@ -52,7 +55,10 @@ namespace FASTER.core
             // The default implementation of IPU simply writes input to destination, if there is space
             => DoSafeCopy(ref input, ref value, ref rmwInfo);
 
-        private static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref RMWInfo rmwInfo)
+        /// <summary>
+        /// Utility function for SpanByte copying, RMW version.
+        /// </summary>
+        public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref RMWInfo rmwInfo)
         {
             // See comments in upsertInfo overload of this function.
             rmwInfo.ClearExtraValueLength(ref dst, dst.TotalSize);

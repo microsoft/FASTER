@@ -497,7 +497,7 @@ namespace FASTER.core
         {
             var bytes = AsSpan();
             var len = Math.Min(this.Length, 8);
-            StringBuilder sb = new($"len: {this.Length}, md: {(length & kExtraMetadataBitMask) != 0}, ");
+            StringBuilder sb = new($"len: {this.Length}, mdLen: {MetadataSize}, isSer {this.Serialized}, ");
             for (var ii = 0; ii < len; ++ii)
                 sb.Append(bytes[ii].ToString("x2"));
             if (bytes.Length > len)
