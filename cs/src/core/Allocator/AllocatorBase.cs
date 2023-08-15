@@ -1199,6 +1199,11 @@ namespace FASTER.core
         public int AllocatedPageCount;
 
         /// <summary>
+        /// Maximum possible number of empty pages in circular buffer
+        /// </summary>
+        public int MaxEmptyPageCount => BufferSize - 1;
+
+        /// <summary>
         /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
         public int EmptyPageCount
@@ -1208,7 +1213,7 @@ namespace FASTER.core
             set
             {
                 // HeadOffset lag (from tail).
-                var headOffsetLagSize = BufferSize - 1;
+                var headOffsetLagSize = MaxEmptyPageCount;
                 if (value > headOffsetLagSize) return;
                 if (value < 0) return;
 
