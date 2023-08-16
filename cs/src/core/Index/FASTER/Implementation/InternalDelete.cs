@@ -272,6 +272,7 @@ namespace FASTER.core
 
             ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: fasterSession.Ctx.InNewVersion, tombstone: true, stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);
+            newRecordInfo.Unused1 = true;
 
             DeleteInfo deleteInfo = new()
             {
@@ -282,10 +283,10 @@ namespace FASTER.core
             };
             deleteInfo.SetRecordInfoAddress(ref newRecordInfo);
 
-            ref Value newValue = ref hlog.GetValue(newPhysicalAddress);     // No endAddress arg, so no varlen Initialize() is done (since we're deleting the record)
-            (deleteInfo.UsedValueLength, deleteInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newValue);
+            ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            (deleteInfo.UsedValueLength, deleteInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
-            if (!fasterSession.SingleDeleter(ref key, ref newValue, ref deleteInfo))
+            if (!fasterSession.SingleDeleter(ref key, ref newRecordValue, ref deleteInfo))
             {
                 // This record was allocated with a minimal Value size (unless it was a revivified larger record) so there's no room for a Filler,
                 // but we may want it for a later Delete, or for insert with a smaller Key.
@@ -299,8 +300,7 @@ namespace FASTER.core
                 return OperationStatus.NOTFOUND;    // But not CreatedRecord
             }
 
-            // We've already set tombstone and default value and calculated UsedValueLength, so no need to call SetTombstoneAndFullValueLength.
-            SetExtraValueLength(ref newValue, ref newRecordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
+            SetTombstoneAndExtraValueLength(ref newRecordValue, ref newRecordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);

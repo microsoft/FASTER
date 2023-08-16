@@ -673,7 +673,7 @@ namespace FASTER.core
                 (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.fht.GetRecordLengths(physicalAddress, ref value, ref deleteInfo.RecordInfoRef);
                 if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo))
                     return false;
-                _clientSession.fht.SetTombstoneAndExtraValueLength(ref value, ref deleteInfo.RecordInfoRef, deleteInfo.FullValueLength);
+                _clientSession.fht.SetTombstoneAndExtraValueLength(ref value, ref deleteInfo.RecordInfoRef, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
                 deleteInfo.RecordInfoRef.SetDirtyAndModified();
                 return true;
             }

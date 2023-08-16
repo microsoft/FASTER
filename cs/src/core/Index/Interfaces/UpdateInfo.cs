@@ -96,8 +96,11 @@ namespace FASTER.core
         /// <param name="usedValueLength">The currently-used length of the record value</param>
         /// <typeparam name="TValue">The type of the value</typeparam>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe readonly void ClearExtraValueLength<TValue>(ref TValue recordValue, int usedValueLength) 
-            => ClearExtraValueLength(recordInfoPtr, ref recordValue, usedValueLength);
+        public unsafe readonly void ClearExtraValueLength<TValue>(ref TValue recordValue, int usedValueLength)
+        {
+            Debug.Assert(usedValueLength == this.UsedValueLength, $"UpsertInfo: usedValueLength ({usedValueLength}) != this.UsedValueLength ({this.UsedValueLength})");
+            ClearExtraValueLength(recordInfoPtr, ref recordValue, usedValueLength);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe void ClearExtraValueLength<TValue>(IntPtr recordInfoPtr, ref TValue recordValue, int usedValueLength) 
@@ -110,10 +113,7 @@ namespace FASTER.core
                 return;
 
             var valueAddress = (long)Unsafe.AsPointer(ref recordValue);
-            usedValueLength = RoundUp(usedValueLength, sizeof(int));
-
-            int* extraLengthPtr = (int*)(valueAddress + usedValueLength);
-            int fullValueLength = usedValueLength + *extraLengthPtr;
+            int* extraLengthPtr = (int*)(valueAddress + RoundUp(usedValueLength, sizeof(int)));
 
             *extraLengthPtr = 0;
             recordInfo.Filler = false;
@@ -236,7 +236,10 @@ namespace FASTER.core
         /// <typeparam name="TValue">The type of the value</typeparam>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe readonly void ClearExtraValueLength<TValue>(ref TValue recordValue, int usedValueLength)
-            => UpsertInfo.ClearExtraValueLength(recordInfoPtr, ref recordValue, usedValueLength);
+        {
+            Debug.Assert(usedValueLength == this.UsedValueLength, $"RMWInfo: usedValueLength ({usedValueLength}) != this.UsedValueLength ({this.UsedValueLength})");
+            UpsertInfo.ClearExtraValueLength(recordInfoPtr, ref recordValue, usedValueLength);
+        }
 
         /// <summary>
         /// Set the extra value length, if any, into the record past the used value length.

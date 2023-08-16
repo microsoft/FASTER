@@ -40,6 +40,10 @@ namespace FASTER.core
             };
             upsertInfo.SetRecordInfoAddress(ref newRecordInfo);
 
+            // Even though readcache records are immutable, we have to initialize the lengths
+            ref Value newRecordValue = ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
+
             Output output = default;
             if (!fasterSession.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref upsertInfo, WriteReason.CopyToReadCache))

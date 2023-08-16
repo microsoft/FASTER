@@ -50,7 +50,7 @@ namespace FASTER.core
             if (recycle && GetAllocationForRetry(fasterSession, ref pendingContext, stackCtx.hei.Address, ref allocatedSize, newKeySize, out newLogicalAddress, out newPhysicalAddress))
                 return true;
 
-            if (TryTakeFreeRecord<Input, Output, Context, FasterSession>(fasterSession, ref allocatedSize, newKeySize, stackCtx.hei.entry, out newLogicalAddress, out newPhysicalAddress))
+            if (TryTakeFreeRecord<Input, Output, Context, FasterSession>(fasterSession, actualSize, ref allocatedSize, newKeySize, stackCtx.hei.entry, out newLogicalAddress, out newPhysicalAddress))
                 return true;
 
             // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).

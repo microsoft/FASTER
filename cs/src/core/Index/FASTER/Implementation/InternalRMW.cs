@@ -155,7 +155,7 @@ namespace FASTER.core
                             if (ok)
                                 SetExtraValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                             else
-                                SetTombstoneAndExtraValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
+                                SetTombstoneAndExtraValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
                             srcRecordInfo.Unseal(makeValid: false);
                         }
                         goto CreateNewRecord;
