@@ -346,8 +346,11 @@ namespace FASTER.core
                 PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
-                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal)
+
+                // Success should always Seal the old record if it's in mutable.
+                if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                     srcRecordInfo.UnlockExclusiveAndSeal();
+
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;

@@ -682,14 +682,6 @@ namespace FASTER.test.statemachine
             fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
         }
 
-
-        bool tryStartLUC(
-            ref LockableUnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> luContext,
-            ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> session)
-        {
-            luContext = session.LockableUnsafeContext;
-            return !session.IsInPreparePhase();
-        }
         void RecoverAndTest(IDevice log)
         {
             NumClicks inputArg = default;
