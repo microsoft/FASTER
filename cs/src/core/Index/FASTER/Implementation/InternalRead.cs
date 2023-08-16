@@ -286,7 +286,8 @@ namespace FASTER.core
                     if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable)
                         return OperationStatus.SUCCESS;
                     if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
-                        return ConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref userContext, lsn, ref stackCtx, WriteReason.CopyToTail);
+                        return ConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref userContext, lsn, ref stackCtx,
+                                                     WriteReason.CopyToTail, wantIO: false);
                     if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache
                             && TryCopyToReadCache(fasterSession, ref pendingContext, ref key, ref input, ref recordValue, ref stackCtx))
                         return OperationStatus.SUCCESS | OperationStatus.COPIED_RECORD_TO_READ_CACHE;

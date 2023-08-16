@@ -1199,6 +1199,11 @@ namespace FASTER.core
         public int AllocatedPageCount;
 
         /// <summary>
+        /// Maximum possible number of empty pages in circular buffer
+        /// </summary>
+        public int MaxEmptyPageCount => BufferSize - 1;
+
+        /// <summary>
         /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
         public int EmptyPageCount
@@ -1208,7 +1213,7 @@ namespace FASTER.core
             set
             {
                 // HeadOffset lag (from tail).
-                var headOffsetLagSize = BufferSize - 1;
+                var headOffsetLagSize = MaxEmptyPageCount;
                 if (value > headOffsetLagSize) return;
                 if (value < 0) return;
 
@@ -1343,6 +1348,26 @@ namespace FASTER.core
             return sectorSize;
         }
 
+        void AllocatePagesWithException(int pageIndex, PageOffset localTailPageOffset)
+        {
+            try
+            {
+                // Allocate this page, if needed
+                if (!IsAllocated(pageIndex % BufferSize))
+                    AllocatePage(pageIndex % BufferSize);
+
+                // Allocate next page in advance, if needed
+                if (!IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePage((pageIndex + 1) % BufferSize);
+            }
+            catch
+            {
+                localTailPageOffset.Offset = PageSize;
+                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+                throw;
+            }
+        }
+
         /// <summary>
         /// Try allocate, no thread spinning allowed
         /// </summary>
@@ -1382,6 +1407,8 @@ namespace FASTER.core
                 PageAlignedShiftReadOnlyAddress(shiftAddress);
                 PageAlignedShiftHeadAddress(shiftAddress);
 
+                // This thread is trying to allocate at an offset past where one or more previous threads
+                // already overflowed; exit and allow the first overflow thread to proceed
                 if (offset > PageSize)
                 {
                     if (NeedToWait(pageIndex))
@@ -1406,13 +1433,8 @@ namespace FASTER.core
                     return -1; // RETRY_NOW
                 }
 
-                // Allocate this page, if needed
-                if (!IsAllocated(pageIndex % BufferSize))
-                    AllocatePage(pageIndex % BufferSize);
-
-                // Allocate next page in advance, if needed
-                if (!IsAllocated((pageIndex + 1) % BufferSize))
-                    AllocatePage((pageIndex + 1) % BufferSize);
+                if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePagesWithException(pageIndex, localTailPageOffset);
 
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = numSlots;

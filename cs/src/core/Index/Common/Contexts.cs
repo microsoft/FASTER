@@ -396,7 +396,9 @@ namespace FASTER.core
 
 
         /// <summary>
-        /// Tail address of delta file
+        /// Tail address of delta file: -1 indicates this is not a delta checkpoint metadata
+        /// At recovery, this value denotes the delta tail address excluding the metadata record for the checkpoint
+        /// because we create the metadata before writing to the delta file.
         /// </summary>
         public long deltaTailAddress;
 
@@ -415,7 +417,7 @@ namespace FASTER.core
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
             snapshotFinalLogicalAddress = 0;
-            deltaTailAddress = 0;
+            deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
             headAddress = 0;
 
             checkpointTokens = new();
@@ -564,6 +566,11 @@ namespace FASTER.core
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
+            if (scanDelta && deltaLog != null && deltaTailAddress >= 0)
+            {
+                // Adjust delta tail address to include the metadata record
+                deltaTailAddress = deltaLog.NextAddress;
+            }
             var cookie = s.ReadToEnd();
             commitCookie =  cookie.Length == 0 ? null : Convert.FromBase64String(cookie);
         }

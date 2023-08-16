@@ -190,7 +190,7 @@ namespace FASTER.core
         {
             var idx1 = GetBucketIndex(key1.LockCode, size_mask);
             var idx2 = GetBucketIndex(key2.LockCode, size_mask);
-            return (idx1 != idx2) ? idx1.CompareTo(idx2) : key1.LockType.CompareTo(key2.LockType);
+            return (idx1 != idx2) ? idx1.CompareTo(idx2) : ((byte)key1.LockType).CompareTo((byte)key2.LockType);
         }
 
         /// <inheritdoc/>

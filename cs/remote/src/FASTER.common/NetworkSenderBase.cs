@@ -41,6 +41,9 @@
         public MaxSizeSettings GetMaxSizeSettings => this.maxSizeSettings;
 
         /// <inheritdoc />
+        public abstract string RemoteEndpointName { get; }
+
+        /// <inheritdoc />
         public abstract void GetResponseObject();
 
         /// <inheritdoc />
@@ -65,7 +68,7 @@
         public abstract void Dispose();
 
         /// <inheritdoc />
-        public abstract void Dispose(bool waitForSendCompletion);
+        public abstract void DisposeNetworkSender(bool waitForSendCompletion);
 
         /// <inheritdoc />
         public abstract void Throttle();

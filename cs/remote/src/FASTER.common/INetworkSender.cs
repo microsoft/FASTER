@@ -17,6 +17,11 @@ namespace FASTER.common
         MaxSizeSettings GetMaxSizeSettings { get; }
 
         /// <summary>
+        /// Remote endpoint name
+        /// </summary>
+        string RemoteEndpointName { get; }
+
+        /// <summary>
         /// Allocate a new response object
         /// </summary>
         void GetResponseObject();
@@ -59,7 +64,7 @@ namespace FASTER.common
         /// <summary>
         /// Dispose, optionally waiting for ongoing outgoing calls to complete
         /// </summary>
-        void Dispose(bool waitForSendCompletion);
+        void DisposeNetworkSender(bool waitForSendCompletion);
 
         /// <summary>
         /// Throttle mechanism for preventing too many sends outstanding (blocking)
