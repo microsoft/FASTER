@@ -268,10 +268,14 @@ class FileSystemSegmentedFile {
     return core::Status::Ok;
   }
   core::Status Close() {
-    return (files_) ? files_->Close() : core::Status::Ok;
+      bundle_t* files = files_.load();
+      if (!files) return core::Status::Ok;
+      return files->Close();
   }
   core::Status Delete() {
-    return (files_) ? files_->Delete() : core::Status::Ok;
+      bundle_t* files = files_.load();
+      if (!files) return core::Status::Ok;
+      return files->Delete();
   }
   void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
     uint64_t new_begin_segment = new_begin_offset / kSegmentSize;

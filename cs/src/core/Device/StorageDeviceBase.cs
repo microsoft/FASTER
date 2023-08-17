@@ -48,7 +48,10 @@ namespace FASTER.core
         /// </summary>
         protected long segmentSize;
 
-        private int segmentSizeBits;
+        /// <summary>
+        /// Segment size in bits
+        /// </summary>
+        protected int segmentSizeBits;
         private ulong segmentSizeMask;
 
         /// <summary>

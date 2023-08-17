@@ -51,6 +51,17 @@
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="7.0.0" />
     <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
   </ItemGroup>
+  
+  <ItemGroup>
+	<ContentWithTargetPath Include="Device/runtimes/win-x64/native_device.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  <TargetPath>native_device.dll</TargetPath>
+    </ContentWithTargetPath>
+	<ContentWithTargetPath Include="Device/runtimes/win-x64/native_device.pdb">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  <TargetPath>native_device.pdb</TargetPath>
+    </ContentWithTargetPath>
+  </ItemGroup>
 
   <Choose>
 	<When Condition="'$(TargetFramework)' == 'netstandard2.0' Or '$(TargetFramework)' == 'netstandard2.1'">

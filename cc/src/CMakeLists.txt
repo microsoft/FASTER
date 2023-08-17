@@ -61,3 +61,41 @@ set (FASTER_SOURCES ${FASTER_SOURCES}
 endif()
 
 add_library(faster STATIC ${FASTER_SOURCES} ${FASTER_HEADERS})
+
+
+# Build the native_device library.
+
+set (NATIVE_DEVICE_HEADERS
+  device/file_system_disk.h
+  environment/file.h
+  environment/file_common.h
+  device/native_device.h
+)
+
+if (MSVC)
+set (NATIVE_DEVICE_HEADERS ${NATIVE_DEVICE_HEADERS}
+  environment/file_windows.h
+)
+else()
+set (FNATIVE_DEVICE_HEADERS ${NATIVE_DEVICE_HEADERS}
+  environment/file_linux.h
+)
+endif() 
+
+set (NATIVE_DEVICE_SOURCES
+  core/lss_allocator.cc
+  device/native_device_wrapper.cc
+  core/thread.cc
+)
+
+if (MSVC)
+set (NATIVE_DEVICE_SOURCES ${NATIVE_DEVICE_SOURCES}
+  environment/file_windows.cc
+)
+else()
+set (NATIVE_DEVICE_SOURCES ${NATIVE_DEVICE_SOURCES}
+  environment/file_linux.cc
+)
+endif()
+
+add_library(native_device SHARED ${NATIVE_DEVICE_SOURCES} ${NATIVE_DEVICE_HEADERS})
