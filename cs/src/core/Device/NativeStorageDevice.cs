@@ -84,6 +84,8 @@ namespace FASTER.core
                                       long capacity = Devices.CAPACITY_UNSPECIFIED)
                 : base(filename, GetSectorSize(filename), capacity)
         {
+            filename += "."; // C++ device expects file to end with period
+
             if (filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
                 throw new FasterException($"Path {filename} is too long");
 
@@ -122,9 +124,9 @@ namespace FASTER.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
-            int offset = Interlocked.Increment(ref resultOffset) % 4096;
-            var result = results[offset];
-            result.context = offset;
+            int offset = (Interlocked.Increment(ref resultOffset) - 1) % 4096;
+            ref var result = ref results[offset];
+            result.context = context;
             result.callback = callback;
 
             try
@@ -147,7 +149,7 @@ namespace FASTER.core
                 callback((uint)(e.HResult & 0x0000FFFF), 0, context);
             }
             catch
-             {
+            {
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
             }
@@ -169,9 +171,9 @@ namespace FASTER.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
-            int offset = Interlocked.Increment(ref resultOffset) % 4096;
-            var result = results[offset];
-            result.context = offset;
+            int offset = (Interlocked.Increment(ref resultOffset) - 1) % 4096;
+            ref var result = ref results[offset];
+            result.context = context;
             result.callback = callback;
 
             try
@@ -198,7 +200,6 @@ namespace FASTER.core
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
             }
-
         }
 
         /// <summary>

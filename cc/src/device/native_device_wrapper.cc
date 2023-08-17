@@ -14,11 +14,11 @@ extern "C" {
 		return device->sector_size();
 	}
 
-	__declspec(dllexport) FASTER::core::Status NativeDevice_ReadAsync(NativeDevice* device, uint64_t source, void* dest, uint32_t length, FASTER::core::AsyncIOCallback callback, FASTER::core::IAsyncContext& context) {
+	__declspec(dllexport) FASTER::core::Status NativeDevice_ReadAsync(NativeDevice* device, uint64_t source, void* dest, uint32_t length, FASTER::core::AsyncIOCallback callback, void* context) {
 		return device->ReadAsync(source, dest, length, callback, context);
 	}
 
-	__declspec(dllexport) FASTER::core::Status NativeDevice_WriteAsync(NativeDevice* device, const void* source, uint64_t dest, uint32_t length, FASTER::core::AsyncIOCallback callback, FASTER::core::IAsyncContext& context) {
+	__declspec(dllexport) FASTER::core::Status NativeDevice_WriteAsync(NativeDevice* device, const void* source, uint64_t dest, uint32_t length, FASTER::core::AsyncIOCallback callback, void* context) {
 		return device->WriteAsync(source, dest, length, callback, context);
 	}
 

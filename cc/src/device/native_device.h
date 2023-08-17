@@ -7,6 +7,28 @@ public:
     typedef FASTER::device::FileSystemSegmentedFile<handler_t, 1073741824L> log_file_t;
 
 private:
+    class AsyncIoContext : public FASTER::core::IAsyncContext {
+    public:
+        AsyncIoContext(void* context_, FASTER::core::AsyncIOCallback callback_)
+            : context{ context_ },
+            callback{ callback_ } {
+        }
+
+        /// The deep-copy constructor
+        AsyncIoContext(AsyncIoContext& other)
+            : context{ other.context},
+            callback{ other.callback } {
+        }
+
+    protected:
+        FASTER::core::Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+            return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+        }
+
+    public:
+        void* context;
+        FASTER::core::AsyncIOCallback callback;
+    };
 
 public:
     NativeDevice(const std::string& file,
@@ -31,14 +53,22 @@ public:
         return static_cast<uint32_t>(log_.alignment());
     }
 
-    FASTER::core::Status ReadAsync(uint64_t source, void* dest, uint32_t length, FASTER::core::AsyncIOCallback callback,
-        FASTER::core::IAsyncContext& context) const {
-        return log_.ReadAsync(source, dest, length, callback, context);
+    FASTER::core::Status ReadAsync(uint64_t source, void* dest, uint32_t length, FASTER::core::AsyncIOCallback callback, void* context) const {
+        AsyncIoContext io_context{ context, callback };
+        auto callback_ = [](FASTER::core::IAsyncContext* ctxt, FASTER::core::Status result, size_t bytes_transferred) {
+            FASTER::core::CallbackContext<AsyncIoContext> context{ ctxt };
+            context->callback((FASTER::core::IAsyncContext*)context->context, result, bytes_transferred);
+            };
+        return log_.ReadAsync(source, dest, length, callback_, io_context);
     }
 
-    FASTER::core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length,
-        FASTER::core::AsyncIOCallback callback, FASTER::core::IAsyncContext& context) {
-        return log_.WriteAsync(source, dest, length, callback, context);
+    FASTER::core::Status WriteAsync(const void* source, uint64_t dest, uint32_t length, FASTER::core::AsyncIOCallback callback, void* context) {
+        AsyncIoContext io_context{ context, callback };
+        auto callback_ = [](FASTER::core::IAsyncContext* ctxt, FASTER::core::Status result, size_t bytes_transferred) {
+            FASTER::core::CallbackContext<AsyncIoContext> context{ ctxt };
+            context->callback((FASTER::core::IAsyncContext*)context->context, result, bytes_transferred);
+            };
+        return log_.WriteAsync(source, dest, length, callback_, io_context);
     }
 
     const log_file_t& log() const {
