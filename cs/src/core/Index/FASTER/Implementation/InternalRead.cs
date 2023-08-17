@@ -233,6 +233,8 @@ namespace FASTER.core
 
             try
             {
+                if (srcRecordInfo.IsClosed && !useStartAddress)
+                    return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
@@ -277,8 +279,11 @@ namespace FASTER.core
 
             try
             {
+                if (srcRecordInfo.IsClosed && !useStartAddress)
+                    return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
+
                 ref Value recordValue = ref stackCtx.recSrc.GetValue();
 
                 if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo))

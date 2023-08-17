@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Threading;
-
 namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
@@ -58,6 +56,8 @@ namespace FASTER.core
 
             // ReadCache entries are CAS'd in as the first entry in the hash chain.
             var success = stackCtx.hei.TryCAS(newLogicalAddress | Constants.kReadCacheBitMask);
+            if (success)
+                newRecordInfo.UnsealAndValidate();
             var casSuccess = success;
 
             if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != Constants.kInvalidAddress)
