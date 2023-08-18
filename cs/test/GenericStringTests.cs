@@ -3,49 +3,61 @@
 
 using FASTER.core;
 using NUnit.Framework;
-using System;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class GenericStringTests
     {
         private FasterKV<string, string> fht;
         private ClientSession<string, string, string, string, Empty, MyFuncs> session;
         private IDevice log, objlog;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericStringTests.obj.log", deleteOnClose: true);
+            path = TestUtils.MethodTestDir + "/";
 
-            fht
-                = new FasterKV<string, string>(
-                    1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
-                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 } // log device
-                    );
-
-            session = fht.For(new MyFuncs()).NewSession<MyFuncs>();
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            TestUtils.DeleteDirectory(path, wait: true);
         }
 
         [TearDown]
         public void TearDown()
         {
-            session.Dispose();
-            fht.Dispose();
+            session?.Dispose();
+            session = null;
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
-        }
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
 
+            TestUtils.DeleteDirectory(path);
+        }
 
         [Test]
         [Category("FasterKV")]
-        public void StringBasicTest()
+        [Category("Smoke")]
+        public void StringBasicTest([Values] TestUtils.DeviceType deviceType)
         {
-            const int totalRecords = 2000;
+            string logfilename = path + "GenericStringTests" + deviceType.ToString() + ".log";
+            string objlogfilename = path + "GenericStringTests" + deviceType.ToString() + ".obj.log";
+
+            log = TestUtils.CreateTestDevice(deviceType, logfilename);
+            objlog = TestUtils.CreateTestDevice(deviceType, objlogfilename);
+
+            fht = new FasterKV<string, string>(
+                    1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
+                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 } // log device
+                    );
+
+            session = fht.For(new MyFuncs()).NewSession<MyFuncs>();
+
+            const int totalRecords = 200;
             for (int i = 0; i < totalRecords; i++)
             {
                 var _key = $"{i}";
@@ -53,7 +65,7 @@ namespace FASTER.test
                 session.Upsert(ref _key, ref _value, Empty.Default, 0);
             }
             session.CompletePending(true);
-            Assert.IsTrue(fht.EntryCount == totalRecords);
+            Assert.AreEqual(totalRecords, fht.EntryCount);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -62,22 +74,23 @@ namespace FASTER.test
                 var key = $"{i}";
                 var value = $"{i}";
 
-                if (session.Read(ref key, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                var status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+                if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    session.CompletePendingWithOutputs(out var outputs, wait:true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
-                else
-                {
-                    Assert.IsTrue(output == value);
-                }
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value, output);
             }
         }
 
         class MyFuncs : SimpleFunctions<string, string>
         {
-            public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(output == key);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(key, output);
             }
         }
     }

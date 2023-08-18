@@ -45,34 +45,43 @@ The server wrapper code for this scenario is available at
 clone from GitHub, or create a stand alone program with this code using the server library via NuGet at 
 [Microsoft.FASTER.Server](https://www.nuget.org/packages/Microsoft.FASTER.Server/).
 
-The first step is to create a FasterKV instance, recovering from a checkpoint if needed:
+The first step is to create a FasterKV store instance, recovering from a checkpoint if needed:
 
 ```cs
 var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
 ```
 
-Next, we construct the FasterKV server as follows, specifying the IP address to bind, and the port number to listen on. Types 
-such as `Key`, `Value`, and `Input` are the fixed-length types this server supports, while `Functions` is the `IFunctions` 
-implementation we use.
+Next, we construct the session provider for the store, which is capable of creating sessions
+that speak a particular wire format. For example, a provider based on fixed-length types is below.
+Types such as `Key`, `Value`, and `Input` are the fixed-length types this server supports, while 
+`Functions` is the `IFunctions` implementation we use.
 
 ```cs
-var server = new FasterKVServer<Key, Value, Input, Output, Functions, BlittableParameterSerializer<Key, Value, Input, Output>>
-   (store, e => new Functions(), opts.Address, opts.Port);
+var provider = new FasterKVProvider<Key, Value, Input, Output, Functions, FixedLenSerializer<Key, Value, Input, Output>>(store, e => new Functions());
 ```
 
-In our sample `IFunctions`, RMW is pre-defined to add `Input` to `Value`, so the server behaves as a per-key 
+Next, we create the FASTER server as follows, specifying the IP address to bind, and the port 
+number to listen on. We then register our provider with the server, to operate with protocol 
+of `WireFormat.DefaultFixedLenKV`.
+
+```cs
+var server = new FasterServer(opts.Address, opts.Port);
+server.Register(WireFormat.DefaultFixedLenKV, provider);
+```
+
+In our provider's `IFunctions`, RMW is pre-defined to add `Input` to `Value`, so the server behaves as a per-key 
 sum computation server, in addition to standard reads and upserts. You can pre-define arbitrarily complex computations based
 on `Input`, which can for example, have an enum operation ID inside `Input` for the client to indicate which operation the 
 server should do during RMW, on `Value`:
 
 ```cs
-void InitialUpdater(ref Key key, ref Input input, ref Value value) => value.value = input.value;
-bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+void InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output) => value.value = input.value;
+bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output)
 {
    Interlocked.Add(ref value.value, input.value);
    return true;
 }
-public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue) 
+public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output) 
    => newValue.value = input.value + oldValue.value;
 ```
 
@@ -116,10 +125,11 @@ using var client = new FasterKVClient<long, long>(ip, port);
 
 As you can see above, our client uses `long` keys and values. This is fine to use instead of `Key` and `Value` 
 as `long` is binary compatible with those types that were used on the server side. The next step is to instantiate
-one or more remote client sessions:
+one or more remote client sessions, specifying the protocol as `WireFormat.DefaultFixedLenKV` (compatible with
+FixedLenServer):
 
 ```cs
-using var session = client.NewSession(new Functions());
+using var session = client.NewSession(new Functions(), WireFormat.DefaultFixedLenKV);
 ```
 
 Here, `Functions` implement an interface called `ICallbackFunctions`, and provide completion callbacks that 
@@ -163,8 +173,16 @@ session.Read(key: 23);
 session.CompletePending(true);
 ```
 
-The final read will produce a result that is `25+25` more than the older value of `10023`, for key `23`.
+The final read will produce a result that is `25+25` more than the original value of `10023`, for key `23`.
 
+We can also get the Output from RMW operations directly:
+
+```cs
+session.RMW(23, 25);
+session.CompletePending(true);
+```
+
+The RMW completion callback will verify a result that is `25+25+25` more than the original value of `10023`, for key `23`.
 
 #### Async Client API
 
@@ -173,7 +191,7 @@ async read as follows:
 
 ```cs
 var (status, output) = await session.ReadAsync(23);
-if (status != Status.OK || output != 10023)
+if (status.NotFound || output != 10023)
    throw new Exception("Error!");
 ```
 

@@ -20,16 +20,21 @@ namespace FASTER.core
     {
         private readonly ConcurrentDictionary<TKey, TValue> dictionary;
 
-        private readonly ConcurrentDictionary<TKey, object> keyLocks = new ConcurrentDictionary<TKey, object>();
+        private readonly ConcurrentDictionary<TKey, object> keyLocks = new();
 
         public SafeConcurrentDictionary()
         {
-            this.dictionary = new ConcurrentDictionary<TKey, TValue>();
+            this.dictionary = new();
         }
 
         public SafeConcurrentDictionary(IEnumerable<KeyValuePair<TKey, TValue>> initialCollection)
         {
-            this.dictionary = new ConcurrentDictionary<TKey, TValue>(initialCollection);
+            this.dictionary = new(initialCollection);
+        }
+
+        public SafeConcurrentDictionary(IEqualityComparer<TKey> comparer)
+        {
+            this.dictionary = new(comparer);
         }
 
         /// <summary>
@@ -217,6 +222,17 @@ namespace FASTER.core
         public bool TryRemove(TKey key, out TValue value)
         {
             return dictionary.TryRemove(key, out value);
+        }
+
+        /// <summary>
+        /// Attempts to remove the value for the specified key based on equality to <paramref name="ifValue"/>.
+        /// Returns true if successful, false otherwise (value changed or key not found).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryRemoveConditional(TKey key, in TValue ifValue)
+        {
+            // From https://devblogs.microsoft.com/pfxteam/little-known-gems-atomic-conditional-removals-from-concurrentdictionary/
+            return ((ICollection<KeyValuePair<TKey, TValue>>)dictionary).Remove(new KeyValuePair<TKey, TValue>(key, ifValue));
         }
 
         /// <summary>

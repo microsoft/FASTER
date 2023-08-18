@@ -87,6 +87,8 @@ namespace FASTER.core
 
         #region io constants and flags
         internal const int ERROR_IO_PENDING = 997;
+        internal const int ERROR_PATH_NOT_FOUND = 3;
+        internal const int WIN32_MAX_PATH = 260;
         internal const uint GENERIC_READ = 0x80000000;
         internal const uint GENERIC_WRITE = 0x40000000;
         internal const uint FILE_FLAG_DELETE_ON_CLOSE = 0x04000000;
@@ -305,10 +307,9 @@ namespace FASTER.core
         /// <returns></returns>
         public static bool EnableProcessPrivileges()
         {
-#if NETSTANDARD
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return false;
-#endif
+
             if (processPrivilegeEnabled.HasValue) return processPrivilegeEnabled.Value;
 
             TOKEN_PRIVILEGES token_privileges = default(TOKEN_PRIVILEGES);
@@ -351,10 +352,9 @@ namespace FASTER.core
 
         internal static bool EnableVolumePrivileges(string filename, SafeFileHandle handle)
         {
-#if NETSTANDARD
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return false;
-#endif
+
             if (processPrivilegeEnabled == false)
                 return false;
 
@@ -391,10 +391,8 @@ namespace FASTER.core
         /// <returns></returns>
         public static bool SetFileSize(SafeFileHandle file_handle, long file_size)
         {
-#if NETSTANDARD
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return false;
-#endif
 
             if (!SetFilePointerEx(file_handle, file_size, out long newFilePtr, 0))
             {

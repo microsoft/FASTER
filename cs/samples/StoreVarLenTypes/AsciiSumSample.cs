@@ -24,15 +24,16 @@ namespace StoreVarLenTypes
             using var log = Devices.CreateLogDevice("hlog.log", deleteOnClose: true);
 
             // Create store
-            // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer
+            // For custom varlen (not SpanByte), you need to provide IVariableLengthStructSettings and IFasterEqualityComparer.
+            // For this test we require record-level locking
             using var store = new FasterKV<SpanByte, SpanByte>(
                 size: 1L << 20,
-                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
+                logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 }, lockingMode: LockingMode.Standard);
 
             // Create session for ASCII sums. We require two callback function types to be provided:
-            //    AsciiSumSpanByteFunctions implements RMW callback functions; we require record-level locking
+            //    AsciiSumSpanByteFunctions implements RMW callback functions
             //    AsciiSumVLS implements the callback for computing the length of the result new value, given an old value and an input
-            using var s = store.For(new AsciiSumSpanByteFunctions(locking: true)).NewSession<AsciiSumSpanByteFunctions>
+            using var s = store.For(new AsciiSumSpanByteFunctions()).NewSession<AsciiSumSpanByteFunctions>
                 (sessionVariableLengthStructSettings: new SessionVariableLengthStructSettings<SpanByte, SpanByte> { valueLength = new AsciiSumVLS() });
 
             // Create key
@@ -58,7 +59,7 @@ namespace StoreVarLenTypes
                 store.Log.FlushAndEvict(true); // Flush and evict all records to disk
                 var _status = s.RMW(_key, _input); // CopyUpdater to 270 (due to immutable source value on disk)
 
-                if (_status != Status.PENDING)
+                if (!_status.IsPending)
                 {
                     Console.WriteLine("Error!");
                     return;
@@ -78,7 +79,7 @@ namespace StoreVarLenTypes
 
             // Read does not go pending, and the output should fit in the provided space (10 bytes)
             // Hence, no Memory will be allocated by FASTER
-            if (status != Status.OK || !outputWrapper.IsSpanByte)
+            if (!status.Found || !outputWrapper.IsSpanByte)
             {
                 Console.WriteLine("Error!");
                 return;

@@ -3,6 +3,7 @@
 
 using System;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace FASTER.common
@@ -26,8 +27,10 @@ namespace FASTER.common
         /// Pointer to byte buffer
         /// </summary>
         public readonly byte* bufferPtr;
-        
+
+#if !NET5_0_OR_GREATER
         private readonly GCHandle handle;
+#endif
 
         /// <summary>
         /// Construct new instance
@@ -37,9 +40,14 @@ namespace FASTER.common
         public SeaaBuffer(EventHandler<SocketAsyncEventArgs> eventHandler, int bufferSize)
         {
             socketEventAsyncArgs = new SocketAsyncEventArgs();
+
+#if NET5_0_OR_GREATER
+            buffer = GC.AllocateArray<byte>(bufferSize, true);
+#else
             buffer = new byte[bufferSize];
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-            bufferPtr = (byte*)handle.AddrOfPinnedObject();
+#endif
+            bufferPtr = (byte*)Unsafe.AsPointer(ref buffer[0]);
             socketEventAsyncArgs.SetBuffer(buffer, 0, bufferSize);
             socketEventAsyncArgs.Completed += eventHandler;
         }
@@ -49,7 +57,11 @@ namespace FASTER.common
         /// </summary>
         public void Dispose()
         {
+#if !NET5_0_OR_GREATER
             handle.Free();
+#endif
+            socketEventAsyncArgs.UserToken = null;
+            socketEventAsyncArgs.Dispose();
         }
     }
 }

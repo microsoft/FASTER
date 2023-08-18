@@ -7,10 +7,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
-
-#pragma warning disable CS0162 // Unreachable code detected -- when switching on YcsbConstants 
 
 namespace FASTER.benchmark
 {
@@ -21,83 +20,112 @@ namespace FASTER.benchmark
 
     class TestLoader
     {
-        internal Options Options;
-
-        internal BenchmarkType BenchmarkType;
-        internal LockImpl LockImpl;
-        internal string Distribution;
-
+        internal readonly Options Options;
+        internal readonly string Distribution;
         internal Key[] init_keys = default;
         internal Key[] txn_keys = default;
         internal KeySpanByte[] init_span_keys = default;
         internal KeySpanByte[] txn_span_keys = default;
 
-        internal bool Parse(string[] args)
+        internal readonly BenchmarkType BenchmarkType;
+        internal readonly LockingMode LockingMode;
+        internal readonly long InitCount;
+        internal readonly long TxnCount;
+        internal readonly int MaxKey;
+        internal readonly bool RecoverMode;
+        internal readonly bool error;
+
+        // RUMD percentages. Delete is not a percent; it will fire automatically if the others do not sum to 100, saving an 'if'.
+        internal readonly int ReadPercent, UpsertPercent, RmwPercent;
+
+        internal TestLoader(string[] args)
         {
+            error = true;
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
             if (result.Tag == ParserResultType.NotParsed)
-            {
-                return false;
-            }
+                return;
+
             Options = result.MapResult(o => o, xs => new Options());
 
-            static bool verifyOption(bool isValid, string name)
+            static bool verifyOption(bool isValid, string name, string info = null)
             {
                 if (!isValid)
-                    Console.WriteLine($"Invalid {name} argument");
+                    Console.WriteLine($"Invalid {name} argument" + (string.IsNullOrEmpty(info) ? string.Empty : $": {info}"));
                 return isValid;
             }
 
             this.BenchmarkType = (BenchmarkType)Options.Benchmark;
             if (!verifyOption(Enum.IsDefined(typeof(BenchmarkType), this.BenchmarkType), "Benchmark"))
-                return false;
+                return;
 
             if (!verifyOption(Options.NumaStyle >= 0 && Options.NumaStyle <= 1, "NumaStyle"))
-                return false;
+                return;
 
-            this.LockImpl = (LockImpl)Options.LockImpl;
-            if (!verifyOption(Enum.IsDefined(typeof(LockImpl), this.LockImpl), "Lock Implementation"))
-                return false;
+            this.LockingMode = Options.LockingMode switch
+            {
+                0 => LockingMode.None,
+                1 => LockingMode.Standard,
+                _ => throw new InvalidOperationException($"Unknown Locking mode int: {Options.LockingMode}")
+            };
+            if (!verifyOption(Enum.IsDefined(typeof(LockingMode), this.LockingMode), "LockingMode"))
+                return;
 
             if (!verifyOption(Options.IterationCount > 0, "Iteration Count"))
-                return false;
+                return;
 
-            if (!verifyOption(Options.ReadPercent >= -1 && Options.ReadPercent <= 100, "Read Percent"))
-                return false;
+            if (!verifyOption(Options.HashPacking > 0, "Iteration Count"))
+                return;
 
             this.Distribution = Options.DistributionName.ToLower();
             if (!verifyOption(this.Distribution == YcsbConstants.UniformDist || this.Distribution == YcsbConstants.ZipfDist, "Distribution"))
-                return false;
+                return;
 
             if (!verifyOption(this.Options.RunSeconds >= 0, "RunSeconds"))
-                return false;
+                return;
 
-            return true;
+            var rumdPercents = Options.RumdPercents.ToArray();  // Will be non-null because we specified a default
+            if (!verifyOption(rumdPercents.Length == 4 && Options.RumdPercents.Sum() == 100 && !Options.RumdPercents.Any(x => x < 0), "rmud",
+                    "Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] must be empty or must sum to 100 with no negative elements"))
+                return;
+            else
+            {
+                this.ReadPercent = rumdPercents[0];
+                this.UpsertPercent = this.ReadPercent + rumdPercents[1];
+                this.RmwPercent = this.UpsertPercent + rumdPercents[2];
+            }
+
+            this.InitCount = this.Options.UseSmallData ? 2500480 : 250000000;
+            this.TxnCount = this.Options.UseSmallData ? 10000000 : 1000000000;
+            this.MaxKey = this.Options.UseSmallData ? 1 << 22 : 1 << 28;
+            this.RecoverMode = Options.BackupAndRestore && Options.PeriodicCheckpointMilliseconds <= 0;
+
+            error = false;
         }
 
         internal void LoadData()
         {
-            var worker = new Thread(LoadDataThreadProc);
+            Thread worker = new(LoadDataThreadProc);
             worker.Start();
             worker.Join();
         }
 
         private void LoadDataThreadProc()
         {
-            Native32.AffinitizeThreadShardedNuma(0, 2);
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                Native32.AffinitizeThreadShardedNuma(0, 2);
 
             switch (this.BenchmarkType)
             {
                 case BenchmarkType.Ycsb:
-                    FASTER_YcsbBenchmark.CreateKeyVectors(out this.init_keys, out this.txn_keys);
+                    FASTER_YcsbBenchmark.CreateKeyVectors(this, out this.init_keys, out this.txn_keys);
                     LoadData(this, this.init_keys, this.txn_keys, new FASTER_YcsbBenchmark.KeySetter());
                     break;
                 case BenchmarkType.SpanByte:
-                    FasterSpanByteYcsbBenchmark.CreateKeyVectors(out this.init_span_keys, out this.txn_span_keys);
+                    FasterSpanByteYcsbBenchmark.CreateKeyVectors(this, out this.init_span_keys, out this.txn_span_keys);
                     LoadData(this, this.init_span_keys, this.txn_span_keys, new FasterSpanByteYcsbBenchmark.KeySetter());
                     break;
                 case BenchmarkType.ConcurrentDictionaryYcsb:
-                    ConcurrentDictionary_YcsbBenchmark.CreateKeyVectors(out this.init_keys, out this.txn_keys);
+                    ConcurrentDictionary_YcsbBenchmark.CreateKeyVectors(this, out this.init_keys, out this.txn_keys);
                     LoadData(this, this.init_keys, this.txn_keys, new ConcurrentDictionary_YcsbBenchmark.KeySetter());
                     break;
                 default:
@@ -105,7 +133,7 @@ namespace FASTER.benchmark
             }
         }
 
-        private static void LoadData<TKey, TKeySetter>(TestLoader testLoader, TKey[] init_keys, TKey[] txn_keys, TKeySetter keySetter)
+        private void LoadData<TKey, TKeySetter>(TestLoader testLoader, TKey[] init_keys, TKey[] txn_keys, TKeySetter keySetter)
             where TKeySetter : IKeySetter<TKey>
         {
             if (testLoader.Options.UseSyntheticData)
@@ -136,68 +164,67 @@ namespace FASTER.benchmark
             }
         }
 
-        private static unsafe void LoadDataFromFile<TKey, TKeySetter>(string filePath, string distribution, TKey[] init_keys, TKey[] txn_keys, TKeySetter keySetter)
+        private unsafe void LoadDataFromFile<TKey, TKeySetter>(string filePath, string distribution, TKey[] init_keys, TKey[] txn_keys, TKeySetter keySetter)
             where TKeySetter : IKeySetter<TKey>
         {
             string init_filename = filePath + "/load_" + distribution + "_250M_raw.dat";
             string txn_filename = filePath + "/run_" + distribution + "_250M_1000M_raw.dat";
 
-            Console.WriteLine($"loading all keys from {init_filename} into memory...");
             var sw = Stopwatch.StartNew();
 
-            if (YcsbConstants.kUseSmallData)
+            if (this.Options.UseSmallData)
             {
                 Console.WriteLine($"loading subset of keys and txns from {txn_filename} into memory...");
                 using FileStream stream = File.Open(txn_filename, FileMode.Open, FileAccess.Read, FileShare.Read);
-                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
-                GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
-                byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
 
-                var initValueSet = new HashSet<long>();
+                var initValueSet = new HashSet<long>(init_keys.Length);
 
                 long init_count = 0;
                 long txn_count = 0;
 
                 long offset = 0;
 
-                while (true)
+                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
+                fixed (byte* chunk_ptr = chunk)
                 {
-                    stream.Position = offset;
-                    int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
-                    for (int idx = 0; idx < size && txn_count < txn_keys.Length; idx += 8)
+                    while (true)
                     {
-                        var value = *(long*)(chunk_ptr + idx);
-                        if (!initValueSet.Contains(value))
+                        stream.Position = offset;
+                        int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
+                        for (int idx = 0; idx < size && txn_count < txn_keys.Length; idx += 8)
                         {
-                            if (init_count >= init_keys.Length)
+                            var value = *(long*)(chunk_ptr + idx);
+                            if (!initValueSet.Contains(value))
                             {
-                                if (distribution == YcsbConstants.ZipfDist)
-                                    continue;
+                                if (init_count >= init_keys.Length)
+                                {
+                                    if (distribution == YcsbConstants.ZipfDist)
+                                        continue;
 
-                                // Uniform distribution at current small-data counts is about a 1% hit rate, which is too slow here, so just modulo.
-                                value %= init_keys.Length;
+                                    // Uniform distribution at current small-data counts is about a 1% hit rate, which is too slow here, so just modulo.
+                                    value %= init_keys.Length;
+                                }
+                                else
+                                {
+                                    initValueSet.Add(value);
+                                    keySetter.Set(init_keys, init_count, value);
+                                    ++init_count;
+                                }
                             }
-                            else
-                            {
-                                initValueSet.Add(value);
-                                keySetter.Set(init_keys, init_count, value);
-                                ++init_count;
-                            }
+                            keySetter.Set(txn_keys, txn_count, value);
+                            ++txn_count;
                         }
-                        keySetter.Set(txn_keys, txn_count, value);
-                        ++txn_count;
-                    }
-                    if (size == YcsbConstants.kFileChunkSize)
-                        offset += YcsbConstants.kFileChunkSize;
-                    else
-                        break;
+                        if (size == YcsbConstants.kFileChunkSize)
+                            offset += YcsbConstants.kFileChunkSize;
+                        else
+                            break;
 
-                    if (txn_count == txn_keys.Length)
-                        break;
+                        if (txn_count == txn_keys.Length)
+                            break;
+                    }
                 }
 
                 sw.Stop();
-                chunk_handle.Free();
 
                 if (init_count != init_keys.Length)
                     throw new InvalidDataException($"Init file subset load fail! Expected {init_keys.Length} keys; found {init_count}");
@@ -208,38 +235,36 @@ namespace FASTER.benchmark
                 return;
             }
 
+            Console.WriteLine($"loading all keys from {init_filename} into memory...");
             long count = 0;
 
-            using (FileStream stream = File.Open(init_filename, FileMode.Open, FileAccess.Read,
-                FileShare.Read))
+            using (FileStream stream = File.Open(init_filename, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
-                GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
-                byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
-
                 long offset = 0;
 
-                while (true)
+                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
+                fixed (byte* chunk_ptr = chunk)
                 {
-                    stream.Position = offset;
-                    int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += 8)
+                    while (true)
                     {
-                        keySetter.Set(init_keys, count, *(long*)(chunk_ptr + idx));
-                        ++count;
+                        stream.Position = offset;
+                        int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
+                        for (int idx = 0; idx < size; idx += 8)
+                        {
+                            keySetter.Set(init_keys, count, *(long*)(chunk_ptr + idx));
+                            ++count;
+                            if (count == init_keys.Length)
+                                break;
+                        }
+                        if (size == YcsbConstants.kFileChunkSize)
+                            offset += YcsbConstants.kFileChunkSize;
+                        else
+                            break;
+
                         if (count == init_keys.Length)
                             break;
                     }
-                    if (size == YcsbConstants.kFileChunkSize)
-                        offset += YcsbConstants.kFileChunkSize;
-                    else
-                        break;
-
-                    if (count == init_keys.Length)
-                        break;
                 }
-
-                chunk_handle.Free();
 
                 if (count != init_keys.Length)
                     throw new InvalidDataException($"Init file load fail! Expected {init_keys.Length} keys; found {count}");
@@ -253,34 +278,32 @@ namespace FASTER.benchmark
 
             using (FileStream stream = File.Open(txn_filename, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
-                GCHandle chunk_handle = GCHandle.Alloc(chunk, GCHandleType.Pinned);
-                byte* chunk_ptr = (byte*)chunk_handle.AddrOfPinnedObject();
-
                 count = 0;
                 long offset = 0;
 
-                while (true)
+                byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
+                fixed (byte* chunk_ptr = chunk)
                 {
-                    stream.Position = offset;
-                    int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
-                    for (int idx = 0; idx < size; idx += 8)
+                    while (true)
                     {
-                        keySetter.Set(txn_keys, count, *(long*)(chunk_ptr + idx));
-                        ++count;
+                        stream.Position = offset;
+                        int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
+                        for (int idx = 0; idx < size; idx += 8)
+                        {
+                            keySetter.Set(txn_keys, count, *(long*)(chunk_ptr + idx));
+                            ++count;
+                            if (count == txn_keys.Length)
+                                break;
+                        }
+                        if (size == YcsbConstants.kFileChunkSize)
+                            offset += YcsbConstants.kFileChunkSize;
+                        else
+                            break;
+
                         if (count == txn_keys.Length)
                             break;
                     }
-                    if (size == YcsbConstants.kFileChunkSize)
-                        offset += YcsbConstants.kFileChunkSize;
-                    else
-                        break;
-
-                    if (count == txn_keys.Length)
-                        break;
                 }
-
-                chunk_handle.Free();
 
                 if (count != txn_keys.Length)
                     throw new InvalidDataException($"Txn file load fail! Expected {txn_keys.Length} keys; found {count}");
@@ -305,8 +328,8 @@ namespace FASTER.benchmark
             sw.Stop();
             Console.WriteLine($"loaded {init_keys.Length:N0} keys in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");
 
-            RandomGenerator generator = new RandomGenerator(seed);
-            var zipf = new ZipfGenerator(generator, (int)init_keys.Length, theta: YcsbConstants.SyntheticZipfTheta);
+            RandomGenerator generator = new(seed);
+            ZipfGenerator zipf = new(generator, (int)init_keys.Length, theta: YcsbConstants.SyntheticZipfTheta);
 
             sw.Restart();
             for (int idx = 0; idx < txn_keys.Length; idx++)
@@ -323,14 +346,14 @@ namespace FASTER.benchmark
         
         internal static string DevicePath => $"{DataPath}/hlog";
 
-        internal string BackupPath => $"{DataPath}/{this.Distribution}_{(this.Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(YcsbConstants.kUseSmallData ? "2.5M_10M" : "250M_1000M")}";
+        internal string BackupPath => $"{DataPath}/{this.Distribution}_{(this.Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(this.Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 
         internal bool MaybeRecoverStore<K, V>(FasterKV<K, V> store)
         {
             // Recover database for fast benchmark repeat runs.
-            if (this.Options.BackupAndRestore && YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
+            if (RecoverMode)
             {
-                if (YcsbConstants.kUseSmallData)
+                if (this.Options.UseSmallData)
                 {
                     Console.WriteLine("Skipping Recover() for kSmallData");
                     return false;
@@ -357,12 +380,12 @@ namespace FASTER.benchmark
         internal void MaybeCheckpointStore<K, V>(FasterKV<K, V> store)
         {
             // Checkpoint database for fast benchmark repeat runs.
-            if (this.Options.BackupAndRestore && YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
+            if (RecoverMode)
             {
                 Console.WriteLine($"Checkpointing FasterKV to {this.BackupPath} for fast restart");
-                Stopwatch sw = Stopwatch.StartNew();
-                store.TakeFullCheckpoint(out _, CheckpointType.Snapshot);
-                store.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                var sw = Stopwatch.StartNew();
+                store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 sw.Stop();
                 Console.WriteLine($"  Completed checkpoint in {(double)sw.ElapsedMilliseconds / 1000:N3} seconds");
             }

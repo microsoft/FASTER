@@ -29,14 +29,13 @@ namespace FASTER.test.recovery.objectstore
         private IDevice log, objlog;
 
         [SetUp]
-        public void Setup()
+        public void Setup() => Setup(deleteDir: true);
+
+        public void Setup(bool deleteDir)
         {
-            if (test_path == null)
-            {
-                test_path = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-                if (!Directory.Exists(test_path))
-                    Directory.CreateDirectory(test_path);
-            }
+            test_path = TestUtils.MethodTestDir;
+            if (deleteDir)
+                TestUtils.RecreateDirectory(test_path);
 
             log = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.log", false);
             objlog = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.obj.log", false);
@@ -45,31 +44,39 @@ namespace FASTER.test.recovery.objectstore
                 (
                     keySpace,
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
-                    new CheckpointSettings { CheckpointDir = test_path, CheckPointType = CheckpointType.Snapshot },
+                    new CheckpointSettings { CheckpointDir = test_path },
                     new SerializerSettings<AdId, NumClicks> { keySerializer = () => new AdIdSerializer(), valueSerializer = () => new NumClicksSerializer() }
                     );
         }
 
         [TearDown]
-        public void TearDown()
+        public void TearDown() => TearDown(deleteDir: true);
+
+        public void TearDown(bool deleteDir)
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
-            TestUtils.DeleteDirectory(test_path);
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
+
+            if (deleteDir)
+                TestUtils.DeleteDirectory(test_path);
+        }
+
+        private void PrepareToRecover()
+        {
+            TearDown(deleteDir: false);
+            Setup(deleteDir: false);
         }
 
         [Test]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
         public async ValueTask ObjectRecoveryTest1([Values]bool isAsync)
         {
             Populate();
-            fht.Dispose();
-            fht = null;
-            log.Dispose();
-            objlog.Dispose();
-            Setup();
+            PrepareToRecover();
 
             if (isAsync)
                 await fht.RecoverAsync(token, token);
@@ -95,7 +102,7 @@ namespace FASTER.test.recovery.objectstore
             // Register thread with FASTER
             var session = fht.NewSession(new Functions());
 
-            // Prpcess the batch of input data
+            // Process the batch of input data
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
@@ -104,9 +111,9 @@ namespace FASTER.test.recovery.objectstore
                 if ((i + 1) % checkpointInterval == 0)
                 {
                     if (first)
-                        while (!fht.TakeFullCheckpoint(out token)) ;
+                        while (!fht.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot)) ;
                     else
-                        while (!fht.TakeFullCheckpoint(out _)) ;
+                        while (!fht.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot)) ;
 
                     fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
@@ -172,7 +179,7 @@ namespace FASTER.test.recovery.objectstore
             long[] expected = new long[numUniqueKeys];
             foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var cp = checkpointInfo.continueTokens[guid];
+                var cp = checkpointInfo.continueTokens[guid].Item2;
                 for (long i = 0; i <= cp.UntilSerialNo; i++)
                 {
                     var id = i % numUniqueKeys;
@@ -195,12 +202,7 @@ namespace FASTER.test.recovery.objectstore
             // Assert if expected is same as found
             for (long i = 0; i < numUniqueKeys; i++)
             {
-                Assert.IsTrue(
-                    expected[i] == outputArray[i].value.numClicks,
-                    "Debug error for AdId {0}: Expected ({1}), Found({2})", 
-                    inputArray[i].Item1.adId,
-                    expected[i], 
-                    outputArray[i].value.numClicks);
+                Assert.AreEqual(expected[i], outputArray[i].value.numClicks, $"AdId {inputArray[i].Item1.adId}");
             }
         }
     }

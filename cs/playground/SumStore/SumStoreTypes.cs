@@ -39,37 +39,40 @@ namespace SumStore
 
     public sealed class Functions : FunctionsBase<AdId, NumClicks, Input, Output, Empty>
     {
-        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
+        public override void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
         {
-            Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
+            Console.WriteLine($"Session {sessionID} ({(sessionName ?? "null")}) reports persistence until {commitPoint.UntilSerialNo}");
         }
 
         // Read functions
-        public override void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public override bool SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst)
+        public override bool ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
         {
             dst.value = value;
+            return true;
         }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public override bool InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo)
         {
             value = input.numClicks;
-        }
+            return true;
+         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override bool CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RMWInfo rmwInfo)
         {
             newValue.numClicks = oldValue.numClicks + input.numClicks.numClicks;
-        }
+            return true;        }
     }
 }

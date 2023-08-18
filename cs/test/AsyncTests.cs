@@ -11,9 +11,8 @@ using FASTER.test.recovery.sumstore;
 
 namespace FASTER.test.async
 {
-
     [TestFixture]
-    public class RecoveryTests
+    public class AsyncRecoveryTests
     {
         private FasterKV<AdId, NumClicks> fht1;
         private FasterKV<AdId, NumClicks> fht2;
@@ -23,23 +22,27 @@ namespace FASTER.test.async
 
         [TestCase(CheckpointType.FoldOver)]
         [TestCase(CheckpointType.Snapshot)]
-        [Category("FasterKV")]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async Task AsyncRecoveryTest1(CheckpointType checkpointType)
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/SimpleRecoveryTest2.log", deleteOnClose: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/AsyncRecoveryTest1.log", deleteOnClose: true);
 
-            Directory.CreateDirectory(TestContext.CurrentContext.TestDirectory + "/checkpoints4");
+            string testPath = TestUtils.MethodTestDir + "/checkpoints4";
+            Directory.CreateDirectory(testPath);
 
             fht1 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath }
                 );
 
             fht2 = new FasterKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestContext.CurrentContext.TestDirectory + "/checkpoints4", CheckPointType = checkpointType }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = testPath }
                 );
 
             int numOps = 5000;
@@ -70,12 +73,12 @@ namespace FASTER.test.async
             }
 
             // does not require session
-            fht1.TakeFullCheckpoint(out _);
+            fht1.TryInitiateFullCheckpoint(out _, checkpointType);
             await fht1.CompleteCheckpointAsync();
 
             s2.CompletePending(true,false);
 
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             await fht1.CompleteCheckpointAsync();
 
             s2.Dispose();
@@ -85,57 +88,65 @@ namespace FASTER.test.async
 
             fht2.Recover(token); // sync, does not require session
 
-            var guid = s1.ID;
-            using (var s3 = fht2.For(functions).ResumeSession<AdSimpleFunctions>(guid, out CommitPoint lsn))
+            using (var s3 = fht2.For(functions).ResumeSession<AdSimpleFunctions>(s1.ID, out CommitPoint lsn))
             {
-                Assert.IsTrue(lsn.UntilSerialNo == numOps - 1);
+                Assert.AreEqual(numOps - 1, lsn.UntilSerialNo);
 
                 for (int key = 0; key < numOps; key++)
                 {
                     var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, s3.SerialNo);
 
-                    if (status == Status.PENDING)
+                    if (status.IsPending)
                         s3.CompletePending(true,true);
                     else
                     {
-                        Assert.IsTrue(output.value.numClicks == key);
+                        Assert.AreEqual(key, output.value.numClicks);
                     }
                 }
             }
 
             fht2.Dispose();
             log.Dispose();
-            new DirectoryInfo(TestContext.CurrentContext.TestDirectory + "/checkpoints4").Delete(true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
     }
 
     public class AdSimpleFunctions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.numClicks == key.adId);
+            Assert.IsTrue(status.Found);
+            Assert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions
-        public override void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
+        {
+            dst.value = value;
+            return true;
+        }
 
-        public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
+        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
+        {
+            dst.value = value;
+            return true;
+        }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value) => value = input.numClicks;
+        public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo) { value = input.numClicks; return true; }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RMWInfo rmwInfo)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
+            return true;
         }
     }
 }

@@ -10,7 +10,7 @@ header:
       url: "/docs/quick-start-guide/"
 excerpt: >
   A fast concurrent persistent key-value store and log, in C# and C++.<br />
-  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v1.9.3">Latest release v1.9.3</a></small>
+  <small><a href="https://github.com/microsoft/FASTER/releases/tag/v2.5.0">Latest release v2.5.0</a></small>
 features:
   - image_path: /assets/images/faster-feature-1.png
     alt: "feature1"
@@ -63,22 +63,24 @@ NVMe SSDs using less than a core of CPU, and scaling well in a multi-threaded se
 
 # News and Updates
 
+* Version 2.5 of FASTER has been released with various improvements. A notable new feature is the lockable context which allows users to perform multi-key operations with locking (i.e., transactions).
+
+* Version 2 of FASTER has been released with many API and performance improvements across the board. Learn more about the features in v2 at https://github.com/microsoft/FASTER/pull/563
+
 * A high-performance remote (TCP) interface to FasterKV is now available! It provides linear server scalability with increasing client sessions, with similar server throughput as embedded FasterKV. We provide a default C# client as well as an ability to extend to other protocols. Learn more [here](docs/remote-basics/).
 
-* Async API support has been improved, with async versions of `Upsert` and `Delete` added. Spin-wait has been significantly reduced in the codebase.
-
 * We support variable-length keys and values in FasterKV C# via `Memory<byte>` and more generally `Memory<T> where T : unmanaged` as key/value/input types. We also added
-a new type called `SpanByte` to represent variable-length keys and values. See the sample [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples/StoreVarLenTypes) for details on these capabilities. This is in addition to the existing object-log support for class types.
+a new type called `SpanByte` to represent variable-length keys and values. See the sample [here](https://github.com/Microsoft/FASTER/tree/main/cs/samples/StoreVarLenTypes) for details on these capabilities. This is in addition to the existing object-log support for class types.
 
 * We support C# async in FASTER KV (and FASTER Log). See the guides for [FasterKV](docs/fasterkv-basics/) and [FasterLog](docs/fasterlog-basics/) 
-for more information. Also, check out the samples [here](https://github.com/Microsoft/FASTER/tree/master/cs/samples).
+for more information. Also, check out the samples [here](https://github.com/Microsoft/FASTER/tree/main/cs/samples).
 
 
 # Getting Started
 
 * Quick-Start Guide and Docs: [here](docs/quick-start-guide/)
 * Source Code: [https://github.com/microsoft/FASTER](https://github.com/microsoft/FASTER)
-* C# Samples: [https://github.com/microsoft/FASTER/tree/master/cs/samples](https://github.com/microsoft/FASTER/tree/master/cs/samples)
+* C# Samples: [https://github.com/microsoft/FASTER/tree/main/cs/samples](https://github.com/microsoft/FASTER/tree/main/cs/samples)
 * C# NuGet binary feed:
   * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
   * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)
@@ -91,26 +93,25 @@ Thanks to [Minimal Mistakes](https://github.com/mmistakes/minimal-mistakes) for 
 # Embedded key-value store sample
 
 ```cs
-public static void Main()
+public static void Test()
 {
-  using var log = Devices.CreateLogDevice("hlog.log"); // backing storage device
-  using var store = new FasterKV<long, long>(1L << 20, // hash table size (number of 64-byte buckets)
-     new LogSettings { LogDevice = log } // log settings (devices, page size, memory size, etc.)
-     );
+   using var settings = new FasterKVSettings<long, long>("c:/temp"); // backing storage device
+   using var store = new FasterKV<long, long>(settings);
 
-  // Create a session per sequence of interactions with FASTER
-  using var s = store.NewSession(new SimpleFunctions<long, long>());
-  long key = 1, value = 1, input = 10, output = 0;
-  
-  // Upsert and Read
-  s.Upsert(ref key, ref value);
-  s.Read(ref key, ref output);
-  Debug.Assert(output == value);
-  
-  // Read-Modify-Write (add input to value)
-  s.RMW(ref key, ref input);
-  s.RMW(ref key, ref input);
-  s.Read(ref key, ref output);
-  Debug.Assert(output == value + 20);
+   // Create a session per sequence of interactions with FASTER
+   // We use default callback functions with a custom merger: RMW merges input by adding it to value
+   using var session = store.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
+   
+   long key = 1, value = 1, input = 10, output = 0;
+
+   // Upsert and Read
+   session.Upsert(ref key, ref value);
+   session.Read(ref key, ref output);
+   Debug.Assert(output == value);
+
+   // Read-Modify-Write (add input to value)
+   session.RMW(ref key, ref input);
+   session.RMW(ref key, ref input, ref output);
+   Debug.Assert(output == value + 20);
 }
 ```

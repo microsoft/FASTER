@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
@@ -28,7 +27,17 @@ namespace FASTER.core
         /// <param name="spanByte"></param>
         public SpanByteAndMemory(SpanByte spanByte)
         {
+            if (spanByte.Serialized) throw new Exception("Cannot create new SpanByteAndMemory using serialized SpanByte");
             SpanByte = spanByte;
+            Memory = default;
+        }
+
+        /// <summary>
+        /// Constructor using SpanByte at given (fixed) pointer, of given length
+        /// </summary>
+        public SpanByteAndMemory(void* pointer, int length)
+        {
+            SpanByte = new SpanByte(length, (IntPtr)pointer);
             Memory = default;
         }
 
@@ -50,6 +59,19 @@ namespace FASTER.core
             SpanByte = default;
             SpanByte.Invalid = true;
             Memory = memory;
+        }
+
+        /// <summary>
+        /// Constructor using given IMemoryOwner and length
+        /// </summary>
+        /// <param name="memory"></param>
+        /// <param name="length"></param>
+        public SpanByteAndMemory(IMemoryOwner<byte> memory, int length)
+        {
+            SpanByte = default;
+            SpanByte.Invalid = true;
+            Memory = memory;
+            SpanByte.Length = length;
         }
 
         /// <summary>

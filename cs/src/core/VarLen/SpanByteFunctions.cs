@@ -10,62 +10,58 @@ namespace FASTER.core
     /// </summary>
     public class SpanByteFunctions<Key, Output, Context> : FunctionsBase<Key, SpanByte, SpanByte, Output, Context>
     {
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        /// <param name="locking"></param>
-        public SpanByteFunctions(bool locking = false) : base(locking) { }
-
         /// <inheritdoc />
-        public override void SingleWriter(ref Key key, ref SpanByte src, ref SpanByte dst)
+        public override bool SingleWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             src.CopyTo(ref dst);
+            return true;
         }
 
         /// <inheritdoc />
-        public override bool ConcurrentWriter(ref Key key, ref SpanByte src, ref SpanByte dst)
+        public override bool ConcurrentWriter(ref Key key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo)
         {
-            if (locking) dst.SpinLock();
-
-            // We can write the source (src) data to the existing destination (dst) in-place, 
-            // only if there is sufficient space
-            if (dst.Length < src.Length || dst.IsMarkedReadOnly())
+            if (dst.Length < src.Length)
             {
-                dst.MarkReadOnly();
-                if (locking) dst.Unlock();
                 return false;
             }
 
-            // Option 1: write the source data, leaving the destination size unchanged. You will need
+            // We can adjust the length header on the serialized log, if we wish.
+            // This method will also zero out the extra space to retain log scan correctness.
+            dst.UnmarkExtraMetadata();
+            dst.ShrinkSerializedLength(src.Length);
+
+            // Write the source data, leaving the destination size unchanged. You will need
             // to mange the actual space used by the value if you stop here.
             src.CopyTo(ref dst);
 
-            // We can adjust the length header on the serialized log, if we wish.
-            // This method will also zero out the extra space to retain log scan correctness.
-            dst.ShrinkSerializedLength(src.Length);
-
-            if (locking) dst.Unlock();
             return true;
         }
 
         /// <inheritdoc/>
-        public override void InitialUpdater(ref Key key, ref SpanByte input, ref SpanByte value)
+        public override bool InitialUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output, ref RMWInfo rmwInfo)
         {
             input.CopyTo(ref value);
+            return true;
         }
 
         /// <inheritdoc/>
-        public override void CopyUpdater(ref Key key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue)
+        public override bool CopyUpdater(ref Key key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref Output output, ref RMWInfo rmwInfo)
         {
             oldValue.CopyTo(ref newValue);
+            return true;
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref SpanByte input, ref SpanByte value)
+        public override bool InPlaceUpdater(ref Key key, ref SpanByte input, ref SpanByte value, ref Output output, ref RMWInfo rmwInfo)
         {
             // The default implementation of IPU simply writes input to destination, if there is space
-            return ConcurrentWriter(ref key, ref input, ref value);
+            UpsertInfo upsertInfo = new(ref rmwInfo);
+            return ConcurrentWriter(ref key, ref input, ref input, ref value, ref output, ref upsertInfo);
         }
+
+        /// <inheritdoc/>
+        /// <remarks>Avoids the "value = default" for added tombstone record, which do not have space for the payload</remarks>
+        public override bool SingleDeleter(ref Key key, ref SpanByte value, ref DeleteInfo deleteInfo) => true;
     }
 
     /// <summary>
@@ -73,43 +69,28 @@ namespace FASTER.core
     /// </summary>
     public class SpanByteFunctions<Context> : SpanByteFunctions<SpanByte, SpanByteAndMemory, Context>
     {
-        readonly MemoryPool<byte> memoryPool;
+        private protected readonly MemoryPool<byte> memoryPool;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
-        /// <param name="locking"></param>
-        public SpanByteFunctions(MemoryPool<byte> memoryPool = default, bool locking = false) : base(locking)
+        public SpanByteFunctions(MemoryPool<byte> memoryPool = default)
         {
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
 
         /// <inheritdoc />
-        public unsafe override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
         {
             value.CopyTo(ref dst, memoryPool);
+            return true;
         }
 
         /// <inheritdoc />
-        public unsafe override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        public unsafe override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
         {
             value.CopyTo(ref dst, memoryPool);
-        }
-
-        /// <inheritdoc />
-        public override bool SupportsLocking => locking;
-
-        /// <inheritdoc />
-        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
-        {
-            value.SpinLock();
-        }
-
-        /// <inheritdoc />
-        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
-        {
-            value.Unlock();
             return true;
         }
     }
@@ -119,37 +100,17 @@ namespace FASTER.core
     /// </summary>
     public class SpanByteFunctions_ByteArrayOutput<Context> : SpanByteFunctions<SpanByte, byte[], Context>
     {
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        /// <param name="locking"></param>
-        public SpanByteFunctions_ByteArrayOutput(bool locking = false) : base(locking) { }
-
         /// <inheritdoc />
-        public override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
+        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst, ref ReadInfo readInfo)
         {
             dst = value.ToByteArray();
+            return true;
         }
 
         /// <inheritdoc />
-        public override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst)
+        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref byte[] dst, ref ReadInfo readInfo)
         {
             dst = value.ToByteArray();
-        }
-
-        /// <inheritdoc />
-        public override bool SupportsLocking => locking;
-
-        /// <inheritdoc />
-        public override void Lock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, ref long lockContext)
-        {
-            value.SpinLock();
-        }
-
-        /// <inheritdoc />
-        public override bool Unlock(ref RecordInfo recordInfo, ref SpanByte key, ref SpanByte value, LockType lockType, long lockContext)
-        {
-            value.Unlock();
             return true;
         }
     }

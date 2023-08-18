@@ -3,43 +3,47 @@
 
 using System;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
-
 namespace FASTER.core
 {
     /// <summary>
-    /// Lightweight iterator for memory page (copied to buffer).
-    /// Can be used outside epoch protection.
+    /// Lightweight iterator for memory page (copied to buffer). GetNext() can be used outside epoch protection and locking,
+    /// but ctor must be called within epoch protection.
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     class MemoryPageScanIterator<Key, Value> : IFasterScanIterator<Key, Value>
     {
         readonly Record<Key, Value>[] page;
-        readonly int end;
+        readonly long pageStartAddress;
+        readonly int recordSize;
+        readonly int start, end;
         int offset;
-        
 
-        public MemoryPageScanIterator(Record<Key, Value>[] page, int start, int end)
+        public MemoryPageScanIterator(Record<Key, Value>[] page, int start, int end, long pageStartAddress, int recordSize)
         {
             this.page = new Record<Key, Value>[page.Length];
             Array.Copy(page, start, this.page, start, end - start);
             offset = start - 1;
+            this.start = start;
             this.end = end;
+            this.pageStartAddress = pageStartAddress;
+            this.recordSize = recordSize;
         }
 
-        public long CurrentAddress => offset;
+        public long CurrentAddress => pageStartAddress + offset * recordSize;
 
-        public long NextAddress => offset + 1;
+        public long NextAddress => pageStartAddress + (offset + 1) * recordSize;
+
+        public long BeginAddress => pageStartAddress + start * recordSize;
+
+        public long EndAddress => pageStartAddress + end * recordSize;
 
         public void Dispose()
         {
         }
 
-        public ref Key GetKey()
-        {
-            return ref page[offset].key;
-        }
+        public ref Key GetKey() => ref page[offset].key;
+        public ref Value GetValue() => ref page[offset].value;
 
         public bool GetNext(out RecordInfo recordInfo)
         {
@@ -75,9 +79,7 @@ namespace FASTER.core
             return r;
         }
 
-        public ref Value GetValue()
-        {
-            return ref page[offset].value;
-        }
+        /// <inheritdoc/>
+        public override string ToString() => $"BA {BeginAddress}, EA {EndAddress}, CA {CurrentAddress}, NA {NextAddress}, start {start}, end {end}, recSize {recordSize}, pageSA {pageStartAddress}";
     }
 }

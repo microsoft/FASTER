@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 1591
-
 using System.Threading;
 using FASTER.core;
 
@@ -35,7 +33,6 @@ namespace FASTER.test.recovery.objectstore
             writer.Write(obj.adId);
         }
     }
-
 
     public class Input
     {
@@ -71,24 +68,37 @@ namespace FASTER.test.recovery.objectstore
     public class Functions : FunctionsBase<AdId, NumClicks, Input, Output, Empty>
     {
         // Read functions
-        public override void SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst) => dst.value = value;
+        public override bool SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
+        {
+            dst.value = value;
+            return true;
+        }
 
-        public override void ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst) => dst.value = value;
+        public override bool ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
+        {
+            dst.value = value;
+            return true;
+        }
 
         // RMW functions
-        public override void InitialUpdater(ref AdId key, ref Input input, ref NumClicks value) => value = input.numClicks;
+        public override bool InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo)
+        {
+            value = input.numClicks;
+            return true;
+        }
 
-        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value)
+        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref Input input, ref NumClicks oldValue) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref Input input, ref NumClicks oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
 
-        public override void CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue)
+        public override bool CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RMWInfo rmwInfo)
         {
             newValue = new NumClicks { numClicks = oldValue.numClicks + input.numClicks.numClicks };
+            return true;
         }
     }
 }

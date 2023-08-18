@@ -26,7 +26,7 @@ namespace StoreVarLenTypes
             // and byte as Context (to verify read result in callback)
             var s = store.For(new CustomMemoryFunctions<byte>()).NewSession<CustomMemoryFunctions<byte>>();
 
-            Random r = new Random(100);
+            Random r = new(100);
 
             // Allocate space for key and value operations
             var keyMem = new Memory<byte>(new byte[1000]);
@@ -61,11 +61,11 @@ namespace StoreVarLenTypes
                 var expectedValue = valueMem.Slice(0, valLen);
                 expectedValue.Span.Fill((byte)valLen);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     s.CompletePending(true);
                 else
                 {
-                    if ((status != Status.OK) || (!output.Item1.Memory.Slice(0, output.Item2).Span.SequenceEqual(expectedValue.Span)))
+                    if (!status.Found || (!output.Item1.Memory.Slice(0, output.Item2).Span.SequenceEqual(expectedValue.Span)))
                     {
                         output.Item1.Dispose();
                         success = false;

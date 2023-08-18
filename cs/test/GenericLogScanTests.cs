@@ -2,56 +2,81 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
+using static FASTER.test.BlittableFASTERScanTests;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class GenericFASTERScanTests
     {
         private FasterKV<MyKey, MyValue> fht;
         private IDevice log, objlog;
-        const int totalRecords = 2000;
+        const int totalRecords = 250;
+        private string path;
 
         [SetUp]
         public void Setup()
         {
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericFASTERScanTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/GenericFASTERScanTests.obj.log", deleteOnClose: true);
+            path = MethodTestDir + "/";
 
-            fht = new FasterKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9 },
-                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
+            // Clean up log files from previous test runs in case they weren't cleaned up
+            DeleteDirectory(path, wait: true);
         }
 
         [TearDown]
         public void TearDown()
         {
-            fht.Dispose();
+            fht?.Dispose();
             fht = null;
-            log.Dispose();
-            objlog.Dispose();
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
+
+            DeleteDirectory(path);
         }
 
+        internal struct GenericPushScanTestFunctions : IScanIteratorFunctions<MyKey, MyValue>
+        {
+            internal long numRecords;
+
+            public bool OnStart(long beginAddress, long endAddress) => true;
+
+            public bool ConcurrentReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
+
+            public bool SingleReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords)
+            {
+                Assert.AreEqual(numRecords, key.key, $"log scan 1: key");
+                Assert.AreEqual(numRecords, value.value, $"log scan 1: value");
+
+                ++numRecords;
+                return true;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+
+            public void OnStop(bool completed, long numberOfRecords) { }
+        }
 
         [Test]
         [Category("FasterKV")]
-        public void DiskWriteScanBasicTest()
+        [Category("Smoke")]
+        public void DiskWriteScanBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
-            using var session = fht.For(new MyFunctions()).NewSession<MyFunctions>();
+            log = CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.log");
+            objlog = CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.obj.log");
+            fht = new (128,
+                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
+                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
+                      lockingMode: scanIteratorType == ScanIteratorType.Pull ? LockingMode.None : LockingMode.Standard
+                      );
 
-            var s = fht.Log.Subscribe(new LogObserver());
+            using var session = fht.For(new MyFunctions()).NewSession<MyFunctions>();
+            using var s = fht.Log.Subscribe(new LogObserver());
 
             var start = fht.Log.TailAddress;
             for (int i = 0; i < totalRecords; i++)
@@ -59,35 +84,31 @@ namespace FASTER.test
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
                 session.Upsert(ref _key, ref _value, Empty.Default, 0);
-                if (i % 100 == 0) fht.Log.FlushAndEvict(true);
+                if (i % 100 == 0)
+                    fht.Log.FlushAndEvict(true);
             }
             fht.Log.FlushAndEvict(true);
-            using (var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.SinglePageBuffering))
-            {
 
-                int val = 0;
-                while (iter.GetNext(out RecordInfo recordInfo, out MyKey key, out MyValue value))
+            GenericPushScanTestFunctions scanIteratorFunctions = new();
+
+            void scanAndVerify(ScanBufferingMode sbm)
+            {
+                scanIteratorFunctions.numRecords = 0;
+
+                if (scanIteratorType == ScanIteratorType.Pull)
                 {
-                    Assert.IsTrue(key.key == val);
-                    Assert.IsTrue(value.value == val);
-                    val++;
+                    using var iter = fht.Log.Scan(start, fht.Log.TailAddress, sbm);
+                    while (iter.GetNext(out var recordInfo))
+                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default);
                 }
-                Assert.IsTrue(totalRecords == val);
+                else
+                    Assert.IsTrue(fht.Log.Scan(ref scanIteratorFunctions, start, fht.Log.TailAddress, sbm), "Failed to complete push iteration");
+
+                Assert.AreEqual(totalRecords, scanIteratorFunctions.numRecords);
             }
 
-            using (var iter = fht.Log.Scan(start, fht.Log.TailAddress, ScanBufferingMode.DoublePageBuffering))
-            {
-                int val = 0;
-                while (iter.GetNext(out RecordInfo recordInfo, out MyKey key, out MyValue value))
-                {
-                    Assert.IsTrue(key.key == val);
-                    Assert.IsTrue(value.value == val);
-                    val++;
-                }
-                Assert.IsTrue(totalRecords == val);
-            }
-
-            s.Dispose();
+            scanAndVerify(ScanBufferingMode.SinglePageBuffering);
+            scanAndVerify(ScanBufferingMode.DoublePageBuffering);
         }
 
         class LogObserver : IObserver<IFasterScanIterator<MyKey, MyValue>>
@@ -96,7 +117,7 @@ namespace FASTER.test
 
             public void OnCompleted()
             {
-                Assert.IsTrue(val == totalRecords);
+                Assert.AreEqual(val == totalRecords, $"LogObserver.OnCompleted: totalRecords");
             }
 
             public void OnError(Exception error)
@@ -107,8 +128,8 @@ namespace FASTER.test
             {
                 while (iter.GetNext(out _, out MyKey key, out MyValue value))
                 {
-                    Assert.IsTrue(key.key == val);
-                    Assert.IsTrue(value.value == val);
+                    Assert.AreEqual(val, key.key, $"LogObserver.OnNext: key");
+                    Assert.AreEqual(val, value.value, $"LogObserver.OnNext: value");
                     val++;
                 }
             }

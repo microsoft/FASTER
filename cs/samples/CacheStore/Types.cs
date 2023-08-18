@@ -82,7 +82,7 @@ namespace CacheStore
     /// </summary>
     public class CacheFunctions : SimpleFunctions<CacheKey, CacheValue, CacheContext>
     {
-        public override void ReadCompletionCallback(ref CacheKey key, ref CacheValue input, ref CacheValue output, CacheContext ctx, Status status)
+        public override void ReadCompletionCallback(ref CacheKey key, ref CacheValue input, ref CacheValue output, CacheContext ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx.type == 0)
             {
@@ -93,7 +93,7 @@ namespace CacheStore
             {
                 long ticks = Stopwatch.GetTimestamp() - ctx.ticks;
 
-                if (status == Status.NOTFOUND)
+                if (!status.Found)
                     Console.WriteLine("Async: Value not found, latency = {0}ms", 1000 * (ticks - ctx.ticks) / (double)Stopwatch.Frequency);
 
                 if (output.value != key.key)

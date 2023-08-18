@@ -18,6 +18,7 @@ namespace FASTER.core
     {
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
+        private readonly bool disableFileBuffering;
         private readonly bool osReadBuffering;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
@@ -35,13 +36,14 @@ namespace FASTER.core
         /// <param name="filename">File name (or prefix) with path</param>
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
+        /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="osReadBuffering">Enable OS read buffering</param>
-        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false)
+        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false)
             : base(filename, GetSectorSize(filename), capacity)
         {
-            pool = new SectorAlignedBufferPool(1, 1);
+            pool = new(1, 1);
             ThrottleLimit = 120;
 
             string path = new FileInfo(filename).Directory.FullName;
@@ -51,10 +53,29 @@ namespace FASTER.core
             this._disposed = false;
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
+            this.disableFileBuffering = disableFileBuffering;
             this.osReadBuffering = osReadBuffering;
-            logHandles = new SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)>();
+            logHandles = new();
             if (recoverDevice)
                 RecoverFiles();
+        }
+
+        /// <inheritdoc />
+        public override void Reset()
+        {
+            while (logHandles.Count > 0)
+            {
+                foreach (var entry in logHandles)
+                {
+                    if (logHandles.TryRemove(entry.Key, out _))
+                    {
+                        entry.Value.Item1.Dispose();
+                        entry.Value.Item2.Dispose();
+                        if (deleteOnClose)
+                            File.Delete(GetSegmentName(entry.Key));
+                    }
+                }
+            }
         }
 
         /// <inheritdoc />
@@ -63,15 +84,19 @@ namespace FASTER.core
 
         private void RecoverFiles()
         {
-            FileInfo fi = new FileInfo(FileName); // may not exist
+            FileInfo fi = new(FileName); // may not exist
             DirectoryInfo di = fi.Directory;
             if (!di.Exists) return;
 
             string bareName = fi.Name;
 
-            List<int> segids = new List<int>();
+            List<int> segids = new();
             foreach (FileInfo item in di.GetFiles(bareName + "*"))
             {
+                if (item.Name == bareName)
+                {
+                    continue;
+                }
                 segids.Add(Int32.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
             }
             segids.Sort();
@@ -114,7 +139,7 @@ namespace FASTER.core
             bool gotHandle;
             int numBytes = 0;
 
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
             UnmanagedMemoryManager<byte> umm = default;
 #else
             SectorAlignedMemory memory = default;
@@ -128,7 +153,7 @@ namespace FASTER.core
                 if (gotHandle)
                 {
                     logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
                     unsafe
                     {
                         umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
@@ -154,7 +179,7 @@ namespace FASTER.core
                 Interlocked.Decrement(ref numPending);
 
                 // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                 memory?.Return();
 #endif
                 if (logReadHandle != null) streampool?.Return(logReadHandle);
@@ -170,9 +195,9 @@ namespace FASTER.core
                 {
                     try
                     {
-                        logReadHandle = await streampool.GetAsync();
+                        logReadHandle = await streampool.GetAsync().ConfigureAwait(false);
                         logReadHandle.Seek((long)sourceAddress, SeekOrigin.Begin);
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
                         unsafe
                         {
                             umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
@@ -197,7 +222,7 @@ namespace FASTER.core
                         Interlocked.Decrement(ref numPending);
 
                         // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                         memory?.Return();
 #endif
                         if (logReadHandle != null) streampool?.Return(logReadHandle);
@@ -210,9 +235,9 @@ namespace FASTER.core
                
                 try
                 {
-                    numBytes = await readTask;
+                    numBytes = await readTask.ConfigureAwait(false);
 
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                     unsafe
                     {
                         fixed (void* source = memory.buffer)
@@ -233,7 +258,7 @@ namespace FASTER.core
                     Interlocked.Decrement(ref numPending);
 
                     // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                     memory?.Return();
 #endif
                     // Sequentialize all reads from same handle
@@ -267,7 +292,7 @@ namespace FASTER.core
             Task writeTask = default;
             bool gotHandle;
 
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
             UnmanagedMemoryManager<byte> umm = default;
 #else
             SectorAlignedMemory memory = default;
@@ -283,7 +308,7 @@ namespace FASTER.core
                 if (gotHandle)
                 {
                     logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
                     unsafe
                     {
                         umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
@@ -316,7 +341,7 @@ namespace FASTER.core
                 Interlocked.Decrement(ref numPending);
 
                 // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                 memory?.Return();
 #endif
                 if (logWriteHandle != null) streampool?.Return(logWriteHandle);
@@ -332,9 +357,9 @@ namespace FASTER.core
                 {
                     try
                     {
-                        logWriteHandle = await streampool.GetAsync();
+                        logWriteHandle = await streampool.GetAsync().ConfigureAwait(false);
                         logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-#if NETSTANDARD2_1
+#if NETSTANDARD2_1 || NET
                         unsafe
                         {
                             umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
@@ -366,7 +391,7 @@ namespace FASTER.core
                         Interlocked.Decrement(ref numPending);
 
                         // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                         memory?.Return();
 #endif
                         if (logWriteHandle != null) streampool?.Return(logWriteHandle);
@@ -379,7 +404,7 @@ namespace FASTER.core
 
                 try
                 {
-                    await writeTask;
+                    await writeTask.ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -394,11 +419,11 @@ namespace FASTER.core
                     Interlocked.Decrement(ref numPending);
 
                     // Perform pool returns and disposals
-#if !NETSTANDARD2_1
+#if !(NETSTANDARD2_1 || NET)
                     memory?.Return();
 #endif
                     // Sequentialize all writes to same handle
-                    await ((FileStream)logWriteHandle).FlushAsync();
+                    await ((FileStream)logWriteHandle).FlushAsync().ConfigureAwait(false);
                     streampool?.Return(logWriteHandle);
 
                     // Issue user callback
@@ -417,8 +442,11 @@ namespace FASTER.core
             {
                 logHandle.Item1.Dispose();
                 logHandle.Item2.Dispose();
-                File.Delete(GetSegmentName(segment));
             }
+            try
+            {
+                File.Delete(GetSegmentName(segment));
+            } catch { }
         }
 
         /// <summary>
@@ -438,11 +466,10 @@ namespace FASTER.core
         {
             if (segmentSize > 0) return segmentSize;
             var pool = GetOrAddHandle(segment);
-            long size;
             if (!pool.Item1.TryGet(out var stream))
-                stream = pool.Item1.GetAsync().GetAwaiter().GetResult();
+                stream = pool.Item1.Get();
 
-            size = stream.Length;
+            long size = stream.Length;
             pool.Item1.Return(stream);
             return size;
         }
@@ -464,21 +491,16 @@ namespace FASTER.core
             pool.Free();
         }
 
-
-        private string GetSegmentName(int segmentId)
-        {
-            return FileName + "." + segmentId;
-        }
+        private string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
         private static uint GetSectorSize(string filename)
         {
-#if NETSTANDARD
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 Debug.WriteLine("Assuming 512 byte sector alignment for disk with file " + filename);
                 return 512;
             }
-#endif
+
             if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3),
                                         out uint lpSectorsPerCluster,
                                         out uint _sectorSize,
@@ -512,10 +534,12 @@ namespace FASTER.core
         {
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
-                (FileOptions)FILE_FLAG_NO_BUFFERING |
                 FileOptions.WriteThrough |
                 FileOptions.Asynchronous |
                 FileOptions.None;
+
+            if (disableFileBuffering)
+                fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
             var logWriteHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,

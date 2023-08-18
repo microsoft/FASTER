@@ -1,12 +1,7 @@
 ﻿using FASTER.core;
-using Microsoft.Azure.Storage;
-using Microsoft.Azure.Storage.Blob;
-using System;
+using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace FASTER.devices
@@ -16,46 +11,69 @@ namespace FASTER.devices
     /// </summary>
     public class AzureStorageNamedDeviceFactory : INamedDeviceFactory
     {
-        private readonly CloudBlobClient client;
-        private CloudBlobDirectory baseRef;
-
-        /// <summary>
-        /// Create instance of factory for Azure devices
-        /// </summary>
-        /// <param name="client"></param>
-        public AzureStorageNamedDeviceFactory(CloudBlobClient client)
-        {
-            this.client = client;
-        }
+        readonly BlobUtilsV12.ServiceClients pageBlobAccount;
+        BlobUtilsV12.ContainerClients pageBlobContainer;
+        BlobUtilsV12.BlobDirectory pageBlobDirectory;
+        readonly ILogger logger;
 
         /// <summary>
         /// Create instance of factory for Azure devices
         /// </summary>
         /// <param name="connectionString"></param>
-        public AzureStorageNamedDeviceFactory(string connectionString)
-            : this(CloudStorageAccount.Parse(connectionString).CreateCloudBlobClient())
+        /// <param name="logger"></param>
+        public AzureStorageNamedDeviceFactory(string connectionString, ILogger logger = null)
+            : this(BlobUtilsV12.GetServiceClients(connectionString), logger)
         {
         }
+
+        /// <summary>
+        /// Create instance of factory for Azure devices
+        /// </summary>
+        /// <param name="pageBlobAccount"></param>
+        /// <param name="logger"></param>
+        AzureStorageNamedDeviceFactory(BlobUtilsV12.ServiceClients pageBlobAccount, ILogger logger = null)
+        {
+            this.pageBlobAccount = pageBlobAccount;
+            this.logger = logger;
+        }
+
+        /// <inheritdoc />
+        public void Initialize(string baseName)
+            => InitializeAsync(baseName).GetAwaiter().GetResult();
+            
+        
+        async Task InitializeAsync(string baseName)
+        {
+            var path = baseName.Split('/');
+            var containerName = path[0];
+            var dirName = string.Join("/", path.Skip(1));
+
+            this.pageBlobContainer = BlobUtilsV12.GetContainerClients(this.pageBlobAccount, containerName);
+            if (!await this.pageBlobContainer.WithRetries.ExistsAsync())
+                await this.pageBlobContainer.WithRetries.CreateIfNotExistsAsync();
+
+            pageBlobDirectory = new BlobUtilsV12.BlobDirectory(pageBlobContainer, dirName);
+        }
+
 
         /// <inheritdoc />
         public void Delete(FileDescriptor fileInfo)
         {
+            var dir = fileInfo.directoryName == "" ? pageBlobDirectory : pageBlobDirectory.GetSubDirectory(fileInfo.directoryName);
+
             if (fileInfo.fileName != null)
             {
-                var dir = fileInfo.directoryName == "" ? baseRef : baseRef.GetDirectoryReference(fileInfo.directoryName);
-
-                // We only delete shard 0
-                dir.GetBlobReference(fileInfo.fileName + ".0").DeleteIfExists();
+                // We delete all files with fileName prefix, since shards have extensions as .0, .1, etc.
+                foreach (var blob in dir.GetBlobsAsync(fileInfo.fileName + ".", default).GetAwaiter().GetResult())
+                {
+                    BlobUtilsV12.ForceDeleteAsync(pageBlobContainer.Default, blob).GetAwaiter().GetResult();
+                }
             }
             else
             {
-                var dir = fileInfo.directoryName == "" ? baseRef : baseRef.GetDirectoryReference(fileInfo.directoryName);
-                foreach (IListBlobItem blob in dir.ListBlobs(true))
+                foreach (var blob in dir.GetBlobsAsync(default).GetAwaiter().GetResult())
                 {
-                    if (blob.GetType() == typeof(CloudBlob) || blob.GetType().BaseType == typeof(CloudBlob))
-                    {
-                        ((CloudBlob)blob).DeleteIfExists();
-                    }
+                    BlobUtilsV12.ForceDeleteAsync(pageBlobContainer.Default, blob).GetAwaiter().GetResult();
                 }
             }
         }
@@ -63,48 +81,52 @@ namespace FASTER.devices
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
-            return new AzureStorageDevice(baseRef.GetDirectoryReference(fileInfo.directoryName), fileInfo.fileName);
-        }
-
-        /// <inheritdoc />
-        public void Initialize(string baseName)
-        {
-            var path = baseName.Split('/');
-            var containerName = path[0];
-            var dirName = string.Join("/", path.Skip(1));
-
-            var containerRef = client.GetContainerReference(containerName);
-            containerRef.CreateIfNotExists();
-            baseRef = containerRef.GetDirectoryReference(dirName);
+            return new AzureStorageDevice(fileInfo.fileName, pageBlobDirectory.GetSubDirectory(fileInfo.directoryName), null, false, false, logger);
         }
 
         /// <inheritdoc />
         public IEnumerable<FileDescriptor> ListContents(string path)
         {
-            foreach (var entry in baseRef.GetDirectoryReference(path).ListBlobs().Where(b => b as CloudBlobDirectory != null)
-                .OrderByDescending(f => GetLastModified((CloudBlobDirectory)f)))
-            {
-                yield return new FileDescriptor
-                {
-                    directoryName = entry.Uri.LocalPath,
-                    fileName = ""
-                };
-            }
+            var dir = pageBlobDirectory.GetSubDirectory(path);
+            var client = pageBlobContainer.Default;
 
-            foreach (var entry in baseRef.ListBlobs().Where(b => b as CloudPageBlob != null)
-                .OrderByDescending(f => ((CloudPageBlob)f).Properties.LastModified))
+            HashSet<string> directories = new();
+            foreach (var item in client.GetBlobs(prefix: $"{dir.Prefix}/")
+                .OrderByDescending(f => client.GetBlobClient(f.Name).GetProperties().Value.LastModified)
+                )
             {
-                yield return new FileDescriptor
+                // get the directory name
+                var name = item.Name.Substring(dir.Prefix.Length + 1);
+                // get substring until first slash
+                var slash = name.IndexOf('/');
+                if (slash > 0)
                 {
-                    directoryName = "",
-                    fileName = ((CloudPageBlob)entry).Name
-                };
-            }
-        }
+                    // this is a directory
+                    var dirName = name.Substring(0, slash);
+                    if (!directories.Contains(dirName))
+                    {
+                        directories.Add(dirName);
 
-        private DateTimeOffset? GetLastModified(CloudBlobDirectory cloudBlobDirectory)
-        {
-            return cloudBlobDirectory.ListBlobs().Select(e => ((CloudPageBlob)e).Properties.LastModified).OrderByDescending(e => e).First();
+                        // find file name from path
+                        var fileName = name.Substring(name.LastIndexOf('/') + 1);
+
+                        yield return new FileDescriptor
+                        {
+                            directoryName = dirName,
+                            fileName = "",
+                        };
+                    }
+                }
+                else
+                {
+                    // this is a file
+                    yield return new FileDescriptor
+                    {
+                        directoryName = "",
+                        fileName = name,
+                    };
+                }
+            }
         }
     }
 }

@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using CommandLine;
+using FASTER.core;
+using System.Collections.Generic;
 
 namespace FASTER.benchmark
 {
@@ -19,7 +21,7 @@ namespace FASTER.benchmark
         public int ThreadCount { get; set; }
 
         [Option('n', "numa", Required = false, Default = 0,
-             HelpText = "NUMA options:" +
+             HelpText = "NUMA options (Windows only):" +
                         "\n    0 = No sharding across NUMA sockets" +
                         "\n    1 = Sharding across NUMA sockets")]
         public int NumaStyle { get; set; }
@@ -34,16 +36,12 @@ namespace FASTER.benchmark
         [Option('z', "locking", Required = false, Default = 0,
              HelpText = "Locking Implementation:" +
                         "\n    0 = None (default)" +
-                        "\n    1 = RecordInfo.SpinLock()")]
-        public int LockImpl { get; set; }
+                        "\n    1 = Mixed-mode locking using main HashTable buckets")]
+        public int LockingMode { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
          HelpText = "Number of iterations of the test to run")]
         public int IterationCount { get; set; }
-
-        [Option('r', "read_percent", Required = false, Default = 50,
-         HelpText = "Percentage of reads (-1 for 100% read-modify-write")]
-        public int ReadPercent { get; set; }
 
         [Option('d', "distribution", Required = false, Default = YcsbConstants.UniformDist,
             HelpText = "Distribution of keys in workload")]
@@ -53,19 +51,59 @@ namespace FASTER.benchmark
             HelpText = "Seed for synthetic data distribution")]
         public int RandomSeed { get; set; }
 
+        [Option("rumd", Separator = ',', Required = false, Default = new[] {50,50,0,0},
+         HelpText = "#,#,#,#: Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 100) operations in this run")]
+        public IEnumerable<int> RumdPercents { get; set; }
+
         [Option("synth", Required = false, Default = false,
             HelpText = "Use synthetic data")]
         public bool UseSyntheticData { get; set; }
 
-        [Option("runsec", Required = false, Default = YcsbConstants.kRunSeconds,
+        [Option("runsec", Required = false, Default = 30,
             HelpText = "Number of seconds to execute experiment")]
         public int RunSeconds { get; set; }
+
+        [Option("sd", Required = false, Default = false,
+            HelpText = "Use SmallData in experiment")]
+        public bool UseSmallData { get; set; }
+
+        [Option("sm", Required = false, Default = false,
+            HelpText = "Use Small Memory log in experiment")]
+        public bool UseSmallMemoryLog { get; set; }
+
+        [Option("hashpack", Required = false, Default = 2,
+            HelpText = "The hash table packing; divide the number of keys by this to cause hash collisions")]
+        public int HashPacking { get; set; }
+
+        [Option("safectx", Required = false, Default = false,
+            HelpText = "Use 'safe' context (slower, per-operation epoch control) in experiment")]
+        public bool UseSafeContext { get; set; }
+
+        [Option("chkptms", Required = false, Default = 0,
+            HelpText = "If > 0, the number of milliseconds between checkpoints in experiment (else checkpointing is not done")]
+        public int PeriodicCheckpointMilliseconds { get; set; }
+
+        [Option("chkptsnap", Required = false, Default = false,
+            HelpText = "Use Snapshot checkpoint if doing periodic checkpoints (default is FoldOver)")]
+        public bool PeriodicCheckpointUseSnapshot { get; set; }
+
+        [Option("chkptincr", Required = false, Default = false,
+            HelpText = "Try incremental checkpoint if doing periodic checkpoints")]
+        public bool PeriodicCheckpointTryIncremental { get; set; }
+
+        [Option("dumpdist", Required = false, Default = false,
+            HelpText = "Dump the distribution of each non-empty bucket in the hash table")]
+        public bool DumpDistribution { get; set; }
+
+        internal CheckpointType PeriodicCheckpointType => this.PeriodicCheckpointUseSnapshot ? CheckpointType.Snapshot : CheckpointType.FoldOver;
 
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; r: {ReadPercent}; t: {ThreadCount}; z: {LockImpl}; i: {IterationCount};"
-                        + $" sd: {boolStr(YcsbConstants.kUseSmallData)}; sm: {boolStr(YcsbConstants.kSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}";
+            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount}; hp: {HashPacking}"
+                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
+                        + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
+                        + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
         }
     }
 }

@@ -1,84 +1,69 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
 using System.Net.Sockets;
 using FASTER.common;
 using FASTER.core;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.server
 {
-    internal abstract class ServerSessionBase<Key, Value, Input, Output, Functions, ParameterSerializer> : IDisposable
-        where Functions : IFunctions<Key, Value, Input, Output, long>
-        where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
-    {
-        protected readonly Socket socket;
-        protected readonly ClientSession<Key, Value, Input, Output, long, ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>> session;
-        protected readonly ParameterSerializer serializer;
-        protected readonly MaxSizeSettings maxSizeSettings;
+    /// <summary>
+    /// Abstract base class for server session provider
+    /// </summary>
+    public abstract class ServerSessionBase : IMessageConsumer
+    {      
+        /// <summary>
+        /// Bytes read
+        /// </summary>
+        protected int bytesRead;           
 
-        private readonly NetworkSender messageManager;
-        private readonly int serverBufferSize;
-        
-        protected ReusableObject<SeaaBuffer> responseObject;
-        protected int bytesRead;
+        /// <summary>
+        /// NetworkSender instance
+        /// </summary>
+        protected readonly INetworkSender networkSender;
 
-        public ServerSessionBase(Socket socket, FasterKV<Key, Value> store, Functions functions, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
+        /// <summary>
+        ///  Create instance of session backed by given networkSender
+        /// </summary>
+        /// <param name="networkSender"></param>
+        public ServerSessionBase(INetworkSender networkSender)
         {
-            this.socket = socket;
-            session = store.For(new ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>(functions, this)).NewSession<ServerFunctions<Key, Value, Input, Output, Functions, ParameterSerializer>>();
-            this.maxSizeSettings = maxSizeSettings;
-            serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
-            messageManager = new NetworkSender(serverBufferSize);
-            this.serializer = serializer;
-
+            this.networkSender = networkSender;
             bytesRead = 0;
         }
 
-        public abstract int TryConsumeMessages(byte[] buf);
-        public abstract void CompleteRead(ref Output output, long ctx, core.Status status);
-        public abstract void CompleteRMW(long ctx, core.Status status);
+        /// <inheritdoc />
+        public abstract unsafe int TryConsumeMessages(byte* req_buf, int bytesRead);
 
-        protected void GetResponseObject() { if (responseObject.obj == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
+        /// <summary>
+        /// Publish an update to a key to all the subscribers of the key
+        /// </summary>
+        /// <param name="keyPtr"></param>
+        /// <param name="keyLength"></param>
+        /// <param name="valPtr"></param>
+        /// <param name="valLength"></param>
+        /// <param name="inputPtr"></param>
+        /// <param name="sid"></param>
+        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
 
-        protected void SendResponse(int size)
-        {
-            try
-            {
-                messageManager.Send(socket, responseObject, 0, size);
-            }
-            catch
-            {
-                responseObject.Dispose();
-            }
-        }
-        protected void SendResponse(int offset, int size)
-        {
-            try
-            {
-                messageManager.Send(socket, responseObject, offset, size);
-            }
-            catch
-            {
-                responseObject.Dispose();
-            }
-        }
-
-        public void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;
-
-
+        /// <summary>
+        /// Publish an update to a key to all the (prefix) subscribers of the key
+        /// </summary>
+        /// <param name="prefixPtr"></param>
+        /// <param name="prefixLength"></param>
+        /// <param name="keyPtr"></param>
+        /// <param name="keyLength"></param>
+        /// <param name="valPtr"></param>
+        /// <param name="valLength"></param>
+        /// <param name="inputPtr"></param>
+        /// <param name="sid"></param>
+        public abstract unsafe void PrefixPublish(byte* prefixPtr, int prefixLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
 
         /// <summary>
         /// Dispose
         /// </summary>
-        public virtual void Dispose()
-        {
-            session.Dispose();
-            socket.Dispose();
-            if (responseObject.obj != null)
-                responseObject.Dispose();
-            messageManager.Dispose();
-        }
+        public virtual void Dispose() => networkSender?.Dispose();
     }
-
 }

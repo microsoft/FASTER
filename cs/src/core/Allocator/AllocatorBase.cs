@@ -3,10 +3,13 @@
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
@@ -20,9 +23,7 @@ namespace FASTER.core
         [FieldOffset(0)]
         public long LastFlushedUntilAddress;
         [FieldOffset(8)]
-        public long LastClosedUntilAddress;
-        [FieldOffset(16)]
-        public int Dirty;
+        public long Dirty;
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -41,7 +42,7 @@ namespace FASTER.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public abstract partial class AllocatorBase<Key, Value> : IDisposable
+    internal abstract partial class AllocatorBase<Key, Value> : IDisposable
     {
         /// <summary>
         /// Epoch information
@@ -111,7 +112,12 @@ namespace FASTER.core
         /// <summary>
         /// HeadOFfset lag address
         /// </summary>
-        protected long HeadOffsetLagAddress;
+        internal long HeadOffsetLagAddress;
+
+        /// <summary>
+        /// Number of <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> or <see cref="LockableContext{Key, Value, Input, Output, Context, Functions}"/> instances active.
+        /// </summary>
+        internal long NumActiveLockingSessions = 0;
 
         /// <summary>
         /// Log mutable fraction
@@ -136,12 +142,14 @@ namespace FASTER.core
         public long SafeReadOnlyAddress;
 
         /// <summary>
-        /// Head address
+        /// The lowest in-memory address in the log. While we hold the epoch this may be changed by other threads as part of ShiftHeadAddress,
+        /// but as long as an address was >= HeadAddress while we held the epoch, it cannot be actually evicted until we release the epoch.
         /// </summary>
         public long HeadAddress;
 
         /// <summary>
-        ///  Safe head address
+        /// The lowest reliable in-memory address. This is set by OnPagesClosed as the highest address of the range it is starting to close;
+        /// thus it leads <see cref="ClosedUntilAddress"/>. As long as we hold the epoch, records above this address will not be evicted.
         /// </summary>
         public long SafeHeadAddress;
 
@@ -151,14 +159,30 @@ namespace FASTER.core
         public long FlushedUntilAddress;
 
         /// <summary>
-        /// Flushed until address
+        /// The highest address that has been closed by <see cref="OnPagesClosed"/>. It will catch up to <see cref="SafeHeadAddress"/>
+        /// when a region is closed.
         /// </summary>
         public long ClosedUntilAddress;
 
         /// <summary>
-        /// Begin address
+        /// The lowest valid address in the log
         /// </summary>
         public long BeginAddress;
+        
+        /// <summary>
+        /// The lowest valid address on disk - updated when truncating log
+        /// </summary>
+        public long PersistedBeginAddress;
+
+        /// <summary>
+        /// Address until which we are currently closing. Used to coordinate linear closing of pages.
+        /// Only one thread will be closing pages at a time.
+        /// </summary>
+        long OngoingCloseUntilAddress;
+
+        /// <inheritdoc/>
+        public override string ToString()
+            => $"TA {GetTailAddress()}, ROA {ReadOnlyAddress}, SafeROA {SafeReadOnlyAddress}, HA {HeadAddress}, SafeHA {SafeHeadAddress}, CUA {ClosedUntilAddress}, FUA {FlushedUntilAddress}, BA {BeginAddress}";
 
         #endregion
 
@@ -224,7 +248,7 @@ namespace FASTER.core
         /// <summary>
         /// Error handling
         /// </summary>
-        private readonly ErrorList errorList = new ErrorList();
+        private readonly ErrorList errorList = new();
 
         /// <summary>
         /// Observer for records entering read-only region
@@ -237,14 +261,9 @@ namespace FASTER.core
         internal IObserver<IFasterScanIterator<Key, Value>> OnEvictionObserver;
 
         /// <summary>
-        /// The TaskCompletionSource for flush completion
+        /// The "event" to be waited on for flush completion by the initiator of an operation
         /// </summary>
-        private TaskCompletionSource<long> flushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        /// <summary>
-        /// The task ato be waited on for flush completion by the initiator of an operation
-        /// </summary>
-        internal Task<long> FlushTask => flushTcs.Task;
+        internal CompletionEvent FlushEvent;
 
         #region Abstract methods
         /// <summary>
@@ -401,7 +420,16 @@ namespace FASTER.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="localSegmentOffsets"></param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
+        /// <param name="fuzzyStartLogicalAddress">Start address of fuzzy region, which contains old and new version records (we use this to selectively flush only old-version records during snapshot checkpoint)</param>
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress);
+
+        private protected void VerifyCompatibleSectorSize(IDevice device)
+        {
+            if (this.sectorSize % device.SectorSize != 0)
+                throw new FasterException($"Allocator with sector size {sectorSize} cannot flush to device with sector size {device.SectorSize}");
+        }
+
+        internal long GetReadOnlyLagAddress() => ReadOnlyLagAddress;
 
         /// <summary>
         /// Delta flush
@@ -411,67 +439,113 @@ namespace FASTER.core
         /// <param name="prevEndAddress"></param>
         /// <param name="version"></param>
         /// <param name="deltaLog"></param>
-        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, int version, DeltaLog deltaLog)
+        /// <param name="completedSemaphore"></param>
+        /// <param name="throttleCheckpointFlushDelayMs"></param>
+        internal unsafe virtual void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
-            long startPage = GetPage(startAddress);
-            long endPage = GetPage(endAddress);
-            if (endAddress > GetStartLogicalAddress(endPage))
-                endPage++;
+            logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            long prevEndPage = GetPage(prevEndAddress);
+            var _completedSemaphore = new SemaphoreSlim(0);
+            completedSemaphore = _completedSemaphore;
 
-            deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
-            int destOffset = 0;
+            if (throttleCheckpointFlushDelayMs >= 0)
+                Task.Run(FlushRunner);
+            else
+                FlushRunner();
 
-            for (long p = startPage; p < endPage; p++)
+            void FlushRunner()
             {
-                // All RCU pages need to be added to delta
-                // For IPU-only pages, prune based on dirty bit
-                if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
-                    continue;
+                long startPage = GetPage(startAddress);
+                long endPage = GetPage(endAddress);
+                if (endAddress > GetStartLogicalAddress(endPage))
+                    endPage++;
 
-                var logicalAddress = p << LogPageSizeBits;
-                var physicalAddress = GetPhysicalAddress(logicalAddress);
-                var endPhysicalAddress = physicalAddress + PageSize;
+                long prevEndPage = GetPage(prevEndAddress);
+                deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
+                int destOffset = 0;
 
-                if (p == startPage)
+                // We perform delta capture under epoch protection with page-wise refresh for latency reasons
+                bool epochTaken = false;
+                if (!epoch.ThisInstanceProtected())
                 {
-                    physicalAddress += (int)(startAddress & PageSizeMask);
-                    logicalAddress += (int)(startAddress & PageSizeMask);
+                    epochTaken = true;
+                    epoch.Resume();
                 }
 
-                while (physicalAddress < endPhysicalAddress)
+                try
                 {
-                    ref var info = ref GetInfo(physicalAddress);
-                    var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
-                    if (info.Version == RecordInfo.GetShortVersion(version))
+                    for (long p = startPage; p < endPage; p++)
                     {
-                        int size = sizeof(long) + sizeof(int) + alignedRecordSize;
-                        if (destOffset + size > entryLength)
-                        {
-                            deltaLog.Seal(destOffset);
-                            deltaLog.Allocate(out entryLength, out destPhysicalAddress);
-                            destOffset = 0;
-                            if (destOffset + size > entryLength)
-                                throw new FasterException("Insufficient page size to write delta");
-                        }
-                        *((long*)(destPhysicalAddress + destOffset)) = logicalAddress;
-                        destOffset += sizeof(long);
-                        *((int*)(destPhysicalAddress + destOffset)) = alignedRecordSize;
-                        destOffset += sizeof(int);
-                        Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
-                        destOffset += alignedRecordSize;
-                    }
-                    physicalAddress += alignedRecordSize;
-                    logicalAddress += alignedRecordSize;
-                }
-            }
+                        // Check if we have the page safely available to process in memory
+                        if (HeadAddress >= (p << LogPageSizeBits) + PageSize)
+                            continue;
 
-            if (destOffset > 0)
-                deltaLog.Seal(destOffset);
+                        // All RCU pages need to be added to delta
+                        // For IPU-only pages, prune based on dirty bit
+                        if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
+                            continue;
+
+                        var logicalAddress = p << LogPageSizeBits;
+                        var physicalAddress = GetPhysicalAddress(logicalAddress);
+
+                        var endLogicalAddress = logicalAddress + PageSize;
+                        if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
+                        Debug.Assert(endLogicalAddress > logicalAddress);
+                        var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
+
+                        if (p == startPage)
+                        {
+                            physicalAddress += (int)(startAddress & PageSizeMask);
+                            logicalAddress += (int)(startAddress & PageSizeMask);
+                        }
+
+                        while (physicalAddress < endPhysicalAddress)
+                        {
+                            ref var info = ref GetInfo(physicalAddress);
+                            var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                            if (info.Dirty)
+                            {
+                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
+                                int size = sizeof(long) + sizeof(int) + alignedRecordSize;
+                                if (destOffset + size > entryLength)
+                                {
+                                    deltaLog.Seal(destOffset);
+                                    deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                                    destOffset = 0;
+                                    if (destOffset + size > entryLength)
+                                    {
+                                        deltaLog.Seal(0);
+                                        deltaLog.Allocate(out entryLength, out destPhysicalAddress);
+                                    }
+                                    if (destOffset + size > entryLength)
+                                        throw new FasterException("Insufficient page size to write delta");
+                                }
+                                *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
+                                destOffset += sizeof(long);
+                                *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
+                                destOffset += sizeof(int);
+                                Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
+                                destOffset += alignedRecordSize;
+                            }
+                            physicalAddress += alignedRecordSize;
+                            logicalAddress += alignedRecordSize;
+                        }
+                        epoch.ProtectAndDrain();
+                    }
+                }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
+
+                if (destOffset > 0)
+                    deltaLog.Seal(destOffset);
+                _completedSemaphore.Release();
+            }
         }
 
-        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage)
+        internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
         {
             if (log == null) return;
 
@@ -479,28 +553,66 @@ namespace FASTER.core
             long endLogicalAddress = GetStartLogicalAddress(endPage);
 
             log.Reset();
-            while (log.GetNext(out long physicalAddress, out int entryLength, out int type))
+            while (log.GetNext(out long physicalAddress, out int entryLength, out var type))
             {
-                if (type != 0) continue; // consider only delta records
-                long endAddress = physicalAddress + entryLength;
-                while (physicalAddress < endAddress)
+                switch (type)
                 {
-                    long address = *(long*)physicalAddress;
-                    physicalAddress += sizeof(long);
-                    int size = *(int*)physicalAddress;
-                    physicalAddress += sizeof(int);
-                    if (address >= startLogicalAddress && address < endLogicalAddress)
-                    {
-                        var destination = GetPhysicalAddress(address);
-                        Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
-                    }
-                    physicalAddress += size;
+                    case DeltaLogEntryType.DELTA:
+                        // Delta records
+                        long endAddress = physicalAddress + entryLength;
+                        while (physicalAddress < endAddress)
+                        {
+                            long address = *(long*)physicalAddress;
+                            physicalAddress += sizeof(long);
+                            int size = *(int*)physicalAddress;
+                            physicalAddress += sizeof(int);
+                            if (address >= startLogicalAddress && address < endLogicalAddress)
+                            {
+                                var destination = GetPhysicalAddress(address);
+
+                                // Clear extra space (if any) in old record
+                                var oldSize = GetRecordSize(destination).Item2;
+                                if (oldSize > size)
+                                    new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
+
+                                // Update with new record
+                                Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
+
+                                // Clean up temporary bits when applying the delta log
+                                ref var destInfo = ref GetInfo(destination);
+                                destInfo.ClearBitsForDiskImages();
+                            }
+                            physicalAddress += size;
+                        }
+                        break;
+                    case DeltaLogEntryType.CHECKPOINT_METADATA:
+                        if (recoverTo != -1)
+                        {
+                            // Only read metadata if we need to stop at a specific version
+                            var metadata = new byte[entryLength];
+                            unsafe
+                            {
+                                fixed (byte* m = metadata)
+                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                            }
+
+                            HybridLogRecoveryInfo recoveryInfo = new();
+                            using StreamReader s = new(new MemoryStream(metadata));
+                            recoveryInfo.Initialize(s);
+                            // Finish recovery if only specific versions are requested
+                            if (recoveryInfo.version == recoverTo) return;
+                        }
+
+                        break;
+                    default:
+                        throw new FasterException("Unexpected entry type");
+
                 }
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPage(long logicalAddress, int version)
+        internal void MarkPage(long logicalAddress, long version)
         {
             var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
             if (PageStatusIndicator[offset].Dirty < version)
@@ -508,7 +620,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPageAtomic(long logicalAddress, int version)
+        internal void MarkPageAtomic(long logicalAddress, long version)
         {
             var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
             Utility.MonotonicUpdate(ref PageStatusIndicator[offset].Dirty, version, out _);
@@ -537,6 +649,30 @@ namespace FASTER.core
             }
         }
 
+        private unsafe void VerifyPage(long page)
+        {
+            var startLogicalAddress = GetStartLogicalAddress(page);
+            var physicalAddress = GetPhysicalAddress(startLogicalAddress);
+
+            long untilLogicalAddressInPage = GetPageSize();
+            long pointer = 0;
+
+            while (pointer < untilLogicalAddressInPage)
+            {
+                long recordStart = physicalAddress + pointer;
+                ref RecordInfo info = ref GetInfo(recordStart);
+
+                if (info.IsNull())
+                    pointer += RecordInfo.GetLength();
+                else
+                {
+                    int size = GetRecordSize(recordStart).Item2;
+                    Debug.Assert(size < 50);
+                    Debug.Assert(size <= GetPageSize());
+                    pointer += size;
+                }
+            }
+        }
 
         /// <summary>
         /// Read objects to memory (async)
@@ -565,6 +701,9 @@ namespace FASTER.core
         /// <param name="page">Page number to be cleared</param>
         /// <param name="offset">Offset to clear from (if partial clear)</param>
         internal abstract void ClearPage(long page, int offset = 0);
+
+        internal abstract void FreePage(long page);
+
         /// <summary>
         /// Write page (async)
         /// </summary>
@@ -635,22 +774,178 @@ namespace FASTER.core
         public abstract long[] GetSegmentOffsets();
 
         /// <summary>
-        /// Pull-based scan interface for HLOG
+        /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        public abstract IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
+        /// <returns>Pull Scan iterator instance</returns>
+        public abstract IFasterScanIterator<Key, Value> Scan(FasterKV<Key, Value> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering);
+
+        /// <summary>
+        /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        internal abstract bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions,
+                ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>;
+
+        /// <summary>
+        /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        internal bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, ref TScanFunctions scanFunctions)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+        {
+            OperationStackContext<Key, Value> stackCtx = new(store.comparer.GetHashCode64(ref key));
+            if (!store.FindTag(ref stackCtx.hei))
+                return false;
+            stackCtx.SetRecordSourceToHashEntry(store.hlog);
+            if (store.UseReadCache)
+                store.SkipReadCache(ref stackCtx, out _);
+            if (stackCtx.recSrc.LogicalAddress < store.hlog.BeginAddress)
+                return false;
+            return IterateKeyVersions(store, ref key, stackCtx.recSrc.LogicalAddress, ref scanFunctions);
+        }
+
+        /// <summary>
+        /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        internal abstract bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>;
+
+        /// <summary>
+        /// Implementation for push-scanning FASTER log
+        /// </summary>
+        internal bool PushScanImpl<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
+        {
+            if (!scanFunctions.OnStart(beginAddress, endAddress))
+                return false;
+            var headAddress = this.HeadAddress;
+
+            long numRecords = 1;
+            bool stop = false;
+            for (; !stop && iter.GetNext(out var recordInfo); ++numRecords)
+            {
+                try
+                {
+                    // Pull Iter records are in temp storage so do not need locks, but we'll call ConcurrentReader because, for example, GenericAllocator
+                    // may need to know the object is in that region.
+                    if (iter.CurrentAddress >= headAddress && !recordInfo.IsClosed)
+                        stop = !scanFunctions.ConcurrentReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+                    else
+                        stop = !scanFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+                }
+                catch (Exception ex)
+                {
+                    scanFunctions.OnException(ex, numRecords);
+                    throw;
+                }
+            }
+
+            scanFunctions.OnStop(!stop, numRecords);
+            return !stop;
+        }
+
+        /// <summary>
+        /// Implementation for push-iterating key versions
+        /// </summary>
+        internal bool IterateKeyVersionsImpl<TScanFunctions, TScanIterator>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            where TScanIterator : IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
+        {
+            if (!scanFunctions.OnStart(beginAddress, Constants.kInvalidAddress))
+                return false;
+            var headAddress = this.HeadAddress;
+
+            long numRecords = 1;
+            bool stop = false, continueOnDisk = false;
+            for (; !stop && iter.BeginGetPrevInMemory(ref key, out var recordInfo, out continueOnDisk); ++numRecords)
+            {
+                OperationStackContext<Key, Value> stackCtx = default;
+                try
+                {
+                    // Iter records above headAddress will be in log memory and must be locked.
+                    if (iter.CurrentAddress >= headAddress && !recordInfo.IsClosed)
+                    {
+                        store.LockForScan(ref stackCtx, ref key, ref iter.GetLockableInfo());
+                        stop = !scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+                    }
+                    else
+                        stop = !scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords);
+                }
+                catch (Exception ex)
+                {
+                    scanFunctions.OnException(ex, numRecords);
+                    throw;
+                }
+                finally
+                {
+                    if (stackCtx.recSrc.HasLock)
+                        store.UnlockForScan(ref stackCtx, ref iter.GetKey(), ref iter.GetLockableInfo());
+                    iter.EndGetPrevInMemory();
+                }
+            }
+
+            if (continueOnDisk)
+            {
+                AsyncIOContextCompletionEvent<Key, Value> completionEvent = new();
+                try
+                { 
+                    var logicalAddress = iter.CurrentAddress;
+                    while (!stop && GetFromDiskAndPushToReader(ref key, ref logicalAddress, ref scanFunctions, numRecords, completionEvent, out stop))
+                        ++numRecords;
+                }
+                catch (Exception ex)
+                {
+                    scanFunctions.OnException(ex, numRecords);
+                    throw;
+                }
+                finally
+                {
+                    completionEvent.Dispose();
+                }
+            }
+
+            scanFunctions.OnStop(!stop, numRecords);
+            return !stop;
+        }
+
+        internal unsafe bool GetFromDiskAndPushToReader<TScanFunctions>(ref Key key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
+                AsyncIOContextCompletionEvent<Key, Value> completionEvent, out bool stop)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+        {
+            completionEvent.Prepare(GetKeyContainer(ref key), logicalAddress);
+
+            this.AsyncGetFromDisk(logicalAddress, this.GetAverageRecordSize(), completionEvent.request);
+            completionEvent.Wait();
+
+            stop = false;
+            if (completionEvent.exception is not null)
+            {
+                scanFunctions.OnException(completionEvent.exception, numRecords);
+                return false;
+            }
+            if (completionEvent.request.logicalAddress < this.BeginAddress)
+                return false;
+
+            RecordInfo recordInfo = this.GetInfoFromBytePointer(completionEvent.request.record.GetValidPointer());
+            recordInfo.ClearBitsForDiskImages();
+            stop = !scanFunctions.SingleReader(ref key, ref this.GetContextRecordValue(ref completionEvent.request), new RecordMetadata(recordInfo, completionEvent.request.logicalAddress), numRecords);
+            logicalAddress = recordInfo.PreviousAddress;
+            return !stop;
+        }
 
         /// <summary>
         /// Scan page guaranteed to be in memory
         /// </summary>
         /// <param name="beginAddress">Begin address</param>
         /// <param name="endAddress">End address</param>
-        internal abstract void MemoryPageScan(long beginAddress, long endAddress);
+        /// <param name="observer">Observer of scan</param>
+        internal abstract void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer);
         #endregion
 
+        protected readonly ILogger logger;
 
         /// <summary>
         /// Instantiate base allocator
@@ -660,8 +955,10 @@ namespace FASTER.core
         /// <param name="evictCallback"></param>
         /// <param name="epoch"></param>
         /// <param name="flushCallback"></param>
-        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback)
+        /// <param name="logger"></param>
+        public AllocatorBase(LogSettings settings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null)
         {
+            this.logger = logger;
             if (settings.LogDevice == null)
             {
                 throw new FasterException("LogSettings.LogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
@@ -673,6 +970,7 @@ namespace FASTER.core
             }
             FlushCallback = flushCallback;
             PreallocateLog = settings.PreallocateLog;
+            this.FlushEvent.Initialize();
 
             if (settings.LogDevice is NullDevice)
                 IsNullDevice = true;
@@ -710,7 +1008,10 @@ namespace FASTER.core
             SegmentBufferSize = 1 + (LogTotalSizeBytes / SegmentSize < 1 ? 1 : (int)(LogTotalSizeBytes / SegmentSize));
 
             if (SegmentSize < PageSize)
-                throw new FasterException("Segment must be at least of page size");
+                throw new FasterException($"Segment ({SegmentSize}) must be at least of page size ({PageSize})");
+
+            if ((LogTotalSizeBits != 0) && (LogTotalSizeBytes < PageSize))
+                throw new FasterException($"Memory size ({LogTotalSizeBytes}) must be configured to be either 1 (i.e., 0 bits) or at least page size ({PageSize})");
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
 
@@ -726,7 +1027,109 @@ namespace FASTER.core
             if (PageSize < sectorSize)
                 throw new FasterException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
 
-            AlignedPageSizeBytes = ((PageSize + (sectorSize - 1)) & ~(sectorSize - 1));
+            AlignedPageSizeBytes = (PageSize + (sectorSize - 1)) & ~(sectorSize - 1);
+        }
+
+        /// <summary>
+        /// Number of extra overflow pages allocated
+        /// </summary>
+        internal abstract int OverflowPageCount { get; }
+
+
+        /// <summary>
+        /// Reset the hybrid log. WARNING: assumes that threads have drained out at this point.
+        /// </summary>
+        public virtual void Reset()
+        {
+            var newBeginAddress = GetTailAddress();
+
+            // Shift read-only addresses to tail without flushing
+            Utility.MonotonicUpdate(ref ReadOnlyAddress, newBeginAddress, out _);
+            Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newBeginAddress, out _);
+
+            // Shift head address to tail
+            if (Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out _))
+            {
+                // Close addresses
+                OnPagesClosed(newBeginAddress);
+
+                // Wait for pages to get closed
+                while (ClosedUntilAddress < newBeginAddress)
+                {
+                    Thread.Yield();
+                    if (epoch.ThisInstanceProtected())
+                        epoch.ProtectAndDrain();
+                }
+            }
+
+            // Update begin address to tail
+            Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out _);
+            
+            this.FlushEvent.Initialize();
+            Array.Clear(PageStatusIndicator, 0, BufferSize);
+            if (PendingFlush != null)
+            {
+                for (int i = 0; i < BufferSize; i++)
+                    PendingFlush[i]?.list?.Clear();
+            }
+            device.Reset();
+        }
+
+        internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
+        {
+            // Note: trimLog is unused right now. Can be used to trim the log to the minimum
+            // segment range necessary for recovery to given checkpoint
+
+            var diskBeginAddress = recoveredHLCInfo.info.beginAddress;
+            var diskFlushedUntilAddress =
+                recoveredHLCInfo.info.useSnapshotFile == 0 ?
+                recoveredHLCInfo.info.finalLogicalAddress :
+                recoveredHLCInfo.info.flushedLogicalAddress;
+
+            // Delete disk segments until specified disk begin address
+
+            // First valid disk segment required for recovery
+            long firstValidSegment = (int)(diskBeginAddress >> LogSegmentSizeBits);
+
+            // Last valid disk segment required for recovery
+            int lastValidSegment = (int)(diskFlushedUntilAddress >> LogSegmentSizeBits);
+            if ((diskFlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                lastValidSegment--;
+
+            logger?.LogInformation("Recovery requires disk segments in range [{firstSegment}--{tailStartSegment}]", firstValidSegment, lastValidSegment);
+
+            var firstAvailSegment = device.StartSegment;
+            var lastAvailSegment = device.EndSegment;
+
+            if (FlushedUntilAddress > GetFirstValidLogicalAddress(0))
+            {
+                int currTailSegment = (int)(FlushedUntilAddress >> LogSegmentSizeBits);
+                if ((FlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                    currTailSegment--;
+
+                if (currTailSegment > lastAvailSegment)
+                    lastAvailSegment = currTailSegment;
+            }
+
+            logger?.LogInformation("Available segment range on device: [{firstAvailSegment}--{lastAvailSegment}]", firstAvailSegment, lastAvailSegment);
+
+            if (firstValidSegment < firstAvailSegment)
+                throw new FasterException($"Unable to set first valid segment to {firstValidSegment}, first available segment on disk is {firstAvailSegment}");
+
+            if (lastAvailSegment >= 0 && lastValidSegment > lastAvailSegment)
+                throw new FasterException($"Unable to set last valid segment to {lastValidSegment}, last available segment on disk is {lastAvailSegment}");
+
+            if (trimLog)
+            {
+                logger?.LogInformation("Trimming disk segments until (not including) {firstSegment}", firstValidSegment);
+                TruncateUntilAddressBlocking(firstValidSegment << LogSegmentSizeBits);
+
+                for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
+                {
+                    logger?.LogInformation("Trimming tail segment {s} on disk", s);
+                    RemoveSegment(s);
+                }
+            }
         }
 
         /// <summary>
@@ -735,32 +1138,29 @@ namespace FASTER.core
         /// <param name="firstValidAddress"></param>
         protected void Initialize(long firstValidAddress)
         {
-            Debug.Assert(firstValidAddress <= PageSize);
+            Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
 
-            bufferPool = new SectorAlignedBufferPool(1, sectorSize);
+            bufferPool ??= new SectorAlignedBufferPool(1, sectorSize);
 
             if (BufferSize > 0)
             {
                 long tailPage = firstValidAddress >> LogPageSizeBits;
                 int tailPageIndex = (int)(tailPage % BufferSize);
-                AllocatePage(tailPageIndex);
+                if (!IsAllocated(tailPageIndex))
+                    AllocatePage(tailPageIndex);
 
                 // Allocate next page as well
                 int nextPageIndex = (int)(tailPage + 1) % BufferSize;
-                if ((!IsAllocated(nextPageIndex)))
-                {
+                if (!IsAllocated(nextPageIndex))
                     AllocatePage(nextPageIndex);
-                }
             }
 
             if (PreallocateLog)
             {
                 for (int i = 0; i < BufferSize; i++)
                 {
-                    if ((!IsAllocated(i)))
-                    {
+                    if (!IsAllocated(i))
                         AllocatePage(i);
-                    }
                 }
             }
 
@@ -787,10 +1187,21 @@ namespace FASTER.core
                 epoch.Dispose();
             bufferPool.Free();
 
+            this.FlushEvent.Dispose();
+
             OnReadOnlyObserver?.OnCompleted();
             OnEvictionObserver?.OnCompleted();
         }
 
+        /// <summary>
+        /// Number of pages in circular buffer that are allocated
+        /// </summary>
+        public int AllocatedPageCount;
+
+        /// <summary>
+        /// Maximum possible number of empty pages in circular buffer
+        /// </summary>
+        public int MaxEmptyPageCount => BufferSize - 1;
 
         /// <summary>
         /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
@@ -802,7 +1213,7 @@ namespace FASTER.core
             set
             {
                 // HeadOffset lag (from tail).
-                var headOffsetLagSize = BufferSize - 1;
+                var headOffsetLagSize = MaxEmptyPageCount;
                 if (value > headOffsetLagSize) return;
                 if (value < 0) return;
 
@@ -813,20 +1224,20 @@ namespace FASTER.core
                     emptyPageCount = value;
                     headOffsetLagSize -= emptyPageCount;
 
+                    // Lag addresses are the number of pages "behind" TailPageOffset (the tail in the circular buffer).
                     ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
                     HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
                 }
 
                 // Force eviction now if empty page count has increased
-                if (value > oldEPC)
+                if (value >= oldEPC)
                 {
-                    bool prot = true;
-                    if (!epoch.ThisInstanceProtected())
-                        prot = false;
+                    bool prot = epoch.ThisInstanceProtected();
 
                     if (!prot) epoch.Resume();
                     try
                     {
+                        // These shifts adjust via application of the lag addresses.
                         var _tailAddress = GetTailAddress();
                         PageAlignedShiftReadOnlyAddress(_tailAddress);
                         PageAlignedShiftHeadAddress(_tailAddress);
@@ -876,7 +1287,7 @@ namespace FASTER.core
         /// <returns></returns>
         public long GetPage(long logicalAddress)
         {
-            return (logicalAddress >> LogPageSizeBits);
+            return logicalAddress >> LogPageSizeBits;
         }
 
         /// <summary>
@@ -937,6 +1348,26 @@ namespace FASTER.core
             return sectorSize;
         }
 
+        void AllocatePagesWithException(int pageIndex, PageOffset localTailPageOffset)
+        {
+            try
+            {
+                // Allocate this page, if needed
+                if (!IsAllocated(pageIndex % BufferSize))
+                    AllocatePage(pageIndex % BufferSize);
+
+                // Allocate next page in advance, if needed
+                if (!IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePage((pageIndex + 1) % BufferSize);
+            }
+            catch
+            {
+                localTailPageOffset.Offset = PageSize;
+                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+                throw;
+            }
+        }
+
         /// <summary>
         /// Try allocate, no thread spinning allowed
         /// </summary>
@@ -969,19 +1400,23 @@ namespace FASTER.core
             #region HANDLE PAGE OVERFLOW
             if (localTailPageOffset.Offset > PageSize)
             {
+                int pageIndex = localTailPageOffset.Page + 1;
+
                 // All overflow threads try to shift addresses
-                long shiftAddress = ((long)(localTailPageOffset.Page + 1)) << LogPageSizeBits;
+                long shiftAddress = ((long)pageIndex) << LogPageSizeBits;
                 PageAlignedShiftReadOnlyAddress(shiftAddress);
                 PageAlignedShiftHeadAddress(shiftAddress);
 
+                // This thread is trying to allocate at an offset past where one or more previous threads
+                // already overflowed; exit and allow the first overflow thread to proceed
                 if (offset > PageSize)
                 {
-                    if (NeedToWait(localTailPageOffset.Page + 1))
+                    if (NeedToWait(pageIndex))
                         return 0; // RETRY_LATER
                     return -1; // RETRY_NOW
                 }
 
-                if (NeedToWait(localTailPageOffset.Page + 1))
+                if (NeedToWait(pageIndex))
                 {
                     // Reset to end of page so that next attempt can retry
                     localTailPageOffset.Offset = PageSize;
@@ -990,7 +1425,7 @@ namespace FASTER.core
                 }
 
                 // The thread that "makes" the offset incorrect should allocate next page and set new tail
-                if (CannotAllocate(localTailPageOffset.Page + 1))
+                if (CannotAllocate(pageIndex))
                 {
                     // Reset to end of page so that next attempt can retry
                     localTailPageOffset.Offset = PageSize;
@@ -998,12 +1433,8 @@ namespace FASTER.core
                     return -1; // RETRY_NOW
                 }
 
-                // Allocate next page in advance, if needed
-                int nextPageIndex = (localTailPageOffset.Page + 2) % BufferSize;
-                if ((!IsAllocated(nextPageIndex)))
-                {
-                    AllocatePage(nextPageIndex);
-                }
+                if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
+                    AllocatePagesWithException(pageIndex, localTailPageOffset);
 
                 localTailPageOffset.Page++;
                 localTailPageOffset.Offset = numSlots;
@@ -1014,45 +1445,6 @@ namespace FASTER.core
             #endregion
 
             return (((long)page) << LogPageSizeBits) | ((long)offset);
-        }
-
-        /// <summary>
-        /// Async wrapper for TryAllocate
-        /// </summary>
-        /// <param name="numSlots">Number of slots to allocate</param>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>The allocated logical address</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public async ValueTask<long> AllocateAsync(int numSlots = 1, CancellationToken token = default)
-        {
-            var spins = 0;
-            while (true)
-            {
-                var flushTask = this.FlushTask;
-                var logicalAddress = this.TryAllocate(numSlots);
-                if (logicalAddress > 0)
-                    return logicalAddress;
-                if (logicalAddress == 0)
-                {
-                    if (spins++ < Constants.kFlushSpinCount)
-                    {
-                        Thread.Yield();
-                        continue;
-                    }
-                    try
-                    {
-                        epoch.Suspend();
-                        await flushTask.WithCancellationAsync(token);
-                    }
-                    finally
-                    {
-                        epoch.Resume();
-                    }
-                }
-                this.TryComplete();
-                epoch.ProtectAndDrain();
-                Thread.Yield();
-            }
         }
 
         /// <summary>
@@ -1069,9 +1461,14 @@ namespace FASTER.core
             return logicalAddress;
         }
 
-        
+        // If the page we are trying to allocate is past the last page with an unclosed address region, 
+        // then we can retry immediately because this is called after NeedToWait, so we know we've 
+        // completed the wait on flushEvent for the necessary pages to be flushed, and are waiting for
+        // OnPagesClosed to be completed.
         private bool CannotAllocate(int page) => page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits);
 
+        // If the page we are trying to allocate is past the last page with an unflushed address region, 
+        // we have to wait for the flushEvent.
         private bool NeedToWait(int page) => page >= BufferSize + (FlushedUntilAddress >> LogPageSizeBits);
 
         /// <summary>
@@ -1100,11 +1497,12 @@ namespace FASTER.core
         /// Used by applications to move read-only forward
         /// </summary>
         /// <param name="newReadOnlyAddress"></param>
-        public bool ShiftReadOnlyAddress(long newReadOnlyAddress)
+        /// <param name="noFlush"></param>
+        public bool ShiftReadOnlyAddress(long newReadOnlyAddress, bool noFlush = false)
         {
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnlyOffset))
             {
-                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress));
+                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress, noFlush));
                 return true;
             }
             return false;
@@ -1114,25 +1512,21 @@ namespace FASTER.core
         /// Shift begin address
         /// </summary>
         /// <param name="newBeginAddress"></param>
-        public void ShiftBeginAddress(long newBeginAddress)
+        /// <param name="truncateLog"></param>
+        /// <param name="noFlush"></param>
+        public void ShiftBeginAddress(long newBeginAddress, bool truncateLog, bool noFlush = false)
         {
             // First update the begin address
             if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress))
+            {
+                if (truncateLog)
+                    epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress));
                 return;
-
-            var b = oldBeginAddress >> LogSegmentSizeBits != newBeginAddress >> LogSegmentSizeBits;
+            }
 
             // Shift read-only address
-            var flushTask = FlushTask;
-            try
-            {
-                epoch.Resume();
-                ShiftReadOnlyAddress(newBeginAddress);
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
+            var flushEvent = FlushEvent;
+            ShiftReadOnlyAddress(newBeginAddress, noFlush);
 
             // Wait for flush to complete
             var spins = 0;
@@ -1145,30 +1539,30 @@ namespace FASTER.core
                     Thread.Yield();
                     continue;
                 }
-                flushTask.Wait();
-                flushTask = FlushTask;
+                try
+                {
+                    epoch.Suspend();
+                    flushEvent.Wait();
+                }
+                finally
+                {
+                    epoch.Resume();
+                }
+                flushEvent = FlushEvent;
             }
 
             // Then shift head address
             var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
 
-            if (h || b)
+            if (h || truncateLog)
             {
-                try
+                epoch.BumpCurrentEpoch(() =>
                 {
-                    epoch.Resume();
-                    epoch.BumpCurrentEpoch(() =>
-                    {
-                        if (h)
-                            OnPagesClosed(newBeginAddress);
-                        if (b)
-                            TruncateUntilAddress(newBeginAddress);
-                    });
-                }
-                finally
-                {
-                    epoch.Suspend();
-                }
+                    if (h)
+                        OnPagesClosed(newBeginAddress);
+                    if (truncateLog)
+                        TruncateUntilAddress(newBeginAddress);
+                });
             }
         }
 
@@ -1178,7 +1572,26 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         protected virtual void TruncateUntilAddress(long toAddress)
         {
+            PersistedBeginAddress = toAddress;
+            Task.Run(() => device.TruncateUntilAddress(toAddress));
+        }
+
+        /// <summary>
+        /// Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices
+        /// </summary>
+        /// <param name="toAddress"></param>
+        protected virtual void TruncateUntilAddressBlocking(long toAddress)
+        {
             device.TruncateUntilAddress(toAddress);
+        }
+
+        /// <summary>
+        /// Remove disk segment
+        /// </summary>
+        /// <param name="segment"></param>
+        protected virtual void RemoveSegment(int segment)
+        {
+            device.RemoveSegment(segment);
         }
 
         internal virtual bool TryComplete()
@@ -1191,82 +1604,117 @@ namespace FASTER.core
         /// Flush: send page to secondary store
         /// </summary>
         /// <param name="newSafeReadOnlyAddress"></param>
-        public void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress)
+        /// <param name="noFlush"></param>
+        private void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool noFlush = false)
         {
             if (Utility.MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
             {
-                Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
+                // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 if (OnReadOnlyObserver != null)
                 {
-                    using var iter = Scan(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
+                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
+                    // will have seen a record below the new ReadOnlyAddress as "in mutable region".
+                    using var iter = Scan(store:null, oldSafeReadOnlyAddress, newSafeReadOnlyAddress, ScanBufferingMode.NoBuffering);
                     OnReadOnlyObserver?.OnNext(iter);
                 }
-                AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
+                AsyncFlushPages(oldSafeReadOnlyAddress, newSafeReadOnlyAddress, noFlush);
             }
         }
 
-        /// <summary>
+        /// <summary>   
         /// Action to be performed for when all threads have 
         /// agreed that a page range is closed.
         /// </summary>
         /// <param name="newSafeHeadAddress"></param>
-        public void OnPagesClosed(long newSafeHeadAddress)
+        private void OnPagesClosed(long newSafeHeadAddress)
         {
-            if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out long oldSafeHeadAddress))
+            Debug.Assert(newSafeHeadAddress > 0);
+            if (Utility.MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out _))
             {
-                Debug.WriteLine("SafeHeadOffset shifted from {0:X} to {1:X}", oldSafeHeadAddress, newSafeHeadAddress);
-
-                // Also shift begin address if we are using a null storage device
-                if (IsNullDevice)
-                    Utility.MonotonicUpdate(ref BeginAddress, newSafeHeadAddress, out _);
-
-                for (long closePageAddress = oldSafeHeadAddress & ~PageSizeMask; closePageAddress < newSafeHeadAddress; closePageAddress += PageSize)
+                // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
+                for (; ; Thread.Yield())
                 {
-                    long start = oldSafeHeadAddress > closePageAddress ? oldSafeHeadAddress : closePageAddress;
-                    long end = newSafeHeadAddress < closePageAddress + PageSize ? newSafeHeadAddress : closePageAddress + PageSize;
-                    MemoryPageScan(start, end);
+                    long _ongoingCloseUntilAddress = OngoingCloseUntilAddress;
 
-                    if (newSafeHeadAddress < closePageAddress + PageSize)
+                    // If we are closing in the middle of an ongoing OPCWorker loop, exit.
+                    if (_ongoingCloseUntilAddress >= newSafeHeadAddress)
+                        break;
+
+                    // We'll continue the loop if we fail the CAS here; that means another thread extended the Ongoing range.
+                    if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, newSafeHeadAddress, _ongoingCloseUntilAddress) == _ongoingCloseUntilAddress)
                     {
-                        // Partial page - do not close
-                        // Future work: clear partial page here
+                        if (_ongoingCloseUntilAddress == 0)
+                        {
+                            // There was no other thread running the OPCWorker loop, so this thread is responsible for closing [ClosedUntilAddress -> newSafeHeadAddress]
+                            OnPagesClosedWorker();
+                        }
+                        else
+                        {
+                            // There was another thread runnning the OPCWorker loop, and its ongoing close operation was successfully extended to include the new safe
+                            // head address; we have no further work here.
+                        }
                         return;
-                    }
-
-                    int closePage = (int)(closePageAddress >> LogPageSizeBits);
-                    int closePageIndex = closePage % BufferSize;
-
-                    if (!IsAllocated(closePageIndex))
-                        AllocatePage(closePageIndex);
-                    else
-                        ClearPage(closePage);
-
-                    Utility.MonotonicUpdate(ref PageStatusIndicator[closePageIndex].LastClosedUntilAddress, closePageAddress + PageSize, out _);
-                    ShiftClosedUntilAddress();
-                    if (ClosedUntilAddress > FlushedUntilAddress)
-                    {
-                        throw new FasterException($"Closed address {ClosedUntilAddress} exceeds flushed address {FlushedUntilAddress}");
                     }
                 }
             }
         }
 
-        internal void DebugPrintAddresses(long closePageAddress)
+        private void OnPagesClosedWorker()
         {
-            var _flush = FlushedUntilAddress;
-            var _readonly = ReadOnlyAddress;
-            var _safereadonly = SafeReadOnlyAddress;
-            var _tail = GetTailAddress();
-            var _head = HeadAddress;
-            var _safehead = SafeHeadAddress;
+            for (; ; Thread.Yield())
+            {
+                long closeStartAddress = ClosedUntilAddress;
+                long closeEndAddress = OngoingCloseUntilAddress;
 
-            Console.WriteLine("ClosePageAddress: {0}.{1}", GetPage(closePageAddress), GetOffsetInPage(closePageAddress));
-            Console.WriteLine("FlushedUntil: {0}.{1}", GetPage(_flush), GetOffsetInPage(_flush));
-            Console.WriteLine("Tail: {0}.{1}", GetPage(_tail), GetOffsetInPage(_tail));
-            Console.WriteLine("Head: {0}.{1}", GetPage(_head), GetOffsetInPage(_head));
+                if (ReadCache)
+                    EvictCallback(closeStartAddress, closeEndAddress);
+
+                for (long closePageAddress = closeStartAddress & ~PageSizeMask; closePageAddress < closeEndAddress; closePageAddress += PageSize)
+                {
+                    long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
+                    long end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
+
+                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
+                    // will have seen a record below the eviction range as "in mutable region".
+                    if (OnEvictionObserver is not null)
+                        MemoryPageScan(start, end, OnEvictionObserver);
+
+                    // If we are using a null storage device, we must also shift BeginAddress 
+                    if (IsNullDevice)
+                        Utility.MonotonicUpdate(ref BeginAddress, end, out _);
+
+                    // If the end of the closing range is at the end of the page, free the page
+                    if (end == closePageAddress + PageSize)
+                        FreePage((int)(closePageAddress >> LogPageSizeBits));
+
+                    Utility.MonotonicUpdate(ref ClosedUntilAddress, end, out _);
+                }
+
+                // End if we have exhausted co-operative work
+                if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, 0, closeEndAddress) == closeEndAddress)
+                    break;
+            }
+        }
+
+        private void DebugPrintAddresses()
+        {
+            var _begin = BeginAddress;
+            var _closedUntil = ClosedUntilAddress;
+            var _safehead = SafeHeadAddress;
+            var _head = HeadAddress;
+            var _flush = FlushedUntilAddress;
+            var _safereadonly = SafeReadOnlyAddress;
+            var _readonly = ReadOnlyAddress;
+            var _tail = GetTailAddress();
+
+            Console.WriteLine("BeginAddress: {0}.{1}", GetPage(_begin), GetOffsetInPage(_begin));
+            Console.WriteLine("ClosedUntilAddress: {0}.{1}", GetPage(_closedUntil), GetOffsetInPage(_closedUntil));
             Console.WriteLine("SafeHead: {0}.{1}", GetPage(_safehead), GetOffsetInPage(_safehead));
-            Console.WriteLine("ReadOnly: {0}.{1}", GetPage(_readonly), GetOffsetInPage(_readonly));
+            Console.WriteLine("Head: {0}.{1}", GetPage(_head), GetOffsetInPage(_head));
+            Console.WriteLine("FlushedUntil: {0}.{1}", GetPage(_flush), GetOffsetInPage(_flush));
             Console.WriteLine("SafeReadOnly: {0}.{1}", GetPage(_safereadonly), GetOffsetInPage(_safereadonly));
+            Console.WriteLine("ReadOnly: {0}.{1}", GetPage(_readonly), GetOffsetInPage(_readonly));
+            Console.WriteLine("Tail: {0}.{1}", GetPage(_tail), GetOffsetInPage(_tail));
         }
 
         /// <summary>
@@ -1279,10 +1727,10 @@ namespace FASTER.core
         {
             long currentReadOnlyAddress = ReadOnlyAddress;
             long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
-            long desiredReadOnlyAddress = (pageAlignedTailAddress - ReadOnlyLagAddress);
+            long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyLagAddress;
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out long oldReadOnlyAddress))
             {
-                Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
+                // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(desiredReadOnlyAddress));
             }
         }
@@ -1293,29 +1741,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="currentTailAddress"></param>
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
-        {
-            //obtain local values of variables that can change
-            long currentHeadAddress = HeadAddress;
-            long currentFlushedUntilAddress = FlushedUntilAddress;
-            long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
-            long desiredHeadAddress = (pageAlignedTailAddress - HeadOffsetLagAddress);
-
-            long newHeadAddress = desiredHeadAddress;
-            if (currentFlushedUntilAddress < newHeadAddress)
-            {
-                newHeadAddress = currentFlushedUntilAddress;
-            }
-            newHeadAddress &= ~PageSizeMask;
-
-            if (ReadCache && (newHeadAddress > HeadAddress))
-                EvictCallback(HeadAddress, newHeadAddress);
-
-            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
-            {
-                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
-                epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
-            }
-        }
+            => ShiftHeadAddress((currentTailAddress & ~PageSizeMask) - HeadOffsetLagAddress);
 
         /// <summary>
         /// Tries to shift head address to specified value
@@ -1332,14 +1758,12 @@ namespace FASTER.core
                 newHeadAddress = currentFlushedUntilAddress;
             }
 
-            if (ReadCache && (newHeadAddress > HeadAddress))
-                EvictCallback(HeadAddress, newHeadAddress);
-
             if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
             {
-                Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
+                // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
             }
+
             return newHeadAddress;
         }
 
@@ -1364,36 +1788,19 @@ namespace FASTER.core
 
             if (update)
             {
+                // Anything here must be valid flushes because error flushes do not set LastFlushedUntilAddress, which
+                // prevents future ranges from being marked as flushed
                 if (Utility.MonotonicUpdate(ref FlushedUntilAddress, currentFlushedUntilAddress, out long oldFlushedUntilAddress))
                 {
-                    uint errorCode = 0;
-                    if (errorList.Count > 0)
-                    {
-                        errorCode = errorList.CheckAndWait(oldFlushedUntilAddress, currentFlushedUntilAddress);
-                    }
                     FlushCallback?.Invoke(
                         new CommitInfo
                         {
                             FromAddress = oldFlushedUntilAddress,
                             UntilAddress = currentFlushedUntilAddress,
-                            ErrorCode = errorCode
+                            ErrorCode = 0
                         });
 
-                    var newFlushTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    while (true)
-                    {
-                        var _flushTcs = flushTcs;
-                        if (Interlocked.CompareExchange(ref flushTcs, newFlushTcs, _flushTcs) == _flushTcs)
-                        {
-                            _flushTcs.TrySetResult(errorCode);
-                            break;
-                        }
-                    }
-
-                    if (errorList.Count > 0)
-                    {
-                        errorList.RemoveUntil(currentFlushedUntilAddress);
-                    }
+                    this.FlushEvent.Set();
 
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
                     {
@@ -1401,29 +1808,17 @@ namespace FASTER.core
                     }
                 }
             }
-        }
 
-        /// <summary>
-        /// Shift ClosedUntil address
-        /// </summary>
-        protected void ShiftClosedUntilAddress()
-        {
-            long currentClosedUntilAddress = ClosedUntilAddress;
-            long page = GetPage(currentClosedUntilAddress);
-
-            bool update = false;
-            long pageLastClosedAddress = PageStatusIndicator[page % BufferSize].LastClosedUntilAddress;
-            while (pageLastClosedAddress >= currentClosedUntilAddress && currentClosedUntilAddress >= (page << LogPageSizeBits))
+            if (!errorList.Empty)
             {
-                currentClosedUntilAddress = pageLastClosedAddress;
-                update = true;
-                page++;
-                pageLastClosedAddress = PageStatusIndicator[(int)(page % BufferSize)].LastClosedUntilAddress;
-            }
-
-            if (update)
-            {
-                Utility.MonotonicUpdate(ref ClosedUntilAddress, currentClosedUntilAddress, out _);
+                var info = errorList.GetEarliestError();
+                if (info.FromAddress == FlushedUntilAddress)
+                {
+                    // all requests before error range has finished successfully -- this is the earliest error and we
+                    // can invoke callback on it.
+                    FlushCallback?.Invoke(info);
+                }
+                // Otherwise, do nothing and wait for the next invocation.
             }
         }
 
@@ -1453,7 +1848,7 @@ namespace FASTER.core
             TailPageOffset.Offset = (int)offsetInPage;
 
             // Allocate current page if necessary
-            var pageIndex = (TailPageOffset.Page % BufferSize);
+            var pageIndex = TailPageOffset.Page % BufferSize;
             if (!IsAllocated(pageIndex))
                 AllocatePage(pageIndex);
 
@@ -1477,12 +1872,12 @@ namespace FASTER.core
             ClearPage(pageIndex, (int)GetOffsetInPage(tailAddress));
 
             // Printing debug info
-            Debug.WriteLine("******* Recovered HybridLog Stats *******");
-            Debug.WriteLine("Head Address: {0}", HeadAddress);
-            Debug.WriteLine("Safe Head Address: {0}", SafeHeadAddress);
-            Debug.WriteLine("ReadOnly Address: {0}", ReadOnlyAddress);
-            Debug.WriteLine("Safe ReadOnly Address: {0}", SafeReadOnlyAddress);
-            Debug.WriteLine("Tail Address: {0}", tailAddress);
+            logger?.LogInformation("******* Recovered HybridLog Stats *******");
+            logger?.LogInformation("Head Address: {HeadAddress}", HeadAddress);
+            logger?.LogInformation("Safe Head Address: {SafeHeadAddress}", SafeHeadAddress);
+            logger?.LogInformation("ReadOnly Address: {ReadOnlyAddress}", ReadOnlyAddress);
+            logger?.LogInformation("Safe ReadOnly Address: {SafeReadOnlyAddress}", SafeReadOnlyAddress);
+            logger?.LogInformation("Tail Address: {tailAddress}", tailAddress);
         }
 
         /// <summary>
@@ -1494,7 +1889,7 @@ namespace FASTER.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// 
-        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext<Key, Value> context)
         {
             ulong fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             ulong alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1518,7 +1913,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Read record to memory - simple version
+        /// Read record to memory - simple read context version
         /// </summary>
         /// <param name="fromLogical"></param>
         /// <param name="numBytes"></param>
@@ -1624,7 +2019,7 @@ namespace FASTER.core
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
                 uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+                long adjustedUntilAddress = AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask);
 
                 if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
                 {
@@ -1646,7 +2041,8 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fromAddress"></param>
         /// <param name="untilAddress"></param>
-        public void AsyncFlushPages(long fromAddress, long untilAddress)
+        /// <param name="noFlush"></param>
+        public void AsyncFlushPages(long fromAddress, long untilAddress, bool noFlush = false)
         {
             long startPage = fromAddress >> LogPageSizeBits;
             long endPage = untilAddress >> LogPageSizeBits;
@@ -1697,7 +2093,7 @@ namespace FASTER.core
                     continue;
                 }
 
-                if (IsNullDevice)
+                if (IsNullDevice || noFlush)
                 {
                     // Short circuit as no flush needed
                     Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, asyncResult.untilAddress, out _);
@@ -1718,18 +2114,12 @@ namespace FASTER.core
                     }
 
                     // Enqueue work in shared queue
-                    if (PendingFlush[index].Add(asyncResult))
+                    PendingFlush[index].Add(asyncResult);
+
+                    // Perform work from shared queue if possible
+                    if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
                     {
-                        // Perform work from shared queue if possible
-                        if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
-                        {
-                            WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
-                        }
-                    }
-                    else
-                    {
-                        // Could not add to pending flush list, treat as a failed write
-                        AsyncFlushPageCallback(1, 0, asyncResult);
+                        WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
                     }
                 }
                 else
@@ -1770,44 +2160,61 @@ namespace FASTER.core
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
         /// <param name="endLogicalAddress"></param>
+        /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="completedSemaphore"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore)
+        /// <param name="throttleCheckpointFlushDelayMs"></param>
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
-            int totalNumPages = (int)(endPage - startPage);
-            completedSemaphore = new SemaphoreSlim(0);
-            var asyncResult = new PageAsyncFlushResult<Empty>
+            logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
+
+            var _completedSemaphore = new SemaphoreSlim(0);
+            completedSemaphore = _completedSemaphore;
+
+            // If throttled, convert rest of the method into a truly async task run
+            // because issuing IO can take up synchronous time
+            if (throttleCheckpointFlushDelayMs >= 0)
+                Task.Run(FlushRunner);
+            else
+                FlushRunner();
+
+            void FlushRunner()
             {
-                completedSemaphore = completedSemaphore,
-                count = totalNumPages
-            };
-            var localSegmentOffsets = new long[SegmentBufferSize];
+                int totalNumPages = (int)(endPage - startPage);
 
-            for (long flushPage = startPage; flushPage < endPage; flushPage++)
-            {
+                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
+                var localSegmentOffsets = new long[SegmentBufferSize];
 
-                var pageSize = PageSize;
+                for (long flushPage = startPage; flushPage < endPage; flushPage++)
+                {
+                    long flushPageAddress = flushPage << LogPageSizeBits;
+                    var pageSize = PageSize;
+                    if (flushPage == endPage - 1)
+                        pageSize = (int)(endLogicalAddress - flushPageAddress);
 
-                if (flushPage == endPage - 1)
-                    pageSize = (int)(endLogicalAddress - (flushPage << LogPageSizeBits));
+                    var asyncResult = new PageAsyncFlushResult<Empty>
+                    {
+                        flushCompletionTracker = flushCompletionTracker,
+                        page = flushPage,
+                        fromAddress = flushPageAddress,
+                        untilAddress = flushPageAddress + pageSize,
+                        count = 1
+                    };
 
-                // Intended destination is flushPage
-                WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);
+                    // Intended destination is flushPage
+                    WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
+
+                    if (throttleCheckpointFlushDelayMs >= 0)
+                    {
+                        flushCompletionTracker.WaitOneFlush();
+                        Thread.Sleep(throttleCheckpointFlushDelayMs);
+                    }
+                }
             }
         }
 
-        /// <summary>
-        /// Async get from disk
-        /// </summary>
-        /// <param name="fromLogical"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="context"></param>
-        /// <param name="result"></param>
-        public void AsyncGetFromDisk(long fromLogical,
-                              int numBytes,
-                              AsyncIOContext<Key, Value> context,
-                              SectorAlignedMemory result = default)
+        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
         {
             if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
@@ -1820,7 +2227,7 @@ namespace FASTER.core
             }
 
             if (result == null)
-                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context);
+                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, ref context);
             else
                 AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
         }
@@ -1828,12 +2235,9 @@ namespace FASTER.core
         private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
-            {
-                Trace.TraceError("AsyncGetFromDiskCallback error: {0}", errorCode);
-            }
+                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
 
             var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;
-
             var ctx = result.context;
             try
             {
@@ -1841,38 +2245,31 @@ namespace FASTER.core
                 int requiredBytes = GetRequiredRecordSize((long)record, ctx.record.available_bytes);
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
-                    // We have the complete record.
-                    if (RetrievedFullRecord(record, ref ctx))
+                    // We have all the required bytes. If we don't have the complete record, RetrievedFullRecord calls AsyncGetFromDisk.
+                    if (!RetrievedFullRecord(record, ref ctx))
+                        return;
+
+                    // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
+                    if (ctx.request_key is not null && !comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
                     {
-                        // ReadAtAddress does not have a request key, so it is an implicit match.
-                        if (ctx.request_key is null || comparer.Equals(ref ctx.request_key.Get(), ref GetContextRecordKey(ref ctx)))
+                        // Keys don't match so request the previous record in the chain if it is in the range to resolve.
+                        ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
+                        if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                         {
-                            // The keys are same, so I/O is complete
-                            // ctx.record = result.record;
-                            if (ctx.callbackQueue != null)
-                                ctx.callbackQueue.Enqueue(ctx);
-                            else
-                                ctx.asyncOperation.TrySetResult(ctx);
-                        }
-                        else
-                        {
-                            // Keys are not same. I/O is not complete
-                            ctx.logicalAddress = GetInfoFromBytePointer(record).PreviousAddress;
-                            if (ctx.logicalAddress >= BeginAddress)
-                            {
-                                ctx.record.Return();
-                                ctx.record = ctx.objBuffer = default;
-                                AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
-                            }
-                            else
-                            {
-                                if (ctx.callbackQueue != null)
-                                    ctx.callbackQueue.Enqueue(ctx);
-                                else
-                                    ctx.asyncOperation.TrySetResult(ctx);
-                            }
+                            ctx.record.Return();
+                            ctx.record = ctx.objBuffer = default;
+                            AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
+                            return;
                         }
                     }
+
+                    // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
+                    if (ctx.completionEvent is not null)
+                        ctx.completionEvent.Set(ref ctx);
+                    else if (ctx.callbackQueue is not null)
+                        ctx.callbackQueue.Enqueue(ctx);
+                    else
+                        ctx.asyncOperation.TrySetResult(ctx);
                 }
                 else
                 {
@@ -1882,7 +2279,10 @@ namespace FASTER.core
             }
             catch (Exception e)
             {
-                if (ctx.asyncOperation != null)
+                logger?.LogError(e, "AsyncGetFromDiskCallback error");
+                if (ctx.completionEvent is not null)
+                    ctx.completionEvent.SetException(e);
+                else if (ctx.asyncOperation is not null)
                     ctx.asyncOperation.TrySetException(e);
                 else
                     throw;
@@ -1901,7 +2301,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncFlushPageCallback error: {0}", errorCode);
+                    logger?.LogError("AsyncFlushPageCallback error: {0}", errorCode);
                 }
 
                 // Set the page status to flushed
@@ -1911,9 +2311,18 @@ namespace FASTER.core
                 {
                     if (errorCode != 0)
                     {
-                        errorList.Add(result.fromAddress);
+                        // Note down error details and trigger handling only when we are certain this is the earliest
+                        // error among currently issued flushes
+                        errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode });
                     }
-                    Utility.MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
+                    else
+                    {
+                        // Update the page's last flushed until address only if there is no failure.
+                        Utility.MonotonicUpdate(
+                            ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress,
+                            result.untilAddress, out _);
+                    }
+
                     ShiftFlushedUntilAddress();
                     result.Free();
                 }
@@ -1925,6 +2334,26 @@ namespace FASTER.core
                 }
             }
             catch when (disposed) { }
+        }
+
+        internal void UnsafeSkipError(CommitInfo info)
+        {
+            try
+            {
+                errorList.TruncateUntil(info.UntilAddress);
+                var page = info.FromAddress >> PageSizeMask;
+                Utility.MonotonicUpdate(
+                    ref PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress,
+                    info.UntilAddress, out _);
+                ShiftFlushedUntilAddress();
+                var _flush = FlushedUntilAddress;
+                if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
+                {
+                    WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                }
+            }
+            catch when (disposed) { }
+
         }
 
         /// <summary>
@@ -1939,10 +2368,55 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
+                    logger?.LogError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
                 }
 
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;
+
+                // Unset dirty bit for flushed pages
+                bool epochTaken = false;
+                if (!epoch.ThisInstanceProtected())
+                {
+                    epochTaken = true;
+                    epoch.Resume();
+                }
+
+                try
+                {
+                    var startAddress = result.page << LogPageSizeBits;
+                    var endAddress = startAddress + PageSize;
+
+                    if (result.fromAddress > startAddress)
+                        startAddress = result.fromAddress;
+                    var _readOnlyAddress = SafeReadOnlyAddress;
+                    if (_readOnlyAddress > startAddress)
+                        startAddress = _readOnlyAddress;
+
+                    if (result.untilAddress < endAddress)
+                        endAddress = result.untilAddress;
+                    int flushWidth = (int)(endAddress - startAddress);
+
+                    if (flushWidth > 0)
+                    {
+                        var physicalAddress = GetPhysicalAddress(startAddress);
+                        var endPhysicalAddress = physicalAddress + flushWidth;
+
+                        while (physicalAddress < endPhysicalAddress)
+                        {
+                            ref var info = ref GetInfo(physicalAddress);
+                            var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                            if (info.Dirty)
+                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
+                            physicalAddress += alignedRecordSize;
+                        }
+                    }
+                }
+                finally
+                {
+                    if (epochTaken)
+                        epoch.Suspend();
+                }
+
                 if (Interlocked.Decrement(ref result.count) == 0)
                 {
                     result.Free();

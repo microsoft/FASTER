@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace FASTER.core
@@ -13,8 +14,10 @@ namespace FASTER.core
     {
         public readonly int frameSize, pageSize, sectorSize;
         public readonly byte[][] frame;
-        public GCHandle[] handles;
-        public long[] pointers;
+#if !NET5_0_OR_GREATER
+        public readonly GCHandle[] handles;
+#endif
+        public readonly long[] pointers;
 
         public BlittableFrame(int frameSize, int pageSize, int sectorSize)
         {
@@ -23,18 +26,25 @@ namespace FASTER.core
             this.sectorSize = sectorSize;
 
             frame = new byte[frameSize][];
+#if !NET5_0_OR_GREATER
             handles = new GCHandle[frameSize];
+#endif
             pointers = new long[frameSize];
         }
 
-        public void Allocate(int index)
+        public unsafe void Allocate(int index)
         {
             var adjustedSize = pageSize + 2 * sectorSize;
-            byte[] tmp = new byte[adjustedSize];
-            Array.Clear(tmp, 0, adjustedSize);
 
+#if NET5_0_OR_GREATER
+            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
+            long p = (long)Unsafe.AsPointer(ref tmp[0]);
+#else
+            byte[] tmp = new byte[adjustedSize];
             handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
             long p = (long)handles[index].AddrOfPinnedObject();
+#endif
+            Array.Clear(tmp, 0, adjustedSize);
             pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
             frame[index] = tmp;
         }
@@ -51,13 +61,13 @@ namespace FASTER.core
 
         public void Dispose()
         {
+#if !NET5_0_OR_GREATER
             for (int i = 0; i < frameSize; i++)
             {
-                if (handles[i] != default(GCHandle))
+                if (handles[i].IsAllocated)
                     handles[i].Free();
-                frame[i] = null;
-                pointers[i] = 0;
             }
+#endif
         }
     }
 }

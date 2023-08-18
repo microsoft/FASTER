@@ -30,7 +30,7 @@ namespace FASTER.core
 
         public static void WriteInfo(AddressInfo* info, long address, long size)
         {
-            info->word = default(IntPtr);
+            info->word = default;
             info->Address = address;
             info->Size = size;
         }

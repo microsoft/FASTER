@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable CS0162 // Unreachable code detected -- when switching on YcsbConstants 
-
 //#define DASHBOARD
 
 using FASTER.core;
@@ -27,9 +25,10 @@ namespace FASTER.benchmark
 
     internal unsafe class ConcurrentDictionary_YcsbBenchmark
     {
+        readonly TestLoader testLoader;
         readonly int numaStyle;
         readonly string distribution;
-        readonly int readPercent;
+        readonly int readPercent, upsertPercent, rmwPercent;
         readonly Input[] input_;
 
         readonly Key[] init_keys_;
@@ -44,11 +43,14 @@ namespace FASTER.benchmark
 
         internal ConcurrentDictionary_YcsbBenchmark(Key[] i_keys_, Key[] t_keys_, TestLoader testLoader)
         {
+            this.testLoader = testLoader;
             init_keys_ = i_keys_;
             txn_keys_ = t_keys_;
             numaStyle = testLoader.Options.NumaStyle;
             distribution = testLoader.Distribution;
-            readPercent = testLoader.Options.ReadPercent;
+            readPercent = testLoader.ReadPercent;
+            upsertPercent = testLoader.UpsertPercent;
+            rmwPercent = testLoader.RmwPercent;
 
 #if DASHBOARD
             statsWritten = new AutoResetEvent[threadCount];
@@ -63,11 +65,11 @@ namespace FASTER.benchmark
             writeStats = new bool[threadCount];
             freq = Stopwatch.Frequency;
 #endif
-            input_ = new Input[8];
+            input_ = GC.AllocateArray<Input>(8, true);
             for (int i = 0; i < 8; i++)
                 input_[i].value = i;
 
-            store = new ConcurrentDictionary<Key, Value>(testLoader.Options.ThreadCount, YcsbConstants.kMaxKey, new KeyComparer());
+            store = new (testLoader.Options.ThreadCount, testLoader.MaxKey, new KeyComparer());
         }
 
         internal void Dispose()
@@ -77,19 +79,21 @@ namespace FASTER.benchmark
 
         private void RunYcsb(int thread_idx)
         {
-            RandomGenerator rng = new RandomGenerator((uint)(1 + thread_idx));
+            RandomGenerator rng = new ((uint)(1 + thread_idx));
 
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
-
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+                else
+                    Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            }
+            var sw = Stopwatch.StartNew();
 
             Value value = default;
             long reads_done = 0;
             long writes_done = 0;
+            long deletes_done = 0;
 
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
@@ -101,49 +105,36 @@ namespace FASTER.benchmark
             while (!done)
             {
                 long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
-                while (chunk_idx >= YcsbConstants.kTxnCount)
+                while (chunk_idx >= testLoader.TxnCount)
                 {
-                    if (chunk_idx == YcsbConstants.kTxnCount)
+                    if (chunk_idx == testLoader.TxnCount)
                         idx_ = 0;
                     chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 }
 
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
                 {
-                    Op op;
-                    int r = (int)rng.Generate(100);
+                    int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
-                        op = Op.Read;
-                    else if (readPercent >= 0)
-                        op = Op.Upsert;
-                    else
-                        op = Op.ReadModifyWrite;
-
-                    switch (op)
                     {
-                        case Op.Upsert:
-                            {
-                                store[txn_keys_[idx]] = value;
-                                ++writes_done;
-                                break;
-                            }
-                        case Op.Read:
-                            {
-                                if (store.TryGetValue(txn_keys_[idx], out value))
-                                {
-                                    ++reads_done;
-                                }
-                                break;
-                            }
-                        case Op.ReadModifyWrite:
-                            {
-                                store.AddOrUpdate(txn_keys_[idx], *(Value*)(input_ptr + (idx & 0x7)), (k, v) => new Value { value = v.value + (input_ptr + (idx & 0x7))->value });
-                                ++writes_done;
-                                break;
-                            }
-                        default:
-                            throw new InvalidOperationException("Unexpected op: " + op);
+                        if (store.TryGetValue(txn_keys_[idx], out value))
+                            ++reads_done;
+                        continue;
                     }
+                    if (r < upsertPercent)
+                    {
+                        store[txn_keys_[idx]] = value;
+                        ++writes_done;
+                        continue;
+                    }
+                    if (r < rmwPercent)
+                    {
+                        store.AddOrUpdate(txn_keys_[idx], *(Value*)(input_ptr + (idx & 0x7)), (k, v) => new Value { value = v.value + (input_ptr + (idx & 0x7))->value });
+                        ++writes_done;
+                        continue;
+                    }
+                    store.Remove(txn_keys_[idx], out _);
+                    ++deletes_done;
                 }
 
 #if DASHBOARD
@@ -165,17 +156,15 @@ namespace FASTER.benchmark
 
             sw.Stop();
 
-            Console.WriteLine("Thread " + thread_idx + " done; " + reads_done + " reads, " +
-                writes_done + " writes, in " + sw.ElapsedMilliseconds + " ms.");
-            Interlocked.Add(ref total_ops_done, reads_done + writes_done);
+            Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
+            Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
         }
 
         internal unsafe (double, double) Run(TestLoader testLoader)
         {
-            RandomGenerator rng = new RandomGenerator();
+            RandomGenerator rng = new ();
 
-            GCHandle handle = GCHandle.Alloc(input_, GCHandleType.Pinned);
-            input_ptr = (Input*)handle.AddrOfPinnedObject();
+            input_ptr = (Input*)Unsafe.AsPointer(ref input_[0]);
 
 #if DASHBOARD
             var dash = new Thread(() => DoContinuousMeasurements());
@@ -192,8 +181,7 @@ namespace FASTER.benchmark
                 int x = idx;
                 workers[idx] = new Thread(() => SetupYcsb(x));
             }
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            var sw = Stopwatch.StartNew();
             // Start threads.
             foreach (Thread worker in workers)
             {
@@ -205,7 +193,7 @@ namespace FASTER.benchmark
             }
             sw.Stop();
 
-            double insertsPerSecond = ((double)YcsbConstants.kInitCount / sw.ElapsedMilliseconds) * 1000;
+            double insertsPerSecond = ((double)testLoader.InitCount / sw.ElapsedMilliseconds) * 1000;
             Console.WriteLine(TestStats.GetLoadingTimeLine(insertsPerSecond, sw.ElapsedMilliseconds));
 
             idx_ = 0;
@@ -224,10 +212,9 @@ namespace FASTER.benchmark
                 worker.Start();
             }
 
-            Stopwatch swatch = new Stopwatch();
-            swatch.Start();
+            var swatch = Stopwatch.StartNew();
 
-            if (YcsbConstants.kPeriodicCheckpointMilliseconds <= 0)
+            if (testLoader.Options.PeriodicCheckpointMilliseconds <= 0)
             {
                 Thread.Sleep(TimeSpan.FromSeconds(testLoader.Options.RunSeconds));
             }
@@ -236,8 +223,8 @@ namespace FASTER.benchmark
                 double runSeconds = 0;
                 while (runSeconds < testLoader.Options.RunSeconds)
                 {
-                    Thread.Sleep(TimeSpan.FromMilliseconds(YcsbConstants.kPeriodicCheckpointMilliseconds));
-                    runSeconds += YcsbConstants.kPeriodicCheckpointMilliseconds / 1000;
+                    Thread.Sleep(TimeSpan.FromMilliseconds(testLoader.Options.PeriodicCheckpointMilliseconds));
+                    runSeconds += testLoader.Options.PeriodicCheckpointMilliseconds / 1000;
                 }
             }
 
@@ -254,7 +241,6 @@ namespace FASTER.benchmark
             dash.Abort();
 #endif
 
-            handle.Free();
             input_ptr = null;
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
@@ -267,11 +253,13 @@ namespace FASTER.benchmark
 
         private void SetupYcsb(int thread_idx)
         {
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
-            else
-                Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)thread_idx);
+                else
+                    Native32.AffinitizeThreadShardedNuma((uint)thread_idx, 2); // assuming two NUMA sockets
+            }
 #if DASHBOARD
             var tstart = Stopwatch.GetTimestamp();
             var tstop1 = tstart;
@@ -282,7 +270,7 @@ namespace FASTER.benchmark
             Value value = default;
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
-                chunk_idx < YcsbConstants.kInitCount;
+                chunk_idx < testLoader.InitCount;
                 chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize)
             {
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize; ++idx)
@@ -323,11 +311,13 @@ namespace FASTER.benchmark
         void DoContinuousMeasurements()
         {
 
-            if (numaStyle == 0)
-                Native32.AffinitizeThreadRoundRobin((uint)threadCount + 1);
-            else
-                Native32.AffinitizeThreadShardedTwoNuma((uint)threadCount + 1);
-
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                if (numaStyle == 0)
+                    Native32.AffinitizeThreadRoundRobin((uint)threadCount + 1);
+                else
+                    Native32.AffinitizeThreadShardedTwoNuma((uint)threadCount + 1);
+            }
             double totalThroughput, totalLatency, maximumLatency;
             double totalProgress;
             int ver = 0;
@@ -381,10 +371,10 @@ namespace FASTER.benchmark
 
         #region Load Data
 
-        internal static void CreateKeyVectors(out Key[] i_keys, out Key[] t_keys)
+        internal static void CreateKeyVectors(TestLoader testLoader, out Key[] i_keys, out Key[] t_keys)
         {
-            i_keys = new Key[YcsbConstants.kInitCount];
-            t_keys = new Key[YcsbConstants.kTxnCount];
+            i_keys = new Key[testLoader.InitCount];
+            t_keys = new Key[testLoader.TxnCount];
         }
         internal class KeySetter : IKeySetter<Key>
         {

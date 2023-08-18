@@ -5,17 +5,11 @@ using FASTER.core;
 
 namespace FASTER.benchmark
 {
-    enum BenchmarkType : int
+    enum BenchmarkType : byte
     {
-        Ycsb,
+        Ycsb = 0,
         SpanByte,
         ConcurrentDictionaryYcsb
-    };
-
-    enum LockImpl : int
-    {
-        None,
-        RecordInfo
     };
 
     enum AddressLineNum : int
@@ -42,13 +36,6 @@ namespace FASTER.benchmark
         FinalTrimmedOps = 21
     }
 
-    public enum Op : ulong
-    {
-        Upsert = 0,
-        Read = 1,
-        ReadModifyWrite = 2
-    }
-
     public static class YcsbConstants
     {
         internal const string UniformDist = "uniform";    // Uniformly random distribution of keys
@@ -60,30 +47,10 @@ namespace FASTER.benchmark
         internal const string InsPerSec = "ins/sec";
         internal const string OpsPerSec = "ops/sec";
 
-#if DEBUG
-        internal const bool kUseSmallData = true;
-        internal const bool kSmallMemoryLog = false;
-        internal const int kRunSeconds = 30;
-        internal const bool kDumpDistribution = false;
-        internal const bool kAffinitizedSession = true;
-        internal const int kPeriodicCheckpointMilliseconds = 0;
-#else
-        internal const bool kUseSmallData = false;
-        internal const bool kSmallMemoryLog = false;
-        internal const int kRunSeconds = 30;
-        internal const bool kDumpDistribution = false;
-        internal const bool kAffinitizedSession = true;
-        internal const int kPeriodicCheckpointMilliseconds = 0;
-#endif
-
         internal const CheckpointType kPeriodicCheckpointType = CheckpointType.FoldOver;
         internal const bool kPeriodicCheckpointTryIncremental = false;
 
         internal const double SyntheticZipfTheta = 0.99;
-
-        internal const long kInitCount = kUseSmallData ? 2500480 : 250000000;
-        internal const long kTxnCount = kUseSmallData ? 10000000 : 1000000000;
-        internal const int kMaxKey = kUseSmallData ? 1 << 22 : 1 << 28;
 
         internal const int kFileChunkSize = 4096;
         internal const long kChunkSize = 640;

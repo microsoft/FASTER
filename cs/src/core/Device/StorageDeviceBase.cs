@@ -69,6 +69,12 @@ namespace FASTER.core
         protected int startSegment = 0, endSegment = -1;
 
         /// <summary>
+        /// If true, skip adding the segmentId to the filename.
+        /// </summary>
+        /// <remarks>If true, SegmentSize must be -1</remarks>
+        protected bool OmitSegmentIdFromFileName;
+
+        /// <summary>
         /// Initializes a new StorageDeviceBase
         /// </summary>
         /// <param name="filename">Name of the file to use</param>
@@ -91,12 +97,19 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segmentSize"></param>
         /// <param name="epoch"></param>
-        public virtual void Initialize(long segmentSize, LightEpoch epoch = null)
+        /// <param name="omitSegmentIdFromFilename"></param>
+        public virtual void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
             if (segmentSize != -1)
-                Debug.Assert(Capacity == -1 || Capacity % segmentSize == 0, "capacity must be a multiple of segment sizes");
+            { 
+                if (Capacity != -1 && Capacity % segmentSize != 0)
+                    throw new FasterException("capacity must be a multiple of segment sizes");
+                if (omitSegmentIdFromFilename)
+                    throw new FasterException("omitSegmentIdInFilename requires a segment size of -1");
+            }
             this.segmentSize = segmentSize;
             this.epoch = epoch;
+            this.OmitSegmentIdFromFileName = omitSegmentIdFromFilename;
             if (!Utility.IsPowerOfTwo(segmentSize))
             {
                 if (segmentSize != -1)
@@ -111,6 +124,16 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>
+        /// Create a filename that may or may not include the segmentId
+        /// </summary>
+        protected internal string GetSegmentFilename(string filename, int segmentId) => GetSegmentFilename(filename, segmentId, OmitSegmentIdFromFileName);
+
+        /// <summary>
+        /// Create a filename that may or may not include the segmentId
+        /// </summary>
+        protected internal static string GetSegmentFilename(string filename, int segmentId, bool omitSegmentId) 
+            => omitSegmentId ? filename : $"{filename}.{segmentId}";
 
         /// <summary>
         /// Whether device should be throttled
@@ -169,9 +192,21 @@ namespace FASTER.core
         /// <param name="segment"></param>
         public virtual void RemoveSegment(int segment)
         {
-            ManualResetEventSlim completionEvent = new ManualResetEventSlim(false);
+            ManualResetEventSlim completionEvent = new(false);
             RemoveSegmentAsync(segment, r => completionEvent.Set(), null);
-            completionEvent.Wait();
+            Debug.Assert(!epoch.ThisInstanceProtected());
+            bool isProtected = epoch.ThisInstanceProtected();
+            if (isProtected)
+                epoch.Suspend();
+            try
+            {
+                completionEvent.Wait();
+            }
+            finally
+            {
+                if (isProtected)
+                    epoch.Resume();
+            }
         }
 
         /// <summary>
@@ -189,23 +224,35 @@ namespace FASTER.core
                 callback(result);
                 return;
             }
-            CountdownEvent countdown = new CountdownEvent(toSegment - oldStart);
+            CountdownEvent countdown = new(toSegment - oldStart);
             // This action needs to be epoch-protected because readers may be issuing reads to the deleted segment, unaware of the delete.
             // Because of earlier compare-and-swap, the caller has exclusive access to the range [oldStartSegment, newStartSegment), and there will
             // be no double deletes.
-            epoch.BumpCurrentEpoch(() =>
+
+            bool isProtected = epoch.ThisInstanceProtected();
+            if (!isProtected)
+                epoch.Resume();
+            try
             {
-                for (int i = oldStart; i < toSegment; i++)
+                epoch.BumpCurrentEpoch(() =>
                 {
-                    RemoveSegmentAsync(i, r => {
-                        if (countdown.Signal())
+                    for (int i = oldStart; i < toSegment; i++)
+                    {
+                        RemoveSegmentAsync(i, r =>
                         {
-                            callback(r);
-                            countdown.Dispose();
-                        }
-                    }, result);
-                }
-            });
+                            if (countdown.Signal())
+                            {
+                                callback(r);
+                                countdown.Dispose();
+                            }
+                        }, result);
+                    }
+                });
+            }
+            finally
+            {
+                if (!isProtected) epoch.Suspend();
+            }
         }
 
         /// <summary>
@@ -214,10 +261,21 @@ namespace FASTER.core
         /// <param name="toSegment"></param>
         public void TruncateUntilSegment(int toSegment)
         {
-            using (ManualResetEventSlim completionEvent = new ManualResetEventSlim(false))
+            using (ManualResetEventSlim completionEvent = new(false))
             {
                 TruncateUntilSegmentAsync(toSegment, r => completionEvent.Set(), null);
-                completionEvent.Wait();
+                bool isProtected = epoch.ThisInstanceProtected();
+                if (isProtected)
+                    epoch.Suspend();
+                try
+                {
+                    completionEvent.Wait();
+                }
+                finally
+                {
+                    if (isProtected)
+                        epoch.Resume();
+                }
             }
         }
 
@@ -229,6 +287,11 @@ namespace FASTER.core
         /// <param name="result"></param>
         public virtual void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
         {
+            if ((int)(toAddress >> segmentSizeBits) <= startSegment)
+            {
+                callback(result);
+                return;
+            }
             // Truncate only up to segment boundary if address is not aligned
             TruncateUntilSegmentAsync((int)(toAddress >> segmentSizeBits), callback, result);
         }
@@ -239,10 +302,24 @@ namespace FASTER.core
         /// <param name="toAddress"></param>
         public virtual void TruncateUntilAddress(long toAddress)
         {
-            using (ManualResetEventSlim completionEvent = new ManualResetEventSlim(false))
+            if ((int)(toAddress >> segmentSizeBits) <= startSegment)
+                return;
+
+            using (ManualResetEventSlim completionEvent = new(false))
             {
                 TruncateUntilAddressAsync(toAddress, r => completionEvent.Set(), null);
-                completionEvent.Wait();
+                bool isProtected = epoch.ThisInstanceProtected();
+                if (isProtected)
+                    epoch.Suspend();
+                try
+                {
+                    completionEvent.Wait();
+                }
+                finally
+                {
+                    if (isProtected)
+                        epoch.Resume();
+                }
             }
         }
 
@@ -300,6 +377,11 @@ namespace FASTER.core
         {
             if (segmentSize > 0) return segmentSize;
             return long.MaxValue;
+        }
+
+        /// <inheritdoc/>
+        public virtual void Reset()
+        {
         }
     }
 }

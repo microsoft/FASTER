@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/microsoft/FASTER/master/docs/assets/images/faster-logo.png" alt="FASTER logo" width="600px" />
+  <img src="https://raw.githubusercontent.com/microsoft/FASTER/main/docs/assets/images/faster-logo.png" alt="FASTER logo" width="600px" />
 </p>
   
 [![NuGet](https://img.shields.io/nuget/v/Microsoft.FASTER.Core.svg)](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
-[![Build Status](https://dev.azure.com/ms/FASTER/_apis/build/status/Microsoft.FASTER)](https://dev.azure.com/ms/FASTER/_build/latest?definitionId=8)
+[![Build Status](https://dev.azure.com/ms/FASTER/_apis/build/status/Microsoft.FASTER?branchName=main)](https://dev.azure.com/ms/FASTER/_build/latest?definitionId=8&branchName=main)
 [![Gitter](https://badges.gitter.im/Microsoft/FASTER.svg)](https://gitter.im/Microsoft/FASTER?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 # Introduction
@@ -24,7 +24,6 @@ Both FASTER KV and FASTER Log offer orders-of-magnitude higher performance than 
 workloads. Start learning about FASTER, its unique capabilities, and how to get started at our official website:
 
 [aka.ms/FASTER](https://aka.ms/FASTER)
-
 
 # Contributing
 

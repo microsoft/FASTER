@@ -18,7 +18,7 @@ namespace VarLenClient
         public void Run(string ip, int port)
         {
             using var client1 = new FasterKVClient<ReadOnlyMemory<int>, ReadOnlyMemory<int>>(ip, port);
-            var session = client1.NewSession(new MemoryFunctions());
+            var session = client1.NewSession(new MemoryFunctions()); // uses protocol WireFormat.DefaultVarLenKV by default
 
             SyncMemorySamples(session);
             AsyncMemorySamples(session).Wait();
@@ -69,19 +69,19 @@ namespace VarLenClient
             session.Upsert(key, value);
 
             var (status, output) = await session.ReadAsync(key);
-            if (status != Status.OK || !output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(value.Span))
+            if (!status.Found || !output.Item1.Memory.Span.Slice(0, output.Item2).SequenceEqual(value.Span))
                 throw new Exception("Error!");
 
             await session.DeleteAsync(key);
 
             (status, _) = await session.ReadAsync(key);
-            if (status != Status.NOTFOUND)
+            if (!status.NotFound)
                 throw new Exception("Error!");
 
             key.Span.Fill(9999);
 
             (status, _) = await session.ReadAsync(key);
-            if (status != Status.NOTFOUND)
+            if (!status.NotFound)
                 throw new Exception("Error!");
         }
     }

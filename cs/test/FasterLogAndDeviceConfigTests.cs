@@ -1,48 +1,32 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
-using System;
-using System.Buffers;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
 
-
 namespace FASTER.test
 {
-
     //* NOTE: 
     //* A lot of various usage of Log config and Device config are in FasterLog.cs so the test here
     //* is for areas / parameters not covered by the tests in other areas of the test system
     //* For completeness, setting other parameters too where possible
     //* However, the verification is pretty light. Just makes sure log file created and things be added and read from it 
 
-
-
-     
-       
     [TestFixture]
     internal class LogAndDeviceConfigTests
     {
         private FasterLog log;
         private IDevice device;
-        private string path = Path.GetTempPath() + "DeviceConfigTests/";
+        private string path;
         static readonly byte[] entry = new byte[100];
-
 
         [SetUp]
         public void Setup()
         {
+            path = TestUtils.MethodTestDir + "/";
+
             // Clean up log files from previous test runs in case they weren't cleaned up
-            try
-            {
-                if (Directory.Exists(path))
-                    Directory.Delete(path, true);
-            }
-            catch {}
+            TestUtils.DeleteDirectory(path, wait:true);
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(path + "DeviceConfig", deleteOnClose: true, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
@@ -52,24 +36,20 @@ namespace FASTER.test
         [TearDown]
         public void TearDown()
         {
-            log.Dispose();
-            device.Dispose();
+            log?.Dispose();
+            log = null;
+            device?.Dispose();
+            device = null;
 
             // Clean up log files
-            try
-            {
-                if (Directory.Exists(path))
-                    Directory.Delete(path, true);
-            }
-            catch { }
+            TestUtils.DeleteDirectory(path);
         }
-
 
         [Test]
         [Category("FasterLog")]
+        [Category("Smoke")]
         public void DeviceAndLogConfig()
         {
-
             int entryLength = 10;
 
             // Set Default entry data
@@ -83,7 +63,7 @@ namespace FASTER.test
             log.Commit(true);
 
             // Verify  
-            Assert.IsTrue(File.Exists(path+"/log-commits/commit.0.0"));
+            Assert.IsTrue(File.Exists(path+"/log-commits/commit.1.0"));
             Assert.IsTrue(File.Exists(path + "/DeviceConfig.0"));
 
             // Read the log just to verify can actually read it
@@ -92,15 +72,10 @@ namespace FASTER.test
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
-                       Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as "+currentEntry.ToString() );
-
+                       Assert.AreEqual(currentEntry, result[currentEntry]);
                        currentEntry++;
                 }
             }
         }
-
     }
-    
 }
-
-

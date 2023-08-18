@@ -2,45 +2,47 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
-using System.IO;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
-
     [TestFixture]
     internal class VariableLengthStructFASTERTests
     {
+        // VarLenMax is the variable-length portion; 2 is for the fixed fields
+        const int VarLenMax = 10;
+        const int StackAllocMax = VarLenMax + 2;
+
+        static int GetVarLen(Random r) => r.Next(VarLenMax) + 2;
+
         [Test]
         [Category("FasterKV")]
+        [Category("Smoke")]
         public unsafe void VariableLengthTest1()
         {
-            FasterKV<Key, VLValue> fht;
-            IDevice log;
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<Key, VLValue>
+            DeleteDirectory(MethodTestDir, wait: true);
+
+            var log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
+            var fht = new FasterKV<Key, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = new VLValue() }
                 );
-
             var s = fht.NewSession(new VLFunctions());
 
             Input input = default;
-            Random r = new Random(100);
+            Random r = new(100);
+
+            // Single alloc outside the loop, to the max length we'll need.
+            int* val = stackalloc int[StackAllocMax];
 
             for (int i = 0; i < 5000; i++)
             {
                 var key1 = new Key { key = i };
 
-                var len = 2 + r.Next(10);
-                int* val = stackalloc int[len];
+                var len = GetVarLen(r);
                 ref VLValue value = ref *(VLValue*)val;
                 for (int j = 0; j < len; j++)
                     *(val + j) = len;
@@ -57,56 +59,55 @@ namespace FASTER.test
                 int[] output = null;
                 var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
-                    s.CompletePending(true);
+                    s.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
-                else
+
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(len, output.Length);
+                for (int j = 0; j < len; j++)
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.Length == len);
-                    for (int j = 0; j < len; j++)
-                    {
-                        Assert.IsTrue(output[j] == len);
-                    }
+                    Assert.AreEqual(len, output[j]);
                 }
             }
             s.Dispose();
             fht.Dispose();
-            fht = null;
             log.Dispose();
+            DeleteDirectory(MethodTestDir);
         }
 
         [Test]
         [Category("FasterKV")]
         public unsafe void VariableLengthTest2()
         {
-            FasterKV<VLValue, VLValue> fht;
-            IDevice log;
-            log = Devices.CreateLogDevice(TestContext.CurrentContext.TestDirectory + "/hlog1.log", deleteOnClose: true);
-            fht = new FasterKV<VLValue, VLValue>
+            DeleteDirectory(MethodTestDir, wait: true);
+
+            var log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
+            var fht = new FasterKV<VLValue, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
                 null, null, null, new VariableLengthStructSettings<VLValue, VLValue> { keyLength = new VLValue(), valueLength = new VLValue() }
                 );
-
-
             var s = fht.NewSession(new VLFunctions2());
 
             Input input = default;
-            Random r = new Random(100);
+            Random r = new(100);
+
+            // Single alloc outside the loop, to the max length we'll need.
+            int* keyval = stackalloc int[StackAllocMax];
+            int* val = stackalloc int[StackAllocMax];
 
             for (int i = 0; i < 5000; i++)
             {
-                var keylen = 2 + r.Next(10);
-                int* keyval = stackalloc int[keylen];
+                var keylen = GetVarLen(r);
                 ref VLValue key1 = ref *(VLValue*)keyval;
                 key1.length = keylen;
                 for (int j = 1; j < keylen; j++)
                     *(keyval + j) = i;
 
-                var len = 2 + r.Next(10);
-                int* val = stackalloc int[len];
+                var len = GetVarLen(r);
                 ref VLValue value = ref *(VLValue*)val;
                 for (int j = 0; j < len; j++)
                     *(val + j) = len;
@@ -117,8 +118,7 @@ namespace FASTER.test
             r = new Random(100);
             for (int i = 0; i < 5000; i++)
             {
-                var keylen = 2 + r.Next(10);
-                int* keyval = stackalloc int[keylen];
+                var keylen = GetVarLen(r);
                 ref VLValue key1 = ref *(VLValue*)keyval;
                 key1.length = keylen;
                 for (int j = 1; j < keylen; j++)
@@ -129,26 +129,24 @@ namespace FASTER.test
                 int[] output = null;
                 var status = s.Read(ref key1, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
-                    s.CompletePending(true);
+                    s.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
-                else
+
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(len, output.Length);
+                for (int j = 0; j < len; j++)
                 {
-                    Assert.IsTrue(status == Status.OK);
-                    Assert.IsTrue(output.Length == len);
-                    for (int j = 0; j < len; j++)
-                    {
-                        Assert.IsTrue(output[j] == len);
-                    }
+                    Assert.AreEqual(len, output[j]);
                 }
             }
 
             s.Dispose();
             fht.Dispose();
-            fht = null;
             log.Dispose();
+            DeleteDirectory(MethodTestDir);
         }
-        
     }
 }

@@ -53,9 +53,9 @@ namespace FASTER.core
         {
         }
 
-        public override void Initialize(long segmentSize, LightEpoch epoch)
+        public override void Initialize(long segmentSize, LightEpoch epoch, bool omitSegmentIdFromFileName = false)
         {
-            base.Initialize(segmentSize, epoch);
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFileName);
 
             foreach (IDevice devices in devices)
             {
@@ -149,7 +149,7 @@ namespace FASTER.core
 
         private static string ComputeFileString(IList<IDevice> devices, int commitPoint)
         {
-            StringBuilder result = new StringBuilder();
+            StringBuilder result = new();
             foreach (IDevice device in devices)
             {
                 string formatString = "{0}, file name {1}, capacity {2} bytes;";

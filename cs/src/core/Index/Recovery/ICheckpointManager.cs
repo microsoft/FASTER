@@ -59,13 +59,20 @@ namespace FASTER.core
         void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
+        /// Callback to indicate version shift during checkpoint
+        /// </summary>
+        /// <param name="oldVersion"></param>
+        /// <param name="newVersion"></param>
+        void CheckpointVersionShift(long oldVersion, long newVersion);
+
+        /// <summary>
         /// Commit log incremental checkpoint (incremental snapshot)
         /// </summary>
         /// <param name="logToken"></param>
         /// <param name="version"></param>
         /// <param name="commitMetadata"></param>
         /// <param name="deltaLog"></param>
-        void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog);
+        void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog);
 
         /// <summary>
         /// Retrieve commit metadata for specified index checkpoint
@@ -79,8 +86,10 @@ namespace FASTER.core
         /// </summary>
         /// <param name="logToken">Token</param>
         /// <param name="deltaLog">Delta log</param>
+        /// <param name="scanDelta"> whether or not to scan through the delta log to acquire latest entry. make sure the delta log points to the tail address immediately following the returned metadata.</param>
+        /// <param name="recoverTo"> version upper bound to scan for in the delta log. Function will return the largest version metadata no greater than the given version.</param>
         /// <returns>Metadata, or null if invalid</returns>
-        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog);
+        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1);
 
         /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference
@@ -93,7 +102,6 @@ namespace FASTER.core
         /// </summary>
         /// <returns></returns>
         public IEnumerable<Guid> GetLogCheckpointTokens();
-
 
         /// <summary>
         /// Provide device to store index checkpoint (including overflow buckets)
@@ -123,6 +131,11 @@ namespace FASTER.core
         /// <returns></returns>
         IDevice GetDeltaLogDevice(Guid token);
 
+        /// <summary>
+        /// Cleanup all data (subfolder) related to the given guid by this manager
+        /// </summary>
+        public void Purge(Guid token);
+        
         /// <summary>
         /// Cleanup all data (subfolder) related to checkpoints by this manager
         /// </summary>

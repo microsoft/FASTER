@@ -3,44 +3,46 @@
 
 using System;
 using System.Threading;
-using ServerOptions;
 using CommandLine;
-using FASTER.core;
+using FasterServerOptions;
 using FASTER.server;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using FASTER.core;
 
-namespace FixedLenServer
+namespace FasterFixedLenServer
 {
     /// <summary>
-    /// This sample creates a FASTER server for fixed-length (struct) keys and values
+    /// Sample server for fixed-length (blittable) keys and values.
     /// Types are defined in Types.cs; they are 8-byte keys and values in the sample.
-    /// A binary wire protocol is used.
     /// </summary>
     class Program
     {
         static void Main(string[] args)
         {
-            FixedLenServer(args);
-        }
+            Environment.SetEnvironmentVariable("DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS", "1");
+            Trace.Listeners.Add(new ConsoleTraceListener());
 
-        static void FixedLenServer(string[] args)
-        {
             Console.WriteLine("FASTER fixed-length (binary) KV server");
 
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
             if (result.Tag == ParserResultType.NotParsed) return;
             var opts = result.MapResult(o => o, xs => new Options());
 
-            opts.GetSettings(out var logSettings, out var checkpointSettings, out var indexSize);
+            ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.AddSimpleConsole(options =>
+                {
+                    options.SingleLine = true;
+                    options.TimestampFormat = "hh::mm::ss ";
+                });
+                builder.SetMinimumLevel(LogLevel.Error);
+            });
 
-            // We use blittable structs Key and Value to construct a costomized server for fixed-length types
-            var store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings);
-            if (opts.Recover) store.Recover();
-
-            // We specify FixedLenSerializer as our in-built serializer for blittable (fixed length) types
-            // This server can be used with compatible clients such as FixedLenClient and FASTER.benchmark
-            var server = new FasterKVServer<Key, Value, Input, Output, Functions, FixedLenSerializer<Key, Value, Input, Output>>
-                (store, e => new Functions(), opts.Address, opts.Port);
+            using var server = new FixedLenServer<Key, Value, Input, Output, Functions>(opts.GetServerOptions(), () => new Functions(), lockingMode: LockingMode.Standard);
             server.Start();
+            Console.WriteLine("Started server");
+
             Thread.Sleep(Timeout.Infinite);
         }
     }

@@ -11,33 +11,25 @@ namespace FASTER.server
     /// </summary>
     public class SpanByteFunctionsForServer<Context> : SpanByteFunctions<SpanByte, SpanByteAndMemory, Context>
     {
-        readonly WireFormat wireFormat;
-        readonly MemoryPool<byte> memoryPool;
+        /// <summary>
+        /// Memory pool
+        /// </summary>
+        readonly protected MemoryPool<byte> memoryPool;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="wireFormat"></param>
         /// <param name="memoryPool"></param>
-        public SpanByteFunctionsForServer(WireFormat wireFormat = default, MemoryPool<byte> memoryPool = default) : base(true)
+        public SpanByteFunctionsForServer(MemoryPool<byte> memoryPool = default)
         {
-            this.wireFormat = wireFormat;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
 
         /// <inheritdoc />
-        public unsafe override void SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
-        {
-            if (wireFormat == WireFormat.Binary)
-                CopyWithHeaderTo(ref value, ref dst, memoryPool);
-        }
+        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
 
         /// <inheritdoc />
-        public unsafe override void ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
-        {
-            if (wireFormat == WireFormat.Binary)
-                CopyWithHeaderTo(ref value, ref dst, memoryPool);
-        }
+        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo) => CopyWithHeaderTo(ref value, ref dst, memoryPool);
 
         /// <summary>
         /// Copy to given SpanByteAndMemory (header length and payload copied to actual span/memory)
@@ -45,7 +37,7 @@ namespace FASTER.server
         /// <param name="src"></param>
         /// <param name="dst"></param>
         /// <param name="memoryPool"></param>
-        private unsafe void CopyWithHeaderTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        private static unsafe bool CopyWithHeaderTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
             if (dst.IsSpanByte)
             {
@@ -56,7 +48,7 @@ namespace FASTER.server
                     fixed (byte* ptr = span)
                         *(int*)ptr = src.Length;
                     src.AsReadOnlySpan().CopyTo(span.Slice(sizeof(int)));
-                    return;
+                    return true;
                 }
                 dst.ConvertToHeap();
             }
@@ -67,6 +59,7 @@ namespace FASTER.server
             fixed (byte* ptr = dst.Memory.Memory.Span)
                 *(int*)ptr = src.Length;
             src.AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
+            return true;
         }
     }
 }

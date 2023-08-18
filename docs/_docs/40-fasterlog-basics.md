@@ -9,30 +9,31 @@ toc: true
 ## Introduction to FasterLog C#
 
 FasterLog is a blazing fast, persistent, concurrent, and recoverable log for C#. You can perform
-appends, iteration, and log truncation. Tailing iteration, where the iterator can continue to read newly
-added (committed) entries, is also supported. You can kill and recover FasterLog at any time, and resume
+appends, commits, iteration, and log truncation. Tailing iteration, where the iterator can continue to read newly
+added (committed or uncommitted) entries, is supported. You can kill and recover FasterLog at any time, and resume
 iteration as well. FasterLog may be used either synchronously or using `async` Task interfaces.
 
 Underlying FasterLog is a global 64-bit logical log address space starting from 0. The log is split into
 segments corresponding to files on disk. Each segment consists of a fixed number of pages. Both segment
-and pages sizes are configurable during construction of FasterLog. By default, 
-FasterLog commits at page boundaries. You can also force-commit the log as frequently as you need, e.g., every 
-5ms. The typical use cases of FasterLog are captured in our extremely detailed commented sample [here](https://github.com/microsoft/FASTER/blob/master/cs/samples/FasterLogSample/Program.cs). FasterLog
-works with .NET Standard 2.0, and can be used on a broad range of machines and devices. We have tested
-it on both Windows and Linux machines.
+and pages sizes are configurable during construction of FasterLog. You can commit the log as frequently 
+as you need, e.g., every 5ms. The typical use cases of FasterLog are captured in our extremely detailed 
+commented sample [here](https://github.com/microsoft/FASTER/blob/master/cs/samples/FasterLogSample/Program.cs).
+FasterLog works with all versions of .NET, and has been tested on both Windows and Linux machines.
 
 ## Creating the Log
 
 ```cs
-  var device = Devices.CreateLogDevice("D:\\logs\\hlog.log");
-  var log = new FasterLog(new FasterLogSettings { LogDevice = device });
+  using var config = new FasterLogSettings("d:/fasterlog");
+  using var log = new FasterLog(config);
 ```
 
-We first create a 'device' (with specified file name prefix) that will store the persisted data. FasterLog is
-based on the FASTER `IDevice` abstraction, and we have various device implementations available for use, such
-as local and Azure storage devices. The commit information is frequently written into a file in the same 
-path, called 'hlog.log.commit'. You are responsible for disposing the device via `IDisposable` when done. There 
-are other settings that can be provided, discussed later in this guide.
+We first create an instance of the config, `FasterLogSettings`, using an overload that automatically creates
+a log device at the specified local disk path. The commit information written into a file in the same 
+path, under the `log-commits` folder. The `using` ensures that the automatically created `IDevice` is
+disposed at the end. You can also explicitly create an `IDevice` and assign it to the `LogDevice` field
+of `FasterLogSettings`. In this case, you are responsible for disposing the device when done. We have 
+various device implementations available for use, such as local and Azure storage devices. There are 
+other settings that can be provided, discussed later in this guide.
 
 ## Operations on FasterLog
 
@@ -46,11 +47,12 @@ concurrent enqueues to the log, and supports several variants of enqueue:
 * TryEnqueue: Try to append, returns false if there is no space in the log. This is useful to implement throttling by users.
 * EnqueueAsync: Async version of Enqueue, completed when entry is successfully enqueued (to memory)
 
-You can use these options to append byte arrays (byte[]) or spans (Span<byte>). The maximum size of an
+You can use these options to append byte arrays (`byte[]`) or spans (`Span<byte>`). The maximum size of an
 entry is goverened by the page size chosen when configuring FasterLog. You may also atomically enqueue 
 batches of entries to FasterLog, by providing an `ISpanBatch` as an argument to the enqueue operation. In
 this case, all or none of the entries in the batch will eventually commit atomically. Only the `byte[]`
 variants are shown below.
+
 
 ```cs
 long Enqueue(byte[] entry)
@@ -59,10 +61,9 @@ async ValueTask<long> EnqueueAsync(byte[] entry)
 ```
 ### Commit
 
-By default, FasterLog commits data every time a page gets filled up. We usually need to commit more frequently
-than this, for e.g., every 5ms or immediately after an item is enqueued. This is achieved by the `Commit`
-operation. We support sync and async versions of commit. The commit includes the committed begin and tail
-addresses of the log, as well as any ongoing named iterators.
+Users are expected to call the `Commit` operation to force data to disk and create recoverable points on the log. We support
+sync and async versions of commit. The commit includes the committed begin and tail addresses of the log, as well as any ongoing named
+iterators. See the section for advanced users [below](#advanced-features) for an overview of the different ways commits can be customized.
 
 ```cs
 void Commit(bool spinWait = false)
@@ -183,19 +184,14 @@ the log to consumers in a safe way. Since it is slightly more expensive, we do n
 every enqueue, and instead expose to users to call on demand. You use `RefreshUncommitted` similarly to `Commit`, either call
 it from the enqueue thread (e.g., after every enqueue or a batch of enqueues) or have a separate thread/task that periodically 
 calls it. Note that while `RefreshUncommitted` incurs a small CPU overhead to the write operation, it does not perform any 
-I/O operation.
-
-For optimal performance, we suggest using more than one page in memory for FasterLog used with uncommitted scans (e.g., 2 or 4 pages), 
-and set mutable fraction (`MutableFraction` in log settings) to say 0.5. This will ensure that pages get auto-committed only when the
-in-memory log of 2 of 4 pages is 50% full. This will allow pages sufficient time for records to be consumed by readers before the 
-auto-commit tries to push them to disk. You may also commit manually as usual. The example in [playground](https://github.com/microsoft/FASTER/tree/master/cs/playground/FasterLogPubSub) shows how to use this feature.
+I/O operation. The example in [samples](https://github.com/microsoft/FASTER/tree/master/cs/samples/FasterLogPubSub)
+shows how to use this feature.
 
 
 ### Log Head Truncation
 
-FasterLog support log head truncation, until any prefix of the log. Truncation updates the log begin address and
-deletes truncated parts of the log from disk, if applicable. A truncation is persisted via commit, similar 
-to tail address commit.
+FasterLog support log head truncation, until any prefix of the log. Truncation updates the log begin address. At the
+next commit, we persist the new begin address and delete truncated parts of the log from disk after the commit.
 
 There are two variants: `TruncateUntilPageStart` truncates until the start of the page corresponding to the 
 specified address. This is safe to invoke with any address, as the page start is always a valid pointer to the
@@ -209,6 +205,31 @@ Here is an example, where we truncate the log to limit it to the last 100GB:
   log.TruncateUntilPageStart(log.CommittedUntilAddress - 100_000_000_000L);
 ```
 
+### Log Completion
+
+A log can be explicitly marked as **completed**. A completed log simply signals that log producer (callers of ``Enqueue``)
+have finished adding entries, and will no longer grow the log. This is useful when coordinating with log consumers (e.g., a thread
+iterating through the log with an async iterator, waiting for new entries) to stop waiting for more data. Current entries in the
+log can still be read as normal.
+
+To complete a log:
+```cs
+log.CompleteLog(spinWait: true);
+```
+
+After this call, the log will commit all entries enqueued so far, and future ``Enqueues`` will throw an exception. Users can check for
+log completion by calling:
+```cs
+log.LogCompleted;
+```
+
+During iteration, they can check for the end of iteration due to either log completion or iteration reaching the requested end
+address, as:
+
+```cs
+iterator.Ended
+```
+
 ### Random Read
 
 You can issue random reads on any valid address in the log. This is useful to build, for example, an index over the
@@ -219,15 +240,53 @@ log.
 (result, length) = await log.ReadAsync(iter.CurrentAddress);
 ```
 
+# Advanced Features
+
+### Commit behavior customization
+
+FasterLog gives the user to customize the commit process both for performance and for richer semantics associated with commits:
+- ``LogCommitPolicy``: sometimes it is convenient to call ``Commit()`` liberally in the code base, but that can come with performance overhead --- more commits usually mean smaller, more frequent
+writes to disk that can reduce throughput significantly. By using a custom ``LogCommitPolicy``, users can effectively coalesce multiple commit requests in the background to improve
+overall performance. Aside from a default policy that allows every non-redundant commit through, we add two more advanced policies --- ``MaxParallel`` and ``RateLimit``.
+The former will only issue up to ``k`` (customizable as a parameter) parallel I/Os, forcing later commits to wait and coalesce into the next ``k`` writes; the latter similarly throttles 
+commit requests, but instead enforces that at least some amount of time has passed or some of the data has been written since the last
+commit. Note that regardless of the commit policy chosen, ``Commit()`` exhibits the same behavior transparently, and will never block; instead policy decisions are made
+in the background to only admit certain commit requests into actual I/O operations. In short, commit policies are transparent ways for application developers to tune their
+commit logic for latency and throughput without changing the way they write programs.
+  
+- Strong Commits: Most of the time, FasterLog users simply want entries written to disk. But other times, a commit can be associated with additional information and the performance-centric optimizations of normal
+``Commit`` calls can get in the way. For these users, we introduce the concept of strong commits. Strong commits are special commit requests that ignore commit policies and other performance optimizations to always 
+represent a physical recoverable point on the log. Users can:
+  1. specify a unique commit number that identifies exactly the committed point on log, which can be recovered to later exactly regardless of later commits
+  2. associate a piece of custom metadata with the commit called the cookie. The cookie is an arbitrary byte array that will be atomically written as part of the commit and recovered later with the commit.
+  3. associate a callback with the commit to be invoked when the commit is persistent, instead of spinning or waiting externally.
+In exchange for the rich semantics, strong commits are less scalable than normal commits augmented with commit policies, and we advise users to avoid issuing too many such calls (e.g., calling commit after every operation)
+
+- Fast Commits: Normally, because FasterLog attempts to write to disk pages in parallel, we need an additional metadata file write to record a commit point, which results in an additional I/O. Now, if log-level checksum is enabled,
+we support a special mode that bypasses this metadata write and instead uses special commit records to store commit information on the log itself. Fast commits are faster on the commit critical path, but may be slower to recover
+due to the need to scan the log itself for commit records. Fast commit can be turned on in the log setting.
+  
+### Error behavior
+Normally, FasterLog expects a failure-free underlying storage implementation. When faced with faulty or flaky storage, users may choose to implement a custom ``IDevice`` to mask underlying failures
+by retrying or remapping on failure. However, in the unfortunate scenario where a unhandled failure propagates into FasterLog, FasterLog will cease to function and throw an exception to protect against
+data corruption. Implicitly, FasterLog will only mark an entry as committed if all of its predecessors in the log are committed, in a best-effort attempt to preserve application-level causality.
+When a log range ``(x, y)`` has errored, no entries with address after ``x`` will commit. Subsequent calls to the ``FasterLog`` will result in an exception, until ``FasterLog`` is recovered on a 
+non-faulty device. Purely in-memory enqueus are the exception to this, and FasterLog may still function as a purely in-memory pub/sub system despite log failures. 
+
+This may be undesirable for some advanced users who can tolerate data loss. In this case, sych users can turn on ``TolerateDeviceFailure`` in faster log setting. When this flag
+is set, FasterLog will still throw an exception on a device failure, but will continue to commit future operations, ignoring the errored range afterwards. Doing so is not safe and is 
+not advisable in the general case. 
 
 # Configuring FasterLog
 
 The following log settings are available for configuration:
 
 * `LogDevice`: This is an instance of the storage interface (device/path/file) that will be used for the
-main log. It is a class that implements the disposable `IDevice` interface. FASTER provides several device implementations 
-out of the box, such as `LocalStorageDevice` and `ManagedLocalStorageDevice` for local (or attached) storage.
-You can use our extension method to easily create an instance of a local device:
+main log. Use it if you do not use the constructor overload of `FasterLogSettings` that takes a local path
+and creates a local device automatically. Make sure to eventually dispose a log device that you create 
+yourself. FASTER provides several device implementations out of the box, such as `LocalStorageDevice` 
+and `ManagedLocalStorageDevice` for local (or attached) storage. You can use our extension method to 
+easily create an instance of a local device:
 ```cs
   var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
 ```
@@ -235,7 +294,7 @@ You can use our extension method to easily create an instance of a local device:
 * `PageSizeBits`: This field (P) is used to indicate the size of each page. It is provided in terms of the number
 of bits. You get the actual size of the page by a simple computation of two raised to the power of the number
 specified (2<sup>P</sup>). For example, when `PageSizeBits` P is set to 12, it represents pages of size 4KB 
-(since 2<sup>P</sup> = 2<sup>10</sup> = 4096 = 4KB). Generally you should not need to adjust page size from its
+(since 2<sup>P</sup> = 2<sup>12</sup> = 4096 = 4KB). Generally you should not need to adjust page size from its
 default value of 25 (= 32MB).
 
 * `MemorySizeBits`: This field (M) indicates the total size of memory used by the log. As before, for a setting
@@ -252,11 +311,9 @@ each chunk independently of pages, as one segment typically consists of many pag
 each file on disk to be 1GB (the default), we can set `SegmentSizeBits` S to 30, since 2<sup>30</sup> = 1GB.
 
 * `LogCommitManager`: Users can fine tune the commit of log metadata by extending or replacing the default log
-commit manager provided (`LocalLogCommitManager`). For instance, users may commit to a database instead of the
-local file system. They may also perform various pre-commit and post-commit operations if needed.
-
-* `LogCommitFile`: The file used to store log commit info, defaults to the log file name with a '.commit' suffix.
-This is just a shortcut to setting `LogCommitManager` to `new LocalLogCommitManager(LogCommitFile)`.
+commit manager provided (`DeviceLogCommitCheckpointManager`). For instance, users may commit to a database instead 
+of the local file system. They may also perform various pre-commit and post-commit operations if needed. You can 
+also use the older (legacy) commit manager as follows: `new LocalLogCommitManager(LogCommitFile)`.
 
 * `GetMemory`: This delegate, if provided, is used by FasterLog to allocate memory for copying results over from
 the log, for consumption by the application. GetMemory requests memory of a specified minimum size, and may
@@ -268,6 +325,14 @@ of space per entry, in addition to the 4 byte header storing entry length.
 * `MutableFraction`: Fraction of pages in memory that are left uncommitted by default (when explicit commits are
 not called). If set to 0 (the default), a page commits as soon as it is filled up.
 
+* `RemoveOutdatedCommits`: This setting will delete all outdated commits other than the latest commit. During 
+recovery, it will likewise remove all commits other than the one recovered to. 
+
+* `TryRecoverLatest`: If true (default), we will try to recover the log from the latest valid commit, during 
+instantiation or when calling `FasterLog.CreateAsync(...)`.
+
+* `FastCommitMode` and `LogCommitPolicy`: These settings are used for fast commit and for defining how commits are
+gated into the system. See the [advanced features](#advanced-features) section for more details.
 
 # Full API Reference
 
@@ -277,6 +342,9 @@ not called). If set to 0 (the default), a page commits as soon as it is filled u
 long Enqueue(byte[] entry)
 long Enqueue(ReadOnlySpan<byte> entry)
 long Enqueue(IReadOnlySpanBatch readOnlySpanBatch)
+
+// Log Completion
+void CompleteLog(bool spinWait = false)
 
 // Try to enqueue log entry (to memory)
 
@@ -298,7 +366,9 @@ async ValueTask WaitForCommitAsync(long untilAddress = 0)
 // Commit
 
 void Commit(bool spinWait = false)
+bool CommitStrongly(out long commitTail, out long actualCommitNum, bool spinWait = false, byte[] cookie = null, long proposedCommitNum = -1, Action callback = null)
 async ValueTask CommitAsync()
+async ValueTask<(bool success, long commitTail, long actualCommitNum)> CommitStronglyAsync(byte[] cookie = null, long proposedCommitNum = -1, CancellationToken token = default)
 
 // Helper: enqueue log entry and spin-wait for commit
 

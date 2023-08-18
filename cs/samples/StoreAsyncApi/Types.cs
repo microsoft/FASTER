@@ -87,17 +87,13 @@ namespace StoreAsyncApi
 
     public sealed class CacheFunctions : FunctionsBase<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>
     {
-        public override void ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
+        public override bool ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref ReadInfo readInfo)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-            // Console.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
-        }
-
-        public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status)
+        public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx.type == 0)
             {
@@ -108,7 +104,7 @@ namespace StoreAsyncApi
             {
                 long ticks = DateTime.Now.Ticks - ctx.ticks;
 
-                if (status == Status.NOTFOUND)
+                if (!status.Found)
                     Console.WriteLine("Async: Value not found, latency = {0}ms", new TimeSpan(ticks).TotalMilliseconds);
 
                 if (output.value.value != key.key)
@@ -118,9 +114,10 @@ namespace StoreAsyncApi
             }
         }
 
-        public override void SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
+        public override bool SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref ReadInfo readInfo)
         {
             dst.value = value;
+            return true;
         }
     }
 }

@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 1591
-
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using FASTER.core;
@@ -11,53 +9,48 @@ namespace FASTER.benchmark
 {
     public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
     {
-        readonly bool locking;
-
-        public Functions(bool locking) => this.locking = locking;
-
-        public void RMWCompletionCallback(ref Key key, ref Input input, Empty ctx, Status status)
+        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status)
+        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
         }
 
-        public void UpsertCompletionCallback(ref Key key, ref Value value, Empty ctx)
+        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
         {
-        }
-
-        public void DeleteCompletionCallback(ref Key key, Empty ctx)
-        {
-        }
-
-        public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
-        {
-            Debug.WriteLine("Session {0} reports persistence until {1}", sessionId, commitPoint.UntilSerialNo);
+            Debug.WriteLine($"Session {sessionID} ({(sessionName ?? "null")}) reports persistence until {commitPoint.UntilSerialNo}");
         }
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo)
         {
             dst.value = value;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst)
+        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo)
         {
             dst.value = value;
+            return true;
         }
+
+        public bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { value = default; return true; }
+
+        public bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) => true;
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SingleWriter(ref Key key, ref Value src, ref Value dst)
+        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             dst = src;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref Key key, ref Value src, ref Value dst)
+        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo)
         {
             dst = src;
             return true;
@@ -65,35 +58,42 @@ namespace FASTER.benchmark
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitialUpdater(ref Key key, ref Input input, ref Value value)
+        public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
         {
             value.value = input.value;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value)
+        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
         {
             value.value += input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue)
+        public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
         {
             newValue.value = input.value + oldValue.value;
-        }
-
-        public bool SupportsLocking => locking;
-
-        public void Lock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, ref long lockContext)
-        {
-            recordInfo.SpinLock();
-        }
-
-        public bool Unlock(ref RecordInfo recordInfo, ref Key key, ref Value value, LockType lockType, long lockContext)
-        {
-            recordInfo.Unlock();
             return true;
         }
+
+        public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) { }
+
+        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref RMWInfo rmwInfo) => true;
+
+        public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
+
+        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
+
+        public void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) { }
+
+        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+
+        public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) { }
+        public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
+        public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
+        public void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
     }
 }

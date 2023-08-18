@@ -1,24 +1,30 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+#if !NET5_0_OR_GREATER
 using System.Runtime.InteropServices;
+#endif
 using System.Threading;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace FASTER.core
 {
-    public unsafe sealed class VariableLengthBlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
+    internal unsafe sealed class VariableLengthBlittableAllocator<Key, Value> : AllocatorBase<Key, Value>
     {
         public const int kRecordAlignment = 8; // RecordInfo has a long field, so it should be aligned to 8-bytes
 
         // Circular buffer definition
-        private byte[][] values;
-        private GCHandle[] handles;
-        private long[] pointers;
+        private readonly byte[][] values;
+        private readonly long[] pointers;
+#if !NET5_0_OR_GREATER
+        private readonly GCHandle[] handles;
         private readonly GCHandle ptrHandle;
+#endif
         private readonly long* nativePointers;
         private readonly bool fixedSizeKey;
         private readonly bool fixedSizeValue;
@@ -26,15 +32,34 @@ namespace FASTER.core
         internal readonly IVariableLengthStruct<Key> KeyLength;
         internal readonly IVariableLengthStruct<Value> ValueLength;
 
-        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null)
-            : base(settings, comparer, evictCallback, epoch, flushCallback)
-        {
-            values = new byte[BufferSize][];
-            handles = new GCHandle[BufferSize];
-            pointers = new long[BufferSize];
+        private readonly OverflowPool<PageUnit> overflowPagePool;
 
-            ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
-            nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
+        public VariableLengthBlittableAllocator(LogSettings settings, VariableLengthStructSettings<Key, Value> vlSettings, IFasterEqualityComparer<Key> comparer, 
+                Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null, ILogger logger = null)
+            : base(settings, comparer, evictCallback, epoch, flushCallback, logger)
+        {
+            overflowPagePool = new OverflowPool<PageUnit>(4, p =>
+#if NET5_0_OR_GREATER
+            { }
+#else
+                p.handle.Free()
+#endif
+            );
+
+            if (BufferSize > 0)
+            {
+                values = new byte[BufferSize][];
+
+#if NET5_0_OR_GREATER
+                pointers = GC.AllocateArray<long>(BufferSize, true);
+                nativePointers = (long*)Unsafe.AsPointer(ref pointers[0]);
+#else
+                pointers = new long[BufferSize];
+                handles = new GCHandle[BufferSize];
+                ptrHandle = GCHandle.Alloc(pointers, GCHandleType.Pinned);
+                nativePointers = (long*)ptrHandle.AddrOfPinnedObject();
+#endif
+            }
 
             KeyLength = vlSettings.keyLength;
             ValueLength = vlSettings.valueLength;
@@ -49,6 +74,40 @@ namespace FASTER.core
             {
                 fixedSizeValue = true;
                 ValueLength = new FixedLengthStruct<Value>();
+            }
+        }
+
+        internal override int OverflowPageCount => overflowPagePool.Count;
+
+        public override void Reset()
+        {
+            base.Reset();
+            for (int index = 0; index < BufferSize; index++)
+            {
+                ReturnPage(index);
+            }
+            Initialize();
+        }
+
+        void ReturnPage(int index)
+        {
+            Debug.Assert(index < BufferSize);
+            if (values[index] != null)
+            {
+                overflowPagePool.TryAdd(new PageUnit
+                {
+#if !NET5_0_OR_GREATER
+                        handle = handles[index],
+#endif
+                    pointer = pointers[index],
+                    value = values[index]
+                });
+                values[index] = null;
+                pointers[index] = 0;
+#if !NET5_0_OR_GREATER
+                    handles[index] = default;
+#endif
+                Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
 
@@ -198,19 +257,20 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
-            if (values != null)
+            base.Dispose();
+
+#if !NET5_0_OR_GREATER
+            if (BufferSize > 0)
             {
-                for (int i = 0; i < values.Length; i++)
+                for (int i = 0; i < handles.Length; i++)
                 {
                     if (handles[i].IsAllocated)
                         handles[i].Free();
-                    values[i] = null;
                 }
+                ptrHandle.Free();
             }
-            handles = null;
-            pointers = null;
-            values = null;
-            base.Dispose();
+#endif
+            overflowPagePool.Dispose();
         }
 
         public override AddressInfo* GetKeyAddressInfo(long physicalAddress)
@@ -229,12 +289,29 @@ namespace FASTER.core
         /// <param name="index"></param>
         internal override void AllocatePage(int index)
         {
-            var adjustedSize = PageSize + 2 * sectorSize;
-            byte[] tmp = new byte[adjustedSize];
-            Array.Clear(tmp, 0, adjustedSize);
+            Interlocked.Increment(ref AllocatedPageCount);
 
+            if (overflowPagePool.TryGet(out var item))
+            {
+#if !NET5_0_OR_GREATER
+                handles[index] = item.handle;
+#endif
+                pointers[index] = item.pointer;
+                values[index] = item.value;
+                return;
+            }
+
+            var adjustedSize = PageSize + 2 * sectorSize;
+
+#if NET5_0_OR_GREATER
+            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
+            long p = (long)Unsafe.AsPointer(ref tmp[0]);
+#else
+            byte[] tmp = new byte[adjustedSize];
             handles[index] = GCHandle.Alloc(tmp, GCHandleType.Pinned);
             long p = (long)handles[index].AddrOfPinnedObject();
+#endif
+            Array.Clear(tmp, 0, adjustedSize);
             pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
             values[index] = tmp;
         }
@@ -266,8 +343,9 @@ namespace FASTER.core
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress)
         {
+            base.VerifyCompatibleSectorSize(device);
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
 
             WriteAsync((IntPtr)pointers[flushPage % BufferSize],
@@ -285,7 +363,6 @@ namespace FASTER.core
         {
             return page << LogPageSizeBits;
         }
-
 
         /// <summary>
         /// Get first valid logical address
@@ -307,9 +384,16 @@ namespace FASTER.core
             else
             {
                 // Adjust array offset for cache alignment
-                offset += (int)(pointers[page % BufferSize] - (long)handles[page % BufferSize].AddrOfPinnedObject());
+                offset += (int)(pointers[page % BufferSize] - (long)Unsafe.AsPointer(ref values[page % BufferSize][0]));
                 Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
             }
+        }
+
+        internal override void FreePage(long page)
+        {
+            ClearPage(page, 0);
+            if (EmptyPageCount > 0)
+                ReturnPage((int)(page % BufferSize));
         }
 
         /// <summary>
@@ -319,13 +403,12 @@ namespace FASTER.core
         {
             for (int i = 0; i < values.Length; i++)
             {
+#if !NET5_0_OR_GREATER
                 if (handles[i].IsAllocated)
                     handles[i].Free();
+#endif
                 values[i] = null;
             }
-            handles = null;
-            pointers = null;
-            values = null;
         }
 
         protected override void ReadAsync<TContext>(
@@ -413,24 +496,35 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Iterator interface for scanning FASTER log
+        /// Iterator interface for pull-scanning FASTER log
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        public override IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
+        public override IFasterScanIterator<Key, Value> Scan(FasterKV<Key, Value> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode) 
+            => new VariableLengthBlittableScanIterator<Key, Value>(store, this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+
+        /// <summary>
+        /// Implementation for push-scanning FASTER log, called from LogAccessor
+        /// </summary>
+        internal override bool Scan<TScanFunctions>(FasterKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            return new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, scanBufferingMode, epoch);
+            using VariableLengthBlittableScanIterator<Key, Value> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            return PushScanImpl(store, beginAddress, endAddress, ref scanFunctions, iter);
+        }
+
+        /// <summary>
+        /// Implementation for push-iterating key versions, called from LogAccessor
+        /// </summary>
+        internal override bool IterateKeyVersions<TScanFunctions>(FasterKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+        {
+            using VariableLengthBlittableScanIterator<Key, Value> iter = new(store, this, store.comparer, beginAddress, epoch, logger: logger);
+            return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IFasterScanIterator<Key, Value>> observer)
         {
-            using var iter = new VariableLengthBlittableScanIterator<Key, Value>(this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true);
-            OnEvictionObserver?.OnNext(iter);
+            using var iter = new VariableLengthBlittableScanIterator<Key, Value>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, epoch, true, logger: logger);
+            observer?.OnNext(iter);
         }
-
 
         /// <summary>
         /// Read pages from specified device

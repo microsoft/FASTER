@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace FASTER.core
 {
@@ -17,7 +17,7 @@ namespace FASTER.core
     /// <remarks>The session holds this list and returns an enumeration to the caller of an appropriate CompletePending overload. The session will handle
     /// disposing and clearing this list, but it is best if the caller calls Dispose() after processing the results, so the key, input, and heap containers
     /// are released as soon as possible.</remarks>
-    public class CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> : IDisposable
+    public sealed class CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> : IDisposable
     {
         internal const int kInitialAlloc = 32;
         internal const int kReallocMultuple = 2;
@@ -25,13 +25,13 @@ namespace FASTER.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void Add(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferTo(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
         {
             // Note: vector is never null
             if (this.maxIndex >= vector.Length - 1)
                 Array.Resize(ref this.vector, this.vector.Length * kReallocMultuple);
             ++maxIndex;
-            this.vector[maxIndex].Set(ref pendingContext, status);
+            this.vector[maxIndex].TransferTo(ref pendingContext, status);
         }
 
         /// <summary>
@@ -94,7 +94,7 @@ namespace FASTER.core
         public ref TInput Input => ref inputContainer.Get();
 
         /// <summary>
-        /// The output for this pending operation.
+        /// The output for this pending operation. It is the caller's responsibility to dispose this if necessary; <see cref="Dispose()"/> will not try to dispose this member.
         /// </summary>
         public TOutput Output;
 
@@ -104,28 +104,26 @@ namespace FASTER.core
         public TContext Context;
 
         /// <summary>
-        /// The header of the record for this operation
+        /// The record metadata for this operation
         /// </summary>
-        public RecordInfo RecordInfo;
+        public RecordMetadata RecordMetadata;
 
         /// <summary>
-        /// The logical address of the record for this operation
-        /// </summary>
-        public long Address;
-
-        /// <summary>
-        /// The status of the operation: OK or NOTFOUND
+        /// The status of the operation
         /// </summary>
         public Status Status;
 
-        internal void Set(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferTo(ref FasterKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
         {
+            // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
             this.keyContainer = pendingContext.key;
+            pendingContext.key = null;
             this.inputContainer = pendingContext.input;
+            pendingContext.input = null;
+
             this.Output = pendingContext.output;
             this.Context = pendingContext.userContext;
-            this.RecordInfo = pendingContext.recordInfo;
-            this.Address = pendingContext.logicalAddress;
+            this.RecordMetadata = new(pendingContext.recordInfo, pendingContext.logicalAddress);
             this.Status = status;
         }
 
@@ -133,13 +131,11 @@ namespace FASTER.core
         {
             var tempKeyContainer = keyContainer;
             keyContainer = default;
-            if (tempKeyContainer is { })
-                tempKeyContainer.Dispose();
+            tempKeyContainer?.Dispose();
 
             var tempInputContainer = inputContainer;
             inputContainer = default;
-            if (tempInputContainer is { })
-                tempInputContainer.Dispose();
+            tempInputContainer?.Dispose();
 
             Output = default;
             Context = default;

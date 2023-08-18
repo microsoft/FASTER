@@ -1,0 +1,184 @@
+variables:
+  solution: 'cs/FASTER.sln'
+  solutionRemote: 'cs/remote/FASTER.remote.sln'
+  RunAzureTests: 'yes'
+
+jobs:
+- job: 'csharpWindows'
+  pool:
+    vmImage: windows-2022
+  displayName: 'C# (Windows)'
+  timeoutInMinutes: 150 
+
+  strategy:
+    maxParallel: 2
+    matrix:
+      AnyCPU-Debug:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Debug'
+      AnyCPU-Release:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Release'
+      x64-Debug:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Debug'
+      x64-Release:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Release'
+
+  steps:
+  - task: UseDotNet@2
+    displayName: Use .NET 6.0
+    inputs:
+      packageType: 'sdk'
+      version: '6.0.x'
+
+  - task: UseDotNet@2
+    displayName: Use .NET 7.0
+    inputs:
+      packageType: 'sdk'
+      version: '7.0.x'
+
+  - task: NodeTool@0
+    inputs:
+       versionSpec: 14.x
+
+  - script : npm install -g azurite
+    displayName: Install Azurite
+
+  - script : start /B azurite
+    displayName: Start Azurite
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build $(buildConfiguration)'
+    inputs:
+      command: 'build'
+      projects: '**/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration)'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet test $(buildConfiguration)'
+    inputs:
+      command: test
+      projects: '**/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
+      
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
+    inputs:
+      testRunner: VSTest
+      testResultsFiles: '**/*.trx'
+      searchFolder: '$(Agent.TempDirectory)'
+
+- job: 'cppWindows'
+  pool:
+    vmImage: windows-2022
+  displayName: 'C++ (Windows)'
+
+  strategy:
+    maxParallel: 2
+    matrix:
+      x64-Debug:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Debug'
+      x64-Release:
+        buildPlatform: 'x64'
+        buildConfiguration: 'Release'
+
+  steps:
+  - task: CMake@1
+    displayName: 'CMake .. -G"Visual Studio 17 2022"'
+    inputs:
+      workingDirectory: 'cc/build'
+      cmakeArgs: '.. -G"Visual Studio 17 2022"'
+
+  - task: MSBuild@1
+    displayName: 'Build solution cc/build/FASTER.sln'
+    inputs:
+      solution: 'cc/build/FASTER.sln'
+      msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
+
+  - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "in_memory"'
+    workingDirectory: 'cc/build'
+    displayName: 'Run Ctest'
+
+- job: 'cppLinux'
+  pool:
+    vmImage: ubuntu-20.04
+  displayName: 'C++ (Linux)'
+
+  steps:
+  - script: |
+      sudo apt update
+      sudo apt install -y g++ libaio-dev uuid-dev libtbb-dev
+    displayName: 'Install depdendencies'
+  - script: |
+      cd cc
+      mkdir -p build/Debug build/Release
+      cd build/Debug
+      cmake -DCMAKE_BUILD_TYPE=Debug ../..
+      make -j
+      cd ../../build/Release
+      cmake -DCMAKE_BUILD_TYPE=Release ../..
+      make -j
+    displayName: 'Compile'
+  - script: |
+      ulimit -s 65536
+      CTEST_OUTPUT_ON_FAILURE=1 make test
+    workingDirectory: 'cc/build/Debug'
+    displayName: 'Run Tests (Debug)'
+
+- job: 'csharpLinux'
+  pool:
+    vmImage: ubuntu-20.04
+  displayName: 'C# (Linux)'
+
+  strategy:
+    maxParallel: 2
+    matrix:
+      AnyCPU-Debug:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Debug'
+      AnyCPU-Release:
+        buildPlatform: 'Any CPU'
+        buildConfiguration: 'Release'
+
+  steps:
+  - task: UseDotNet@2
+    displayName: Use .NET 6.0
+    inputs:
+      packageType: 'sdk'
+      version: '6.0.x'
+
+  - task: UseDotNet@2
+    displayName: Use .NET 7.0
+    inputs:
+      packageType: 'sdk'
+      version: '7.0.x'
+
+  - bash: |
+      sudo npm install -g azurite
+      sudo mkdir azurite
+      sudo azurite --silent --location azurite --debug azurite\debug.log &
+    displayName: 'Install and Run Azurite'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet build $(buildConfiguration)'
+    inputs:
+      command: 'build'
+      projects: '**/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration)'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'dotnet test $(buildConfiguration)'
+    inputs:
+      command: test
+      projects: '**/*.test.csproj'
+      arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed" --filter "TestCategory=Smoke"'
+      
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
+    inputs:
+      testResultsFormat: 'VSTest'
+      testResultsFiles: '*.trx'
+      searchFolder: '$(Agent.TempDirectory)'

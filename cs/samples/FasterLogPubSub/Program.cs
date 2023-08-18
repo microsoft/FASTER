@@ -31,7 +31,7 @@ namespace FasterLogPubSub
             }
 
             var device = Devices.CreateLogDevice(path + "mylog");
-            var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
+            var log = new FasterLog(new FasterLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, RemoveOutdatedCommits = sameInstance, AutoRefreshSafeTailAddress = true });
             using var cts = new CancellationTokenSource();
 
             var producer = ProducerAsync(log, cts.Token);
@@ -78,7 +78,7 @@ namespace FasterLogPubSub
 
                     Console.WriteLine("Committing...");
 
-                    await log.CommitAsync(cancellationToken);
+                    await log.CommitAsync(token: cancellationToken);
                 }
             }
             catch (OperationCanceledException) { }
@@ -95,8 +95,6 @@ namespace FasterLogPubSub
                     // Console.WriteLine($"Producing {i}");
 
                     log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
-                    log.RefreshUncommitted();
-
                     i++;
 
                     await Task.Delay(TimeSpan.FromMilliseconds(10));

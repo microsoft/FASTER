@@ -12,12 +12,11 @@ namespace FASTER.common
     /// Object pool
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    internal class SimpleObjectPool<T> : IDisposable where T : class, IDisposable
+    public class SimpleObjectPool<T> : IDisposable where T : class, IDisposable
     {
         private readonly Func<T> factory;
         private readonly LightConcurrentStack<T> stack;
         private int allocatedObjects;
-        private readonly int maxObjects;
 
         /// <summary>
         /// Constructor
@@ -27,11 +26,13 @@ namespace FASTER.common
         public SimpleObjectPool(Func<T> factory, int maxObjects = 128)
         {
             this.factory = factory;
-            this.maxObjects = maxObjects;
-            stack = new LightConcurrentStack<T>();
+            stack = new LightConcurrentStack<T>(maxObjects);
             allocatedObjects = 0;
         }
 
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
             while (allocatedObjects > 0)
@@ -45,20 +46,32 @@ namespace FASTER.common
             }
         }
 
+        /// <summary>
+        /// Checkout item
+        /// </summary>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReusableObject<T> Checkout()
+        public T Checkout()
         {
             if (!stack.TryPop(out var obj))
             {
-                if (allocatedObjects < maxObjects)
-                {
-                    Interlocked.Increment(ref allocatedObjects);
-                    return new ReusableObject<T>(factory(), stack);
-                }
-                // Overflow objects are simply discarded after use
-                return new ReusableObject<T>(factory(), null);
+                Interlocked.Increment(ref allocatedObjects);
+                return factory();
             }
-            return new ReusableObject<T>(obj, stack);
+            return obj;
+        }
+
+        /// <summary>
+        /// Return item
+        /// </summary>
+        /// <param name="obj"></param>
+        public void Return(T obj)
+        {
+            if (!stack.TryPush(obj))
+            {
+                obj.Dispose();
+                Interlocked.Decrement(ref allocatedObjects);
+            }
         }
     }
 }

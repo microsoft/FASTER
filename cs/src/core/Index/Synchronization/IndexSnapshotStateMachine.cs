@@ -1,6 +1,8 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,7 +18,7 @@ namespace FASTER.core
             SystemState next,
             FasterKV<Key, Value> faster)
         {
-            switch (next.phase)
+            switch (next.Phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
                     if (faster._indexCheckpoint.IsDefault())
@@ -25,7 +27,7 @@ namespace FASTER.core
                         faster.InitializeIndexCheckpoint(faster._indexCheckpointToken);
                     }
 
-                    faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.startLogicalAddress);
+                    faster._indexCheckpoint.info.startLogicalAddress = faster.hlog.GetTailAddress();
                     faster.TakeIndexFuzzyCheckpoint();
                     break;
 
@@ -67,7 +69,7 @@ namespace FASTER.core
             CancellationToken token = default)
             where FasterSession : IFasterSession
         {
-            switch (current.phase)
+            switch (current.Phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
                     faster.GlobalStateMachineStep(current);
@@ -109,16 +111,16 @@ namespace FASTER.core
         public override SystemState NextState(SystemState start)
         {
             var result = SystemState.Copy(ref start);
-            switch (start.phase)
+            switch (start.Phase)
             {
                 case Phase.REST:
-                    result.phase = Phase.PREP_INDEX_CHECKPOINT;
+                    result.Phase = Phase.PREP_INDEX_CHECKPOINT;
                     break;
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    result.phase = Phase.WAIT_INDEX_ONLY_CHECKPOINT;
+                    result.Phase = Phase.WAIT_INDEX_ONLY_CHECKPOINT;
                     break;
                 case Phase.WAIT_INDEX_ONLY_CHECKPOINT:
-                    result.phase = Phase.REST;
+                    result.Phase = Phase.REST;
                     break;
                 default:
                     throw new FasterException("Invalid Enum Argument");

@@ -18,9 +18,8 @@ namespace FASTER.test.recovery.objects
         [SetUp]
         public void Setup()
         {
-            FasterFolderPath = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-            if (!Directory.Exists(FasterFolderPath))
-                Directory.CreateDirectory(FasterFolderPath);
+            FasterFolderPath = TestUtils.MethodTestDir;
+            TestUtils.RecreateDirectory(FasterFolderPath);
         }
 
         [TearDown]
@@ -31,25 +30,28 @@ namespace FASTER.test.recovery.objects
 
         [Test]
         [Category("FasterKV")]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+
         public async ValueTask ObjectRecoveryTest2(
             [Values]CheckpointType checkpointType,
             [Range(100, 700, 300)] int iterations,
             [Values]bool isAsync)
         {
             this.iterations = iterations;
-            Prepare(checkpointType, out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context);
+            Prepare(out _, out _, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context);
 
             var session1 = h.For(new MyFunctions()).NewSession<MyFunctions>();
-            Write(session1, context, h);
+            Write(session1, context, h, checkpointType);
             Read(session1, context, false);
             session1.Dispose();
 
-            h.TakeFullCheckpoint(out _);
-            h.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            h.TryInitiateFullCheckpoint(out _, checkpointType);
+            h.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             Destroy(log, objlog, h);
 
-            Prepare(checkpointType, out _, out _, out log, out objlog, out h, out context);
+            Prepare(out _, out _, out log, out objlog, out h, out context);
 
             if (isAsync)
                 await h.RecoverAsync();
@@ -63,7 +65,7 @@ namespace FASTER.test.recovery.objects
             Destroy(log, objlog, h);
         }
 
-        private void Prepare(CheckpointType checkpointType, out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context)
+        private void Prepare(out string logPath, out string objPath, out IDevice log, out IDevice objlog, out FasterKV<MyKey, MyValue> h, out MyContext context)
         {
             logPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests.log");
             objPath = Path.Combine(FasterFolderPath, $"FasterRecoverTests_HEAP.log");
@@ -82,8 +84,7 @@ namespace FASTER.test.recovery.objects
                 },
                 new CheckpointSettings()
                 {
-                    CheckpointDir = Path.Combine(FasterFolderPath, "check-points"),
-                    CheckPointType = checkpointType
+                    CheckpointDir = Path.Combine(FasterFolderPath, "check-points")
                 },
                 new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
              );
@@ -98,7 +99,7 @@ namespace FASTER.test.recovery.objects
             objlog.Dispose();
         }
 
-        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht)
+        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, FasterKV<MyKey, MyValue> fht, CheckpointType checkpointType)
         {
             for (int i = 0; i < iterations; i++)
             {
@@ -108,8 +109,8 @@ namespace FASTER.test.recovery.objects
 
                 if (i % 100 == 0)
                 {
-                    fht.TakeFullCheckpoint(out _);
-                    fht.CompleteCheckpointAsync().GetAwaiter().GetResult();
+                    fht.TryInitiateFullCheckpoint(out _, checkpointType);
+                    fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 }
             }
         }
@@ -118,36 +119,36 @@ namespace FASTER.test.recovery.objects
         {
             for (int i = 0; i < iterations; i++)
             {
-                var key = new MyKey { key = i, name = i.ToString() };
-                var input = default(MyInput);
-                MyOutput g1 = new MyOutput();
+                MyKey key = new() { key = i, name = i.ToString() };
+                MyInput input = default;
+                MyOutput g1 = new();
                 var status = session.Read(ref key, ref input, ref g1, context, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref g1);
                 }
 
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(g1.value.value == i.ToString());
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(i.ToString(), g1.value.value);
             }
 
             if (delete)
             {
-                var key = new MyKey { key = 1, name = "1" };
-                var input = default(MyInput);
-                var output = new MyOutput();
+                MyKey key = new() { key = 1, name = "1" };
+                MyInput input = default;
+                MyOutput output = new();
                 session.Delete(ref key, context, 0);
                 var status = session.Read(ref key, ref input, ref output, context, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                     context.FinalizeRead(ref status, ref output);
                 }
 
-                Assert.IsTrue(status == Status.NOTFOUND);
+                Assert.IsFalse(status.Found);
             }
         }
     }
@@ -227,10 +228,10 @@ namespace FASTER.test.recovery.objects
 
     public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, MyContext>
     {
-        public override void InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value) => value.value = input.value;
-        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue) => true;
-        public override void CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue) => newValue = oldValue;
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value)
+        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo) { value.value = input.value; return true; }
+        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyOutput output, ref RMWInfo rmwInfo) => true;
+        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo) { newValue = oldValue; return true; }
+        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo)
         {
             if (value.value.Length < input.value.Length)
                 return false;
@@ -239,10 +240,21 @@ namespace FASTER.test.recovery.objects
         }
 
 
-        public override void SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
-        public override void SingleWriter(ref MyKey key, ref MyValue src, ref MyValue dst) => dst = src;
-        public override void ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst) => dst.value = value;
-        public override bool ConcurrentWriter(ref MyKey key, ref MyValue src, ref MyValue dst)
+        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
+        {
+            dst.value = value;
+            return true;
+        }
+
+        public override bool SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { dst = src; return true; }
+
+        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
+        {
+            dst.value = value;
+            return true;
+        }
+
+        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo)
         {
             if (src == null)
                 return false;
@@ -254,6 +266,6 @@ namespace FASTER.test.recovery.objects
             return true;
         }
 
-        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status) => ctx.Populate(ref status, ref output);
+        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, MyContext ctx, Status status, RecordMetadata recordMetadata) => ctx.Populate(ref status, ref output);
     }
 }

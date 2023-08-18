@@ -5,8 +5,8 @@ namespace FASTER.core
 {
     /// <summary>
     /// Functions that make RMW behave as an atomic TryAdd operation, where Input is the value being added.
-    /// Return Status.NOTFOUND => TryAdd succeededed (item added).
-    /// Return Status.OK => TryAdd failed (item not added, key was already present).
+    /// Return Status.NotFound => TryAdd succeededed (item added).
+    /// Return Status.Found => TryAdd failed (item not added, key was already present).
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
@@ -14,15 +14,15 @@ namespace FASTER.core
     public class TryAddFunctions<Key, Value, Context> : SimpleFunctions<Key, Value, Context>
     {
         /// <inheritdoc />
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value) => true;
+        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RMWInfo rmwInfo) => true;
         /// <inheritdoc />
-        public override bool NeedCopyUpdate(ref Key key, ref Value input, ref Value oldValue) => false;
+        public override bool NeedCopyUpdate(ref Key key, ref Value input, ref Value oldValue, ref Value output, ref RMWInfo rmwInfo) => false;
     }
 
     /// <summary>
     /// Functions that make RMW behave as an atomic TryAdd operation, where Input is the value being added.
-    /// Return Status.NOTFOUND => TryAdd succeededed (item added)
-    /// Return Status.OK => TryAdd failed (item not added, key was already present)
+    /// Return Status.NotFound => TryAdd succeededed (item added)
+    /// Return Status.Found => TryAdd failed (item not added, key was already present)
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>

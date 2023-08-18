@@ -2,18 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using FASTER.core;
 using System.IO;
 using NUnit.Framework;
 
 namespace FASTER.test.largeobjects
 {
-
     [TestFixture]
     internal class LargeObjectTests
     {
@@ -25,12 +19,8 @@ namespace FASTER.test.largeobjects
         [SetUp]
         public void Setup()
         {
-            if (test_path == null)
-            {
-                test_path = TestContext.CurrentContext.TestDirectory + "/" + Path.GetRandomFileName();
-                if (!Directory.Exists(test_path))
-                    Directory.CreateDirectory(test_path);
-            }
+            test_path = TestUtils.MethodTestDir;
+            TestUtils.RecreateDirectory(test_path);
         }
 
         [TearDown]
@@ -53,7 +43,7 @@ namespace FASTER.test.largeobjects
             fht1 = new FasterKV<MyKey, MyLargeValue>
                 (128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
+                new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -70,7 +60,7 @@ namespace FASTER.test.largeobjects
             }
             session1.Dispose();
 
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
             fht1.Dispose();
             log.Dispose();
@@ -82,7 +72,7 @@ namespace FASTER.test.largeobjects
             fht2 = new FasterKV<MyKey, MyLargeValue>
                 (128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
+                new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -94,13 +84,13 @@ namespace FASTER.test.largeobjects
                 var key = new MyKey { key = keycnt };
                 var status = session2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     session2.CompletePending(true);
                 else
                 {
                     for (int i = 0; i < output.value.value.Length; i++)
                     {
-                        Assert.IsTrue(output.value.value[i] == (byte)(output.value.value.Length+i));
+                        Assert.AreEqual((byte)(output.value.value.Length+i), output.value.value[i]);
                     }
                 }
             }

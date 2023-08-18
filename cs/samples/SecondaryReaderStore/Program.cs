@@ -3,7 +3,6 @@
 
 using FASTER.core;
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Threading;
 
@@ -57,7 +56,7 @@ namespace SecondaryReaderStore
                 if (key > 0 && key % checkpointFreq == 0)
                 {
                     Console.WriteLine($"Checkpointing primary until key {key - 1}");
-                    primaryStore.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).GetAwaiter().GetResult();
+                    primaryStore.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).AsTask().GetAwaiter().GetResult();
                     Console.WriteLine($"Upserting keys at primary starting from {key}");
                 }
 
@@ -66,7 +65,7 @@ namespace SecondaryReaderStore
 
             }
             Console.WriteLine($"Checkpointing primary until key {numOps - 1}");
-            primaryStore.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).GetAwaiter().GetResult();
+            primaryStore.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).AsTask().GetAwaiter().GetResult();
             Console.WriteLine("Shutting down primary");
         }
 
@@ -91,7 +90,7 @@ namespace SecondaryReaderStore
                 while (true)
                 {
                     var status = s1.Read(ref key, ref output);
-                    if (status == Status.NOTFOUND)
+                    if (!status.Found)
                     {
                         Console.WriteLine($"Key {key} not found at secondary; performing recovery to catch up");
                         Thread.Sleep(500);
@@ -111,6 +110,5 @@ namespace SecondaryReaderStore
             }
 
         }
-
     }
 }

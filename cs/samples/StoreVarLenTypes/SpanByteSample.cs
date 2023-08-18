@@ -18,6 +18,24 @@ namespace StoreVarLenTypes
     /// </summary>
     public class SpanByteSample
     {
+        // Functions for the push scan iterator.
+        internal struct ScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
+        {
+            internal long count;
+
+            public bool OnStart(long beginAddress, long endAddress) => true;
+
+            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
+
+            public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords) 
+                => key.ToByteArray()[0] == count++;
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+
+            public void OnStop(bool completed, long numberOfRecords) { }
+        }
+
         public static void Run()
         {
             // VarLen types do not need an object log
@@ -30,9 +48,9 @@ namespace StoreVarLenTypes
                 logSettings: new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
 
             // Create session
-            var s = store.For(new CustomSpanByteFunctions(locking: false)).NewSession<CustomSpanByteFunctions>();
+            var s = store.For(new CustomSpanByteFunctions()).NewSession<CustomSpanByteFunctions>();
 
-            Random r = new Random(100);
+            Random r = new(100);
 
             // Here, stackalloc implies fixed, so it can be used directly with SpanByte
             // For Span<byte> over heap data (e.g., strings or byte[]), make sure to use
@@ -40,8 +58,9 @@ namespace StoreVarLenTypes
             Span<byte> keyMem = stackalloc byte[1000];
             Span<byte> valueMem = stackalloc byte[1000];
 
+            const int numRecords = 200;
             byte i;
-            for (i = 0; i < 200; i++)
+            for (i = 0; i < numRecords; i++)
             {
                 var keyLen = r.Next(1, 1000);
                 var key = keyMem.Slice(0, keyLen);
@@ -55,51 +74,45 @@ namespace StoreVarLenTypes
                 s.Upsert(key, value);
             }
 
-            bool success = true;
+            ScanFunctions scanFunctions = new();
+            bool success = store.Log.Scan(ref scanFunctions, store.Log.BeginAddress, store.Log.TailAddress)
+                           && scanFunctions.count == numRecords;
 
-            i = 0;
-            using (IFasterScanIterator<SpanByte, SpanByte> iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
+            if (!success)
             {
-                while (iterator.GetNext(out RecordInfo recordInfo))
+                Console.WriteLine("SpanByteSample: Error on Scan!");
+            }
+            else
+            {
+                r = new Random(100);
+                for (i = 0; i < numRecords; i++)
                 {
-                    ref var key = ref iterator.GetKey();
-                    if (key.ToByteArray()[0] != i++)
+                    var keyLen = r.Next(1, 1000);
+                    Span<byte> key = keyMem.Slice(0, keyLen);
+                    key.Fill(i);
+
+                    var valLen = r.Next(1, 1000);
+
+                    // Option 2: Converting fixed Span<byte> to SpanByte
+                    var status = s.Read(SpanByte.FromFixedSpan(key), out byte[] output, userContext: (byte)valLen);
+
+                    var expectedValue = valueMem.Slice(0, valLen);
+                    expectedValue.Fill((byte)valLen);
+
+                    if (status.IsPending)
                     {
-                        success = false;
-                        break;
+                        s.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        using (completedOutputs)
+                        {
+                            success = completedOutputs.Next();
+                            if (success)
+                                (status, output) = (completedOutputs.Current.Status, completedOutputs.Current.Output);
+                        }
                     }
-                }
-            }
-
-            if (i != 200)
-            {
-                success = false;
-            }
-
-            r = new Random(100);
-            for (i = 0; i < 200; i++)
-            {
-                var keyLen = r.Next(1, 1000);
-                Span<byte> key = keyMem.Slice(0, keyLen);
-                key.Fill(i);
-
-                var valLen = r.Next(1, 1000);
-
-                // Option 2: Converting fixed Span<byte> to SpanByte
-                var status = s.Read(SpanByte.FromFixedSpan(key), out byte[] output, userContext: (byte)valLen);
-
-                var expectedValue = valueMem.Slice(0, valLen);
-                expectedValue.Fill((byte)valLen);
-
-                if (status == Status.PENDING)
-                {
-                    s.CompletePending(true);
-                }
-                else
-                {
-                    if ((status != Status.OK) || (!output.SequenceEqual(expectedValue.ToArray())))
+                    success &= status.Found && output.SequenceEqual(expectedValue.ToArray());
+                    if (!success)
                     {
-                        success = false;
+                        Console.WriteLine("SpanByteSample: Error on Read!");
                         break;
                     }
                 }
@@ -107,8 +120,6 @@ namespace StoreVarLenTypes
 
             if (success)
                 Console.WriteLine("SpanByteSample: Success!");
-            else
-                Console.WriteLine("Error!");
 
             s.Dispose();
             store.Dispose();

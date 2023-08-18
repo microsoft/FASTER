@@ -1,63 +1,55 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
-using System.Threading;
+using System.Linq;
 
 namespace FASTER.core
 {
     class ErrorList
     {
-        private readonly List<long> errorList;
+        private List<CommitInfo> errorList;
 
-        public ErrorList() => errorList = new List<long>();
+        public ErrorList() => errorList = new();
 
-        public void Add(long address)
+        public void Add(CommitInfo info)
         {
             lock (errorList)
-                errorList.Add(address);
+                errorList.Add(info);
         }
 
-        public uint CheckAndWait(long oldFlushedUntilAddress, long currentFlushedUntilAddress)
-        {
-            bool done = false;
-            uint errorCode = 0;
-            while (!done)
-            {
-                done = true;
-                lock (errorList)
-                {
-                    for (int i = 0; i < errorList.Count; i++)
-                    {
-                        if (errorList[i] >= oldFlushedUntilAddress && errorList[i] < currentFlushedUntilAddress)
-                        {
-                            errorCode = 1;
-                        }
-                        else if (errorList[i] < oldFlushedUntilAddress)
-                        {
-                            done = false; // spin barrier for other threads during exception
-                            Thread.Yield();
-                        }
-                    }
-                }
-            }
-            return errorCode;
-        }
-
-        public void RemoveUntil(long currentFlushedUntilAddress)
+        public CommitInfo GetEarliestError()
         {
             lock (errorList)
             {
-                for (int i = 0; i < errorList.Count; i++)
+                var result = new CommitInfo {FromAddress = long.MaxValue};
+                var index = -1;
+                for (var i = 0; i < errorList.Count; i++)
                 {
-                    if (errorList[i] < currentFlushedUntilAddress)
+                    if (errorList[i].FromAddress < result.FromAddress)
                     {
-                        errorList.RemoveAt(i);
+                        result = errorList[i];
+                        index = i;
                     }
                 }
-            }
 
+                return result;
+            }
         }
-        public int Count => errorList.Count;
+
+        public void ClearError()
+        {
+            lock (errorList)
+                errorList.Clear();
+        }
+
+        public void TruncateUntil(long untilAddress)
+        {
+            lock (errorList)
+                errorList = errorList.FindAll(info => info.UntilAddress > untilAddress);
+        }
+
+        public bool Empty => errorList.Count == 0;
     }
 }
