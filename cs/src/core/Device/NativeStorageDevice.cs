@@ -84,8 +84,6 @@ namespace FASTER.core
                                       long capacity = Devices.CAPACITY_UNSPECIFIED)
                 : base(filename, GetSectorSize(filename), capacity)
         {
-            filename += "."; // C++ device expects file to end with period
-
             if (filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
                 throw new FasterException($"Path {filename} is too long");
 

@@ -136,7 +136,7 @@ class FileSystemSegmentBundle {
     , end_segment{ end_segment_ }
     , owner_{ true } {
     for(uint64_t idx = begin_segment; idx < end_segment; ++idx) {
-      new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
+      new(files() + (idx - begin_segment)) file_t{ filename_ + "." + std::to_string(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
@@ -158,7 +158,7 @@ class FileSystemSegmentBundle {
     uint64_t end_new = end_segment;
 
     for(uint64_t idx = begin_segment; idx < begin_copy; ++idx) {
-      new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
+      new(files() + (idx - begin_segment)) file_t{ filename_ + "." + std::to_string(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
@@ -168,7 +168,7 @@ class FileSystemSegmentBundle {
       new(files() + (idx - begin_segment)) file_t{ std::move(other.file(idx)) };
     }
     for(uint64_t idx = end_copy; idx < end_new; ++idx) {
-      new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
+      new(files() + (idx - begin_segment)) file_t{ filename_ + "." + std::to_string(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);

@@ -71,8 +71,7 @@ namespace FASTER.test
             }
 
             device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
-            device.TryComplete();
-            semaphore.Wait();
+            while (!semaphore.Wait(0)) device.TryComplete();
 
             pbuffer.Return();
         }
@@ -85,9 +84,7 @@ namespace FASTER.test
             var pbuffer = bufferPool.Get((int)numBytesToRead);
             device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
                 (uint)numBytesToRead, IOCallback, null);
-            device.TryComplete();
-            semaphore.Wait();
-
+            while (!semaphore.Wait(0)) device.TryComplete();
             buffer = new byte[numBytesToRead];
             fixed (byte* bufferRaw = buffer)
                 Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
