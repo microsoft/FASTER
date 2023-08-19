@@ -23,8 +23,11 @@ namespace FASTER.core
     /// </summary>
     public unsafe class NativeStorageDevice : StorageDeviceBase
     {
+        const int MaxResults = 1 << 12;
+
         private static uint sectorSize = 512;
         private bool _disposed;
+        private readonly ConcurrentQueue<int> freeResults = new();
         NativeResult[] results;
 
         /// <summary>
@@ -61,11 +64,14 @@ namespace FASTER.core
         static extern bool NativeDevice_TryComplete(IntPtr device);
         #endregion
 
+        readonly AsyncIOCallback _callbackDelegate;
+
         void _callback(IntPtr context, int errorCode, ulong numBytes)
         {
             Interlocked.Decrement(ref numPending);
             var result = results[(int)context];
             result.callback((uint)errorCode, (uint)numBytes, result.context);
+            freeResults.Enqueue((int)context);
         }
 
         /// <inheritdoc />
@@ -84,6 +90,8 @@ namespace FASTER.core
                                       long capacity = Devices.CAPACITY_UNSPECIFIED)
                 : base(filename, GetSectorSize(filename), capacity)
         {
+            _callbackDelegate = _callback;
+
             if (filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
                 throw new FasterException($"Path {filename} is too long");
 
@@ -95,7 +103,7 @@ namespace FASTER.core
                 Directory.CreateDirectory(path);
 
             this.nativeDevice = NativeDevice_Create(filename, false, disableFileBuffering, deleteOnClose);
-            this.results = new NativeResult[4096];
+            this.results = new NativeResult[MaxResults];
 
             Debug.WriteLine("Sector size: {0}", NativeDevice_sector_size(nativeDevice));
         }
@@ -122,7 +130,8 @@ namespace FASTER.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
-            int offset = (Interlocked.Increment(ref resultOffset) - 1) % 4096;
+            if (!freeResults.TryDequeue(out int offset))
+                offset = (Interlocked.Increment(ref resultOffset) - 1) % MaxResults;
             ref var result = ref results[offset];
             result.context = context;
             result.callback = callback;
@@ -130,7 +139,7 @@ namespace FASTER.core
             try
             {
                 Interlocked.Increment(ref numPending);
-                int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callback, (IntPtr)offset);
+                int _result = NativeDevice_ReadAsync(nativeDevice, ((ulong)segmentId << segmentSizeBits) | sourceAddress, destinationAddress, readLength, _callbackDelegate, (IntPtr)offset);
                     
                 if (_result != 0)
                 {
@@ -145,11 +154,13 @@ namespace FASTER.core
             {
                 Interlocked.Decrement(ref numPending);
                 callback((uint)(e.HResult & 0x0000FFFF), 0, context);
+                freeResults.Enqueue(offset);
             }
             catch
             {
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
+                freeResults.Enqueue(offset);
             }
         }
 
@@ -169,7 +180,8 @@ namespace FASTER.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
-            int offset = (Interlocked.Increment(ref resultOffset) - 1) % 4096;
+            if (!freeResults.TryDequeue(out int offset))
+                offset = (Interlocked.Increment(ref resultOffset) - 1) % MaxResults;
             ref var result = ref results[offset];
             result.context = context;
             result.callback = callback;
@@ -177,7 +189,7 @@ namespace FASTER.core
             try
             {
                 Interlocked.Increment(ref numPending);
-                int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callback, (IntPtr)offset);
+                int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << segmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
 
                 if (_result != 0)
                 {
