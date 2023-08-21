@@ -79,7 +79,7 @@ namespace FASTER.benchmark
 
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<Key, Value>
-                    (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
+                    (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 30, MemorySizeBits = 26 },
                     new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.LockingMode);
             else
                 store = new FasterKV<Key, Value>
