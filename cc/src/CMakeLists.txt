@@ -99,3 +99,6 @@ set (NATIVE_DEVICE_SOURCES ${NATIVE_DEVICE_SOURCES}
 endif()
 
 add_library(native_device SHARED ${NATIVE_DEVICE_SOURCES} ${NATIVE_DEVICE_HEADERS})
+if (UNIX)
+   target_link_libraries(native_device PRIVATE stdc++fs aio)
+endif()

@@ -61,6 +61,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  <TargetPath>native_device.pdb</TargetPath>
     </ContentWithTargetPath>
+	<ContentWithTargetPath Include="Device/runtimes/linux-x64/libnative_device.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  <TargetPath>libnative_device.so</TargetPath>
+    </ContentWithTargetPath>
   </ItemGroup>
 
   <Choose>
