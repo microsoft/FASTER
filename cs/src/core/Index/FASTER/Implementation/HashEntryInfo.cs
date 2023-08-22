@@ -86,7 +86,6 @@ namespace FASTER.core
             {
                 Tag = tag,
                 Address = newLogicalAddress & Constants.kAddressMask,
-                Pending = this.entry.Pending,
                 Tentative = false
                 // .ReadCache is included in newLogicalAddress
             };

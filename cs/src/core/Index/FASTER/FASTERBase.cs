@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using FASTER.core;
 using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
@@ -251,18 +250,6 @@ namespace FASTER.core
             }
         }
 
-        public bool Pending
-        {
-            readonly get => (word & Constants.kPendingBitMask) != 0;
-            set
-            {
-                if (value)
-                    word |= Constants.kPendingBitMask;
-                else
-                    word &= ~Constants.kPendingBitMask;
-            }
-        }
-
         public bool Tentative
         {
             readonly get => (word & Constants.kTentativeBitMask) != 0;
@@ -291,7 +278,7 @@ namespace FASTER.core
         {
             var addrRC = this.ReadCache ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            return $"addr {this.AbsoluteAddress}{addrRC}, tag {Tag}, tent {bstr(Tentative)}, pend {bstr(Pending)}";
+            return $"addr {this.AbsoluteAddress}{addrRC}, tag {Tag}, tent {bstr(Tentative)}";
         }
     }
 
@@ -486,7 +473,6 @@ namespace FASTER.core
                 hei.entry = default;
                 hei.entry.Tag = hei.tag;
                 hei.entry.Address = Constants.kTempInvalidAddress;
-                hei.entry.Pending = false;
                 hei.entry.Tentative = true;
 
                 // Insert the tag into this slot. Failure means another session inserted a key into that slot, so continue the loop to find another free slot.
