@@ -66,9 +66,14 @@ namespace FASTER.core
 
         public void WriteInfo(bool inNewVersion, bool tombstone, long previousAddress)
         {
+            // For Recovery reasons, we need to have the record both Sealed and Invalid: 
+            // - Recovery removes the Sealed bit, so we need Invalid to survive from this point on to successful CAS.
+            //   Otherwise, Scan could return partial records (e.g. a checkpoint was taken that flushed midway through the record update).
+            // - Revivification sets Sealed; we need to preserve it here.
+            // We'll clear both on successful CAS.
             this.word = default;
             this.Tombstone = tombstone;
-            this.SetValid();
+            this.SealAndInvalidate();
             this.PreviousAddress = previousAddress;
             this.IsInNewVersion = inNewVersion;
         }
@@ -108,7 +113,9 @@ namespace FASTER.core
         {
             Debug.Assert(!IsLockedShared, "Trying to X unlock an S locked record");
             Debug.Assert(IsLockedExclusive, "Trying to X unlock an unlocked record");
-            Debug.Assert(!IsSealed, "Trying to X unlock a Sealed record");
+
+            // Because we seal the source of an RCU and that source is likely locked, we cannot assert !IsSealed.
+            // Debug.Assert(!IsSealed, "Trying to X unlock a Sealed record");
             word &= ~kExclusiveLockBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
         }
 
@@ -119,8 +126,13 @@ namespace FASTER.core
         public void UnlockExclusiveAndSeal()
         {
             Debug.Assert(!IsLockedShared, "Trying to X unlock an S locked record");
-            Debug.Assert(IsLockedExclusive, "Trying to X unlock an unlocked record");
-            Debug.Assert(!IsSealed, "Trying to X unlock a Sealed record");
+
+            // Because we seal the source of an RCU and that source is likely locked, we cannot assert !IsSealed.
+            // Debug.Assert(!IsSealed, "Trying to X unlock a Sealed record");
+
+            // For this we are Unlocking and Sealing without the cost of an "if EphemeralLocking", so do not assert this.
+            // Debug.Assert(IsLockedExclusive, "Trying to X unlock an unlocked record");
+
             word = (word & ~kExclusiveLockBitMask) | kSealedBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point
         }
 
@@ -313,6 +325,8 @@ namespace FASTER.core
         public void SetTombstone() => word |= kTombstoneBitMask;
         public void SetValid() => word |= kValidBitMask;
         public void SetInvalid() => word &= ~(kValidBitMask | kExclusiveLockBitMask);
+        public void SealAndInvalidate() => word &= (word & ~kValidBitMask) | kSealedBitMask;
+        public void UnsealAndValidate() => word = (word & ~kSealedBitMask) | kValidBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetInvalidAtomic()
