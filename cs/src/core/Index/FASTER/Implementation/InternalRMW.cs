@@ -483,7 +483,9 @@ namespace FASTER.core
                 {
                     // Else it was a CopyUpdater so call PCU
                     fasterSession.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref newRecordInfo, ref rmwInfo);
-                    if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal)
+
+                    // Success should always Seal the old record if it's in mutable.
+                    if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                         srcRecordInfo.UnlockExclusiveAndSeal();
                 }
                 stackCtx.ClearNewRecord();

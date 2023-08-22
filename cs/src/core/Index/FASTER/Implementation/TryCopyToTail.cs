@@ -78,7 +78,10 @@ namespace FASTER.core
             }
 
             if (success)
+            {
+                newRecordInfo.UnsealAndValidate();
                 PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo, pendingContext.InitialEntryAddress);
+            }
             else
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
