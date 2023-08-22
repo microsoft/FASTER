@@ -8,7 +8,7 @@ using System.IO;
 using NUnit.Framework;
 using System.Threading.Tasks;
 
-namespace FASTER.test.recovery.sumstore.recover_continue
+namespace FASTER.test.recovery.sumstore.cntinue
 {
     [TestFixture]
     internal class RecoverContinueTests
@@ -24,7 +24,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/RecoverContinueTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/test.log", deleteOnClose: true);
             checkpointDir = TestUtils.MethodTestDir + "/checkpoints3";
             Directory.CreateDirectory(checkpointDir);
 

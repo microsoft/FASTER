@@ -971,7 +971,6 @@ namespace FASTER.core
                     {
                         hei.entry.Address = pageLogicalAddress + pointer;
                         hei.entry.Tag = hei.tag;
-                        hei.entry.Pending = false;
                         hei.entry.Tentative = false;
                         hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
                     }
@@ -983,7 +982,6 @@ namespace FASTER.core
                         {
                             hei.entry.Address = info.PreviousAddress;
                             hei.entry.Tag = hei.tag;
-                            hei.entry.Pending = false;
                             hei.entry.Tentative = false;
                             hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
                         }
