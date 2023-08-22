@@ -582,8 +582,10 @@ namespace FASTER.core
         {
             var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
-            do 
-                internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, serialNo);
+            var keyHash = comparer.GetHashCode64(ref key);
+
+            do
+                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
@@ -600,8 +602,10 @@ namespace FASTER.core
         {
             var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
+            var keyHash = readOptions.KeyHash ?? comparer.GetHashCode64(ref key);
+
             do
-                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
+                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
@@ -620,7 +624,7 @@ namespace FASTER.core
             Key key = default;
             OperationStatus internalStatus;
             do
-                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
+                internalStatus = InternalRead(ref key, keyHash: 0L, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
@@ -631,14 +635,14 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, Context context, FasterSession fasterSession, long serialNo)
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
+                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
@@ -649,7 +653,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
                                                                             Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -657,7 +661,7 @@ namespace FASTER.core
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
+                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
@@ -669,12 +673,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo)
-            where FasterSession : IFasterSession<Key, Value, Input, Output, Context> 
-            => ContextRMW(ref key, ref input, ref output, out _, context, fasterSession, serialNo);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, out RecordMetadata recordMetadata, 
+        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, long keyHash, ref Input input, ref Output output, out RecordMetadata recordMetadata, 
                                                                           Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
@@ -682,7 +681,7 @@ namespace FASTER.core
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, serialNo);
+                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, fasterSession, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
@@ -694,14 +693,14 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<Input, Output, Context, FasterSession>(ref Key key, Context context, FasterSession fasterSession, long serialNo)
+        internal Status ContextDelete<Input, Output, Context, FasterSession>(ref Key key, long keyHash, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalDelete(ref key, ref context, ref pcontext, fasterSession, serialNo);
+                internalStatus = InternalDelete(ref key, keyHash, ref context, ref pcontext, fasterSession, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);

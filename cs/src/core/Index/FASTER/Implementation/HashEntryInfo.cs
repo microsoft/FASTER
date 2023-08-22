@@ -102,10 +102,7 @@ namespace FASTER.core
 
         public override string ToString()
         {
-            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
-            var hashSign = hash < 0 ? "-" : string.Empty;
-            var absHash = this.hash >= 0 ? this.hash : -this.hash;
-            var hashStr = $"{hashSign}{absHash}";
+            var hashStr = GetHashString(this.hash);
 
             if (bucket == null)
                 return $"hash {hashStr} <no bucket>";
