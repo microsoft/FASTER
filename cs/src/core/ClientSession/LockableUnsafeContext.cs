@@ -49,33 +49,27 @@ namespace FASTER.core
         #endregion Begin/EndLockable
 
         #region Key Locking
- 
-        /// <inheritdoc/>
-        public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
 
         /// <inheritdoc/>
-        public long GetLockCode(Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
+        public bool NeedKeyHash => clientSession.NeedKeyHash;
 
         /// <inheritdoc/>
-        public long GetLockCode(ref Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
+        public long GetKeyHash(Key key) => clientSession.fht.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetLockCode(Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
+        public long GetKeyHash(ref Key key) => clientSession.fht.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
+        public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(key1, key2);
 
         /// <inheritdoc/>
-        public int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareLockCodes(key1, key2);
+        public int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
-        public int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareLockCodes(ref key1, ref key2);
+        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys);
 
         /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys);
-
-        /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys, start, count);
+        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys, start, count);
 
         /// <inheritdoc/>
         public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, 0, keys.Length);

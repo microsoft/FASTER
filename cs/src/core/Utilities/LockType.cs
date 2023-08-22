@@ -59,9 +59,9 @@ namespace FASTER.core
     public interface ILockableKey
     {
         /// <summary>
-        /// The lock code for a specific key, obtained from <see cref="ILockableContext{TKey}.GetLockCode(ref TKey, long)"/>
+        /// The hash code for a specific key, obtained from <see cref="ILockableContext{TKey}.GetKeyHash(ref TKey)"/>
         /// </summary>
-        public long LockCode { get; }
+        public long KeyHash { get; }
 
         /// <summary>
         /// The lock type for a specific key
@@ -80,14 +80,9 @@ namespace FASTER.core
         /// </summary>
         public TKey Key;
 
-        /// <summary>
-        /// The hash code of the key that is acquiring or releasing a lock
-        /// </summary>
-        public long KeyHash;
-
         #region ILockableKey
         /// <inheritdoc/>
-        public long LockCode { get; set; }
+        public long KeyHash { get; set; }
 
         /// <inheritdoc/>
         public LockType LockType { get; set; }
@@ -105,7 +100,7 @@ namespace FASTER.core
         {
             Key = key;
             LockType = lockType;
-            LockCode = context.GetLockCode(ref key, out KeyHash);
+            KeyHash = context.GetKeyHash(ref key);
         }
         /// <summary>
         /// Constructor
@@ -120,7 +115,6 @@ namespace FASTER.core
             Key = key;
             KeyHash = keyHash;
             LockType = lockType;
-            LockCode = context.GetLockCode(ref key, keyHash);
         }
 
         /// <summary>
@@ -129,13 +123,13 @@ namespace FASTER.core
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="context"></param>
-        public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortLockCodes(keys);
+        public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortKeyHashes(keys);
 
         /// <inheritdoc/>
         public override string ToString()
         {
             var hashStr = Utility.GetHashString(this.KeyHash);
-            return $"key {Key}, hash {hashStr}, lockCode {LockCode}, {LockType}";
+            return $"key {Key}, hash {hashStr}, lockCode {KeyHash}, {LockType}";
         }
     }
 

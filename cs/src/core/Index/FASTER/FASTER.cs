@@ -252,6 +252,12 @@ namespace FASTER.core
             }
         }
 
+        /// <summary>Get the hashcode for a key.</summary>
+        public long GetKeyHash(Key key) => this.comparer.GetHashCode64(ref key);
+
+        /// <summary>Get the hashcode for a key.</summary>
+        public long GetKeyHash(ref Key key) => this.comparer.GetHashCode64(ref key);
+
         /// <summary>
         /// Initiate full checkpoint
         /// </summary>

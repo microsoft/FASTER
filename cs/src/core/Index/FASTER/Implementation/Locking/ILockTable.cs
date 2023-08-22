@@ -86,8 +86,6 @@ namespace FASTER.core
         /// </summary>
         public LockState GetLockState(ref TKey key, ref HashEntryInfo hei);
 
-        public bool NeedKeyLockCode { get; }
-
-        public long GetLockCode(ref TKey key, long keyHash);
+        public bool NeedKeyHash { get; }
     }
 }

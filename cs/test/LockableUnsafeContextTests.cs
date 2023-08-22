@@ -85,25 +85,25 @@ namespace FASTER.test.LockableUnsafeContext
 
         private void AddX(ref FixedLengthLockableKeyStruct<long> key, int addend)
         {
-            if (!buckets.TryGetValue(key.LockCode, out var counts))
+            if (!buckets.TryGetValue(key.KeyHash, out var counts))
                 counts = default;
             counts.x += addend;
             Assert.GreaterOrEqual(counts.x, 0);
-            buckets[key.LockCode] = counts;
+            buckets[key.KeyHash] = counts;
         }
 
         private void AddS(ref FixedLengthLockableKeyStruct<long> key, int addend)
         {
-            if (!buckets.TryGetValue(key.LockCode, out var counts))
+            if (!buckets.TryGetValue(key.KeyHash, out var counts))
                 counts = default;
             counts.s += addend;
             Assert.GreaterOrEqual(counts.s, 0);
-            buckets[key.LockCode] = counts;
+            buckets[key.KeyHash] = counts;
         }
 
         internal bool GetLockCounts(ref FixedLengthLockableKeyStruct<long> key, out (int x, int s) counts)
         {
-            if (!buckets.TryGetValue(key.LockCode, out counts))
+            if (!buckets.TryGetValue(key.KeyHash, out counts))
             {
                 counts = default;
                 return false;
@@ -273,7 +273,7 @@ namespace FASTER.test.LockableUnsafeContext
             {
                 for (int ii = 0; ii < keys.Length; ++ii)
                 {
-                    if (ii == 0 || keys[ii].LockCode != keys[ii - 1].LockCode)
+                    if (ii == 0 || keys[ii].KeyHash != keys[ii - 1].KeyHash)
                         yield return ii;
                 }
                 yield break;
@@ -282,7 +282,7 @@ namespace FASTER.test.LockableUnsafeContext
             // LockOperationType.Unlock
             for (int ii = keys.Length - 1; ii >= 0; --ii)
             {
-                if (ii == 0 || keys[ii].LockCode != keys[ii - 1].LockCode)
+                if (ii == 0 || keys[ii].KeyHash != keys[ii - 1].KeyHash)
                     yield return ii;
             }
         }
@@ -306,7 +306,7 @@ namespace FASTER.test.LockableUnsafeContext
             };
 
             for (var ii = 0; ii < keys.Length; ++ii)
-                Assert.AreEqual(bucketIndex, fht.LockTable.GetBucketIndex(keys[ii].LockCode), $"BucketIndex mismatch on key {ii}");
+                Assert.AreEqual(bucketIndex, fht.LockTable.GetBucketIndex(keys[ii].KeyHash), $"BucketIndex mismatch on key {ii}");
 
             lContext.Lock(keys);
             lContext.Unlock(keys);
@@ -410,7 +410,7 @@ namespace FASTER.test.LockableUnsafeContext
                 // Similarly, we need to track bucket counts.
                 BucketLockTracker blt = new();
                 var lockKeys = Enumerable.Range(0, NumRecs).Select(ii => new FixedLengthLockableKeyStruct<long>(r.Next(RandRange), LockType.Shared, luContext)).ToArray();
-                luContext.SortLockCodes(lockKeys);
+                luContext.SortKeyHashes(lockKeys);
                 luContext.Lock(lockKeys);
 
                 var expectedS = 0;
@@ -492,7 +492,7 @@ namespace FASTER.test.LockableUnsafeContext
                 new FixedLengthLockableKeyStruct<long>(readKey51, LockType.Shared, luContext),      // Source, shared
                 new FixedLengthLockableKeyStruct<long>(resultKey, LockType.Exclusive, luContext),   // Destination, exclusive
             };
-            luContext.SortLockCodes(keys);
+            luContext.SortKeyHashes(keys);
 
             try
             {
@@ -632,9 +632,9 @@ namespace FASTER.test.LockableUnsafeContext
                 new FixedLengthLockableKeyStruct<long>(resultKey, LockType.Exclusive, luContext),   // Destination, exclusive
             };
 
-            luContext.SortLockCodes(keys);
+            luContext.SortKeyHashes(keys);
 
-            var buckets = keys.Select(key => fht.LockTable.GetBucketIndex(key.LockCode)).ToArray();
+            var buckets = keys.Select(key => fht.LockTable.GetBucketIndex(key.KeyHash)).ToArray();
 
             try
             {
@@ -1160,7 +1160,7 @@ namespace FASTER.test.LockableUnsafeContext
             luContext.BeginLockable();
             try
             {
-                fht.LockTable.SortLockCodes(keyVec);
+                fht.LockTable.SortKeyHashes(keyVec);
                 luContext.Lock(keyVec);
                 foreach (var idx in EnumActionKeyIndices(keyVec, LockOperationType.Lock))
                     blt.Increment(ref keyVec[idx]);

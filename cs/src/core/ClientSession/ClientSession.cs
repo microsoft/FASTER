@@ -760,29 +760,19 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public bool NeedKeyLockCode => this.fht.LockTable.IsEnabled && this.fht.LockTable.NeedKeyLockCode;
+        public bool NeedKeyHash => this.fht.LockTable.IsEnabled && this.fht.LockTable.NeedKeyHash;
 
         /// <inheritdoc/>
-        public long GetLockCode(ref Key key, out long keyHash)
-        {
-            keyHash = this.fht.comparer.GetHashCode64(ref key);
-            return this.fht.LockTable.IsEnabled ? this.fht.LockTable.GetLockCode(ref key, keyHash) : keyHash;
-        }
+        public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => fht.LockTable.CompareKeyHashes(key1, key2);
 
         /// <inheritdoc/>
-        public long GetLockCode(ref Key key, long keyHash) => this.fht.LockTable.IsEnabled ? this.fht.LockTable.GetLockCode(ref key, keyHash) : keyHash;
+        public int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => fht.LockTable.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
-        public int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => fht.LockTable.CompareLockCodes(key1, key2);
+        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => fht.LockTable.SortKeyHashes(keys);
 
         /// <inheritdoc/>
-        public int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => fht.LockTable.CompareLockCodes(ref key1, ref key2);
-
-        /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => fht.LockTable.SortLockCodes(keys);
-
-        /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => fht.LockTable.SortLockCodes(keys, start, count);
+        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => fht.LockTable.SortKeyHashes(keys, start, count);
 
         #endregion IFasterContext
 

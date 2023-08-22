@@ -290,7 +290,7 @@ namespace FASTER.stress
                     var lockKeyCount = this.GetKeysToLock(rng, ii, lockOrdinals);
                     for (var jj = 0; jj < lockOrdinals.Length; ++jj)
                         lockKeys[jj] = new(getOrdinalKey(lockOrdinals[jj]), LockType.Shared, valueTester.LockableContext);
-                    valueTester.LockableContext.SortLockCodes(lockKeys);   // Sort to avoid deadlocks
+                    valueTester.LockableContext.SortKeyHashes(lockKeys);   // Sort to avoid deadlocks
                     valueTester.TestRecord(lockOrdinals[0], lockKeyCount, lockKeys);
                 }
                 this.Status(iter > 0 && iter % 100 == 0 ? Verbose.Low : Verbose.High, $"Thread {tid}/{Environment.CurrentManagedThreadId} completed Sync iteration {iter}");
@@ -309,7 +309,7 @@ namespace FASTER.stress
                     var lockKeyCount = this.GetKeysToLock(rng, ii, lockOrdinals);
                     for (var jj = 0; jj < lockOrdinals.Length; ++jj)
                         lockKeys[jj] = new(getOrdinalKey(lockOrdinals[jj]), LockType.Shared, valueTester.LockableContext);
-                    valueTester.LockableContext.SortLockCodes(lockKeys);   // Sort to avoid deadlocks
+                    valueTester.LockableContext.SortKeyHashes(lockKeys);   // Sort to avoid deadlocks
                     await valueTester.TestRecordAsync(lockOrdinals[0], lockKeyCount, lockKeys);
                 }
                 this.Status(iter > 0 && iter % 100 == 0 ? Verbose.Low : Verbose.High, $"Thread {tid}/{Environment.CurrentManagedThreadId} completed Async iteration {iter}");

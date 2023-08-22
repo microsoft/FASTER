@@ -23,46 +23,28 @@ namespace FASTER.core
         void EndLockable();
 
         /// <summary>
-        /// If true, then keys must use one of the <see cref="GetLockCode(ref TKey, long)"/> overloads to obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
+        /// If true, then keys must use one of the <see cref="GetKeyHash(ref TKey)"/> overloads to obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
         /// </summary>
         /// <remarks>Whether this returns true depends on the <see cref="LockingMode"/> on <see cref="FasterKVSettings{Key, Value}"/>, or passed to the FasterKV constructor.</remarks>
-        bool NeedKeyLockCode { get; }
+        bool NeedKeyHash { get; }
 
         /// <summary>
         /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
         /// <param name="key">The key to obtain a code for</param>
-        /// <param name="keyHash">The hashcode of the key; created and returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/>.</param>
         /// </summary>
-        /// <remarks>If <see cref="NeedKeyLockCode"/> is true, this code is obtained by FASTER on method calls and is used in its locking scheme. 
+        /// <returns>The hashcode of the key; created and returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/></returns>
+        /// <remarks>If <see cref="NeedKeyHash"/> is true, the hash code is obtained by FASTER on method calls and is used in its locking scheme. 
         ///     In that case the app must ensure that the keys in a group are sorted by this value, to avoid deadlock.</remarks>
-        long GetLockCode(TKey key, out long keyHash);
+        long GetKeyHash(TKey key);
 
         /// <summary>
         /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
         /// <param name="key">The key to obtain a code for</param>
-        /// <param name="keyHash">The hashcode of the key; created and returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/>.</param>
         /// </summary>
-        /// <remarks>If <see cref="NeedKeyLockCode"/> is true, this code is obtained by FASTER on method calls and is used in its locking scheme. 
+        /// <returns>The hashcode of the key; created and returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/></returns>
+        /// <remarks>If <see cref="NeedKeyHash"/> is true, the hash code is obtained by FASTER on method calls and is used in its locking scheme. 
         ///     In that case the app must ensure that the keys in a group are sorted by this value, to avoid deadlock.</remarks>
-        long GetLockCode(ref TKey key, out long keyHash);
-
-        /// <summary>
-        /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
-        /// <param name="key">The key to obtain a code for</param>
-        /// <param name="keyHash">The hashcode of the key; must be the value returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/>.</param>
-        /// </summary>
-        /// <remarks>If <see cref="NeedKeyLockCode"/> is true, this code is obtained by FASTER on method calls and is used in its locking scheme. 
-        ///     In that case the app must ensure that the keys in a group are sorted by this value, to avoid deadlock.</remarks>
-        long GetLockCode(TKey key, long keyHash);
-
-        /// <summary>
-        /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
-        /// <param name="key">The key to obtain a code for</param>
-        /// <param name="keyHash">The hashcode of the key; must be the value returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/>.</param>
-        /// </summary>
-        /// <remarks>If <see cref="NeedKeyLockCode"/> is true, this code is obtained by FASTER on method calls and is used in its locking scheme. 
-        ///     In that case the app must ensure that the keys in a group are sorted by this value, to avoid deadlock.</remarks>
-        long GetLockCode(ref TKey key, long keyHash);
+        long GetKeyHash(ref TKey key);
 
         /// <summary>
         /// Compare two structures that implement ILockableKey.
@@ -71,7 +53,7 @@ namespace FASTER.core
         /// <param name="key1">The first key to compare</param>
         /// <param name="key2">The first key to compare</param>
         /// <returns>The result of key1.CompareTo(key2)</returns>
-        int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2)
+        int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2)
             where TLockableKey : ILockableKey;
 
         /// <summary>
@@ -81,7 +63,7 @@ namespace FASTER.core
         /// <param name="key1">The first key to compare</param>
         /// <param name="key2">The first key to compare</param>
         /// <returns>The result of key1.CompareTo(key2)</returns>
-        int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2)
+        int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2)
             where TLockableKey : ILockableKey;
 
         /// <summary>
@@ -89,7 +71,7 @@ namespace FASTER.core
         /// </summary>
         /// <typeparam name="TLockableKey">The type of the app data struct or class containing key info</typeparam>
         /// <param name="keys">The array of app key data </param>
-        void SortLockCodes<TLockableKey>(TLockableKey[] keys)
+        void SortKeyHashes<TLockableKey>(TLockableKey[] keys)
             where TLockableKey : ILockableKey;
 
         /// <summary>
@@ -99,14 +81,14 @@ namespace FASTER.core
         /// <param name="keys">The array of app key data </param>
         /// <param name="start">The starting key index to sort</param>
         /// <param name="count">The number of keys to sort</param>
-        void SortLockCodes<TLockableKey>(TLockableKey[] keys, int start, int count)
+        void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey;
 
         /// <summary>
         /// Locks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         void Lock<TLockableKey>(TLockableKey[] keys)
             where TLockableKey : ILockableKey;
 
@@ -114,7 +96,7 @@ namespace FASTER.core
         /// Locks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         /// <param name="start">The starting key index to Lock</param>
         /// <param name="count">The number of keys to Lock</param>
         void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
@@ -124,7 +106,7 @@ namespace FASTER.core
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         /// <param name="maxRetriesPerKey">Maximum number of retries per key:
         ///     <list>
         ///         <li>less than 0: ignored; may be cancelled by <paramref name="cancellationToken"/></li>
@@ -140,7 +122,7 @@ namespace FASTER.core
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         /// <param name="start">The starting key index to Lock</param>
         /// <param name="count">The number of keys to Lock</param>
         /// <param name="maxRetriesPerKey">Maximum number of retries per key:
@@ -158,7 +140,7 @@ namespace FASTER.core
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
         /// <param name="cancellationToken">The cancellation token, if any</param>
         bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -168,7 +150,7 @@ namespace FASTER.core
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         /// <param name="start">The starting key index to Lock</param>
         /// <param name="count">The number of keys to Lock</param>
         /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
@@ -180,7 +162,7 @@ namespace FASTER.core
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         /// <param name="cancellationToken">The cancellation token</param>
         bool TryLock<TLockableKey>(TLockableKey[] keys, CancellationToken cancellationToken)
             where TLockableKey : ILockableKey;
@@ -189,7 +171,7 @@ namespace FASTER.core
         /// Promotes a shared lock on the key to an exclusive lock, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         /// <param name="start">The starting key index to Lock</param>
         /// <param name="count">The number of keys to Lock</param>
         /// <param name="cancellationToken">The cancellation token, if any</param>
@@ -238,7 +220,7 @@ namespace FASTER.core
         /// Unlocks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         void Unlock<TLockableKey>(TLockableKey[] keys)
         where TLockableKey : ILockableKey;
 
@@ -246,7 +228,7 @@ namespace FASTER.core
         /// Unlocks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keyCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortLockCodes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keyCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
         /// <param name="start">The starting index to Unlock</param>
         /// <param name="count">The number of keys to Unlock</param>
         void Unlock<TLockableKey>(TLockableKey[] keys, int start, int count)

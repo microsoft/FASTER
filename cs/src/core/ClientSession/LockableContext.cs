@@ -40,31 +40,25 @@ namespace FASTER.core
         #region Key Locking
 
         /// <inheritdoc/>
-        public bool NeedKeyLockCode => clientSession.NeedKeyLockCode;
+        public bool NeedKeyHash => clientSession.NeedKeyHash;
 
         /// <inheritdoc/>
-        public long GetLockCode(Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
+        public long GetKeyHash(Key key) => clientSession.fht.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetLockCode(ref Key key, out long keyHash) => clientSession.GetLockCode(ref key, out keyHash);
+        public long GetKeyHash(ref Key key) => clientSession.fht.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetLockCode(Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
+        public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
-        public long GetLockCode(ref Key key, long keyHash) => clientSession.GetLockCode(ref key, keyHash);
+        public int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
-        public int CompareLockCodes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareLockCodes(key1, key2);
+        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys);
 
         /// <inheritdoc/>
-        public int CompareLockCodes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareLockCodes(ref key1, ref key2);
-
-        /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys);
-
-        /// <inheritdoc/>
-        public void SortLockCodes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortLockCodes(keys, start, count);
+        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys, start, count);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe void DoInternalLockOp<FasterSession, TLockableKey>(FasterSession fasterSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
@@ -115,11 +109,11 @@ namespace FASTER.core
             for (int keyIdx = start; keyIdx <= end; ++keyIdx)
             {
                 ref var key = ref keys[keyIdx];
-                if (keyIdx == start || clientSession.fht.LockTable.GetBucketIndex(key.LockCode) != clientSession.fht.LockTable.GetBucketIndex(keys[keyIdx - 1].LockCode))
+                if (keyIdx == start || clientSession.fht.LockTable.GetBucketIndex(key.KeyHash) != clientSession.fht.LockTable.GetBucketIndex(keys[keyIdx - 1].KeyHash))
                 { 
                     for (int numRetriesForKey = 0; ;)
                     { 
-                        OperationStatus status = clientSession.fht.InternalLock(key.LockCode, new(LockOperationType.Lock, key.LockType));
+                        OperationStatus status = clientSession.fht.InternalLock(key.KeyHash, new(LockOperationType.Lock, key.LockType));
                         bool fail = false;
                         if (status == OperationStatus.SUCCESS)
                         {
@@ -156,7 +150,7 @@ namespace FASTER.core
                 }
             }
 
-            // We reached the end of the list, possibly after a duplicate lockcode; all locks were successful.
+            // We reached the end of the list, possibly after a duplicate keyhash; all locks were successful.
             return true;
         }
 
@@ -169,7 +163,7 @@ namespace FASTER.core
             var startTime = timeout.Ticks > 0 ? DateTime.UtcNow : default;
             for (int numRetriesForKey = 0; ;)
             {
-                OperationStatus status = clientSession.fht.InternalPromoteLock(key.LockCode);
+                OperationStatus status = clientSession.fht.InternalPromoteLock(key.KeyHash);
                 if (status == OperationStatus.SUCCESS)
                 {
                     ++clientSession.exclusiveLockCount;
@@ -200,11 +194,11 @@ namespace FASTER.core
             where TLockableKey : ILockableKey
         {
             ref var key = ref keys[idx];
-            if (idx == start || clientSession.fht.LockTable.GetBucketIndex(key.LockCode) != clientSession.fht.LockTable.GetBucketIndex(keys[idx - 1].LockCode))
+            if (idx == start || clientSession.fht.LockTable.GetBucketIndex(key.KeyHash) != clientSession.fht.LockTable.GetBucketIndex(keys[idx - 1].KeyHash))
             {
                 OperationStatus status;
                 do
-                    status = clientSession.fht.InternalLock(key.LockCode, new(lockOpType, key.LockType));
+                    status = clientSession.fht.InternalLock(key.KeyHash, new(lockOpType, key.LockType));
                 while (clientSession.fht.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession));
                 Debug.Assert(status == OperationStatus.SUCCESS);
                 return key.LockType;
