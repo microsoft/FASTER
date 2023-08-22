@@ -30,7 +30,7 @@ namespace FASTER.core
         internal long PhysicalAddress;
 
         /// <summary>
-        /// The highest logical address (in the main log, i.e. below readcache) for this key; if we have a readcache prefix chain, this is the splice point.
+        /// The highest logical address in the main log (i.e. below readcache) for this key; if we have a readcache prefix chain, this is the splice point.
         /// </summary>
         internal long LatestLogicalAddress;
 

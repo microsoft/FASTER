@@ -113,13 +113,12 @@ namespace FASTER.core
                         if (WriteDefaultOnDelete)
                             recordValue = default;
 
-                        // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
-                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
+                        // Try to update hash chain to elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
+                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
                         {
                             // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
-                            // the hashtable entry has already been updated by someone else.
-                            var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
-                            stackCtx.hei.TryCAS(address, tag: 0);
+                            // the hashtable entry has already been updated by someone else. Set the entry.word to zero.
+                            stackCtx.hei.TryCAS(Constants.kInvalidAddress, tag: 0);
                         }
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
