@@ -1,16 +1,36 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    public static class OpenFlags
+    {
+        // Linux-specific constants  
+        public const int O_RDONLY = 0x0000;
+        public const int O_WRONLY = 0x0001;
+        public const int O_RDWR = 0x0002;
+        public const int O_CREAT = 0x0040;
+        public const int O_EXCL = 0x0080;
+        public const int O_TRUNC = 0x0200;
+        public const int O_APPEND = 0x0400;
+        public const int O_DIRECT = 0x4000;
+        public const int O_NONBLOCK = 0x800;
+        public const int S_IRWXU = 0x1C0; // Read, write, execute/search by owner  
+        public const int S_IRWXG = 0x038; // Read, write, execute/search by group  
+        public const int S_IRWXO = 0x007; // Read, write, execute/search by others  
+    }
+
     /// <summary>
     /// Managed device using .NET streams
     /// </summary>
@@ -22,6 +42,17 @@ namespace FASTER.core
         private readonly bool osReadBuffering;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
+        private static readonly bool isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
+        /// <summary>
+        /// Open file in Linux
+        /// </summary>
+        /// <param name="pathname"></param>
+        /// <param name="flags"></param>
+        /// <param name="mode"></param>
+        /// <returns></returns>
+        [DllImport("libc.so.6", EntryPoint = "open", SetLastError = true)]
+        public static extern int LinuxOpen(string pathname, int flags, int mode);
 
         /// <summary>
         /// Number of pending reads on device
@@ -482,40 +513,85 @@ namespace FASTER.core
 
         private Stream CreateReadHandle(int segmentId)
         {
-            const int FILE_FLAG_NO_BUFFERING = 0x20000000;
-            FileOptions fo =
-                FileOptions.WriteThrough |
-                FileOptions.Asynchronous |
-                FileOptions.None;
-            if (!osReadBuffering)
-                fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
+            if (isWindows)
+            {
+                const int FILE_FLAG_NO_BUFFERING = 0x20000000;
+                FileOptions fo =
+                    FileOptions.WriteThrough |
+                    FileOptions.Asynchronous |
+                    FileOptions.None;
+                if (!osReadBuffering)
+                    fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
-            var logReadHandle = new FileStream(
-                GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                FileAccess.Read, FileShare.ReadWrite, 512, fo);
+                return new FileStream(
+                    GetSegmentName(segmentId), FileMode.OpenOrCreate,
+                    FileAccess.Read, FileShare.ReadWrite, 512, fo);
+            }
+            else
+            {
+                int flags = OpenFlags.O_RDONLY | OpenFlags.O_CREAT | OpenFlags.O_NONBLOCK;
+                int mode = OpenFlags.S_IRWXU | OpenFlags.S_IRWXG | OpenFlags.S_IRWXO;
+                if (!osReadBuffering)
+                    flags |= OpenFlags.O_DIRECT;
 
-            return logReadHandle;
+                int fileDescriptor = LinuxOpen(GetSegmentName(segmentId), flags, mode);
+
+                if (fileDescriptor == -1)
+                {
+                    Console.WriteLine("Error opening file");
+                    return null;
+                }
+
+                SafeFileHandle fileHandle = new SafeFileHandle(new IntPtr(fileDescriptor), true);
+                return new FileStream(fileHandle, FileAccess.Read);
+            }
         }
 
         private Stream CreateWriteHandle(int segmentId)
         {
-            const int FILE_FLAG_NO_BUFFERING = 0x20000000;
-            FileOptions fo =
-                FileOptions.WriteThrough |
-                FileOptions.Asynchronous |
-                FileOptions.None;
+            if (isWindows)
+            {
+                const int FILE_FLAG_NO_BUFFERING = 0x20000000;
+                FileOptions fo =
+                    FileOptions.WriteThrough |
+                    FileOptions.Asynchronous |
+                    FileOptions.None;
 
-            if (disableFileBuffering)
-                fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
+                if (disableFileBuffering)
+                    fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
-            var logWriteHandle = new FileStream(
-                GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                FileAccess.Write, FileShare.ReadWrite, 512, fo);
+                var logWriteHandle = new FileStream(
+                    GetSegmentName(segmentId), FileMode.OpenOrCreate,
+                    FileAccess.Write, FileShare.ReadWrite, 512, fo);
 
-            if (preallocateFile && segmentSize != -1)
-                SetFileSize(logWriteHandle, segmentSize);
+                if (preallocateFile && segmentSize != -1)
+                    SetFileSize(logWriteHandle, segmentSize);
 
-            return logWriteHandle;
+                return logWriteHandle;
+            }
+            else
+            {
+                int flags = OpenFlags.O_WRONLY | OpenFlags.O_CREAT | OpenFlags.O_NONBLOCK;
+                int mode = OpenFlags.S_IRWXU | OpenFlags.S_IRWXG | OpenFlags.S_IRWXO;
+                if (disableFileBuffering)
+                    flags |= OpenFlags.O_DIRECT;
+
+                int fileDescriptor = LinuxOpen(GetSegmentName(segmentId), flags, mode);
+
+                if (fileDescriptor == -1)
+                {
+                    Console.WriteLine("Error opening file");
+                    return null;
+                }
+
+                SafeFileHandle fileHandle = new SafeFileHandle(new IntPtr(fileDescriptor), true);
+                var logWriteHandle = new FileStream(fileHandle, FileAccess.Write);
+
+                if (preallocateFile && segmentSize != -1)
+                    SetFileSize(logWriteHandle, segmentSize);
+
+                return logWriteHandle;
+            }
         }
 
         private (AsyncPool<Stream>, AsyncPool<Stream>) AddHandle(int _segmentId)
