@@ -158,19 +158,10 @@ namespace FASTER.core
                     {
                         umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
                     }
-
-                    // FileStream.ReadAsync is not thread-safe hence need a lock here
-                    lock (this)
-                    {
-                        readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
-                    }
+                    readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
 #else
                     memory = pool.Get((int)readLength);
-                    // FileStream.ReadAsync is not thread-safe hence need a lock here
-                    lock (this)
-                    {
-                        readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
-                    }
+                    readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
 #endif
                 }
             }
@@ -203,18 +194,10 @@ namespace FASTER.core
                             umm = new UnmanagedMemoryManager<byte>((byte*)destinationAddress, (int)readLength);
                         }
 
-                        // FileStream.ReadAsync is not thread-safe hence need a lock here
-                        lock (this)
-                        {
-                            readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
-                        }
+                        readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
 #else
                         memory = pool.Get((int)readLength);
-                        // FileStream.ReadAsync is not thread-safe hence need a lock here
-                        lock (this)
-                        {
-                            readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
-                        }
+                        readTask = logReadHandle.ReadAsync(memory.buffer, 0, (int)readLength);
 #endif
                     }
                     catch
@@ -314,11 +297,7 @@ namespace FASTER.core
                         umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
                     }
 
-                    // FileStream.WriteAsync is not thread-safe hence need a lock here
-                    lock (this)
-                    {
-                        writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
-                    }
+                    writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
 #else
                     memory = pool.Get((int)numBytesToWrite);
                     unsafe
@@ -328,11 +307,7 @@ namespace FASTER.core
                             Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
                         }
                     }
-                    // FileStream.WriteAsync is not thread-safe hence need a lock here
-                    lock (this)
-                    {
-                        writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
-                    }
+                    writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
 #endif
                 }
             }
@@ -365,11 +340,7 @@ namespace FASTER.core
                             umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
                         }
 
-                        // FileStream.WriteAsync is not thread-safe hence need a lock here
-                        lock (this)
-                        {
-                            writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
-                        }
+                        writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
 #else
                         memory = pool.Get((int)numBytesToWrite);
                         unsafe
@@ -379,11 +350,7 @@ namespace FASTER.core
                                 Buffer.MemoryCopy((void*)sourceAddress, destination, numBytesToWrite, numBytesToWrite);
                             }
                         }
-                        // FileStream.WriteAsync is not thread-safe hence need a lock here
-                        lock (this)
-                        {
-                            writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
-                        }
+                        writeTask = logWriteHandle.WriteAsync(memory.buffer, 0, (int)numBytesToWrite);
 #endif
                     }
                     catch
