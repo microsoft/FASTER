@@ -129,7 +129,7 @@ namespace FASTER.core
         public override string ToString()
         {
             var hashStr = Utility.GetHashString(this.KeyHash);
-            return $"key {Key}, hash {hashStr}, lockCode {KeyHash}, {LockType}";
+            return $"key {Key}, hash {hashStr}, {LockType}";
         }
     }
 
