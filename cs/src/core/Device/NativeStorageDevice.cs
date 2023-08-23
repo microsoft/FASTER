@@ -1,10 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -26,7 +24,6 @@ namespace FASTER.core
         const int MaxResults = 1 << 12;
 
         private static uint sectorSize = 512;
-        private bool _disposed;
         private readonly ConcurrentQueue<int> freeResults = new();
         NativeResult[] results;
 
@@ -62,9 +59,14 @@ namespace FASTER.core
 
         [DllImport("native_device", EntryPoint = "NativeDevice_TryComplete", CallingConvention = CallingConvention.Cdecl)]
         static extern bool NativeDevice_TryComplete(IntPtr device);
+
+        [DllImport("native_device", EntryPoint = "NativeDevice_QueueRun", CallingConvention = CallingConvention.Cdecl)]
+        static extern int NativeDevice_QueueRun(IntPtr device, int timeout_secs);
         #endregion
 
         readonly AsyncIOCallback _callbackDelegate;
+        readonly CancellationTokenSource completionThreadToken = new();
+        int numCompletionThreads;
 
         void _callback(IntPtr context, int errorCode, ulong numBytes)
         {
@@ -84,10 +86,11 @@ namespace FASTER.core
         /// <param name="deleteOnClose"></param>
         /// <param name="disableFileBuffering"></param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        /// <param name="numCompletionThreads">Number of IO completion threads</param>
         protected internal NativeStorageDevice(string filename,
                                       bool deleteOnClose = false,
                                       bool disableFileBuffering = true,
-                                      long capacity = Devices.CAPACITY_UNSPECIFIED)
+                                      long capacity = Devices.CAPACITY_UNSPECIFIED, int numCompletionThreads = 1)
                 : base(filename, GetSectorSize(filename), capacity)
         {
             _callbackDelegate = _callback;
@@ -96,7 +99,6 @@ namespace FASTER.core
                 throw new FasterException($"Path {filename} is too long");
 
             ThrottleLimit = 120;
-            this._disposed = false;
 
             string path = new FileInfo(filename).Directory.FullName;
             if (!Directory.Exists(path))
@@ -104,8 +106,15 @@ namespace FASTER.core
 
             this.nativeDevice = NativeDevice_Create(filename, false, disableFileBuffering, deleteOnClose);
             this.results = new NativeResult[MaxResults];
-
-            Debug.WriteLine("Sector size: {0}", NativeDevice_sector_size(nativeDevice));
+            this.numCompletionThreads = numCompletionThreads;
+            for (int i = 0; i < numCompletionThreads; i++)
+            {
+                var thread = new Thread(CompletionWorker)
+                {
+                    IsBackground = true
+                };
+                thread.Start();
+            }
         }
 
         /// <inheritdoc />
@@ -130,8 +139,16 @@ namespace FASTER.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
-            if (!freeResults.TryDequeue(out int offset))
-                offset = (Interlocked.Increment(ref resultOffset) - 1) % MaxResults;
+            int offset;
+            while (!freeResults.TryDequeue(out offset))
+            {
+                if (resultOffset < MaxResults)
+                {
+                    offset = Interlocked.Increment(ref resultOffset) - 1;
+                    if (offset < MaxResults) break;
+                }
+                Thread.Yield();
+            }
             ref var result = ref results[offset];
             result.context = context;
             result.callback = callback;
@@ -180,8 +197,16 @@ namespace FASTER.core
                                       DeviceIOCompletionCallback callback,
                                       object context)
         {
-            if (!freeResults.TryDequeue(out int offset))
-                offset = (Interlocked.Increment(ref resultOffset) - 1) % MaxResults;
+            int offset;
+            while (!freeResults.TryDequeue(out offset))
+            {
+                if (resultOffset < MaxResults)
+                {
+                    offset = Interlocked.Increment(ref resultOffset) - 1;
+                    if (offset < MaxResults) break;
+                }
+                Thread.Yield();
+            }
             ref var result = ref results[offset];
             result.context = context;
             result.callback = callback;
@@ -237,8 +262,10 @@ namespace FASTER.core
         /// </summary>
         public override void Dispose()
         {
-            _disposed = true;
+            completionThreadToken.Cancel();
             NativeDevice_Destroy(nativeDevice);
+            while (Interlocked.CompareExchange(ref numCompletionThreads, int.MinValue, 0) != 0) Thread.Yield();
+            completionThreadToken.Dispose();
         }
 
         /// <inheritdoc/>
@@ -263,6 +290,23 @@ namespace FASTER.core
         private static uint GetSectorSize(string filename)
         {
             return sectorSize;
+        }
+
+        void CompletionWorker()
+        {
+            try
+            {
+                while (true)
+                {
+                    if (completionThreadToken.IsCancellationRequested) break;
+                    NativeDevice_QueueRun(nativeDevice, 5);
+                    Thread.Yield();
+                }
+            }
+            finally
+            {
+                Interlocked.Decrement(ref numCompletionThreads);
+            }
         }
     }
 }

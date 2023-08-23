@@ -295,6 +295,30 @@ bool QueueIoHandler::TryComplete() {
   }
 }
 
+int QueueIoHandler::QueueRun(int timeout_secs) {
+    DWORD bytes_transferred;
+    ULONG_PTR completion_key;
+    LPOVERLAPPED overlapped = NULL;
+    bool succeeded = ::GetQueuedCompletionStatus(io_completion_port_, &bytes_transferred,
+        &completion_key, &overlapped, timeout_secs * 1000);
+    if (overlapped) {
+        Status return_status;
+        if (!succeeded) {
+            return_status = Status::IOError;
+        }
+        else {
+            return_status = Status::Ok;
+        }
+        auto callback_context = make_context_unique_ptr<IoCallbackContext>(
+            reinterpret_cast<IoCallbackContext*>(overlapped));
+        callback_context->callback(callback_context->caller_context, return_status, bytes_transferred);
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+
 Status QueueFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
                        QueueIoHandler* handler, bool* exists) {
   DWORD flags = FILE_FLAG_RANDOM_ACCESS | FILE_FLAG_OVERLAPPED;

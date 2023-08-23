@@ -3,8 +3,9 @@
 
 class NativeDevice {
 public:
-#if defined(_WIN32) || defined(_WIN64)  
-    typedef FASTER::environment::ThreadPoolIoHandler handler_t;
+#if defined(_WIN32) || defined(_WIN64)
+    typedef FASTER::environment::QueueIoHandler handler_t;
+    // typedef FASTER::environment::ThreadPoolIoHandler handler_t;
 #else
     typedef FASTER::environment::QueueIoHandler handler_t;
 #endif
@@ -100,6 +101,10 @@ public:
 
     bool TryComplete() {
         return handler_.TryComplete();
+    }
+
+    int QueueRun(int timeout_secs) {
+        return handler_.QueueRun(timeout_secs);
     }
 
 private:

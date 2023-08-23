@@ -213,6 +213,9 @@ class QueueIoHandler {
   /// Try to execute the next IO completion on the queue, if any.
   bool TryComplete();
 
+  // Process IO completions on queue with timeout
+  int QueueRun(int timeout_secs);
+
  private:
   /// The Linux AIO context used for IO completions.
   io_context_t io_object_;
@@ -355,8 +358,9 @@ class UringIoHandler {
 
   /// Try to execute the next IO completion on the queue, if any.
   bool TryComplete();
+  int QueueRun(int timeout_secs);
 
- private:
+private:
   /// The io_uring for all the I/Os
   struct io_uring* ring_;
   SpinLock sq_lock_, cq_lock_;

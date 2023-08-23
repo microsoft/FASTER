@@ -273,6 +273,10 @@ class ThreadPoolIoHandler {
     return false;
   }
 
+  inline static constexpr int QueueRun(int timeout_secs) {
+      return 0;
+  }
+
  private:
   /// The parent threadpool.
   WindowsPtpThreadPool threadpool_;
@@ -332,6 +336,7 @@ class QueueIoHandler {
   };
 
   bool TryComplete();
+  int QueueRun(int timeout_secs);
 
  private:
   /// The completion port to whose queue completions are added.

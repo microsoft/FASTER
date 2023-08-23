@@ -35,4 +35,8 @@ extern "C" {
 	EXPORTED_SYMBOL bool NativeDevice_TryComplete(NativeDevice* device) {
 		return device->TryComplete();
 	}
+
+	EXPORTED_SYMBOL int NativeDevice_QueueRun(NativeDevice* device, int timeout_secs) {
+		return device->QueueRun(timeout_secs);
+	}
 }

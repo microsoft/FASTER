@@ -135,6 +135,35 @@ bool QueueIoHandler::TryComplete() {
   }
 }
 
+#define IO_BATCH_EVENTS	8		/* number of events to batch up */
+
+int QueueIoHandler::QueueRun(int timeout_secs) {
+    struct timespec timeout = (timeout_secs, 0);
+    struct io_event events[IO_BATCH_EVENTS];
+    struct io_event* ep;
+
+    int ret = 0;		/* total number of events processed */
+    int n;
+
+    /*
+     * Process io events and call the callbacks.
+     * Try to batch the events up to IO_BATCH_EVENTS at a time.
+     * Loop until we have read all the available events and called the callbacks.
+     */
+    do {
+        int i;
+        if ((n = ::io_getevents(io_object_, 1, IO_BATCH_EVENTS, &events, timeout)) <= 0)
+            break;
+        ret += n;
+        for (ep = events, i = n; i-- > 0; ep++) {
+            io_callback_t callback = reinterpret_cast<io_callback_t>(ep->data);
+            callback(ctx, ep->obj, ep->res, ep->res2);
+        }
+    } while (n == IO_BATCH_EVENTS);
+
+    return ret ? ret : n;
+}
+
 Status QueueFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,
                        QueueIoHandler* handler, bool* exists) {
   int flags = 0;
@@ -235,6 +264,10 @@ bool UringIoHandler::TryComplete() {
     cq_lock_.Release();
     return false;
   }
+}
+
+int UringIoHandler::QueueRun(int timeout_secs) {
+    return 0; // not implemented
 }
 
 Status UringFile::Open(FileCreateDisposition create_disposition, const FileOptions& options,

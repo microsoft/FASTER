@@ -33,6 +33,7 @@ namespace FASTER.core
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 logDevice = new ManagedLocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice);
+                // logDevice = new NativeStorageDevice(logPath, deleteOnClose, disableFileBuffering, capacity);
             }
             else
             {
