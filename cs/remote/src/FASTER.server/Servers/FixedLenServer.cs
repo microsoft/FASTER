@@ -23,11 +23,11 @@ namespace FASTER.server
         /// </summary>
         /// <param name="opts"></param>
         /// <param name="functionsGen"></param>
-        /// <param name="lockingMode"></param>
+        /// <param name="concurrencyControlMode"></param>
         /// <param name="maxSizeSettings"></param>
         /// <param name="loggerFactory"></param>
-        public FixedLenServer(ServerOptions opts, Func<Functions> functionsGen, LockingMode lockingMode, MaxSizeSettings maxSizeSettings = default, ILoggerFactory loggerFactory = null)
-            : base(opts, functionsGen, new FixedLenSerializer<Key, Value, Input, Output>(), new FixedLenKeySerializer<Key, Input>(), lockingMode: lockingMode, maxSizeSettings, loggerFactory)
+        public FixedLenServer(ServerOptions opts, Func<Functions> functionsGen, ConcurrencyControlMode concurrencyControlMode, MaxSizeSettings maxSizeSettings = default, ILoggerFactory loggerFactory = null)
+            : base(opts, functionsGen, new FixedLenSerializer<Key, Value, Input, Output>(), new FixedLenKeySerializer<Key, Input>(), concurrencyControlMode: concurrencyControlMode, maxSizeSettings, loggerFactory)
         {
         }
     }
