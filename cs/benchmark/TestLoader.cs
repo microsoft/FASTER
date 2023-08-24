@@ -28,7 +28,7 @@ namespace FASTER.benchmark
         internal KeySpanByte[] txn_span_keys = default;
 
         internal readonly BenchmarkType BenchmarkType;
-        internal readonly LockingMode LockingMode;
+        internal readonly ConcurrencyControlMode ConcurrencyControlMode;
         internal readonly long InitCount;
         internal readonly long TxnCount;
         internal readonly int MaxKey;
@@ -61,13 +61,13 @@ namespace FASTER.benchmark
             if (!verifyOption(Options.NumaStyle >= 0 && Options.NumaStyle <= 1, "NumaStyle"))
                 return;
 
-            this.LockingMode = Options.LockingMode switch
+            this.ConcurrencyControlMode = Options.ConcurrencyControlMode switch
             {
-                0 => LockingMode.None,
-                1 => LockingMode.Standard,
-                _ => throw new InvalidOperationException($"Unknown Locking mode int: {Options.LockingMode}")
+                0 => ConcurrencyControlMode.None,
+                1 => ConcurrencyControlMode.LockTable,
+                _ => throw new InvalidOperationException($"Unknown Locking mode int: {Options.ConcurrencyControlMode}")
             };
-            if (!verifyOption(Enum.IsDefined(typeof(LockingMode), this.LockingMode), "LockingMode"))
+            if (!verifyOption(Enum.IsDefined(typeof(ConcurrencyControlMode), this.ConcurrencyControlMode), "ConcurrencyControlMode"))
                 return;
 
             if (!verifyOption(Options.IterationCount > 0, "Iteration Count"))

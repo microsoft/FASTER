@@ -241,7 +241,7 @@ namespace FASTER.core
             get
             {
                 if (!this.fht.LockTable.IsEnabled)
-                    throw new FasterException($"LockableUnsafeContext requires {nameof(LockingMode.Standard)}");
+                    throw new FasterException($"LockableUnsafeContext requires {nameof(ConcurrencyControlMode.LockTable)}");
                 return luContext;
             }
         }
@@ -254,7 +254,7 @@ namespace FASTER.core
             get
             {
                 if (!this.fht.LockTable.IsEnabled)
-                    throw new FasterException($"LockableContext requires {nameof(LockingMode.Standard)}");
+                    throw new FasterException($"LockableContext requires {nameof(ConcurrencyControlMode.LockTable)}");
                 return lContext;
             }
         }

@@ -26,12 +26,12 @@ namespace FASTER.test
 
         private void InternalSetup(ScanIteratorType scanIteratorType, bool largeMemory)
         {
-            // Default lockingMode for this iterator type.
-            var lockingMode = scanIteratorType == ScanIteratorType.Pull ? LockingMode.None : LockingMode.Standard;
-            InternalSetup(lockingMode, largeMemory);
+            // Default ConcurrencyControlMode for this iterator type.
+            var concurrencyControlMode = scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable;
+            InternalSetup(concurrencyControlMode, largeMemory);
         }
 
-        private void InternalSetup(LockingMode lockingMode, bool largeMemory)
+        private void InternalSetup(ConcurrencyControlMode concurrencyControlMode, bool largeMemory)
         {
             // Broke this out as we have different requirements by test.
             log = Devices.CreateLogDevice(MethodTestDir + "/GenericIterationTests.log", deleteOnClose: true);
@@ -41,7 +41,7 @@ namespace FASTER.test
                 (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = largeMemory ? 25 : 14, PageSizeBits = largeMemory ? 20 : 9 },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                lockingMode: lockingMode);
+                concurrencyControlMode: concurrencyControlMode);
             session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 
@@ -198,9 +198,9 @@ namespace FASTER.test
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void GenericIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] LockingMode lockingMode, [Values] ScanMode scanMode)
+        public unsafe void GenericIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ScanMode scanMode)
         {
-            InternalSetup(lockingMode, largeMemory: true);
+            InternalSetup(concurrencyControlMode, largeMemory: true);
 
             const int totalRecords = 2000;
             var start = fht.Log.TailAddress;

@@ -64,7 +64,7 @@ namespace FASTER.test
             log = CreateTestDevice(deviceType, $"{path}{deviceType}.log");
             fht = new FasterKV<KeyStruct, ValueStruct>
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
-                 lockingMode: scanIteratorType == ScanIteratorType.Pull ? LockingMode.None : LockingMode.Standard);
+                 concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable);
 
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
             BlittablePushIterationTestFunctions scanIteratorFunctions = new();
@@ -181,13 +181,13 @@ namespace FASTER.test
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void BlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] LockingMode lockingMode, [Values] ScanMode scanMode)
+        public unsafe void BlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ScanMode scanMode)
         {
             log = Devices.CreateLogDevice($"{path}lock_test.log");
             fht = new FasterKV<KeyStruct, ValueStruct>(1L << 20,
                  // Must be large enough to contain all records in memory to exercise locking
                  new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20, SegmentSizeBits = 22 },
-                 lockingMode: lockingMode);
+                 concurrencyControlMode: concurrencyControlMode);
 
             const int totalRecords = 2000;
             var start = fht.Log.TailAddress;

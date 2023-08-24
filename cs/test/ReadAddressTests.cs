@@ -146,7 +146,7 @@ namespace FASTER.test.readaddress
 
             internal long[] InsertAddresses = new long[numKeys];
 
-            internal TestStore(bool useReadCache, ReadCopyOptions readCopyOptions, bool flush, LockingMode lockingMode)
+            internal TestStore(bool useReadCache, ReadCopyOptions readCopyOptions, bool flush, ConcurrencyControlMode concurrencyControlMode)
             {
                 this.testDir = TestUtils.MethodTestDir;
                 TestUtils.DeleteDirectory(this.testDir, wait:true);
@@ -170,7 +170,7 @@ namespace FASTER.test.readaddress
                     checkpointSettings: new CheckpointSettings { CheckpointDir = $"{this.testDir}/CheckpointDir" },
                     serializerSettings: null,
                     comparer: new Key.Comparer(),
-                    lockingMode: lockingMode
+                    concurrencyControlMode: concurrencyControlMode
                     );
             }
 
@@ -260,15 +260,15 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, LockingMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, LockingMode.Standard)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, LockingMode.Ephemeral)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, ConcurrencyControlMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, ConcurrencyControlMode.RecordIsolation)]
         [Category("FasterKV"), Category("Read")]
-        public void VersionedReadSyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] LockingMode lockingMode)
+        public void VersionedReadSyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, lockingMode);
+            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, concurrencyControlMode);
             testStore.Populate(useRMW, useAsync:false).GetAwaiter().GetResult();
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -326,9 +326,9 @@ namespace FASTER.test.readaddress
         }
 
         [Test, Category(FasterKVTestCategory), Category(ReadTestCategory)]
-        public void IterateKeyTests([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode, [Values] LockingMode lockingMode)
+        public void IterateKeyTests([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
-            using var testStore = new TestStore(useReadCache:false, ReadCopyOptions.None, flushMode != FlushMode.NoFlush, lockingMode);
+            using var testStore = new TestStore(useReadCache:false, ReadCopyOptions.None, flushMode != FlushMode.NoFlush, concurrencyControlMode);
             testStore.Populate(useRMW: true, useAsync: false).GetAwaiter().GetResult();
 
             for (int iteration = 0; iteration < 2; ++iteration)
@@ -341,9 +341,9 @@ namespace FASTER.test.readaddress
         }
 
         [Test, Category(FasterKVTestCategory), Category(ReadTestCategory)]
-        public void IterateKeyStopTests([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode, [Values] LockingMode lockingMode)
+        public void IterateKeyStopTests([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
-            using var testStore = new TestStore(useReadCache: false, ReadCopyOptions.None, flushMode != FlushMode.NoFlush, lockingMode);
+            using var testStore = new TestStore(useReadCache: false, ReadCopyOptions.None, flushMode != FlushMode.NoFlush, concurrencyControlMode);
             testStore.Populate(useRMW: false, useAsync: false).GetAwaiter().GetResult();
 
             for (int iteration = 0; iteration < 2; ++iteration)
@@ -356,15 +356,15 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, LockingMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, LockingMode.Standard)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, LockingMode.Ephemeral)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, ConcurrencyControlMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, ConcurrencyControlMode.RecordIsolation)]
         [Category("FasterKV"), Category("Read")]
-        public async Task VersionedReadAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] LockingMode lockingMode)
+        public async Task VersionedReadAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, lockingMode);
+            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, concurrencyControlMode);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -389,15 +389,15 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, LockingMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, LockingMode.Standard)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, LockingMode.Ephemeral)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, ConcurrencyControlMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, ConcurrencyControlMode.RecordIsolation)]
         [Category("FasterKV"), Category("Read")]
-        public void ReadAtAddressSyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] LockingMode lockingMode)
+        public void ReadAtAddressSyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, lockingMode);
+            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, concurrencyControlMode);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -445,15 +445,15 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, LockingMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, LockingMode.Standard)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, LockingMode.Ephemeral)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, ConcurrencyControlMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, ConcurrencyControlMode.RecordIsolation)]
         [Category("FasterKV"), Category("Read")]
-        public async Task ReadAtAddressAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] LockingMode lockingMode)
+        public async Task ReadAtAddressAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, lockingMode);
+            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, concurrencyControlMode);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -491,15 +491,15 @@ namespace FASTER.test.readaddress
         }
 
         // Test is similar to others but tests the Overload where RadFlag.none is set -- probably don't need all combinations of test but doesn't hurt 
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, LockingMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, LockingMode.Standard)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, LockingMode.Ephemeral)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, ConcurrencyControlMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, ConcurrencyControlMode.RecordIsolation)]
         [Category("FasterKV"), Category("Read")]
-        public async Task ReadAtAddressAsyncCopyOptionsNoReadCacheTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] LockingMode lockingMode)
+        public async Task ReadAtAddressAsyncCopyOptionsNoReadCacheTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, lockingMode);
+            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, concurrencyControlMode);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -537,15 +537,15 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, LockingMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, LockingMode.Standard)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, LockingMode.Ephemeral)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, ConcurrencyControlMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, ConcurrencyControlMode.RecordIsolation)]
         [Category("FasterKV"), Category("Read")]
-        public void ReadNoKeySyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] LockingMode lockingMode)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
+        public void ReadNoKeySyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, [Values] ConcurrencyControlMode concurrencyControlMode)        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, lockingMode);
+            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, concurrencyControlMode);
             testStore.Populate(useRMW, useAsync: false).GetAwaiter().GetResult();
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -581,15 +581,15 @@ namespace FASTER.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, LockingMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, LockingMode.Standard)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, LockingMode.Ephemeral)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, false, ConcurrencyControlMode.None)]
+        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, true, true, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, false, true, ConcurrencyControlMode.RecordIsolation)]
         [Category("FasterKV"), Category("Read")]
-        public async Task ReadNoKeyAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, LockingMode lockingMode)
+        public async Task ReadNoKeyAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, bool useRMW, bool flush, ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, lockingMode);
+            using var testStore = new TestStore(useReadCache, readCopyOptions, flush, concurrencyControlMode);
             await testStore.Populate(useRMW, useAsync: true);
             using var session = testStore.fkv.For(new Functions()).NewSession<Functions>();
 
@@ -707,19 +707,19 @@ namespace FASTER.test.readaddress
 
             log = Devices.CreateLogDevice(MethodTestDir + "/SimpleRecoveryTest1.log", deleteOnClose: true);
 
-            var lockingMode = LockingMode.Standard;
+            var concurrencyControlMode = ConcurrencyControlMode.LockTable;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is LockingMode locking_mode)
+                if (arg is ConcurrencyControlMode locking_mode)
                 {
-                    lockingMode = locking_mode;
+                    concurrencyControlMode = locking_mode;
                     break;
                 }
             }
 
             fht = new FasterKV<long, long>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                lockingMode: lockingMode
+                concurrencyControlMode: concurrencyControlMode
                 );
 
             session = fht.NewSession(new SimpleFunctions<long, long>());
@@ -740,7 +740,7 @@ namespace FASTER.test.readaddress
 
         [Test]
         [Category("FasterKV"), Category("Read")]
-        public async ValueTask ReadMinAddressTest([Values] SyncMode syncMode, [Values] LockingMode lockingMode)
+        public async ValueTask ReadMinAddressTest([Values] SyncMode syncMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             long minAddress = core.Constants.kInvalidAddress;
             var pivotKey = numOps / 2;

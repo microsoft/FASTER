@@ -87,7 +87,7 @@ namespace FASTER.core
                 fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(),
                 fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
                 fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
-                fasterKVSettings.TryRecoverLatest, fasterKVSettings.LockingMode, null, fasterKVSettings.logger)
+                fasterKVSettings.TryRecoverLatest, fasterKVSettings.ConcurrencyControlMode, null, fasterKVSettings.logger)
         { }
 
         /// <summary>
@@ -100,14 +100,14 @@ namespace FASTER.core
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="lockingMode">How FASTER should do record locking</param>
+        /// <param name="concurrencyControlMode">How FASTER should do record locking</param>
         /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="FasterKVSettings{Key, Value}"/>).</param>
         /// <param name="logger">Logger to use.</param>
         /// <param name="lockTableSize">Number of buckets in the lock table</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, LockingMode lockingMode = LockingMode.Standard,
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, ConcurrencyControlMode concurrencyControlMode = ConcurrencyControlMode.LockTable,
             ILoggerFactory loggerFactory = null, ILogger logger = null, int lockTableSize = Constants.kDefaultLockTableSize)
         {
             this.loggerFactory = loggerFactory;
@@ -134,8 +134,8 @@ namespace FASTER.core
                 }
             }
 
-            this.DoTransientLocking = lockingMode == LockingMode.Standard;
-            this.DoEphemeralLocking = lockingMode == LockingMode.Ephemeral;
+            this.DoTransientLocking = concurrencyControlMode == ConcurrencyControlMode.LockTable;
+            this.DoEphemeralLocking = concurrencyControlMode == ConcurrencyControlMode.RecordIsolation;
 
             if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
@@ -238,7 +238,7 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            this.LockTable = new OverflowBucketLockTable<Key, Value>(lockingMode == LockingMode.Standard ? this : null);
+            this.LockTable = new OverflowBucketLockTable<Key, Value>(concurrencyControlMode == ConcurrencyControlMode.LockTable ? this : null);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

@@ -119,7 +119,7 @@ namespace FASTER.test
                 fht = new FasterKV<KeyStruct, ValueStruct>
                     (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 },
                     checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir },
-                    lockingMode: LockingMode.None);
+                    concurrencyControlMode: ConcurrencyControlMode.None);
 
                 session = fht.NewSession(copyOnWrite);
 
@@ -168,7 +168,7 @@ namespace FASTER.test
                 fht = new FasterKV<KeyStruct, ValueStruct>
                     (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 },
                     checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir },
-                    lockingMode: LockingMode.None);
+                    concurrencyControlMode: ConcurrencyControlMode.None);
 
                 fht.Recover(token);
                 session = fht.NewSession(copyOnWrite);

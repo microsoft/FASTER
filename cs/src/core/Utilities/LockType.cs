@@ -27,17 +27,17 @@ namespace FASTER.core
     /// <summary>
     /// How FASTER should do record locking
     /// </summary>
-    public enum LockingMode : byte
+    public enum ConcurrencyControlMode : byte
     {
         /// <summary>
-        /// Keys are locked based upon the session type, using hash buckets, and support manual locking.
+        /// Keys are locked using a LockTable. Currently the implementation latches the hash index buckets. Supports manual and transient locking, based on the session type.
         /// </summary>
-        Standard,
+        LockTable,
 
         /// <summary>
-        /// Keys are locked only for the duration of a concurrent IFunctions call (one that operates on data in the mutable region of the log).
+        /// Records are locked only for the duration of a concurrent IFunctions call (one that operates on data in the mutable region of the log), using the RecordInfo header.
         /// </summary>
-        Ephemeral,
+        RecordIsolation,
 
         /// <summary>
         /// Locking is not done in FASTER.

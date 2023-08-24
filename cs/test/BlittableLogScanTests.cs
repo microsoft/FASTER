@@ -21,7 +21,7 @@ namespace FASTER.test
             DeleteDirectory(MethodTestDir, wait:true);
             log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 }, lockingMode: LockingMode.None);
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 }, concurrencyControlMode: ConcurrencyControlMode.None);
         }
 
         [TearDown]
