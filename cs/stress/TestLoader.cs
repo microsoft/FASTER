@@ -289,7 +289,7 @@ namespace FASTER.stress
                 {
                     var lockKeyCount = this.GetKeysToLock(rng, ii, lockOrdinals);
                     for (var jj = 0; jj < lockOrdinals.Length; ++jj)
-                        lockKeys[jj] = new(getOrdinalKey(lockOrdinals[jj]), LockType.Shared, valueTester.LockableContext);
+                        lockKeys[jj] = new(getOrdinalKey(lockOrdinals[jj]), LockType.Shared, valueTester.FasterContext);
                     valueTester.LockableContext.SortKeyHashes(lockKeys);   // Sort to avoid deadlocks
                     valueTester.TestRecord(lockOrdinals[0], lockKeyCount, lockKeys);
                 }
@@ -308,7 +308,7 @@ namespace FASTER.stress
                 {
                     var lockKeyCount = this.GetKeysToLock(rng, ii, lockOrdinals);
                     for (var jj = 0; jj < lockOrdinals.Length; ++jj)
-                        lockKeys[jj] = new(getOrdinalKey(lockOrdinals[jj]), LockType.Shared, valueTester.LockableContext);
+                        lockKeys[jj] = new(getOrdinalKey(lockOrdinals[jj]), LockType.Shared, valueTester.FasterContext);
                     valueTester.LockableContext.SortKeyHashes(lockKeys);   // Sort to avoid deadlocks
                     await valueTester.TestRecordAsync(lockOrdinals[0], lockKeyCount, lockKeys);
                 }

@@ -54,12 +54,6 @@ namespace FASTER.core
         public bool NeedKeyHash => clientSession.NeedKeyHash;
 
         /// <inheritdoc/>
-        public long GetKeyHash(Key key) => clientSession.fht.GetKeyHash(ref key);
-
-        /// <inheritdoc/>
-        public long GetKeyHash(ref Key key) => clientSession.fht.GetKeyHash(ref key);
-
-        /// <inheritdoc/>
         public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(key1, key2);
 
         /// <inheritdoc/>
@@ -169,6 +163,12 @@ namespace FASTER.core
         #endregion Key Locking
 
         #region IFasterContext
+
+        /// <inheritdoc/>
+        public long GetKeyHash(Key key) => clientSession.fht.GetKeyHash(ref key);
+
+        /// <inheritdoc/>
+        public long GetKeyHash(ref Key key) => clientSession.fht.GetKeyHash(ref key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)

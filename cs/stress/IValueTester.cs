@@ -24,6 +24,8 @@ namespace FASTER.stress
 
         ILockableContext<TKey> LockableContext { get; }
 
+        IFasterContext<TKey> FasterContext => LockableContext as IFasterContext<TKey>;
+
         void TestRecord(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] keys);
         Task TestRecordAsync(int keyOrdinal, int keyCount, FixedLengthLockableKeyStruct<TKey>[] keys);
     }

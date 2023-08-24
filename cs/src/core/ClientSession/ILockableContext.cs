@@ -23,28 +23,10 @@ namespace FASTER.core
         void EndLockable();
 
         /// <summary>
-        /// If true, then keys must use one of the <see cref="GetKeyHash(ref TKey)"/> overloads to obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
+        /// If true, then keys must use one of the <see cref="IFasterContext{TKey}.GetKeyHash(ref TKey)"/> overloads to obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
         /// </summary>
         /// <remarks>Whether this returns true depends on the <see cref="LockingMode"/> on <see cref="FasterKVSettings{Key, Value}"/>, or passed to the FasterKV constructor.</remarks>
         bool NeedKeyHash { get; }
-
-        /// <summary>
-        /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
-        /// <param name="key">The key to obtain a code for</param>
-        /// </summary>
-        /// <returns>The hashcode of the key; created and returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/></returns>
-        /// <remarks>If <see cref="NeedKeyHash"/> is true, the hash code is obtained by FASTER on method calls and is used in its locking scheme. 
-        ///     In that case the app must ensure that the keys in a group are sorted by this value, to avoid deadlock.</remarks>
-        long GetKeyHash(TKey key);
-
-        /// <summary>
-        /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
-        /// <param name="key">The key to obtain a code for</param>
-        /// </summary>
-        /// <returns>The hashcode of the key; created and returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/></returns>
-        /// <remarks>If <see cref="NeedKeyHash"/> is true, the hash code is obtained by FASTER on method calls and is used in its locking scheme. 
-        ///     In that case the app must ensure that the keys in a group are sorted by this value, to avoid deadlock.</remarks>
-        long GetKeyHash(ref TKey key);
 
         /// <summary>
         /// Compare two structures that implement ILockableKey.

@@ -36,6 +36,12 @@ namespace FASTER.core
         #region IFasterContext
 
         /// <inheritdoc/>
+        public long GetKeyHash(Key key) => clientSession.fht.GetKeyHash(ref key);
+
+        /// <inheritdoc/>
+        public long GetKeyHash(ref Key key) => clientSession.fht.GetKeyHash(ref key);
+
+        /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
             => clientSession.CompletePending(wait, spinWaitForCommit);
 

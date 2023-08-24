@@ -265,6 +265,13 @@ namespace FASTER.core
         public BasicContext<Key, Value, Input, Output, Context, Functions> BasicContext => bContext;
 
         #region IFasterContext
+
+        /// <inheritdoc/>
+        public long GetKeyHash(Key key) => fht.GetKeyHash(ref key);
+
+        /// <inheritdoc/>
+        public long GetKeyHash(ref Key key) => fht.GetKeyHash(ref key);
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
@@ -1170,7 +1177,6 @@ namespace FASTER.core
             status = OperationStatus.SUCCESS;
             return false;
         }
-
 
         // This is a struct to allow JIT to inline calls (and bypass default interface call mechanism)
         internal readonly struct InternalFasterSession : IFasterSession<Key, Value, Input, Output, Context>

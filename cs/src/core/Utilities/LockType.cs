@@ -59,7 +59,7 @@ namespace FASTER.core
     public interface ILockableKey
     {
         /// <summary>
-        /// The hash code for a specific key, obtained from <see cref="ILockableContext{TKey}.GetKeyHash(ref TKey)"/>
+        /// The hash code for a specific key, obtained from <see cref="IFasterContext{TKey}.GetKeyHash(ref TKey)"/>
         /// </summary>
         public long KeyHash { get; }
 
@@ -91,12 +91,12 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(TKey key, LockType lockType, ILockableContext<TKey> context) : this(ref key, lockType, context) { }
+        public FixedLengthLockableKeyStruct(TKey key, LockType lockType, IFasterContext<TKey> context) : this(ref key, lockType, context) { }
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(ref TKey key, LockType lockType, ILockableContext<TKey> context)
+        public FixedLengthLockableKeyStruct(ref TKey key, LockType lockType, IFasterContext<TKey> context)
         {
             Key = key;
             LockType = lockType;

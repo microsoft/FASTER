@@ -7,9 +7,29 @@ using System.Threading.Tasks;
 namespace FASTER.core
 {
     /// <summary>
+    /// Interface for Key-only FASTER operations
+    /// </summary>
+    public interface IFasterContext<Key>
+    {
+        /// <summary>
+        /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
+        /// <param name="key">The key to obtain a code for</param>
+        /// </summary>
+        /// <returns>The hashcode of the key; created and returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/></returns>
+        long GetKeyHash(Key key);
+
+        /// <summary>
+        /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
+        /// <param name="key">The key to obtain a code for</param>
+        /// </summary>
+        /// <returns>The hashcode of the key; created and returned by <see cref="IFasterEqualityComparer{Key}.GetHashCode64(ref Key)"/></returns>
+        long GetKeyHash(ref Key key);
+    }
+
+    /// <summary>
     /// Interface for FASTER operations
     /// </summary>
-    public interface IFasterContext<Key, Value, Input, Output, Context>
+    public interface IFasterContext<Key, Value, Input, Output, Context> : IFasterContext<Key>
     {
         /// <summary>
         /// Synchronously complete outstanding pending synchronous operations.
