@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static FASTER.core.Utility;
 
@@ -69,6 +70,36 @@ namespace FASTER.core
             if (entry.Address < hlog.HeadAddress)
                 return false;
             return hlog.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool CanElide(ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo) 
+            => stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlog.BeginAddress;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private (bool elided, bool added) TryElideAndTransferToFreeList(ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, int fullRecordLength)
+        {
+            // Try to CAS out of the hashtable and if successful, add it to the free list.
+            Debug.Assert(srcRecordInfo.IsSealed, "Expected a Sealed record in TryElideAndTransferToFreeList");
+
+            if (!stackCtx.hei.TryElide())
+                return (false, false);
+
+            return (true, TryTransferToFreeList(ref stackCtx, ref srcRecordInfo, fullRecordLength));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TryTransferToFreeList(ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, int fullRecordLength)
+        {
+            // Try to CAS out of the hashtable and if successful, add it to the free list.
+            Debug.Assert(srcRecordInfo.IsSealed, "Expected a Sealed record in TryTransferToFreeList");
+
+            if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
+            {
+                SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, fullRecordLength);
+                return FreeRecordPool.TryAdd(stackCtx.recSrc.LogicalAddress, fullRecordLength);
+            }
+            return false;
         }
 
         internal enum LatchOperation : byte

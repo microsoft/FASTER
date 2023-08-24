@@ -662,6 +662,81 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        public void VarLenIPUGrowAndRevivifyTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        {
+            Populate();
+
+            var tailAddress = fkv.Log.TailAddress;
+
+            Span<byte> keyVec = stackalloc byte[KeyLength];
+            byte fillByte = 42;
+            keyVec.Fill(fillByte);
+            var key = SpanByte.FromFixedSpan(keyVec);
+
+            Span<byte> inputVec = stackalloc byte[GrowLength];
+            var input = SpanByte.FromFixedSpan(inputVec);
+            inputVec.Fill(fillByte);
+
+            SpanByteAndMemory output = new();
+
+            functions.expectedInputLength = GrowLength;
+            functions.expectedSingleDestLength = GrowLength;
+            functions.expectedConcurrentDestLength = InitialLength;
+            functions.expectedSingleFullValueLength = RoundUpSpanByteFullValueLength(GrowLength);
+            functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
+
+            functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+            functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(GrowLength));
+
+            // Get a free record from a failed IPU.
+            if (updateOp == UpdateOp.Upsert)
+            {
+                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                Assert.IsTrue(status.Record.Created, status.ToString());
+            }
+            else if (updateOp == UpdateOp.RMW)
+            { 
+                var status = session.RMW(ref key, ref input);
+                Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
+            }
+
+            Assert.Less(tailAddress, fkv.Log.TailAddress);
+            Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
+            output.Memory?.Dispose();
+            output.Memory = null;
+            tailAddress = fkv.Log.TailAddress;
+
+            RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
+
+            // Get a new key and shrink the requested length so we revivify the free record from the failed IPU.
+            keyVec.Fill(numRecords + 1);
+            input = SpanByte.FromFixedSpan(inputVec.Slice(0, InitialLength));
+
+            functions.expectedInputLength = InitialLength;
+            functions.expectedSingleDestLength = InitialLength;
+            functions.expectedConcurrentDestLength = InitialLength;
+            functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
+            functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+
+            if (updateOp == UpdateOp.Upsert)
+            {
+                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                Assert.IsTrue(status.Record.Created, status.ToString());
+            }
+            else if (updateOp == UpdateOp.RMW)
+            {
+                var status = session.RMW(ref key, ref input);
+                Assert.IsTrue(status.Record.Created, status.ToString());
+            }
+
+            Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
+            Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
+            output.Memory?.Dispose();
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
         public void VarLenReadOnlyMinAddressTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();

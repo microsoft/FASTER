@@ -399,6 +399,10 @@ namespace FASTER.core
             SetExtraValueLength(ref newRecordValue, ref newRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
+            // If the current record can be elided then we can freelist it; detach it by swapping its .PreviousAddress into newRecordInfo.
+            bool tryTransferToFreeList = UseFreeRecordPool && CanElide(ref stackCtx, ref srcRecordInfo);
+            if (tryTransferToFreeList)
+                newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
             {
@@ -406,8 +410,16 @@ namespace FASTER.core
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert);
 
-                // Success should always Seal the old record.
+                // Success should always Seal the old record. Ephemeral locking returns HoldForSeal in this case, so it is still locked here.
                 srcRecordInfo.UnlockExclusiveAndSeal();
+
+                if (tryTransferToFreeList && stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
+                {
+                    // Try to transfer this to the freelist. We need to re-get the old record's length because rmwInfo has the new record's info.
+                    // Ignore the return value; if elision fails, it will remain in the tag chain, Sealed; if freelist-add fails, it is invalidated.
+                    var oldRecordFullLength = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo).fullRecordLength;
+                    TryElideAndTransferToFreeList(ref stackCtx, ref srcRecordInfo, oldRecordFullLength);
+                }
 
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;

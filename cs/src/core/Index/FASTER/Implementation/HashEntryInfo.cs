@@ -96,6 +96,15 @@ namespace FASTER.core
             return false;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryElide()
+        {
+            if (this.entry.word != Interlocked.CompareExchange(ref this.bucket->bucket_entries[this.slot], 0L, this.entry.word))
+                return false;
+            this.entry.word = 0L;
+            return true;
+        }
+
         public override string ToString()
         {
             // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name

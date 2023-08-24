@@ -123,30 +123,22 @@ namespace FASTER.core
                         // Note: We do not currently consider this reuse for mid-chain records (records past the HashBucket), because TracebackForKeyMatch would need
                         //  to return the next-higher record whose .PreviousAddress points to this one, *and* we'd need to make sure that record was not revivified out.
                         //  Also, we do not consider this in-chain reuse for records with different keys, because we don't get here if the keys don't match.
-                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlog.BeginAddress && UseFreeRecordPool)
+                        if (CanElide(ref stackCtx, ref srcRecordInfo))
                         {
                             if (!EnableRevivification)
                             {
                                 // Ignore the result here; this is just tidying up the HashBucket.
-                                stackCtx.hei.TryCAS(srcRecordInfo.PreviousAddress);
+                                stackCtx.hei.TryElide();
                             }
                             else if (srcRecordInfo.TrySeal(invalidate: true))
                             {   
                                 // Always Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
                                 // We invalidate it also for checkpoint/recovery consistency (this removes Sealed bit so Scan would enumerate
                                 // records that would be in the freelist if the freelist survived Recovery).
-                                bool isFree = false;
-                                if (srcRecordInfo.Tombstone)   // If this is false, it was revivified by another session immediately after ConcurrentDeleter completed.
-                                {
-                                    // If we CAS out of the hashtable successfully, add it to the free list.
-                                    if (stackCtx.hei.TryCAS(srcRecordInfo.PreviousAddress) && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
-                                    {
-                                        SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, fullRecordLength);
-                                        FreeRecordPool.TryAdd(stackCtx.recSrc.LogicalAddress, fullRecordLength);
-                                        isFree = true;
-                                    }
-                                }
-                                if (!isFree)
+                                bool isElided = false;
+                                if (UseFreeRecordPool && srcRecordInfo.Tombstone)   // If Tombstone is false, it was revivified by another session immediately after ConcurrentDeleter completed.
+                                    (isElided, _) = TryElideAndTransferToFreeList(ref stackCtx, ref srcRecordInfo, fullRecordLength);
+                                if (!isElided)
                                 {
                                     // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
                                     srcRecordInfo.Unseal(makeValid: true);
