@@ -4,7 +4,6 @@
 using System;
 using FASTER.core;
 using NUnit.Framework;
-using static FASTER.test.BlittableIterationTests;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test
@@ -20,7 +19,7 @@ namespace FASTER.test
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait:true);
-            log = Devices.CreateLogDevice(MethodTestDir + "/BlittableFASTERScanTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
             fht = new FasterKV<KeyStruct, ValueStruct>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 }, lockingMode: LockingMode.None);
         }
@@ -98,6 +97,52 @@ namespace FASTER.test
 
             scanAndVerify(ScanBufferingMode.SinglePageBuffering);
             scanAndVerify(ScanBufferingMode.DoublePageBuffering);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+
+        public void BlittableScanJumpToBeginAddressTest()
+        {
+            using var session = fht.For(new Functions()).NewSession<Functions>();
+
+            const int numRecords = 200;
+            const int numTailRecords = 10;
+            long shiftBeginAddressTo = 0;
+            int shiftToKey = 0;
+            for (int i = 0; i < numRecords; i++)
+            {
+                if (i == numRecords - numTailRecords)
+                {
+                    shiftBeginAddressTo = fht.Log.TailAddress;
+                    shiftToKey = i;
+                }
+                var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                session.Upsert(ref key, ref value, Empty.Default, 0);
+            }
+
+            using var iter = fht.Log.Scan(fht.Log.HeadAddress, fht.Log.TailAddress);
+
+            for (int i = 0; i < 100; ++i)
+            {
+                Assert.IsTrue(iter.GetNext(out var recordInfo));
+                Assert.AreEqual(i, iter.GetKey().kfield1);
+                Assert.AreEqual(i, iter.GetValue().vfield1);
+            }
+
+            fht.Log.ShiftBeginAddress(shiftBeginAddressTo);
+
+            for (int i = 0; i < numTailRecords; ++i)
+            { 
+                Assert.IsTrue(iter.GetNext(out var recordInfo));
+                if (i == 0)
+                    Assert.AreEqual(fht.Log.BeginAddress, iter.CurrentAddress);
+                var expectedKey = numRecords - numTailRecords + i;
+                Assert.AreEqual(expectedKey, iter.GetKey().kfield1);
+                Assert.AreEqual(expectedKey, iter.GetValue().vfield1);
+            }
         }
 
         class LogObserver : IObserver<IFasterScanIterator<KeyStruct, ValueStruct>>

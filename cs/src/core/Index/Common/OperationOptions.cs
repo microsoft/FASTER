@@ -79,7 +79,7 @@ namespace FASTER.core
     }
 
     /// <summary>
-    /// Options for the read operation
+    /// Options for the Read() operation
     /// </summary>
     public struct ReadOptions
     {
@@ -88,20 +88,67 @@ namespace FASTER.core
         /// For ReadAtAddress it is the address to read at.
         /// Can be populated from <see cref="RecordMetadata.RecordInfo"/>.PreviousAddress for chained reads.
         /// </summary>
-        public long StartAddress;
+        public long StartAddress { get; internal set; }
 
         /// <summary>
         /// The minimum address to search at (records are searched toward the head--that is, in decreasing address order);
         /// if this is Constants.kInvalidAddress, the search continues until no further records are found, as in other forms of Read.
         /// </summary>
-        public long StopAddress;
+        public long StopAddress { get; internal set; }
 
         /// <summary>
         /// Options for automatically copying immutable records on Read().
         /// </summary>
-        public ReadCopyOptions CopyOptions;
+        public ReadCopyOptions CopyOptions { get; internal set; }
+
+        /// <summary>
+        /// The hashcode of the key for this operation
+        /// </summary>
+        public long? KeyHash { get; internal set; }
 
         /// <inheritdoc/>
-        public override string ToString() => $"startAddr: {StartAddress}, stopAddr {StopAddress}, copy {{{CopyOptions}}}";
+        public readonly override string ToString() => $"startAddr: {StartAddress}, stopAddr {StopAddress}, copy {{{CopyOptions}}}, keyHash {Utility.GetHashString(KeyHash)}";
+    }
+
+    /// <summary>
+    /// Options for the Read() operation
+    /// </summary>
+    public struct RMWOptions
+    {
+        /// <summary>
+        /// The hashcode of the key for this operation
+        /// </summary>
+        public long? KeyHash { get; internal set; }
+
+        /// <inheritdoc/>
+        public readonly override string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}";
+    }
+
+    /// <summary>
+    /// Options for the Read() operation
+    /// </summary>
+    public struct UpsertOptions
+    {
+        /// <summary>
+        /// The hashcode of the key for this operation
+        /// </summary>
+        public long? KeyHash { get; internal set; }
+
+        /// <inheritdoc/>
+        public readonly override string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}";
+    }
+
+    /// <summary>
+    /// Options for the Read() operation
+    /// </summary>
+    public struct DeleteOptions
+    {
+        /// <summary>
+        /// The hashcode of the key for this operation
+        /// </summary>
+        public long? KeyHash { get; internal set; }
+
+        /// <inheritdoc/>
+        public readonly override string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}";
     }
 }

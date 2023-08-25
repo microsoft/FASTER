@@ -114,7 +114,7 @@ namespace FASTER.core
                         {
                             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
                                 status = ConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
-                                                               ref pendingContext.userContext, pendingContext.serialNum, ref stackCtx, WriteReason.CopyToTail, callerHasLock: true);
+                                                               ref pendingContext.userContext, pendingContext.serialNum, ref stackCtx, WriteReason.CopyToTail);
                             else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
                                     && TryCopyToReadCache(fasterSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref stackCtx))
                                 status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
@@ -224,7 +224,7 @@ namespace FASTER.core
             } // end while (true)
 
             do
-                status = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
+                status = InternalRMW(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
             while (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext));
             return status;
         }

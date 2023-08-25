@@ -572,7 +572,7 @@ namespace FASTER.test.ReadCacheTests
 
             try
             {
-                luContext.SortLockCodes(keys);
+                luContext.SortKeyHashes(keys);
 
                 // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
                 luContext.Lock(keys);
