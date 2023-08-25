@@ -25,7 +25,7 @@ namespace FASTER.core
         /// <summary>
         /// If true, then keys must use one of the <see cref="IFasterContext{TKey}.GetKeyHash(ref TKey)"/> overloads to obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
         /// </summary>
-        /// <remarks>Whether this returns true depends on the <see cref="LockingMode"/> on <see cref="FasterKVSettings{Key, Value}"/>, or passed to the FasterKV constructor.</remarks>
+        /// <remarks>Whether this returns true depends on the <see cref="ConcurrencyControlMode"/> on <see cref="FasterKVSettings{Key, Value}"/>, or passed to the FasterKV constructor.</remarks>
         bool NeedKeyHash { get; }
 
         /// <summary>

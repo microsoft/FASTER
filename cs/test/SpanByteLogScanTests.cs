@@ -22,7 +22,7 @@ namespace FASTER.test
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
             fht = new FasterKV<SpanByte, SpanByte>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 20, PageSizeBits = 15 }, lockingMode: LockingMode.None);
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 20, PageSizeBits = 15 }, concurrencyControlMode: ConcurrencyControlMode.None);
         }
 
         [TearDown]

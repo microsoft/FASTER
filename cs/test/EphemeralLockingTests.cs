@@ -68,7 +68,7 @@ namespace FASTER.test.EphemeralLocking
             functions = new EphemeralLockingTestFunctions();
 
             fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
-                                            checkpointSettings: checkpointSettings, comparer: comparer, lockingMode: LockingMode.Ephemeral);
+                                            checkpointSettings: checkpointSettings, comparer: comparer, concurrencyControlMode: ConcurrencyControlMode.RecordIsolation);
             session = fht.For(functions).NewSession<EphemeralLockingTestFunctions>();
         }
 

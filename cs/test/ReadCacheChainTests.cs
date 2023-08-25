@@ -57,19 +57,19 @@ namespace FASTER.test.ReadCacheTests
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
             log = Devices.CreateLogDevice(MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
 
-            var lockingMode = LockingMode.None;
+            var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is LockingMode lm)
+                if (arg is ConcurrencyControlMode lm)
                 {
-                    lockingMode = lm;
+                    concurrencyControlMode = lm;
                     continue;
                 }
             }
 
             fht = new FasterKV<long, long>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
-                comparer: new ChainComparer(mod), lockingMode: lockingMode);
+                comparer: new ChainComparer(mod), concurrencyControlMode: concurrencyControlMode);
         }
 
         [TearDown]
@@ -291,7 +291,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteCacheRecordTest([Values] LockingMode lockingMode)
+        public void DeleteCacheRecordTest([Values] ConcurrencyControlMode concurrencyControlMode)
         {
             PopulateAndEvict();
             CreateChain();
@@ -319,7 +319,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteHalfOfAllCacheRecordsTest([Values] LockingMode lockingMode)
+        public void DeleteHalfOfAllCacheRecordsTest([Values] ConcurrencyControlMode concurrencyControlMode)
         {
             PopulateAndEvict();
             CreateChain();
@@ -371,7 +371,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void UpsertCacheRecordTest([Values] LockingMode lockingMode)
+        public void UpsertCacheRecordTest([Values] ConcurrencyControlMode concurrencyControlMode)
         {
             DoUpdateTest(useRMW: false);
         }
@@ -380,7 +380,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void RMWCacheRecordTest([Values] LockingMode lockingMode)
+        public void RMWCacheRecordTest([Values] ConcurrencyControlMode concurrencyControlMode)
         {
             DoUpdateTest(useRMW: true);
         }
@@ -429,7 +429,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromCTTTest([Values] LockingMode lockingMode)
+        public void SpliceInFromCTTTest([Values] ConcurrencyControlMode concurrencyControlMode)
         {
             PopulateAndEvict();
             CreateChain();
@@ -449,7 +449,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion, [Values] LockingMode lockingMode)
+        public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -477,7 +477,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromRMWTest([Values] RecordRegion recordRegion, [Values] LockingMode lockingMode)
+        public void SpliceInFromRMWTest([Values] RecordRegion recordRegion, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -524,7 +524,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion, [Values] LockingMode lockingMode)
+        public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -552,7 +552,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(FasterKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void VerifyLockCountsAfterReadCacheEvict([Values(LockingMode.Standard)] LockingMode lockingMode)
+        public void VerifyLockCountsAfterReadCacheEvict([Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             PopulateAndEvict();
             CreateChain();
@@ -677,7 +677,7 @@ namespace FASTER.test.ReadCacheTests
             }
 
             fht = new FasterKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange),
-                lockingMode: LockingMode.Ephemeral);
+                concurrencyControlMode: ConcurrencyControlMode.RecordIsolation);
         }
 
         [TearDown]
@@ -891,7 +891,7 @@ namespace FASTER.test.ReadCacheTests
             }
 
             fht = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: new SpanByteComparerModulo(modRange),
-                lockingMode: LockingMode.Standard);
+                concurrencyControlMode: ConcurrencyControlMode.LockTable);
         }
 
         [TearDown]

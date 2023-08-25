@@ -39,13 +39,13 @@ namespace FASTER.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BlittableLogCompactionTests.log", deleteOnClose: true);
 
-            var lockingMode = LockingMode.Standard;
+            var concurrencyControlMode = ConcurrencyControlMode.LockTable;
             var hashMod = HashModulo.NoMod;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is LockingMode locking_mode)
+                if (arg is ConcurrencyControlMode locking_mode)
                 {
-                    lockingMode = locking_mode;
+                    concurrencyControlMode = locking_mode;
                     continue;
                 }
                 if (arg is HashModulo mod)
@@ -56,7 +56,7 @@ namespace FASTER.test
             }
 
             fht = new FasterKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 }, comparer: new HashModuloComparer(hashMod), lockingMode: lockingMode);;
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 }, comparer: new HashModuloComparer(hashMod), concurrencyControlMode: concurrencyControlMode);;
         }
 
         [TearDown]
@@ -125,7 +125,7 @@ namespace FASTER.test
         [Category("Compaction")]
         [Category("Smoke")]
 
-        public void BlittableLogCompactionTest1([Values] CompactionType compactionType, [Values(LockingMode.Standard)] LockingMode lockingMode)
+        public void BlittableLogCompactionTest1([Values] CompactionType compactionType, [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -156,7 +156,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        public void BlittableLogCompactionTest2([Values] CompactionType compactionType, [Values(LockingMode.Standard)] LockingMode lockingMode,
+        public void BlittableLogCompactionTest2([Values] CompactionType compactionType, [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode,
                                                 [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
@@ -204,7 +204,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        public void BlittableLogCompactionTest3([Values] CompactionType compactionType, [Values(LockingMode.Standard)] LockingMode lockingMode)
+        public void BlittableLogCompactionTest3([Values] CompactionType compactionType, [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -243,7 +243,7 @@ namespace FASTER.test
         [Category("Compaction")]
         [Category("Smoke")]
 
-        public void BlittableLogCompactionCustomFunctionsTest1([Values] CompactionType compactionType, [Values(LockingMode.Standard)] LockingMode lockingMode)
+        public void BlittableLogCompactionCustomFunctionsTest1([Values] CompactionType compactionType, [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             using var session = fht.For(new FunctionsCompaction()).NewSession<FunctionsCompaction>();
 
@@ -302,9 +302,9 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Compaction")]
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "lockingMode is used by Setup")]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void BlittableLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType, [Values]bool flushAndEvict,
-                                                                [Values(LockingMode.Standard)] LockingMode lockingMode)
+                                                                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy

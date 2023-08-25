@@ -19,13 +19,13 @@ namespace FASTER.core
         internal OverflowBucketLockTable(FasterKV<TKey, TValue> f) => this.fht = f;
 
         [Conditional("DEBUG")]
-        void AssertLockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking lock when locking mode is not {LockingMode.Standard}");
+        void AssertLockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking lock when locking mode is not {ConcurrencyControlMode.LockTable}");
 
         [Conditional("DEBUG")]
-        void AssertUnlockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking unlock when locking mode is not {LockingMode.Standard}");
+        void AssertUnlockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking unlock when locking mode is not {ConcurrencyControlMode.LockTable}");
 
         [Conditional("DEBUG")]
-        void AssertQueryAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking query when locking mode is not {LockingMode.Standard}");
+        void AssertQueryAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking query when locking mode is not {ConcurrencyControlMode.LockTable}");
 
         internal long GetSize() => fht.state[fht.resizeInfo.version].size_mask;
 
