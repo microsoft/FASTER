@@ -4,8 +4,10 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -19,21 +21,21 @@ namespace FASTER.test
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> session;
         private IDevice log;
         private string path;
-        TestUtils.DeviceType deviceType;
+        DeviceType deviceType;
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
+            path = MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            DeleteDirectory(path, wait: true);
         }
 
-        private void Setup(long size, LogSettings logSettings, TestUtils.DeviceType deviceType, int latencyMs = TestUtils.DefaultLocalMemoryDeviceLatencyMs)
+        private void Setup(long size, LogSettings logSettings, DeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
         {
             string filename = path + TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log";
-            log = TestUtils.CreateTestDevice(deviceType, filename, latencyMs: latencyMs);
+            log = CreateTestDevice(deviceType, filename, latencyMs: latencyMs);
             logSettings.LogDevice = log;
             fht = new FasterKV<KeyStruct, ValueStruct>(size, logSettings);
             session = fht.For(new Functions()).NewSession<Functions>();
@@ -48,7 +50,7 @@ namespace FASTER.test
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(path);
+            DeleteDirectory(path);
         }
 
         private void AssertCompleted(Status expected, Status actual)
@@ -61,13 +63,13 @@ namespace FASTER.test
         private (Status status, OutputStruct output) CompletePendingResult()
         {
             session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-            return TestUtils.GetSinglePendingResult(completedOutputs);
+            return GetSinglePendingResult(completedOutputs);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteRead([Values] TestUtils.DeviceType deviceType)
+        public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
 
@@ -88,7 +90,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteReadDelete([Values] TestUtils.DeviceType deviceType)
+        public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
 
@@ -125,7 +127,7 @@ namespace FASTER.test
         public void NativeInMemWriteReadDelete2()
         {
             // Just set this one since Write Read Delete already does all four devices
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             const int count = 10;
 
@@ -174,7 +176,7 @@ namespace FASTER.test
         public unsafe void NativeInMemWriteRead2()
         {
             // Just use this one instead of all four devices since InMemWriteRead covers all four devices
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             int count = 200;
 
@@ -227,7 +229,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public unsafe void TestShiftHeadAddress([Values] TestUtils.DeviceType deviceType, [Values] TestUtils.BatchMode batchMode)
+        public unsafe void TestShiftHeadAddress([Values] DeviceType deviceType, [Values] BatchMode batchMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;
@@ -237,7 +239,7 @@ namespace FASTER.test
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            var latencyMs = batchMode == TestUtils.BatchMode.NoBatch ? 0 : TestUtils.DefaultLocalMemoryDeviceLatencyMs;
+            var latencyMs = batchMode == BatchMode.NoBatch ? 0 : DefaultLocalMemoryDeviceLatencyMs;
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType, latencyMs: latencyMs);
 
             for (int c = 0; c < NumRecs; c++)
@@ -280,11 +282,11 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
                 Assert.IsTrue(foundStatus.IsPending);
-                if (batchMode == TestUtils.BatchMode.NoBatch)
+                if (batchMode == BatchMode.NoBatch)
                 {
                     Status status;
                     session.CompletePendingWithOutputs(out var outputs, wait: true);
-                    (status, output) = TestUtils.GetSinglePendingResult(outputs);
+                    (status, output) = GetSinglePendingResult(outputs);
                     Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(key1.kfield1, output.value.vfield1);
                     Assert.AreEqual(key1.kfield2, output.value.vfield2);
@@ -309,7 +311,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public unsafe void NativeInMemRMWRefKeys([Values] TestUtils.DeviceType deviceType)
+        public unsafe void NativeInMemRMWRefKeys([Values] DeviceType deviceType)
         {
             InputStruct input = default;
             OutputStruct output = default;
@@ -374,7 +376,7 @@ namespace FASTER.test
         // Tests the overload where no reference params used: key,input,userContext,serialNo
         [Test]
         [Category("FasterKV")]
-        public unsafe void NativeInMemRMWNoRefKeys([Values] TestUtils.DeviceType deviceType)
+        public unsafe void NativeInMemRMWNoRefKeys([Values] DeviceType deviceType)
         {
             InputStruct input = default;
 
@@ -435,7 +437,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadNoRefKeyInputOutput([Values] TestUtils.DeviceType deviceType)
+        public void ReadNoRefKeyInputOutput([Values] DeviceType deviceType)
         {
             InputStruct input = default;
 
@@ -458,7 +460,7 @@ namespace FASTER.test
         // Test the overload call of .Read (key, out output, userContext, serialNo)
         [Test]
         [Category("FasterKV")]
-        public void ReadNoRefKey([Values] TestUtils.DeviceType deviceType)
+        public void ReadNoRefKey([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
@@ -481,7 +483,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadWithoutInput([Values] TestUtils.DeviceType deviceType)
+        public void ReadWithoutInput([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
@@ -509,7 +511,7 @@ namespace FASTER.test
         public void ReadWithoutSerialID()
         {
             // Just checking without Serial ID so one device type is enough
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
 
@@ -533,7 +535,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void ReadBareMinParams([Values] TestUtils.DeviceType deviceType)
+        public void ReadBareMinParams([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
@@ -557,7 +559,7 @@ namespace FASTER.test
         public void ReadAtAddressDefaultOptions()
         {
             // Just functional test of ReadFlag so one device is enough
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
 
@@ -612,7 +614,7 @@ namespace FASTER.test
         public void ReadAtAddressIgnoreReadCache()
         {
             // Another ReadFlag functional test so one device is enough
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             Setup(128, new LogSettings { MemorySizeBits = 29, ReadCacheSettings = new ReadCacheSettings() }, deviceType);
 
@@ -642,7 +644,7 @@ namespace FASTER.test
                 if (status.IsPending)
                 {
                     skipReadCacheSession.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                    (status, output) = TestUtils.GetSinglePendingResult(completedOutputs);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
                 Assert.IsTrue(status.Found);
                 VerifyOutput();
@@ -691,7 +693,7 @@ namespace FASTER.test
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void UpsertDefaultsTest([Values] TestUtils.DeviceType deviceType)
+        public void UpsertDefaultsTest([Values] DeviceType deviceType)
         {
             Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
@@ -719,7 +721,7 @@ namespace FASTER.test
         public void UpsertNoRefNoDefaultsTest()
         {
             // Just checking more parameter values so one device is enough
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
 
@@ -745,7 +747,7 @@ namespace FASTER.test
         public void UpsertSerialNumberTest()
         {
             // Simple Upsert of Serial Number test so one device is enough
-            deviceType = TestUtils.DeviceType.MLSD;
+            deviceType = DeviceType.MLSD;
 
             Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
 
@@ -783,7 +785,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         public static void KVBasicsSampleEndToEndInDocs()
         {
-            string testDir = TestUtils.MethodTestDir;
+            string testDir = MethodTestDir;
             using var log = Devices.CreateLogDevice($"{testDir}/hlog.log", deleteOnClose: false);
             using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
             using var s = store.NewSession(new SimpleFunctions<long, long>());
@@ -801,7 +803,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         public static void LogPathtooLong()
         {
-            string testDir = new string('x', Native32.WIN32_MAX_PATH - 11);                 // As in LSD, -11 for ".<segment>"
+            string testDir = new ('x', Native32.WIN32_MAX_PATH - 11);                       // As in LSD, -11 for ".<segment>"
             using var log = Devices.CreateLogDevice($"{testDir}", deleteOnClose: true);     // Should succeed
             Assert.Throws(typeof(FasterException), () => Devices.CreateLogDevice($"{testDir}y", deleteOnClose: true));
         }
@@ -810,7 +812,7 @@ namespace FASTER.test
         [Category("FasterKV")]
         public static void UshortKeyByteValueTest()
         {
-            using var log = Devices.CreateLogDevice($"{TestUtils.MethodTestDir}/hlog.log", deleteOnClose: false);
+            using var log = Devices.CreateLogDevice($"{MethodTestDir}/hlog.log", deleteOnClose: false);
             using var store = new FasterKV<ushort, byte>(1L << 20, new LogSettings { LogDevice = log });
             using var s = store.NewSession(new SimpleFunctions<ushort, byte>());
             ushort key = 1024;
@@ -838,6 +840,190 @@ namespace FASTER.test
 
                 prevTailLogicalAddress = tailLogicalAddress;
                 prevTailPhysicalAddress = tailPhysicalAddress;
+            }
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public static void BasicSyncOperationsTest()
+        {
+            using var log = Devices.CreateLogDevice($"{MethodTestDir}/hlog.log", deleteOnClose: false);
+            using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
+            using var session = store.NewSession(new SimpleFunctions<long, long>());
+            const int numRecords = 500;
+            const int valueMult = 1_000_000;
+
+            var hashes = new long[numRecords];
+            Status status;
+            long output;
+
+            for (long key = 0; key < numRecords; key++)
+            {
+                long value = key + valueMult;
+                hashes[key] = store.comparer.GetHashCode64(ref key);
+                status = session.Upsert(key, value);
+                Assert.IsTrue(status.Record.Created, status.ToString());
+                status = session.Read(key, out output);
+                Assert.IsTrue(status.Found, status.ToString());
+                Assert.AreEqual(value, output);
+            }
+
+            void doUpdate(bool useRMW)
+            {
+                // Update and Read without keyHash
+                for (long key = 0; key < numRecords; key++)
+                {
+                    long value = key + valueMult * 2;
+                    if (useRMW)
+                    {
+                        status = session.RMW(key, value);
+                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                    }
+                    else
+                    { 
+                        status = session.Upsert(key, value);
+                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                    }
+                    status = session.Read(key, out output);
+                    Assert.IsTrue(status.Found, status.ToString());
+                    Assert.AreEqual(value, output);
+                }
+
+                // Update and Read with keyHash
+                for (long key = 0; key < numRecords; key++)
+                {
+                    long value = key + valueMult * 3;
+                    if (useRMW)
+                    {
+                        RMWOptions rmwOptions = new() { KeyHash = hashes[key] };
+                        status = session.RMW(key, value, ref rmwOptions);
+                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                    }
+                    else
+                    {
+                        UpsertOptions upsertOptions = new() { KeyHash = hashes[key] };
+                        status = session.Upsert(key, value, ref upsertOptions);
+                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                    }
+                    ReadOptions readOptions = new() { KeyHash = hashes[key] };
+                    status = session.Read(key, out output, ref readOptions);
+                    Assert.IsTrue(status.Found, status.ToString());
+                    Assert.AreEqual(value, output);
+                }
+            }
+
+            doUpdate(useRMW: false);
+            doUpdate(useRMW: true);
+
+            // Delete without keyHash
+            for (long key = 0; key < numRecords; key++)
+            {
+                status = session.Delete(key);
+                Assert.IsTrue(status.Found, status.ToString());
+                status = session.Read(key, out _);
+                Assert.IsTrue(status.NotFound, status.ToString());
+            }
+
+            // Update and Read without keyHash
+            for (long key = 0; key < numRecords; key++)
+            {
+                DeleteOptions deleteOptions = new() { KeyHash = hashes[key] };
+                status = session.Delete(key, ref deleteOptions);
+                ReadOptions readOptions = new() { KeyHash = hashes[key] };
+                status = session.Read(key, out _, ref readOptions);
+                Assert.IsTrue(status.NotFound, status.ToString());
+            }
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public static async Task BasicAsyncOperationsTest()
+        {
+            using var log = Devices.CreateLogDevice($"{MethodTestDir}/hlog.log", deleteOnClose: false);
+            using var store = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
+            using var session = store.NewSession(new SimpleFunctions<long, long>());
+            const int numRecords = 500;
+            const int valueMult = 1_000_000;
+
+            var hashes = new long[numRecords];
+            Status status;
+            long output;
+
+            for (long key = 0; key < numRecords; key++)
+            {
+                long value = key + valueMult;
+                hashes[key] = store.comparer.GetHashCode64(ref key);
+                status = await CompleteAsync(session.UpsertAsync(key, value));
+                Assert.IsTrue(status.Record.Created, status.ToString());
+                (status, output) = await CompleteAsync(session.ReadAsync(key));
+                Assert.IsTrue(status.Found, status.ToString());
+                Assert.AreEqual(value, output);
+            }
+
+            async void doUpdate(bool useRMW)
+            {
+                // Update and Read without keyHash
+                for (long key = 0; key < numRecords; key++)
+                {
+                    long value = key + valueMult * 2;
+                    if (useRMW)
+                    {
+                        status = await CompleteAsync(session.RMWAsync(key, value));
+                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                    }
+                    else
+                    {
+                        status = await CompleteAsync(session.UpsertAsync(key, value));
+                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                    }
+                    (status, output) = await CompleteAsync(session.ReadAsync(key));
+                    Assert.IsTrue(status.Found, status.ToString());
+                    Assert.AreEqual(value, output);
+                }
+
+                // Update and Read with keyHash
+                for (long key = 0; key < numRecords; key++)
+                {
+                    long value = key + valueMult * 3;
+                    if (useRMW)
+                    {
+                        RMWOptions rmwOptions = new() { KeyHash = hashes[key] };
+                        status = await CompleteAsync(session.RMWAsync(key, value, ref rmwOptions));
+                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                    }
+                    else
+                    {
+                        UpsertOptions upsertOptions = new() { KeyHash = hashes[key] };
+                        status = await CompleteAsync(session.UpsertAsync(key, value, ref upsertOptions));
+                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                    }
+                    ReadOptions readOptions = new() { KeyHash = hashes[key] };
+                    (status, output) = await CompleteAsync(session.ReadAsync(key, ref readOptions));
+                    Assert.IsTrue(status.Found, status.ToString());
+                    Assert.AreEqual(value, output);
+                }
+            }
+
+            doUpdate(useRMW: false);
+            doUpdate(useRMW: true);
+
+            // Delete without keyHash
+            for (long key = 0; key < numRecords; key++)
+            {
+                status = await CompleteAsync(session.DeleteAsync(key));
+                Assert.IsTrue(status.Found, status.ToString());
+                (status, _) = await CompleteAsync(session.ReadAsync(key));
+                Assert.IsTrue(status.NotFound, status.ToString());
+            }
+
+            // Update and Read without keyHash
+            for (long key = 0; key < numRecords; key++)
+            {
+                DeleteOptions deleteOptions = new() { KeyHash = hashes[key] };
+                status = await CompleteAsync(session.DeleteAsync(key, ref deleteOptions));
+                ReadOptions readOptions = new() { KeyHash = hashes[key] };
+                (status, _) = await CompleteAsync(session.ReadAsync(key, ref readOptions));
+                Assert.IsTrue(status.NotFound, status.ToString());
             }
         }
     }

@@ -132,8 +132,9 @@ namespace FASTER.core
                 out AsyncIOContext<Key, Value> diskRequest)
         {
             OperationStatus internalStatus;
+            var keyHash = readOptions.KeyHash ?? comparer.GetHashCode64(ref key);
             do
-                internalStatus = InternalRead(ref key, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
+                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
             while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
             return HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus, out diskRequest);

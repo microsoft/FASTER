@@ -14,6 +14,7 @@ namespace FASTER.core
         /// function is used to complete the operation.
         /// </summary>
         /// <param name="key">Key of the record.</param>
+        /// <param name="keyHash">Hashcode of <paramref name="key"/></param>
         /// <param name="input">Input required to compute output from value.</param>
         /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="startAddress">If not Constants.kInvalidAddress, this is the address to start at instead of a hash table lookup</param>
@@ -42,12 +43,13 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output,
+        internal OperationStatus InternalRead<Input, Output, Context, FasterSession>(ref Key key, long keyHash, ref Input input, ref Output output,
                                     long startAddress, ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext,
                                     FasterSession fasterSession, long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
+            OperationStackContext<Key, Value> stackCtx = new(keyHash);
+            pendingContext.keyHash = keyHash;
 
             if (fasterSession.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -233,6 +235,8 @@ namespace FASTER.core
 
             try
             {
+                if (srcRecordInfo.IsClosed && !useStartAddress)
+                    return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
 
@@ -277,8 +281,11 @@ namespace FASTER.core
 
             try
             {
+                if (srcRecordInfo.IsClosed && !useStartAddress)
+                    return OperationStatus.RETRY_LATER;
                 if (srcRecordInfo.Tombstone)
                     return OperationStatus.NOTFOUND;
+
                 ref Value recordValue = ref stackCtx.recSrc.GetValue();
 
                 if (fasterSession.SingleReader(ref key, ref input, ref recordValue, ref output, ref srcRecordInfo, ref readInfo))
@@ -287,7 +294,7 @@ namespace FASTER.core
                         return OperationStatus.SUCCESS;
                     if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
                         return ConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref input, ref recordValue, ref output, ref userContext, lsn, ref stackCtx,
-                                                     WriteReason.CopyToTail, callerHasLock: true);
+                                                     WriteReason.CopyToTail, wantIO: false);
                     if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache
                             && TryCopyToReadCache(fasterSession, ref pendingContext, ref key, ref input, ref recordValue, ref stackCtx))
                         return OperationStatus.SUCCESS | OperationStatus.COPIED_RECORD_TO_READ_CACHE;

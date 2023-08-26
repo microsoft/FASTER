@@ -138,7 +138,9 @@ bool QueueIoHandler::TryComplete() {
 #define IO_BATCH_EVENTS	8		/* number of events to batch up */
 
 int QueueIoHandler::QueueRun(int timeout_secs) {
-    struct timespec timeout = (timeout_secs, 0);
+    struct timespec timeout;
+    timeout.tv_sec = timeout_secs;
+    timeout.tv_nsec = 0;
     struct io_event events[IO_BATCH_EVENTS];
     struct io_event* ep;
 
@@ -152,12 +154,12 @@ int QueueIoHandler::QueueRun(int timeout_secs) {
      */
     do {
         int i;
-        if ((n = ::io_getevents(io_object_, 1, IO_BATCH_EVENTS, &events, timeout)) <= 0)
+        if ((n = ::io_getevents(io_object_, 1, IO_BATCH_EVENTS, events, &timeout)) <= 0)
             break;
         ret += n;
         for (ep = events, i = n; i-- > 0; ep++) {
             io_callback_t callback = reinterpret_cast<io_callback_t>(ep->data);
-            callback(ctx, ep->obj, ep->res, ep->res2);
+            callback(io_object_, ep->obj, ep->res, ep->res2);
         }
     } while (n == IO_BATCH_EVENTS);
 

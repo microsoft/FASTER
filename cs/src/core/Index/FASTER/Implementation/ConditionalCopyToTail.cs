@@ -8,16 +8,36 @@ namespace FASTER.core
 {
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
+        /// <summary>
+        /// Copy a record to the tail of the log after caller has verifyied it does not exist within a specified range.
+        /// </summary>
+        /// <param name="fasterSession">Callback functions.</param>
+        /// <param name="pendingContext">pending context created when the operation goes pending.</param>
+        /// <param name="key">key of the record.</param>
+        /// <param name="input">input passed through.</param>
+        /// <param name="value">the value to insert</param>
+        /// <param name="output">Location to store output computed from input and value.</param>
+        /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
+        /// <param name="lsn">Operation serial number</param>
+        /// <param name="stackCtx">Contains information about the call context, record metadata, and so on</param>
+        /// <param name="writeReason">The reason the CopyToTail is being done</param>
+        /// <param name="wantIO">Whether to do IO if the search must go below HeadAddress. ReadFromImmutable, for example,
+        ///     is just an optimization to avoid future IOs, so if we need an IO here we just defer them to the next Read().</param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private OperationStatus ConditionalCopyToTail<Input, Output, Context, FasterSession>(FasterSession fasterSession,
                 ref PendingContext<Input, Output, Context> pendingContext,
                 ref Key key, ref Input input, ref Value value, ref Output output, ref Context userContext, long lsn,
-                ref OperationStackContext<Key, Value> stackCtx, WriteReason writeReason, bool callerHasLock = false)
+                ref OperationStackContext<Key, Value> stackCtx, WriteReason writeReason, bool wantIO = true)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            // We are called by one of ReadFromImmutable, CompactionConditionalCopyToTail, or ContinueConditionalCopyToTail, and stackCtx is set up for the first try.
-            // minAddress is the stackCtx.recSrc.LatestLogicalAddress; by the time we get here, any IO below that has been done due to PrepareConditionalCopyToTailIO,
-            // which then went to ContinueConditionalCopyToTail, which evaluated whether the record was found at that level.
+            bool callerHasLock = stackCtx.recSrc.HasTransientLock;
+
+            // We are called by one of ReadFromImmutable, CompactionConditionalCopyToTail, or ContinuePendingConditionalCopyToTail;
+            // these have already searched to see if the record is present above minAddress, and stackCtx is set up for the first try.
+            // minAddress is the stackCtx.recSrc.LatestLogicalAddress; by the time we get here, any IO below that has been done due to
+            // PrepareConditionalCopyToTailIO, which then went to ContinuePendingConditionalCopyToTail, which evaluated whether the
+            // record was found at that level.
             while (true)
             {
                 // ConditionalCopyToTail is different in regard to locking from the usual procedures, in that if we find a source record we don't lock--we exit with success.
@@ -36,20 +56,29 @@ namespace FASTER.core
                             TransientSUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
                     }
                 }
+
+                // We're here we failed TryCopyToTail, probably a failed CAS due to another record insertion.
                 if (!HandleImmediateRetryStatus(status, fasterSession, ref pendingContext))
                     return status;
 
-                // Failed TryCopyToTail, probably a failed CAS due to another record insertion. Re-traverse from the tail to the highest point we just searched
-                // (which may have gone below HeadAddress). +1 to LatestLogicalAddress because we have examined that already.
+                // HandleImmediateRetryStatus may have been refreshed the epoch which means HeadAddress etc. may have changed. Re-traverse from the tail to the highest
+                // point we just searched (which may have gone below HeadAddress). +1 to LatestLogicalAddress because we have examined that already. Use stackCtx2 to
+                // preserve stacKCtx, both for retrying the Insert if needed and for preserving the caller's lock status, etc.
                 var minAddress = stackCtx.recSrc.LatestLogicalAddress + 1;
-                stackCtx = new(stackCtx.hei.hash);
-                if (TryFindRecordInMainLogForConditionalCopyToTail(ref key, ref stackCtx, minAddress, out bool needIO))
+                OperationStackContext<Key, Value> stackCtx2 = new(stackCtx.hei.hash);
+                if (TryFindRecordInMainLogForConditionalCopyToTail(ref key, ref stackCtx2, minAddress, out bool needIO))
                     return OperationStatus.SUCCESS;
 
-                // Issue IO if necessary, else loop back up and retry the insert.
-                if (needIO)
+                // Issue IO if necessary and desired (for ReadFromImmutable, it isn't; just exit in that case), else loop back up and retry the insert.
+                if (!wantIO)
+                {
+                    // Caller (e.g. ReadFromImmutable) called this to keep read-hot records in memory. That's already failed, so give up and we'll read it when we have to.
+                    if (stackCtx.recSrc.LogicalAddress < hlog.HeadAddress)
+                        return OperationStatus.SUCCESS;
+                }
+                else if (needIO)
                     return PrepareIOForConditionalCopyToTail(fasterSession, ref pendingContext, ref key, ref input, ref value, ref output, ref userContext, lsn,
-                                                      ref stackCtx, minAddress, WriteReason.Compaction);
+                                                      ref stackCtx2, minAddress, WriteReason.Compaction);
             }
         }
 

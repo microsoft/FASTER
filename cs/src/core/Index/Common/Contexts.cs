@@ -142,6 +142,7 @@ namespace FASTER.core
             internal IHeapContainer<Input> input;
             internal Output output;
             internal Context userContext;
+            internal long keyHash;
 
             // Some additional information about the previous attempt
             internal long id;
