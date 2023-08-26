@@ -45,8 +45,11 @@ namespace FASTER.core
         // Return whether another thread has been launched while we were scanning.
         internal bool YieldToAnotherThread() => this.state == BumpOrSleep;
 
+        public long LaunchCount;
+
         private void LaunchWorker(bool fromAdd)
         {
+            Interlocked.Increment(ref LaunchCount);
             ulong startMs;
             while (!disposed)
             {

@@ -58,6 +58,8 @@ namespace FASTER.test.Revivification
             sw.Start();
             while (pool.HasSafeRecords != want)
             {
+                if (sw.ElapsedMilliseconds >= DefaultSafeWaitTimeout)
+                    Assert.Greater(pool.bumpEpochWorker.LaunchCount, 0, "WaitForSafeRecords timed out with zero LaunchCount");
                 Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}");
                 Thread.Yield();
             }
@@ -121,9 +123,9 @@ namespace FASTER.test.Revivification
         internal static void AssertElidable<TKey, TValue>(FasterKV<TKey, TValue> fkv, ref TKey key)
         {
             OperationStackContext<TKey, TValue> stackCtx = new(fkv.comparer.GetHashCode64(ref key));
-            Assert.IsTrue(fkv.FindTag(ref stackCtx.hei), $"Cannot find key {key}");
+            Assert.IsTrue(fkv.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key}");
             var recordInfo = fkv.hlog.GetInfo(fkv.hlog.GetPhysicalAddress(stackCtx.hei.Address));
-            Assert.Less(recordInfo.PreviousAddress, fkv.hlog.BeginAddress);
+            Assert.Less(recordInfo.PreviousAddress, fkv.hlog.BeginAddress, "AssertElidable: expected elidable key");
         }
     }
 
@@ -222,7 +224,7 @@ namespace FASTER.test.Revivification
             Populate();
 
             bool stayInChain = deleteDest == DeleteDest.InChain;
-            FreeRecordPool<int, int> pool = stayInChain ? RevivificationTestUtils.SwapFreeRecordPool(fkv, default) : default;
+            FreeRecordPool<int, int> pool = stayInChain ? RevivificationTestUtils.SwapFreeRecordPool(fkv, default) : fkv.FreeRecordPool;
 
             var deleteKey = 42;
             if (!stayInChain)
