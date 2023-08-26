@@ -37,7 +37,7 @@ namespace FASTER.test
             var enqueueDone = new ManualResetEventSlim();
             var commitThreads = new List<Thread>();
             // Make sure to spin up many commit threads to expose lots of interleavings
-            for (var i = 0; i < 2 * Math.Max(1, Environment.ProcessorCount - 1); i++)
+            for (var i = 0; i < Math.Max(1, Environment.ProcessorCount / 2); i++)
             {
                 commitThreads.Add(new Thread(() =>
                 {

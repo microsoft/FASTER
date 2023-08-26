@@ -119,7 +119,7 @@ namespace FASTER.test
             var enqueueDone = new ManualResetEventSlim();
             var commitThreads = new List<Thread>();
             // Make sure to not spin up too many commit threads, otherwise we might clog epochs and halt progress
-            for (var i = 0; i < Math.Max(1, Environment.ProcessorCount - 1); i++)
+            for (var i = 0; i < Math.Max(1, Environment.ProcessorCount / 2); i++)
             {
                 commitThreads.Add(new Thread(() =>
                 {

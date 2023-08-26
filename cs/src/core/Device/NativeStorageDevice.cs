@@ -160,11 +160,7 @@ namespace FASTER.core
                     
                 if (_result != 0)
                 {
-                    int error = Marshal.GetLastWin32Error();
-                    if (error != Native32.ERROR_IO_PENDING)
-                    {
-                        throw new IOException("Error reading from log file", error);
-                    }
+                    throw new IOException("Error reading from log file", _result);
                 }
             }
             catch (IOException e)
@@ -218,11 +214,7 @@ namespace FASTER.core
 
                 if (_result != 0)
                 {
-                    int error = Marshal.GetLastWin32Error();
-                    if (error != Native32.ERROR_IO_PENDING)
-                    {
-                        throw new IOException("Error reading from log file", error);
-                    }
+                    throw new IOException("Error reading from log file", _result);
                 }
             }
             catch (IOException e)
@@ -263,6 +255,7 @@ namespace FASTER.core
         public override void Dispose()
         {
             completionThreadToken.Cancel();
+            while (numPending > 0) Thread.Yield();
             NativeDevice_Destroy(nativeDevice);
             while (Interlocked.CompareExchange(ref numCompletionThreads, int.MinValue, 0) != 0) Thread.Yield();
             completionThreadToken.Dispose();
