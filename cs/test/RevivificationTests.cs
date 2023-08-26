@@ -116,6 +116,15 @@ namespace FASTER.test.Revivification
             long epoch = GetLatestAddedEpoch(pool, recordSize);
             WaitForSafeEpoch(fkv, epoch, pool);
         }
+
+        internal static void AssertElidable<TKey, TValue>(FasterKV<TKey, TValue> fkv, TKey key) => AssertElidable(fkv, ref key);
+        internal static void AssertElidable<TKey, TValue>(FasterKV<TKey, TValue> fkv, ref TKey key)
+        {
+            OperationStackContext<TKey, TValue> stackCtx = new(fkv.comparer.GetHashCode64(ref key));
+            Assert.IsTrue(fkv.FindTag(ref stackCtx.hei), $"Cannot find key {key}");
+            var recordInfo = fkv.hlog.GetInfo(fkv.hlog.GetPhysicalAddress(stackCtx.hei.Address));
+            Assert.Less(recordInfo.PreviousAddress, fkv.hlog.BeginAddress);
+        }
     }
 
     internal readonly struct RevivificationSpanByteComparer : IFasterEqualityComparer<SpanByte>
@@ -212,22 +221,33 @@ namespace FASTER.test.Revivification
         {
             Populate();
 
+            bool stayInChain = deleteDest == DeleteDest.InChain;
+            FreeRecordPool<int, int> pool = stayInChain ? RevivificationTestUtils.SwapFreeRecordPool(fkv, default) : default;
+
             var deleteKey = 42;
+            if (!stayInChain)
+                RevivificationTestUtils.AssertElidable(fkv, deleteKey);
             var tailAddress = fkv.Log.TailAddress;
+
             session.Delete(deleteKey);
             Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
 
             var updateKey = deleteDest == DeleteDest.InChain ? deleteKey : numRecords + 1;
             var updateValue = updateKey + valueMult;
 
-            RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
+            if (!stayInChain)
+            { 
+                Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
+                RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
+            }
 
             if (updateOp == UpdateOp.Upsert)
                 session.Upsert(updateKey, updateValue);
             else if (updateOp == UpdateOp.RMW)
                 session.RMW(updateKey, updateValue);
 
-            RevivificationTestUtils.WaitForSafeRecords(fkv, want: false);
+            if (!stayInChain)
+                RevivificationTestUtils.WaitForSafeRecords(fkv, want: false);
             Assert.AreEqual(tailAddress, fkv.Log.TailAddress, "Expected tail address not to grow (record was revivified)");
         }
     }
@@ -811,6 +831,9 @@ namespace FASTER.test.Revivification
             Span<byte> keyVecDelAboveRO = stackalloc byte[KeyLength];
             keyVecDelAboveRO.Fill(delAboveRO);
             var delKeyAboveRO = SpanByte.FromFixedSpan(keyVecDelAboveRO);
+
+            if (!stayInChain && collisionRange == CollisionRange.None)  // CollisionRange.Ten has a valid .PreviousAddress so won't be moved to FreeList
+                RevivificationTestUtils.AssertElidable(fkv, ref delKeyAboveRO);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             var lastAddedEpoch = fkv.epoch.CurrentEpoch;
