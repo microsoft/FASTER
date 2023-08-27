@@ -65,8 +65,7 @@ namespace FASTER.core
 
                 // See if more entries were added following the bump.
                 int waitMs;
-                long lowestUnsafeEpoch = 0;
-                while (!ScanForBumpOrEmpty(startMs, fromAdd, out waitMs, ref lowestUnsafeEpoch))
+                while (!ScanForBumpOrEmpty(startMs, fromAdd, out waitMs, out long lowestUnsafeEpoch))
                 {
                     // No records needing Bump(), or another thread has taken BumpOrSleep state, or we're here from Take to update HasSafeRecords.
                     if (!fromAdd)
@@ -91,9 +90,10 @@ namespace FASTER.core
                 this.state = ScanOrQuiescent;
         }
 
-        bool ScanForBumpOrEmpty(ulong startMs, bool fromAdd, out int waitMs, ref long lowestUnsafeEpoch)
+        internal bool ScanForBumpOrEmpty(ulong startMs, bool fromAdd, out int waitMs, out long lowestUnsafeEpoch)
         {
             waitMs = BumpEpochWorker.DefaultBumpIntervalMs;
+            lowestUnsafeEpoch = 0;
             if (!this.recordPool.ScanForBumpOrEmpty(MaxCountForBump, out int countNeedingBump, ref lowestUnsafeEpoch) || !fromAdd)
                 return false;   // Pool is empty, no bump needed, or we are yielding to another thread
 

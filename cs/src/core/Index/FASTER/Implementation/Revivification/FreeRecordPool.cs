@@ -422,7 +422,7 @@ namespace FASTER.core
                             if (++countNeedingBump >= maxCountForBump)
                                 break;
                         }
-                        else if (localRecord.addedEpoch < lowestUnsafeEpoch)
+                        else if (lowestUnsafeEpoch == 0 || localRecord.addedEpoch < lowestUnsafeEpoch)
                         {
                             // This epoch is not safe but is below currentEpoch, so a bump of CurrentEpoch itself is not needed; track the lowest unsafe epoch.
                             lowestUnsafeEpoch = localRecord.addedEpoch;

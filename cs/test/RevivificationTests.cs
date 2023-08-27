@@ -59,8 +59,12 @@ namespace FASTER.test.Revivification
             while (pool.HasSafeRecords != want)
             {
                 if (sw.ElapsedMilliseconds >= DefaultSafeWaitTimeout)
-                    Assert.Greater(pool.bumpEpochWorker.LaunchCount, 0, "WaitForSafeRecords timed out with zero LaunchCount");
-                Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}");
+                {
+                    var startMs = Native32.GetTickCount64();
+                    pool.bumpEpochWorker.ScanForBumpOrEmpty(startMs, fromAdd: true, out var waitMs, out long lowestUnsafeEpoch);
+                    Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}; BEW.LaunchCount {pool.bumpEpochWorker.LaunchCount}, "
+                        + $"epoch.CurrentEpoch {fkv.epoch.CurrentEpoch}, waitMs {waitMs}, lowestUnsafeEpoch {lowestUnsafeEpoch}");
+                }
                 Thread.Yield();
             }
         }
