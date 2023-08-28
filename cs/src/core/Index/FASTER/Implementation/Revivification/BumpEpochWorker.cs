@@ -3,6 +3,7 @@
 
 using System.Threading;
 using System.Threading.Tasks;
+using static FASTER.core.Utility;
 
 namespace FASTER.core
 {
@@ -61,7 +62,7 @@ namespace FASTER.core
                     recordPool.fkv.epoch.BumpCurrentEpoch();
                     this.state = ScanOrQuiescent;   // Only set this if fromAdd, since we did not take BumpOrSleep state on entry in the non-fromAdd case
                 }
-                startMs = Native32.GetTickCount64();
+                startMs = GetCurrentMilliseconds();
 
                 // See if more entries were added following the bump.
                 int waitMs;
@@ -113,7 +114,7 @@ namespace FASTER.core
                         waitMs = BumpEpochWorker.DefaultBumpIntervalMs;                     // 1024 ms
 
                     // If more time has already elapsed than we just decided to wait, we'll Bump immediately.
-                    var elapsedMs = Native32.GetTickCount64() - startMs;
+                    var elapsedMs = GetCurrentMilliseconds() - startMs;
                      if (elapsedMs >= (ulong)waitMs)
                         waitMs = 0;
                 }
