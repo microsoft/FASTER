@@ -60,10 +60,9 @@ namespace FASTER.test.Revivification
             {
                 if (sw.ElapsedMilliseconds >= DefaultSafeWaitTimeout)
                 {
-                    var startMs = Utility.GetCurrentMilliseconds();
-                    pool.bumpEpochWorker.ScanForBumpOrEmpty(startMs, fromAdd: true, out var waitMs, out long lowestUnsafeEpoch);
-                    Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}; BEW.LaunchCount {pool.bumpEpochWorker.LaunchCount}, "
-                        + $"epoch.CurrentEpoch {fkv.epoch.CurrentEpoch}, waitMs {waitMs}, lowestUnsafeEpoch {lowestUnsafeEpoch}");
+                    pool.bumpEpochWorker.ScanForBumpOrEmpty(GetCurrentMilliseconds(), fromAdd: true, out var waitMs, out long lowestUnsafeEpoch);
+                    Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}: "
+                            + $"epoch.CurrentEpoch {fkv.epoch.CurrentEpoch}, waitMs {waitMs}, lowestUnsafeEpoch {lowestUnsafeEpoch}");
                 }
                 Thread.Yield();
             }
