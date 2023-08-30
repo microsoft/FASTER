@@ -61,9 +61,9 @@ namespace FASTER.test.Revivification
                 if (sw.ElapsedMilliseconds >= DefaultSafeWaitTimeout)
                 {
                     var startMs = Native32.GetTickCount64();
-                    pool.bumpEpochWorker.ScanForBumpOrEmpty(startMs, fromAdd: true, out var waitMs, out long lowestUnsafeEpoch);
-                    Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}; BEW.LaunchCount {pool.bumpEpochWorker.LaunchCount}, "
-                        + $"epoch.CurrentEpoch {fkv.epoch.CurrentEpoch}, waitMs {waitMs}, lowestUnsafeEpoch {lowestUnsafeEpoch}");
+                    pool.bumpEpochWorker.ScanForBumpOrEmpty(startMs, fromAdd: true, out var waitMs, out bool hasSafeRecords, out long lowestUnsafeEpoch);
+                    Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}: BEW.LaunchCount {pool.bumpEpochWorker.LaunchCount}, "
+                        + $"epoch.CurrentEpoch {fkv.epoch.CurrentEpoch}, waitMs {waitMs}, hasSafeRecords {hasSafeRecords}, lowestUnsafeEpoch {lowestUnsafeEpoch}");
                 }
                 Thread.Yield();
             }
@@ -875,7 +875,7 @@ namespace FASTER.test.Revivification
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
 
-            bool stayInChain = deleteDest == DeleteDest.InChain;
+            bool stayInChain = deleteDest == DeleteDest.InChain || collisionRange != CollisionRange.None;   // Collisions make the key inelidable
 
             byte delAboveRO = (byte)(numRecords - (stayInChain
                 ? (int)CollisionRange.Ten + 3       // Will remain in chain
@@ -947,8 +947,7 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SimpleMidChainRevivifyTest([Values(CollisionRange.Ten)] CollisionRange collisionRange,
-                                               [Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public void SimpleRevivifyTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
 
@@ -962,6 +961,8 @@ namespace FASTER.test.Revivification
             Span<byte> keyVec = stackalloc byte[KeyLength];
             keyVec.Fill(chainKey);
             var key = SpanByte.FromFixedSpan(keyVec);
+            if (!stayInChain)
+                RevivificationTestUtils.AssertElidable(fkv, ref key);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             var status = session.Delete(ref key);
@@ -974,6 +975,9 @@ namespace FASTER.test.Revivification
             inputVec.Fill(chainKey);
 
             SpanByteAndMemory output = new();
+
+            if (!stayInChain)
+                RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
 
             // Revivify in the chain. Because this stays in the chain, the expectedFullValueLength is roundup(InitialLength)
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
@@ -1035,8 +1039,8 @@ namespace FASTER.test.Revivification
                     session.Upsert(ref key, ref input, ref input, ref output);
                 else if (updateOp == UpdateOp.RMW)
                     session.RMW(ref key, ref input);
+                Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
             }
-            Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
         }
 
         [Test]
@@ -1150,6 +1154,8 @@ namespace FASTER.test.Revivification
             for (var ii = 0; ii < numRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
+
+                RevivificationTestUtils.AssertElidable(fkv, ref key);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 latestAddedEpoch = fkv.epoch.CurrentEpoch;

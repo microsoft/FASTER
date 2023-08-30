@@ -73,6 +73,8 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        // Can only elide the record if it is the one in the hash bucket entry and its PreviousAddress does not point to a valid record.
+        // Otherwise an earlier record for this key could be reachable again.
         private bool CanElide(ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo) 
             => stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlog.BeginAddress;
 

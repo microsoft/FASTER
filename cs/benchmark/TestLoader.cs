@@ -63,7 +63,7 @@ namespace FASTER.benchmark
             if (!verifyOption(Options.IterationCount > 0, "Iteration Count"))
                 return;
 
-            if (!verifyOption(Options.HashPacking > 0, "Iteration Count"))
+            if (!verifyOption(Options.HashPacking > 0, "Hash Packing"))
                 return;
 
             this.Distribution = Options.DistributionName.ToLower();
@@ -91,6 +91,8 @@ namespace FASTER.benchmark
 
             error = false;
         }
+
+        internal long GetHashTableSize() => (long)(this.MaxKey / this.Options.HashPacking);
 
         internal void LoadData()
         {

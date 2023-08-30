@@ -65,20 +65,20 @@ namespace FASTER.core
 
                 // See if more entries were added following the bump.
                 int waitMs;
-                while (!ScanForBumpOrEmpty(startMs, fromAdd, out waitMs, out long lowestUnsafeEpoch))
+                while (!ScanForBumpOrEmpty(startMs, fromAdd, out waitMs, out bool hasSafeRecords, out long lowestUnsafeEpoch))
                 {
                     // No records needing Bump(), or another thread has taken BumpOrSleep state, or we're here from Take to update HasSafeRecords.
-                    if (!fromAdd)
+                    if (!fromAdd || YieldToAnotherThread())
                         goto Done;
 
-                    // If we can create some safe records by recalculating the safe epoch, redo the scan; otherwise break out of this loop to sleep and retry the bump.
-                    if (lowestUnsafeEpoch > 0 && this.state == ScanOrQuiescent && recordPool.fkv.epoch.ComputeNewSafeToReclaimEpoch() >= lowestUnsafeEpoch)
+                    // If we have no safe records and recalculating the safe epoch makes some safe, then redo the scan; otherwise break out of this loop to sleep and redo the bump.
+                    if (!hasSafeRecords && lowestUnsafeEpoch > 0 && this.state == ScanOrQuiescent && recordPool.fkv.epoch.ComputeNewSafeToReclaimEpoch() >= lowestUnsafeEpoch)
                         continue;
                     break;
                 }
 
-                // We need another bump. If another thread has already claimed the BumpOrSleep state, exit.
-                if (!ClaimBumpOrSleepState())
+                // We need another bump. If we're only here from Take to update HasSafeRecords, or if another thread has already claimed the BumpOrSleep state, exit.
+                if (!fromAdd || !ClaimBumpOrSleepState())
                     goto Done;
 
                 // If we don't have many entries, sleep a bit so we don't thrash epoch increments.
@@ -90,11 +90,11 @@ namespace FASTER.core
                 this.state = ScanOrQuiescent;
         }
 
-        internal bool ScanForBumpOrEmpty(ulong startMs, bool fromAdd, out int waitMs, out long lowestUnsafeEpoch)
+        internal bool ScanForBumpOrEmpty(ulong startMs, bool fromAdd, out int waitMs, out bool hasSafeRecords, out long lowestUnsafeEpoch)
         {
             waitMs = BumpEpochWorker.DefaultBumpIntervalMs;
             lowestUnsafeEpoch = 0;
-            if (!this.recordPool.ScanForBumpOrEmpty(MaxCountForBump, out int countNeedingBump, ref lowestUnsafeEpoch) || !fromAdd)
+            if (!this.recordPool.ScanForBumpOrEmpty(MaxCountForBump, out int countNeedingBump, out hasSafeRecords, ref lowestUnsafeEpoch) || !fromAdd)
                 return false;   // Pool is empty, no bump needed, or we are yielding to another thread
 
             if (countNeedingBump > 0)

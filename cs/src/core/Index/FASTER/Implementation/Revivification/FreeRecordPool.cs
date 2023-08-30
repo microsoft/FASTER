@@ -70,13 +70,13 @@ namespace FASTER.core
         internal bool Set<Key, Value>(long address, long recordSize, FasterKV<Key, Value> fkv)
         {
             // If the record is empty or the address is below mutable, set the new address into it.
-            var epoch = this.addedEpoch;
-            if ((epoch == Epoch_Empty || (IsSetEpoch(epoch) && this.Address < fkv.hlog.ReadOnlyAddress)) && TryLatch(epoch))
+            var oldRecord = this;
+            if ((oldRecord.addedEpoch == Epoch_Empty || (IsSetEpoch(oldRecord.addedEpoch) && this.Address < fkv.hlog.ReadOnlyAddress)) && TryLatch(oldRecord.addedEpoch))
             {
                 // Doublecheck in case another thread in the same epoch wrote into it with a later address than before.
                 if (this.Address >= fkv.hlog.ReadOnlyAddress)
                 {
-                    this.addedEpoch = epoch;   // Unlatches
+                    this.addedEpoch = oldRecord.addedEpoch;   // Unlatches
                     return false;
                 }
 
@@ -131,22 +131,31 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryTake<Key, Value>(int recordSize, long minAddress, FasterKV<Key, Value> fkv, out long address)
+        internal bool TryTake<Key, Value>(int recordSize, long minAddress, FasterKV<Key, Value> fkv, out long address, ref long lowestUnsafeEpoch)
         {
             address = 0;
 
             // This is subject to extremely unlikely ABA--someone else could Set() a new address with the same epoch.
-            // If so, it doesn't matter; we just return the address that's there.
-            var epoch = this.addedEpoch;
+            // If so, it doesn't matter; we just return the address that's there as long as it's good.
             FreeRecord oldRecord = this;
-            if (!IsSetEpoch(epoch) || epoch > fkv.epoch.SafeToReclaimEpoch || oldRecord.Size < recordSize || oldRecord.Address < minAddress
-                || !TryLatch(epoch))
-            {
-                // Not set, or failed to CAS the epoch; leave 'word' unchanged
-                return false;
+            while (true)
+            { 
+                if (!IsSetEpoch(oldRecord.addedEpoch) || oldRecord.addedEpoch > fkv.epoch.SafeToReclaimEpoch || oldRecord.Size < recordSize || oldRecord.Address < minAddress)
+                {
+                    // Not set, epoch ineligible, or size or address below required.
+                    if (oldRecord.addedEpoch < lowestUnsafeEpoch)
+                        lowestUnsafeEpoch = oldRecord.addedEpoch;
+                    return false;
+                }
+
+                if (TryLatch(oldRecord.addedEpoch))
+                    break;
+
+                // Failed to CAS the epoch. Loop again to see if someone else put in a different, but still good, record.
+                oldRecord = this;
             }
 
-            // At this point we must unlatch. Recheck 'word' after the latch.
+            // At this point we must unlatch. Recheck 'address' after the latch.
             if (this.Size >= recordSize && this.Address >= minAddress)
             {
                 address = this.Address;
@@ -157,7 +166,7 @@ namespace FASTER.core
             if (this.Address < fkv.hlog.ReadOnlyAddress)
                 SetEmpty();
             else
-                this.addedEpoch = epoch;    // Restore for the next caller to try
+                this.addedEpoch = oldRecord.addedEpoch;    // Restore for the next caller to try
             return false;
         }
 
@@ -170,20 +179,31 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe bool TryTakeOversize<Key, Value>(long recordSize, long minAddress, FasterKV<Key, Value> fkv, out long address)
+        internal unsafe bool TryTakeOversize<Key, Value>(long recordSize, long minAddress, FasterKV<Key, Value> fkv, out long address, ref long lowestUnsafeEpoch)
         {
             address = 0;
 
             // The difference in this oversize version is that we delay checking size until after the CAS, because we have
             // go go the slow route of getting the physical address.
-            var epoch = this.addedEpoch;
-            if (!IsSetEpoch(epoch) || epoch > fkv.epoch.SafeToReclaimEpoch || this.Address < minAddress || !TryLatch(epoch))
-            {
-                // Not set, or failed to CAS the epoch; leave 'word' unchanged
-                return false;
+            FreeRecord oldRecord = this;
+            while (true)
+            { 
+                if (!IsSetEpoch(oldRecord.addedEpoch) || oldRecord.addedEpoch > fkv.epoch.SafeToReclaimEpoch || this.Address < minAddress)
+                {
+                    // Not set, epoch ineligible, or size or address below required.
+                    if (oldRecord.addedEpoch < lowestUnsafeEpoch)
+                        lowestUnsafeEpoch = oldRecord.addedEpoch;
+                    return false;
+                }
+
+                if (TryLatch(oldRecord.addedEpoch))
+                    break;
+
+                // Failed to CAS the epoch. Loop again to see if someone else put in a different, but still good, record.
+                oldRecord = this;
             }
 
-            // At this point we must unlatch. Recheck 'word' after the latch.
+            // At this point we must unlatch. Recheck 'address' after the latch.
             if (this.Address >= minAddress)
             { 
                 long thisSize = GetRecordSize(fkv, this.Address);
@@ -198,7 +218,7 @@ namespace FASTER.core
             if (this.Address < fkv.hlog.ReadOnlyAddress)
                 SetEmpty();
             else
-                this.addedEpoch = epoch;    // Restore for the next caller to try
+                this.addedEpoch = oldRecord.addedEpoch;    // Restore for the next caller to try.
             return false;
         }
     }
@@ -329,11 +349,22 @@ namespace FASTER.core
         public bool TryTakeFirstFit<Key, Value>(int recordSize, long minAddress, FasterKV<Key, Value> fkv, bool oversize, out long address)
         {
             var segmentStart = GetSegmentStart(recordSize);
-            for (var ii = 0; ii < this.recordCount; ++ii)
-            {
-                FreeRecord* record = GetRecord(segmentStart + ii);
-                if (oversize ? record->TryTakeOversize(recordSize, minAddress, fkv, out address) : record->TryTake(recordSize, minAddress, fkv, out address))
-                    return true;
+
+            int retries = 0;
+            while (true)
+            { 
+                long lowestUnsafeEpoch = long.MaxValue;
+                for (var ii = 0; ii < this.recordCount; ++ii)
+                {
+                    FreeRecord* record = GetRecord(segmentStart + ii);
+                    if (oversize ? record->TryTakeOversize(recordSize, minAddress, fkv, out address, ref lowestUnsafeEpoch) : record->TryTake(recordSize, minAddress, fkv, out address, ref lowestUnsafeEpoch))
+                        return true;
+                }
+                if (++retries > this.recordCount / RevivificationBin.MinRecordsPerBin)
+                    break;
+                if (lowestUnsafeEpoch < fkv.epoch.SafeToReclaimEpoch
+                        && lowestUnsafeEpoch < fkv.epoch.ComputeNewSafeToReclaimEpoch())
+                    break;
             }
 
             address = 0;
@@ -395,7 +426,7 @@ namespace FASTER.core
                 }
 
                 record = GetRecord(segmentStart + bestFitIndex);
-                if (oversize ? record->TryTakeOversize(recordSize, minAddress, fkv, out address) : record->TryTake(recordSize, minAddress, fkv, out address))
+                if (oversize ? record->TryTakeOversize(recordSize, minAddress, fkv, out address, ref lowestFailedEpoch) : record->TryTake(recordSize, minAddress, fkv, out address, ref lowestFailedEpoch))
                     return true;
 
                 // We found a candidate but CAS failed or epoch was not safe. Reduce the best fit scan length and continue.
@@ -404,33 +435,31 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool ScanForBumpOrEmpty(long currentEpoch, long safeEpoch, int maxCountForBump, out int countNeedingBump, ref long lowestUnsafeEpoch)
+        internal void ScanForBumpOrEmpty<TKey, TValue>(FreeRecordPool<TKey, TValue> recordPool, ref bool hasSafeRecords, long currentEpoch, long safeEpoch, int maxCountForBump, out int countNeedingBump, ref long lowestUnsafeEpoch)
         {
-            var hasSafeRecords = false;
             countNeedingBump = 0;
             for (var ii = 0; ii < this.recordCount; ++ii)
             {
                 FreeRecord localRecord = *(records + ii);
-                if (localRecord.IsSet)
+                if (!localRecord.IsSet)
+                    continue;
+
+                if (localRecord.addedEpoch <= safeEpoch)
                 {
-                    if (localRecord.addedEpoch <= safeEpoch)
-                        hasSafeRecords = true;
-                    else if (localRecord.addedEpoch <= currentEpoch)
-                    {
-                        if (localRecord.addedEpoch == currentEpoch)
-                        { 
-                            if (++countNeedingBump >= maxCountForBump)
-                                break;
-                        }
-                        else if (lowestUnsafeEpoch == 0 || localRecord.addedEpoch < lowestUnsafeEpoch)
-                        {
-                            // This epoch is not safe but is below currentEpoch, so a bump of CurrentEpoch itself is not needed; track the lowest unsafe epoch.
-                            lowestUnsafeEpoch = localRecord.addedEpoch;
-                        }
-                    }
+                    if (!hasSafeRecords)    // Set this.HasRecords as soon as we know we have some, but only write to it once during this all-bins-scan loop
+                        hasSafeRecords = recordPool.HasSafeRecords = true;
+                }
+                else if (localRecord.addedEpoch == currentEpoch)
+                { 
+                    if (++countNeedingBump >= maxCountForBump && hasSafeRecords)
+                        break;
+                }
+                else if (localRecord.addedEpoch < currentEpoch && (lowestUnsafeEpoch == 0 || localRecord.addedEpoch < lowestUnsafeEpoch))
+                {
+                    // This epoch is not safe but is below currentEpoch, so a bump of CurrentEpoch itself is not needed; track the lowest unsafe epoch.
+                    lowestUnsafeEpoch = localRecord.addedEpoch;
                 }
             }
-            return hasSafeRecords;
         }
 
         public void Dispose()
@@ -578,29 +607,22 @@ namespace FASTER.core
             return result;
         }
 
-        internal bool ScanForBumpOrEmpty(int maxCountForBump, out int totalCountNeedingBump, ref long lowestUnsafeEpoch)
+        internal bool ScanForBumpOrEmpty(int maxCountForBump, out int totalCountNeedingBump, out bool hasSafeRecords, ref long lowestUnsafeEpoch)
         {
-            bool hasSafeRecords;
             for (var currentEpoch = this.fkv.epoch.CurrentEpoch ; ;)
             {
                 hasSafeRecords = false;
                 totalCountNeedingBump = 0;
                 foreach (var bin in this.bins)
                 {
-                    if (this.bumpEpochWorker.YieldToAnotherThread())
+                    if (this.bumpEpochWorker.YieldToAnotherThread() && hasSafeRecords)
                         return false;
                     if (currentEpoch != this.fkv.epoch.CurrentEpoch)
                         goto RedoEpoch; // Epoch was bumped since we started
 
-                    bool binHasSafeRecords = bin.ScanForBumpOrEmpty(currentEpoch, fkv.epoch.SafeToReclaimEpoch, maxCountForBump, out int countNeedingBump, ref lowestUnsafeEpoch);
-                    if (binHasSafeRecords)
-                    {
-                        if (!hasSafeRecords)    // Set this.HasRecords as soon as we know we have some, but only write to it once during this loop
-                            this.HasSafeRecords = hasSafeRecords = true;
-                    }
-
+                    bin.ScanForBumpOrEmpty(this, ref hasSafeRecords, currentEpoch, fkv.epoch.SafeToReclaimEpoch, maxCountForBump, out int countNeedingBump, ref lowestUnsafeEpoch);
                     totalCountNeedingBump += countNeedingBump;
-                    if (totalCountNeedingBump >= maxCountForBump)
+                    if (totalCountNeedingBump >= maxCountForBump && hasSafeRecords)
                         break;
                 }
 

@@ -40,7 +40,7 @@ namespace FASTER.benchmark
         RunningTail = 6,
         FinalFullIns = 10,
         FinalFullOps = 11,
-        FinalFullTail = 11,
+        FinalFullTail = 12,
         FinalTrimmedIns = 20,
         FinalTrimmedOps = 21,
         FinalTrimmedTail = 22

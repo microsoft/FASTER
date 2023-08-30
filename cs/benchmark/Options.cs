@@ -63,6 +63,12 @@ namespace FASTER.benchmark
                         $"\n    {nameof(RevivificationLevel.Full)} = Tag chain and FreeList")]
         public RevivificationLevel RevivificationLevel { get; set; }
 
+        [Option("reviv-bin-record-count", Separator = ',', Required = false, Default = 128,
+            HelpText = "#,#,...,#: Number of records in each bin:" +
+                       "    Default (not specified): All bins are 128 records" +
+                       "    # (one value): All bins have this number of records, else error")]
+        public int RevivBinRecordCount { get; set; }
+
         [Option("synth", Required = false, Default = false,
             HelpText = "Use synthetic data")]
         public bool UseSyntheticData { get; set; }
@@ -70,6 +76,10 @@ namespace FASTER.benchmark
         [Option("runsec", Required = false, Default = 30,
             HelpText = "Number of seconds to execute experiment")]
         public int RunSeconds { get; set; }
+
+        [Option("epoch-refresh", Required = false, Default = 512,
+            HelpText = "Number of operations between epoch refreshes for unsafe contexts")]
+        public int EpochRefreshOpCount { get; set; }
 
         [Option("sd", Required = false, Default = false,
             HelpText = "Use SmallData in experiment")]
@@ -79,9 +89,9 @@ namespace FASTER.benchmark
             HelpText = "Use Small Memory log in experiment")]
         public bool UseSmallMemoryLog { get; set; }
 
-        [Option("hashpack", Required = false, Default = 2,
+        [Option("hashpack", Required = false, Default = 2.0,
             HelpText = "The hash table packing; divide the number of keys by this to cause hash collisions")]
-        public int HashPacking { get; set; }
+        public double HashPacking { get; set; }
 
         [Option("safectx", Required = false, Default = false,
             HelpText = "Use 'safe' context (slower, per-operation epoch control) in experiment")]
@@ -108,8 +118,8 @@ namespace FASTER.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount};"
-                        + $" hp: {HashPacking}; sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
+            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount};"
+                        + $" hp: {HashPacking}; epoch-refresh {EpochRefreshOpCount}; sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
                         + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";
         }

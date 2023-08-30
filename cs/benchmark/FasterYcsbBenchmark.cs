@@ -80,6 +80,9 @@ namespace FASTER.benchmark
                 _ => throw new ApplicationException("Invalid RevivificationLevel")
             };
 
+            if (testLoader.Options.RevivificationLevel == RevivificationLevel.Full)
+                revivificationSettings.FreeListBins[0].NumberOfRecords = testLoader.Options.RevivBinRecordCount;
+
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
             if (testLoader.Options.ThreadCount >= 16)
@@ -87,11 +90,11 @@ namespace FASTER.benchmark
 
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<Key, Value>
-                    (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
+                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
                     new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.Options.LockingMode, revivificationSettings: revivificationSettings);
             else
                 store = new FasterKV<Key, Value>
-                    (testLoader.MaxKey / testLoader.Options.HashPacking, new LogSettings { LogDevice = device, PreallocateLog = true },
+                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true },
                     new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.Options.LockingMode, revivificationSettings: revivificationSettings);
         }
 
@@ -137,6 +140,7 @@ namespace FASTER.benchmark
 
             try
             {
+                int epochOps = 0;
                 while (!done)
                 {
                     long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
@@ -147,13 +151,16 @@ namespace FASTER.benchmark
                         chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                     }
 
-                    for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
+                    for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx, ++epochOps)
                     {
-                        if (idx % 512 == 0)
+                        if (epochOps == testLoader.Options.EpochRefreshOpCount)
                         {
+                            epochOps = 0;
                             uContext.Refresh();
-                            uContext.CompletePending(false);
                         }
+
+                        if (idx % 512 == 0)
+                            uContext.CompletePending(false);
 
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
@@ -252,11 +259,7 @@ namespace FASTER.benchmark
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
                 {
                     if (idx % 512 == 0)
-                    {
-                        if (!testLoader.Options.UseSafeContext)
-                            session.Refresh();
                         session.CompletePending(false);
-                    }
 
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)

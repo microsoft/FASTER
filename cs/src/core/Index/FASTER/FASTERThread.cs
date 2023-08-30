@@ -103,7 +103,6 @@ namespace FASTER.core
                 }
                 break;
             }
-
         }
 
         internal static void InitContext<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)

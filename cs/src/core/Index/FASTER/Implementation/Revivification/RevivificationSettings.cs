@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 
 namespace FASTER.core
@@ -47,7 +46,16 @@ namespace FASTER.core
         /// <summary>
         /// Default bin for fixed-length.
         /// </summary>
-        public static RevivificationSettings DefaultFixedLength { get; } = new() { FreeListBins = new[] { new RevivificationBin() { RecordSize = RevivificationBin.MaxRecordSize } } };
+        public static RevivificationSettings DefaultFixedLength { get; } = new()
+        { 
+            FreeListBins = new[]
+            { 
+                new RevivificationBin() { 
+                    RecordSize = RevivificationBin.MaxRecordSize, 
+                    BestFitScanLimit = RevivificationBin.UseFirstFit 
+                }
+            }
+        };
 
         /// <summary>
         /// Enable only in-tag-chain revivification; do not use FreeList
@@ -89,6 +97,11 @@ namespace FASTER.core
         public const int MinRecordSize = 16;
 
         /// <summary>
+        /// The minimum number of records per bin.
+        /// </summary>
+        public const int MinRecordsPerBin = FreeRecordBin.MinRecordsPerBin;
+
+        /// <summary>
         /// The maximum size of a record; must fit on a single page.
         /// </summary>
         public const int MaxRecordSize = 1 << LogSettings.kMaxPageSizeBits;
@@ -112,7 +125,7 @@ namespace FASTER.core
         /// <summary>
         /// The default number of records per bin.
         /// </summary>
-        public const int DefaultRecordsPerBin = 1024;
+        public const int DefaultRecordsPerBin = 256;
 
         /// <summary>
         /// The maximum size of records in this partition. This should be partitioned for your app. Ignored if this is the single bin
@@ -144,8 +157,8 @@ namespace FASTER.core
         {
             if (!isFixedLength && (RecordSize < MinRecordSize || RecordSize > MaxRecordSize))
                 throw new FasterException($"Invalid RecordSize {RecordSize}; must be >= {MinRecordSize} and <= {MaxRecordSize}");
-            if (NumberOfRecords <= FreeRecordBin.MinRecordsPerBin)
-                throw new FasterException($"Invalid NumberOfRecords {NumberOfRecords}; must be > {FreeRecordBin.MinRecordsPerBin}");
+            if (NumberOfRecords < MinRecordsPerBin)
+                throw new FasterException($"Invalid NumberOfRecords {NumberOfRecords}; must be > {MinRecordsPerBin}");
         }
 
         /// <inheritdoc/>

@@ -510,6 +510,9 @@ namespace FASTER.core
             return ReserveEntry();
         }
 
+        /// <inheritdoc/>
+        public override string ToString() => $"Current {CurrentEpoch}, SafeToReclaim {SafeToReclaimEpoch}, drainCount {drainCount}";
+
         /// <summary>
         /// Epoch table entry (cache line size).
         /// </summary>
