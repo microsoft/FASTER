@@ -60,9 +60,8 @@ namespace FASTER.test.Revivification
             {
                 if (sw.ElapsedMilliseconds >= DefaultSafeWaitTimeout)
                 {
-                    var startMs = Native32.GetTickCount64();
-                    pool.bumpEpochWorker.ScanForBumpOrEmpty(startMs, fromAdd: true, out var waitMs, out bool hasSafeRecords, out long lowestUnsafeEpoch);
-                    Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}: BEW.LaunchCount {pool.bumpEpochWorker.LaunchCount}, "
+                    pool.bumpEpochWorker.ScanForBumpOrEmpty(GetCurrentMilliseconds(), fromAdd: true, out var waitMs, out bool hasSafeRecords, out long lowestUnsafeEpoch);
+                    Assert.Less(sw.ElapsedMilliseconds, DefaultSafeWaitTimeout, $"Timeout while waiting for HasSafeRecords to be {want}: "
                         + $"epoch.CurrentEpoch {fkv.epoch.CurrentEpoch}, waitMs {waitMs}, hasSafeRecords {hasSafeRecords}, lowestUnsafeEpoch {lowestUnsafeEpoch}");
                 }
                 Thread.Yield();
@@ -1798,9 +1797,9 @@ namespace FASTER.test.Revivification
                         // Do not wait here; the loop will do that with retries
 
                         // Continue until all are Taken or we hit the timeout, sleeping to let the Take() threads catch up
-                        var startMs = Native32.GetTickCount64();
+                        var startMs = GetCurrentMilliseconds();
                         List<int> strayFlags = new();
-                        while (Native32.GetTickCount64() - startMs < RevivificationTestUtils.DefaultSafeWaitTimeout)
+                        while (GetCurrentMilliseconds() - startMs < RevivificationTestUtils.DefaultSafeWaitTimeout)
                         {
                             Thread.Sleep(20);
                             strayFlags.Clear();
@@ -1813,7 +1812,7 @@ namespace FASTER.test.Revivification
                                 break;
                         }
 
-                        var stopMs = Native32.GetTickCount64();
+                        var stopMs = GetCurrentMilliseconds();
                         var strayRecords = EnumerateSetRecords(freeRecordPool.bins[0]);
                         Assert.IsTrue(strayFlags.Count + strayRecords.Count == 0, $"strayflags {strayFlags.Count}, strayRecords {strayRecords.Count}, iteration {iteration}");
                     }

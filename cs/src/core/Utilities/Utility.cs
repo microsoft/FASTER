@@ -440,5 +440,15 @@ namespace FASTER.core
             // make sure any exceptions in the task get unwrapped and exposed to the caller.
             return await task;
         }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        public static ulong GetCurrentMilliseconds()
+        {
+            Debug.Assert(Stopwatch.IsHighResolution, "Expected Stopwatch.IsHighResolution to be true");
+            return (ulong)(((double)Stopwatch.GetTimestamp() / Stopwatch.Frequency) * 1000);
+        }
     }
 }

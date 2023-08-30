@@ -417,10 +417,5 @@ namespace FASTER.core
             return unchecked(((int)0x80070000) | errorCode);
         }
         #endregion
-
-        #region Other operations
-        [DllImport("kernel32", SetLastError = true)]
-        internal static extern ulong GetTickCount64();
-        #endregion
     }
 }
