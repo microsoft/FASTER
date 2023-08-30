@@ -561,7 +561,7 @@ namespace FASTER.core
                         // Try to transfer this to the freelist. We need to re-get the old record's length because rmwInfo has the new record's info.
                         // Ignore the return value; if elision fails, it will remain in the tag chain, Sealed; if freelist-add fails, it is invalidated.
                         var oldRecordFullLength = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo).fullRecordLength;
-                        TryTransferToFreeList(ref stackCtx, ref srcRecordInfo, oldRecordFullLength);
+                        TryElideAndTransferToFreeList(ref stackCtx, ref srcRecordInfo, oldRecordFullLength);
                     }
                 }
 
