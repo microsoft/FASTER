@@ -135,13 +135,25 @@ namespace FASTER.core
                                 // Always Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
                                 // We invalidate it also for checkpoint/recovery consistency (this removes Sealed bit so Scan would enumerate
                                 // records that would be in the freelist if the freelist survived Recovery).
-                                bool isElided = false;
+                                bool isElided = false, isAdded = false;
                                 if (UseFreeRecordPool && srcRecordInfo.Tombstone)   // If Tombstone is false, it was revivified by another session immediately after ConcurrentDeleter completed.
-                                    (isElided, _) = TryElideAndTransferToFreeList(ref stackCtx, ref srcRecordInfo, fullRecordLength);
+                                    (isElided, isAdded) = TryElideAndTransferToFreeList(ref stackCtx, ref srcRecordInfo, fullRecordLength);
                                 if (!isElided)
                                 {
                                     // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
                                     srcRecordInfo.Unseal(makeValid: true);
+                                }
+                                else if (!isAdded)
+                                {
+                                    // The record was not added to the freelist, but was elided. See if we can put it back in as a normal Tombstone. Since we just
+                                    // elided it and the elision criteria is that it is the only above-BeginAddress record in the chain, and elision sets the
+                                    // HashBucketEntry.word to 0, it means we do not expect any records for this key's tag to exist after the elision. Therefore,
+                                    // we can re-insert the record iff the HashBucketEntry's address is <= kTempInvalidAddress.
+                                    stackCtx.hei = new(stackCtx.hei.hash);
+                                    FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
+
+                                    if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
+                                        srcRecordInfo.Unseal(makeValid: true);
                                 }
                             }
                         }
