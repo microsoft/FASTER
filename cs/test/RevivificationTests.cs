@@ -20,6 +20,8 @@ namespace FASTER.test.Revivification
 
     public enum RevivificationEnabled { Reviv, NoReviv }
 
+    public enum MutablePercent { Mutable50 = 50 }
+
     static class RevivificationTestUtils
     {
         internal static RMWInfo CopyToRMWInfo(ref UpsertInfo upsertInfo)
@@ -45,7 +47,7 @@ namespace FASTER.test.Revivification
         internal const int DefaultSafeWaitTimeout = BumpEpochWorker.DefaultBumpIntervalMs * 2;
 
         internal static FreeRecordPool<TKey, TValue> CreateSingleBinFreeRecordPool<TKey, TValue>(FasterKV<TKey, TValue> fkv, RevivificationBin binDef, int fixedRecordLength = 0)
-            => new (fkv, new RevivificationSettings() { FreeListBins = new[] { binDef } }, fixedRecordLength);
+            => new (fkv, new RevivificationSettings() { FreeRecordBins = new[] { binDef } }, fixedRecordLength);
 
         internal static void WaitForSafeRecords<TKey, TValue>(FasterKV<TKey, TValue> fkv, bool want, FreeRecordPool<TKey, TValue> pool = null)
         {
@@ -182,6 +184,7 @@ namespace FASTER.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             var lockingMode = LockingMode.Standard;
+            MutablePercent? mutablePercent = default;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is LockingMode lm)
@@ -189,10 +192,18 @@ namespace FASTER.test.Revivification
                     lockingMode = lm;
                     continue;
                 }
+                if (arg is MutablePercent mp)
+                {
+                    mutablePercent = mp;
+                    continue;
+                }
             }
 
+            var revivificationSettings = RevivificationSettings.DefaultFixedLength.Clone();
+            if (mutablePercent.HasValue)
+                revivificationSettings.MutablePercent = (int)mutablePercent.Value;
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
-                                            lockingMode: lockingMode, revivificationSettings: RevivificationSettings.DefaultFixedLength);
+                                            lockingMode: lockingMode, revivificationSettings: revivificationSettings);
             functions = new RevivificationFixedLenFunctions();
             session = fkv.For(functions).NewSession<RevivificationFixedLenFunctions>();
         }
@@ -254,6 +265,60 @@ namespace FASTER.test.Revivification
             if (!stayInChain)
                 RevivificationTestUtils.WaitForSafeRecords(fkv, want: false);
             Assert.AreEqual(tailAddress, fkv.Log.TailAddress, "Expected tail address not to grow (record was revivified)");
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "mutableRange is used by Setup")]
+        public void SimpleMinAddressAddTest([Values] MutablePercent mutableRange)
+        {
+            Populate();
+
+            // This should not go to FreeList because it's below the MutablePercent
+            Assert.IsTrue(session.Delete(2).Found);
+            Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
+
+            // This should go to FreeList because it's above the MutablePercent
+            Assert.IsTrue(session.Delete(numRecords - 1).Found);
+            Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "mutableRange is used by Setup")]
+        public void SimpleMinAddressTakeTest([Values] MutablePercent mutableRange, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        {
+            Populate();
+
+            // This should go to FreeList because it's above the MutablePercent
+            Assert.IsTrue(session.Delete(numRecords - 1).Found);
+            Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
+            RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
+
+            // Detach the pool temporarily so the records aren't revivified by the next insertions.
+            FreeRecordPool<int, int> pool = RevivificationTestUtils.SwapFreeRecordPool(fkv, default);
+
+            // Now add a bunch of records to drop the FreeListed address below the MutablePercent
+            int maxRecord = numRecords * 2;
+            for (int key = numRecords; key < maxRecord; key++)
+            {
+                var status = session.Upsert(key, key * valueMult);
+                Assert.IsTrue(status.Record.Created, status.ToString());
+            }
+
+            // Restore the pool
+            RevivificationTestUtils.SwapFreeRecordPool(fkv, pool);
+
+            var tailAddress = fkv.Log.TailAddress;
+
+            if (updateOp == UpdateOp.Upsert)
+                session.Upsert(maxRecord, maxRecord * valueMult);
+            else if (updateOp == UpdateOp.RMW)
+                session.RMW(maxRecord, maxRecord * valueMult);
+
+            Assert.Less(tailAddress, fkv.Log.TailAddress, "Expected tail address to grow (record was not revivified)");
         }
     }
 

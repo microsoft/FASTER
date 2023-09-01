@@ -67,14 +67,14 @@ namespace FASTER.core
         bool TryLatch(long epoch) => Interlocked.CompareExchange(ref this.addedEpoch, Epoch_Latched, epoch) == epoch;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool Set<Key, Value>(long address, long recordSize, FasterKV<Key, Value> fkv)
+        internal bool Set<Key, Value>(long address, long recordSize, FasterKV<Key, Value> fkv, long minAddress)
         {
             // If the record is empty or the address is below mutable, set the new address into it.
             var oldRecord = this;
-            if ((oldRecord.addedEpoch == Epoch_Empty || (IsSetEpoch(oldRecord.addedEpoch) && this.Address < fkv.hlog.ReadOnlyAddress)) && TryLatch(oldRecord.addedEpoch))
+            if ((oldRecord.addedEpoch == Epoch_Empty || (IsSetEpoch(oldRecord.addedEpoch) && this.Address < minAddress)) && TryLatch(oldRecord.addedEpoch))
             {
                 // Doublecheck in case another thread in the same epoch wrote into it with a later address than before.
-                if (this.Address >= fkv.hlog.ReadOnlyAddress)
+                if (this.Address >= minAddress)
                 {
                     this.addedEpoch = oldRecord.addedEpoch;   // Unlatches
                     return false;
@@ -111,7 +111,7 @@ namespace FASTER.core
                 return false;
             if (oldRecord.Address < minAddress)
             {
-                if (oldRecord.Address < fkv.hlog.ReadOnlyAddress)
+                if (oldRecord.Address < minAddress)
                     SetEmptyAtomic();
                 return false;
             }
@@ -163,7 +163,7 @@ namespace FASTER.core
                 return true;
             }
 
-            if (this.Address < fkv.hlog.ReadOnlyAddress)
+            if (this.Address < minAddress)
                 SetEmpty();
             else
                 this.addedEpoch = oldRecord.addedEpoch;    // Restore for the next caller to try
@@ -215,7 +215,7 @@ namespace FASTER.core
                 }
             }
 
-            if (this.Address < fkv.hlog.ReadOnlyAddress)
+            if (this.Address < minAddress)
                 SetEmpty();
             else
                 this.addedEpoch = oldRecord.addedEpoch;    // Restore for the next caller to try.
@@ -320,16 +320,16 @@ namespace FASTER.core
         private FreeRecord* GetRecord(int recordIndex) => records + (recordIndex >= recordCount ? recordIndex - recordCount : recordIndex);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd<Key, Value>(long address, int recordSize, FasterKV<Key, Value> fkv) 
-            => TryAdd(address, recordSize, fkv, GetSegmentStart(recordSize));
+        public bool TryAdd<Key, Value>(long address, int recordSize, FasterKV<Key, Value> fkv, long minAddress) 
+            => TryAdd(address, recordSize, fkv, minAddress, GetSegmentStart(recordSize));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd<Key, Value>(long address, int recordSize, FasterKV<Key, Value> fkv, int segmentStart)
+        public bool TryAdd<Key, Value>(long address, int recordSize, FasterKV<Key, Value> fkv, long minAddress, int segmentStart)
         {
             for (var ii = 0; ii < this.recordCount; ++ii)
             {
                 FreeRecord* record = GetRecord(segmentStart + ii);
-                if (record->Set(address, recordSize, fkv))
+                if (record->Set(address, recordSize, fkv, minAddress))
                     return true;
             }
             return false;
@@ -505,13 +505,13 @@ namespace FASTER.core
             if (this.IsFixedLength)
             {
                 this.numBins = 1;
-                this.bins = new[] { new FreeRecordBin(ref settings.FreeListBins[0], fixedRecordLength, isFixedLength: true) };
+                this.bins = new[] { new FreeRecordBin(ref settings.FreeRecordBins[0], fixedRecordLength, isFixedLength: true) };
                 return;
             }
 
             // First create the "size index": a cache-aligned vector of int bin sizes. This way searching for the bin
             // for a record size will stay in a single cache line (unless there are more than 16 bins).
-            var sizeIndexCount = RoundUp(settings.FreeListBins.Length * sizeof(int), Constants.kCacheLineBytes) / sizeof(int);
+            var sizeIndexCount = RoundUp(settings.FreeRecordBins.Length * sizeof(int), Constants.kCacheLineBytes) / sizeof(int);
 
             // Overallocate the GCHandle by one cache line so we have room to offset the returned pointer to make it cache-aligned.
 #if NET5_0_OR_GREATER
@@ -530,11 +530,11 @@ namespace FASTER.core
             // Create the bins.
             List<FreeRecordBin> binList = new();
             int prevBinRecordSize = RevivificationBin.MinRecordSize - 8;      // The minimum record size increment is 8, so the first bin will set this to MinRecordSize or more
-            for (var ii = 0; ii < settings.FreeListBins.Length; ++ii)
+            for (var ii = 0; ii < settings.FreeRecordBins.Length; ++ii)
             {
-                if (prevBinRecordSize >= settings.FreeListBins[ii].RecordSize)
+                if (prevBinRecordSize >= settings.FreeRecordBins[ii].RecordSize)
                     continue;
-                FreeRecordBin bin = new(ref settings.FreeListBins[ii], prevBinRecordSize);
+                FreeRecordBin bin = new(ref settings.FreeRecordBins[ii], prevBinRecordSize);
                 sizeIndex[binList.Count] = bin.maxRecordSize;
                 binList.Add(bin);
                 prevBinRecordSize = bin.maxRecordSize;
@@ -565,10 +565,11 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAdd(long logicalAddress, int size)
         {
+            var minAddress = fkv.GetMinRevivificationAddress();
             int binIndex = 0;
-            if (logicalAddress < fkv.hlog.ReadOnlyAddress || (!this.IsFixedLength && !GetBinIndex(size, out binIndex)))
+            if (logicalAddress < minAddress || (!this.IsFixedLength && !GetBinIndex(size, out binIndex)))
                 return false;
-            if (!bins[binIndex].TryAdd(logicalAddress, size, this.fkv))
+            if (!bins[binIndex].TryAdd(logicalAddress, size, this.fkv, minAddress))
                 return false;
             
             bumpEpochWorker.Start(fromAdd: true);
@@ -578,7 +579,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAdd(long logicalAddress, long physicalAddress, int allocatedSize)
         {
-            if (logicalAddress < fkv.hlog.ReadOnlyAddress)
+            var minAddress = fkv.GetMinRevivificationAddress();
+            if (logicalAddress < minAddress)
                 return false;
             var recordInfo = fkv.hlog.GetInfo(physicalAddress);
             recordInfo.TrySeal(invalidate: true );
@@ -589,6 +591,10 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryTake(int recordSize, long minAddress, out long address)
         {
+            var minMutableAddress = fkv.GetMinRevivificationAddress();
+            if (minAddress < minMutableAddress)
+                minAddress = minMutableAddress;
+
             address = 0;
 
             bool result = false;

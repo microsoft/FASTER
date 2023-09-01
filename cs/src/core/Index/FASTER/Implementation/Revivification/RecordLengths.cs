@@ -14,19 +14,32 @@ namespace FASTER.core
         private IVariableLengthStruct<Value> valueLengthStruct;
         internal VariableLengthBlittableAllocator<Key, Value> varLenAllocator;
 
+        // This has to be here instead of in the FreeRecordPool because it's also used for in-chain revivification and the FreeRecordPool may be null.
+        internal double mutableRevivificationMultiplier;
+
         private bool InitializeRevivification(RevivificationSettings settings)
         {
             // Set these first in case revivification is not enabled; they still tell us not to expect fixed-length.
             valueLengthStruct = (this.hlog as VariableLengthBlittableAllocator<Key, Value>)?.ValueLength;
+
+            this.mutableRevivificationMultiplier = settings is null ? 1.0 : settings.MutablePercent / 100.0;
 
             if (settings is null) 
                 return false;
             settings.Verify(IsFixedLengthReviv);
             if (!settings.EnableRevivification)
                 return false;
-            if (settings.FreeListBins?.Length > 0)
+            if (settings.FreeRecordBins?.Length > 0)
                 this.FreeRecordPool = new FreeRecordPool<Key, Value>(this, settings, IsFixedLengthReviv ? hlog.GetAverageRecordSize() : -1);
             return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long GetMinRevivificationAddress()
+        {
+            var readOnlyAddress = hlog.ReadOnlyAddress;
+            var tailAddress = hlog.GetTailAddress();
+            return tailAddress - (long)((tailAddress - readOnlyAddress) * this.mutableRevivificationMultiplier);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

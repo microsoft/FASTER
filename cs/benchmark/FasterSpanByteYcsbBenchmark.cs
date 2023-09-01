@@ -79,7 +79,7 @@ namespace FASTER.benchmark
             {
                 RevivificationLevel.None => default,
                 RevivificationLevel.Chain => new RevivificationSettings(),
-                RevivificationLevel.Full => new RevivificationSettings() { FreeListBins = new[] { new RevivificationBin() {
+                RevivificationLevel.Full => new RevivificationSettings() { FreeRecordBins = new[] { new RevivificationBin() {
                     RecordSize = RecordInfo.GetLength() + kKeySize + kValueSize + 8,    // extra to ensure rounding up of value
                     NumberOfRecords = testLoader.Options.RevivBinRecordCount,
                     BestFitScanLimit = RevivificationBin.UseFirstFit } } },

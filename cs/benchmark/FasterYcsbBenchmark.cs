@@ -81,7 +81,7 @@ namespace FASTER.benchmark
             };
 
             if (testLoader.Options.RevivificationLevel == RevivificationLevel.Full)
-                revivificationSettings.FreeListBins[0].NumberOfRecords = testLoader.Options.RevivBinRecordCount;
+                revivificationSettings.FreeRecordBins[0].NumberOfRecords = testLoader.Options.RevivBinRecordCount;
 
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 

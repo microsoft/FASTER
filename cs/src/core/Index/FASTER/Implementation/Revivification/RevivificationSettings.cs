@@ -14,14 +14,20 @@ namespace FASTER.core
         /// Indicates whether deleted record space should be reused.
         /// <list type="bullet">
         /// <li>If this is true, then tombstoned records in the hashtable chain are revivified if possible, and a FreeList is maintained if 
-        ///     <see cref="FreeListBins"/> is non-null and non-empty.
+        ///     <see cref="FreeRecordBins"/> is non-null and non-empty.
         /// </li>
         /// <li>If this is false, then tombstoned records in the hashtable chain will not be revivified, and no FreeList is used (regardless 
-        ///     of the setting of <see cref="FreeListBins"/>).
+        ///     of the setting of <see cref="FreeRecordBins"/>).
         /// </li>
         /// </list>
         /// </summary>
         public bool EnableRevivification = true;
+
+        /// <summary>
+        /// How much of the mutable address space, from the tail down, is eligible for revivification. This prevents revivifying records too close to
+        /// ReadOnly for the app's usage pattern--it may be important for recent records to remain near the tail. Default is to use the full mutable region.
+        /// </summary>
+        public int MutablePercent = 100;
 
         /// <summary>
         /// Bin definitions for the free list (in addition to any in the hash chains). These must be ordered by <see cref="RevivificationBin.RecordSize"/>.
@@ -31,7 +37,7 @@ namespace FASTER.core
         /// <see cref="RevivificationBin.RecordSize"/> is ignored. Otherwise, one or both of the Key and Value are variable-length,
         /// and this usually contains multiple bins.
         /// </remarks>
-        public RevivificationBin[] FreeListBins;
+        public RevivificationBin[] FreeRecordBins;
 
         /// <summary>
         /// By default, when looking for FreeRecords we search only the bin for the specified size. This allows searching the next-highest bin as well.
@@ -48,7 +54,7 @@ namespace FASTER.core
         /// </summary>
         public static RevivificationSettings DefaultFixedLength { get; } = new()
         { 
-            FreeListBins = new[]
+            FreeRecordBins = new[]
             { 
                 new RevivificationBin() { 
                     RecordSize = RevivificationBin.MaxRecordSize, 
@@ -69,20 +75,39 @@ namespace FASTER.core
 
         internal void Verify(bool isFixedRecordLength)
         {
-            if (!EnableRevivification || FreeListBins?.Length == 0)
+            if (!EnableRevivification || FreeRecordBins?.Length == 0)
                 return;
-            if (isFixedRecordLength && FreeListBins?.Length > 1)
+            if (isFixedRecordLength && FreeRecordBins?.Length > 1)
                 throw new FasterException($"Only 1 bin may be specified with fixed-length datatypes (blittable or object)");
-            if (FreeListBins is not null)
+            if (FreeRecordBins is not null)
             { 
-                foreach (var bin in FreeListBins)
+                foreach (var bin in FreeRecordBins)
                     bin.Verify(isFixedRecordLength);
             }
         }
 
+        /// <summary>
+        /// Return a copy of these RevivificationSettings.
+        /// </summary>
+        public RevivificationSettings Clone()
+        {
+            var settings = new RevivificationSettings()
+            {
+                EnableRevivification = this.EnableRevivification,
+                MutablePercent = this.MutablePercent,
+                SearchNextHigherBin = this.SearchNextHigherBin
+            };
+            if (this.FreeRecordBins is not null)
+            { 
+                settings.FreeRecordBins = new RevivificationBin[this.FreeRecordBins.Length];
+                System.Array.Copy(this.FreeRecordBins, settings.FreeRecordBins, this.FreeRecordBins.Length);
+            }
+            return settings;
+        }
+
         /// <inheritdoc/>
         public override string ToString() 
-            => $"enabled {EnableRevivification}, #bins {FreeListBins?.Length}, searchNextBin {SearchNextHigherBin}";
+            => $"enabled {EnableRevivification}, #bins {FreeRecordBins?.Length}, searchNextBin {SearchNextHigherBin}";
     }
 
     /// <summary>
@@ -200,7 +225,7 @@ namespace FASTER.core
                 RecordSize = RevivificationBin.MaxRecordSize,
                 NumberOfRecords = RevivificationBin.DefaultRecordsPerBin
             });
-            this.FreeListBins = binList.ToArray();
+            this.FreeRecordBins = binList.ToArray();
 
             this.SearchNextHigherBin = true;
         }

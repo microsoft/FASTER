@@ -115,7 +115,7 @@ namespace FASTER.core
                     if (srcRecordInfo.Tombstone)
                     {
                         // This is safe to revivify even if the record's PreviousAddress points to a valid record, because it is revivified for the same key.
-                        if (!this.EnableRevivification)
+                        if (!this.EnableRevivification || (stackCtx.recSrc.LogicalAddress < this.GetMinRevivificationAddress()))
                             goto CreateNewRecord;
 
                         // Try in-place revivification of the record.
