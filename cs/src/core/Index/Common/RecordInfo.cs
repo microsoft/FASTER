@@ -78,15 +78,11 @@ namespace FASTER.core
             this.IsInNewVersion = inNewVersion;
         }
 
-        public bool Equals(RecordInfo other) => this.word == other.word;
+        public readonly bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
+        public readonly bool IsLockedShared => NumLockedShared != 0;
+        public readonly bool IsLocked => IsLockedExclusive || IsLockedShared;
 
-        public long GetHashCode64() => Utility.GetHashCode(this.word);
-
-        public bool IsLockedExclusive => (word & kExclusiveLockBitMask) != 0;
-        public bool IsLockedShared => NumLockedShared != 0;
-        public bool IsLocked => IsLockedExclusive || IsLockedShared;
-
-        public byte NumLockedShared => (byte)((word & kSharedLockMaskInWord) >> kLockShiftInWord);
+        public readonly byte NumLockedShared => (byte)((word & kSharedLockMaskInWord) >> kLockShiftInWord);
 
         // We ignore locks and temp bits for disk images
         public void ClearBitsForDiskImages()
@@ -100,8 +96,8 @@ namespace FASTER.core
 
         private static bool IsClosedWord(long word) => (word & (kValidBitMask | kSealedBitMask)) != kValidBitMask;
 
-        public bool IsClosed => IsClosedWord(word);
-        public bool IsSealed => (this.word & kSealedBitMask) != 0;
+        public readonly bool IsClosed => IsClosedWord(word);
+        public readonly bool IsSealed => (this.word & kSealedBitMask) != 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InitializeLockShared() => this.word += kSharedLockIncrement;
@@ -173,10 +169,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockExclusive()
         {
-            int spinCount = Constants.kMaxLockSpins;
-
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
-            for (; ; Thread.Yield())
+            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
             {
                 long expected_word = word;
                 if (IsClosedWord(expected_word))
@@ -186,7 +180,7 @@ namespace FASTER.core
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word | kExclusiveLockBitMask, expected_word))
                         break;
                 }
-                if (spinCount > 0 && --spinCount <= 0)
+                if (--spinCount <= 0)
                     return false;
             }
 
@@ -232,10 +226,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockShared()
         {
-            int spinCount = Constants.kMaxLockSpins;
-
             // Acquire shared lock
-            for (; ; Thread.Yield())
+            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
             {
                 long expected_word = word;
                 if (IsClosedWord(expected_word))
@@ -246,7 +238,7 @@ namespace FASTER.core
                     if (expected_word == Interlocked.CompareExchange(ref word, expected_word + kSharedLockIncrement, expected_word))
                         return true;
                 }
-                if (spinCount > 0 && --spinCount <= 0) 
+                if (--spinCount <= 0) 
                     return false;
             }
         }
@@ -258,8 +250,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryResetModifiedAtomic()
         {
-            int spinCount = Constants.kMaxLockSpins;
-            for (; ; Thread.Yield())
+            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
             {
                 long expected_word = word;
                 if (IsClosedWord(expected_word))
@@ -268,7 +259,7 @@ namespace FASTER.core
                     return true;
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & (~kModifiedBitMask), expected_word))
                     return true;
-                if (spinCount > 0 && --spinCount <= 0)
+                if (--spinCount <= 0)
                     return false;
             }
         }
@@ -284,11 +275,11 @@ namespace FASTER.core
             return expected_word == Interlocked.CompareExchange(ref this.word, newRI.word, expected_word);
         }
 
-        public bool IsNull() => word == 0;
+        public readonly bool IsNull() => word == 0;
 
         public bool Tombstone
         {
-            get => (word & kTombstoneBitMask) > 0;
+            readonly get => (word & kTombstoneBitMask) > 0;
             set
             {
                 if (value) word |= kTombstoneBitMask;
@@ -298,7 +289,7 @@ namespace FASTER.core
 
         public bool Valid
         {
-            get => (word & kValidBitMask) > 0;
+            readonly get => (word & kValidBitMask) > 0;
             set
             {
                 if (value) word |= kValidBitMask;
@@ -318,7 +309,7 @@ namespace FASTER.core
 
         public bool Dirty
         {
-            get => (word & kDirtyBitMask) > 0;
+            readonly get => (word & kDirtyBitMask) > 0;
             set
             {
                 if (value) word |= kDirtyBitMask;
@@ -328,7 +319,7 @@ namespace FASTER.core
 
         public bool Modified
         {
-            get => (word & kModifiedBitMask) > 0;
+            readonly get => (word & kModifiedBitMask) > 0;
             set
             {
                 if (value) word |= kModifiedBitMask;
@@ -338,7 +329,7 @@ namespace FASTER.core
 
         public bool Filler
         {
-            get => (word & kFillerBitMask) > 0;
+            readonly get => (word & kFillerBitMask) > 0;
             set
             {
                 if (value) word |= kFillerBitMask;
@@ -348,7 +339,7 @@ namespace FASTER.core
 
         public bool IsInNewVersion
         {
-            get => (word & kInNewVersionBitMask) > 0;
+            readonly get => (word & kInNewVersionBitMask) > 0;
             set
             {
                 if (value) word |= kInNewVersionBitMask;
@@ -374,13 +365,13 @@ namespace FASTER.core
             }
         }
 
-        public bool Invalid => (word & kValidBitMask) == 0;
+        public readonly bool Invalid => (word & kValidBitMask) == 0;
 
-        public bool SkipOnScan => IsClosedWord(word);
+        public readonly bool SkipOnScan => IsClosedWord(word);
 
         public long PreviousAddress
         {
-            get => word & kPreviousAddressMaskInWord;
+            readonly get => word & kPreviousAddressMaskInWord;
             set
             {
                 word &= ~kPreviousAddressMaskInWord;
@@ -392,18 +383,18 @@ namespace FASTER.core
         public static int GetLength() => kTotalSizeInBytes;
 
         internal bool Unused1
-        {
-            get => (word & kUnused1BitMask) != 0;
+        { 
+            readonly get => (word & kUnused1BitMask) != 0;
             set => word = value ? word | kUnused1BitMask : word & ~kUnused1BitMask;
         }
 
         internal bool Unused2
-        {
-            get => (word & kUnused2BitMask) != 0;
+        { 
+            readonly get => (word & kUnused2BitMask) != 0;
             set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask;
         }
 
-        public override string ToString()
+        public override readonly string ToString()
         {
             var paRC = IsReadCache(this.PreviousAddress) ? "(rc)" : string.Empty;
             var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";

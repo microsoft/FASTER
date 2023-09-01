@@ -223,7 +223,7 @@ namespace FASTER.core
             } // end while (true)
 
             do
-                status = InternalRMW(ref key, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
+                status = InternalRMW(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
             while (HandleImmediateRetryStatus(status, fasterSession, ref pendingContext));
             return status;
         }

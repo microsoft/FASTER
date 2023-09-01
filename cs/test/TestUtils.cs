@@ -229,6 +229,34 @@ namespace FASTER.test
             return result;
         }
 
+        internal async static ValueTask<(Status status, Output output)> CompleteAsync<Key, Value, Input, Output, Context>(ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> resultTask)
+        {
+            var readCompleter = await resultTask;
+            return readCompleter.Complete();
+        }
+
+        internal async static ValueTask<Status> CompleteAsync<Key, Value, Context>(ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Key, Value, Context>> resultTask)
+        {
+            var result = await resultTask;
+            while (result.Status.IsPending)
+                result = await result.CompleteAsync().ConfigureAwait(false);
+            return result.Status;
+        }
+
+        internal async static ValueTask<Status> CompleteAsync<Key, Value, Context>(ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Value, Value, Context>> resultTask)
+        {
+            var result = await resultTask;
+            while (result.Status.IsPending)
+                result = await result.CompleteAsync().ConfigureAwait(false);
+            return result.Status;
+        }
+
+        internal async static ValueTask<Status> CompleteAsync<Key, Value, Input, Output, Context>(ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> resultTask)
+        {
+            var deleteCompleter = await resultTask;
+            return deleteCompleter.Complete();
+        }
+
         internal async static ValueTask DoTwoThreadRandomKeyTest(int count, Action<int> first, Action<int> second, Action<int> verification)
         {
             Task[] tasks = new Task[2];

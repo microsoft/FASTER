@@ -183,13 +183,13 @@ namespace FASTER.test.Revivification
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
-            var lockingMode = LockingMode.Standard;
+            var concurrencyControlMode = ConcurrencyControlMode.LockTable;
             MutablePercent? mutablePercent = default;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is LockingMode lm)
+                if (arg is ConcurrencyControlMode ccm)
                 {
-                    lockingMode = lm;
+                    concurrencyControlMode = ccm;
                     continue;
                 }
                 if (arg is MutablePercent mp)
@@ -203,7 +203,7 @@ namespace FASTER.test.Revivification
             if (mutablePercent.HasValue)
                 revivificationSettings.MutablePercent = (int)mutablePercent.Value;
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
-                                            lockingMode: lockingMode, revivificationSettings: revivificationSettings);
+                                            concurrencyControlMode: concurrencyControlMode, revivificationSettings: revivificationSettings);
             functions = new RevivificationFixedLenFunctions();
             session = fkv.For(functions).NewSession<RevivificationFixedLenFunctions>();
         }
@@ -238,7 +238,8 @@ namespace FASTER.test.Revivification
             Populate();
 
             bool stayInChain = deleteDest == DeleteDest.InChain;
-            FreeRecordPool<int, int> pool = stayInChain ? RevivificationTestUtils.SwapFreeRecordPool(fkv, default) : fkv.FreeRecordPool;
+            if (stayInChain)
+                RevivificationTestUtils.SwapFreeRecordPool(fkv, default);
 
             var deleteKey = 42;
             if (!stayInChain)
@@ -564,7 +565,7 @@ namespace FASTER.test.Revivification
 
             CollisionRange collisionRange = CollisionRange.None;
             LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySizeBits = 22 };
-            var lockingMode = LockingMode.Standard;
+            var concurrencyControlMode = ConcurrencyControlMode.LockTable;
             var revivificationSettings = RevivificationSettings.PowerOf2Bins;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
@@ -573,9 +574,9 @@ namespace FASTER.test.Revivification
                     collisionRange = cr;
                     continue;
                 }
-                if (arg is LockingMode lm)
+                if (arg is ConcurrencyControlMode ccm)
                 {
-                    lockingMode = lm;
+                    concurrencyControlMode = ccm;
                     continue;
                 }
                 if (arg is PendingOp)
@@ -592,7 +593,7 @@ namespace FASTER.test.Revivification
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            fkv = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, lockingMode: lockingMode, revivificationSettings: revivificationSettings);
+            fkv = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, concurrencyControlMode: concurrencyControlMode, revivificationSettings: revivificationSettings);
 
             valueVLS = new RevivificationVarLenStruct();
             functions = new RevivificationSpanByteFunctions(fkv);
@@ -1571,12 +1572,12 @@ namespace FASTER.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.obj.log"), deleteOnClose: true);
 
-            var lockingMode = LockingMode.Standard;
+            var concurrencyControlMode = ConcurrencyControlMode.LockTable;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is LockingMode lm)
+                if (arg is ConcurrencyControlMode ccm)
                 {
-                    lockingMode = lm;
+                    concurrencyControlMode = ccm;
                     continue;
                 }
             }
@@ -1585,7 +1586,7 @@ namespace FASTER.test.Revivification
                 (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 22, PageSizeBits = 12 },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                lockingMode: lockingMode, revivificationSettings: RevivificationSettings.DefaultFixedLength);
+                concurrencyControlMode: concurrencyControlMode, revivificationSettings: RevivificationSettings.DefaultFixedLength);
 
             functions = new MyFunctions();
             session = fkv.For(functions).NewSession<MyFunctions>();
@@ -1751,7 +1752,7 @@ namespace FASTER.test.Revivification
 
             CollisionRange collisionRange = CollisionRange.None;
             LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySizeBits = 22 };
-            var lockingMode = LockingMode.Standard;
+            var concurrencyControlMode = ConcurrencyControlMode.LockTable;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is CollisionRange cr)
@@ -1759,15 +1760,15 @@ namespace FASTER.test.Revivification
                     collisionRange = cr;
                     continue;
                 }
-                if (arg is LockingMode lm)
+                if (arg is ConcurrencyControlMode ccm)
                 {
-                    lockingMode = lm;
+                    concurrencyControlMode = ccm;
                     continue;
                 }
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            fkv = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, lockingMode: lockingMode, revivificationSettings: RevivificationSettings.PowerOf2Bins);
+            fkv = new FasterKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: comparer, concurrencyControlMode: concurrencyControlMode, revivificationSettings: RevivificationSettings.PowerOf2Bins);
 
             var valueVLS = new RevivificationVLS();
             functions = new RevivificationStressFunctions(keyComparer: null);

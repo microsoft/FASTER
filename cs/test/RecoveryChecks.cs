@@ -612,7 +612,7 @@ namespace FASTER.test.recovery
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path },
-                lockingMode : LockingMode.Ephemeral
+                concurrencyControlMode : ConcurrencyControlMode.RecordIsolation
                 );
 
             using var s1 = fht1.NewSession(new MyFunctions());

@@ -31,11 +31,11 @@ namespace FASTER.server
         /// <param name="functionsGen"></param>
         /// <param name="serializer"></param>
         /// <param name="keyInputSerializer"></param>
-        /// <param name="lockingMode"></param>
+        /// <param name="concurrencyControlMode"></param>
         /// <param name="maxSizeSettings"></param>
         /// <param name="loggerFactory"></param>
-        public GenericServer(ServerOptions opts, Func<Functions> functionsGen, ParameterSerializer serializer, IKeyInputSerializer<Key, Input> keyInputSerializer, 
-                             LockingMode lockingMode, MaxSizeSettings maxSizeSettings = default, ILoggerFactory loggerFactory = null)
+        public GenericServer(ServerOptions opts, Func<Functions> functionsGen, ParameterSerializer serializer, IKeyInputSerializer<Key, Input> keyInputSerializer,
+                             ConcurrencyControlMode concurrencyControlMode, MaxSizeSettings maxSizeSettings = default, ILoggerFactory loggerFactory = null)
         {
             this.opts = opts;
 
@@ -45,7 +45,7 @@ namespace FASTER.server
             if (!Directory.Exists(opts.CheckpointDir))
                 Directory.CreateDirectory(opts.CheckpointDir);
 
-            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings, lockingMode: lockingMode, loggerFactory: loggerFactory);
+            store = new FasterKV<Key, Value>(indexSize, logSettings, checkpointSettings, concurrencyControlMode: concurrencyControlMode, loggerFactory: loggerFactory);
 
             if (opts.Recover)
             {

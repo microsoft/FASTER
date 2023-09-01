@@ -25,7 +25,7 @@ namespace FASTER.test
                 (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                lockingMode: LockingMode.None);
+                concurrencyControlMode: ConcurrencyControlMode.None);
             session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 

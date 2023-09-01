@@ -38,7 +38,7 @@ namespace FASTER.test.Dispose
             objlog = Devices.CreateLogDevice(MethodTestDir + "/ObjectFASTERTests.obj.log", deleteOnClose: true);
 
             LogSettings logSettings = new () { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 };
-            var lockingMode = LockingMode.None;
+            var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCopyDestination dest)
@@ -47,16 +47,16 @@ namespace FASTER.test.Dispose
                         logSettings.ReadCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
                     continue;
                 }
-                if (arg is LockingMode lm)
+                if (arg is ConcurrencyControlMode ccm)
                 {
-                    lockingMode = lm;
+                    concurrencyControlMode = ccm;
                     continue;
                 }
             }
 
             fht = new FasterKV<MyKey, MyValue>(128, logSettings: logSettings, comparer: new MyKeyComparer(),
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                lockingMode: lockingMode   // Warning: LockingMode.Standard will deadlock with X locks as both keys map to the same LockCode
+                concurrencyControlMode: concurrencyControlMode   // Warning: ConcurrencyControlMode.LockTable will deadlock with X locks as both keys map to the same keyHash
                 );
         }
 
@@ -363,7 +363,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeSingleWriter2Threads([Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
+        public void DisposeSingleWriter2Threads([Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -401,7 +401,7 @@ namespace FASTER.test.Dispose
         [Category("FasterKV")]
         [Category("Smoke")]
         public void DisposeInitialUpdater2Threads([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode,
-                                                  [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
+                                                  [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -440,7 +440,7 @@ namespace FASTER.test.Dispose
         [Category("FasterKV")]
         [Category("Smoke")]
         public void DisposeCopyUpdater2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode,
-                                               [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
+                                               [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -504,7 +504,7 @@ namespace FASTER.test.Dispose
         [Category("FasterKV")]
         [Category("Smoke")]
         public void DisposeSingleDeleter2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode,
-                                                  [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
+                                                  [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -550,7 +550,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void PendingRead([Values] ReadCopyDestination copyDest, [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
+        public void PendingRead([Values] ReadCopyDestination copyDest, [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
 
         {
             DoPendingReadInsertTest(copyDest, initialReadCacheInsert: false);
@@ -560,7 +560,7 @@ namespace FASTER.test.Dispose
         [Category("FasterKV")]
         [Category("Smoke")]
         public void CopyToTailWithInitialReadCache([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest,
-                                                   [Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
+                                                   [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             // We use the ReadCopyDestination.ReadCache parameter so Setup() knows to set up the readcache, but
             // for the actual test it is used only for setup; we execute CopyToTail.
@@ -608,7 +608,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposePendingRead2Threads([Values] ReadCopyDestination copyDest, [Values] LockingMode lockingMode)
+        public void DisposePendingRead2Threads([Values] ReadCopyDestination copyDest, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             DoDisposePendingReadInsertTest2Threads(copyDest, initialReadCacheInsert: false);
         }
@@ -616,7 +616,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposeCopyToTailWithInitialReadCache2Threads([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest, [Values] LockingMode lockingMode)
+        public void DisposeCopyToTailWithInitialReadCache2Threads([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             // We use the ReadCopyDestination.ReadCache parameter so Setup() knows to set up the readcache, but
             // for the actual test it is used only for setup; we execute CopyToTail.
@@ -703,7 +703,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposePendingReadWithNoInsertTest([Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
+        public void DisposePendingReadWithNoInsertTest([Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions = new DisposeFunctionsNoSync();
 
@@ -730,7 +730,7 @@ namespace FASTER.test.Dispose
         [Test]
         [Category("FasterKV")]
         [Category("Smoke")]
-        public void DisposePendingRmwWithNoConflictTest([Values(LockingMode.Ephemeral, LockingMode.None)] LockingMode lockingMode)
+        public void DisposePendingRmwWithNoConflictTest([Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions = new DisposeFunctionsNoSync();
 

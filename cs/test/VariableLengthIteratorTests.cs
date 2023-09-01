@@ -24,7 +24,7 @@ namespace FASTER.test
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
                 null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = vlLength },
-                lockingMode: LockingMode.None);
+                concurrencyControlMode: ConcurrencyControlMode.None);
 
             var session = fht.NewSession(new VLFunctions());
 

@@ -450,5 +450,15 @@ namespace FASTER.core
             Debug.Assert(Stopwatch.IsHighResolution, "Expected Stopwatch.IsHighResolution to be true");
             return (ulong)(((double)Stopwatch.GetTimestamp() / Stopwatch.Frequency) * 1000);
         }
+
+        internal static string GetHashString(long hash)
+        {
+            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
+            var hashSign = hash < 0 ? "-" : string.Empty;
+            var absHash = hash >= 0 ? hash : -hash;
+            return $"{hashSign}{absHash}";
+        }
+
+        internal static string GetHashString(long? hash) => hash.HasValue ? GetHashString(hash.Value) : "null";
     }
 }

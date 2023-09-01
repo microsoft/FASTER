@@ -91,11 +91,11 @@ namespace FASTER.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new FasterKV<SpanByte, SpanByte>
                     (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.Options.LockingMode, revivificationSettings: revivificationSettings);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, concurrencyControlMode: testLoader.Options.ConcurrencyControlMode);
             else
                 store = new FasterKV<SpanByte, SpanByte>
                     (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, lockingMode: testLoader.Options.LockingMode, revivificationSettings: revivificationSettings);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, concurrencyControlMode: testLoader.Options.ConcurrencyControlMode);
         }
 
         internal void Dispose()

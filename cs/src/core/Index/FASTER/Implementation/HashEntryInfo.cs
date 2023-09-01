@@ -29,7 +29,7 @@ namespace FASTER.core
         internal ushort tag;
 
 #if DEBUG
-        internal long LockCode;
+        internal long BucketIndex;
 #endif // DEBUG
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -83,7 +83,6 @@ namespace FASTER.core
             {
                 Tag = this.tag,
                 Address = newLogicalAddress & Constants.kAddressMask,
-                Pending = this.entry.Pending,
                 Tentative = false
                 // .ReadCache is included in newLogicalAddress
             };
@@ -107,10 +106,7 @@ namespace FASTER.core
 
         public override string ToString()
         {
-            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
-            var hashSign = hash < 0 ? "-" : string.Empty;
-            var absHash = this.hash >= 0 ? this.hash : -this.hash;
-            var hashStr = $"{hashSign}{absHash}";
+            var hashStr = GetHashString(this.hash);
 
             if (bucket == null)
                 return $"hash {hashStr} <no bucket>";
@@ -122,7 +118,7 @@ namespace FASTER.core
 
             var result = $"addr {this.AbsoluteAddress}{addrRC}, currAddr {this.AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashStr}, tag {this.tag}, slot {this.slot}, Bkt1 [";
 #if DEBUG
-            result += $"code {LockCode}, ";
+            result += $"index {BucketIndex}, ";
 #endif // DEBUG
             result += $"{HashBucket.ToString(firstBucket)}]";
             return result;

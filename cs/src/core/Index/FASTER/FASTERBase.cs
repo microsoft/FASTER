@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using FASTER.core;
 using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
@@ -28,19 +27,19 @@ namespace FASTER.core
         // Position of fields in hash-table entry
         public const int kTentativeBitShift = 63;
 
-        public const long kTentativeBitMask = (1L << kTentativeBitShift);
+        public const long kTentativeBitMask = 1L << kTentativeBitShift;
 
         public const int kPendingBitShift = 62;
 
-        public const long kPendingBitMask = (1L << kPendingBitShift);
+        public const long kPendingBitMask = 1L << kPendingBitShift;
 
         public const int kReadCacheBitShift = 47;
-        public const long kReadCacheBitMask = (1L << kReadCacheBitShift);
+        public const long kReadCacheBitMask = 1L << kReadCacheBitShift;
 
         public const int kTagSize = 14;
         public const int kTagShift = 62 - kTagSize;
         public const long kTagMask = (1L << kTagSize) - 1;
-        public const long kTagPositionMask = (kTagMask << kTagShift);
+        public const long kTagPositionMask = kTagMask << kTagShift;
         public const int kAddressBits = 48;
         public const long kAddressMask = (1L << kAddressBits) - 1;
 
@@ -52,6 +51,7 @@ namespace FASTER.core
 
         public const int kMaxLockSpins = 10;   // TODO verify these
         public const int kMaxReaderLockDrainSpins = kMaxLockSpins * 10;
+        public const int kMaxWriterLockDrainSpins = kMaxLockSpins * 5;
 
         /// Invalid entry value
         public const int kInvalidEntrySlot = kEntriesPerBucket;
@@ -115,20 +115,30 @@ namespace FASTER.core
         public static bool TryAcquireSharedLatch(HashBucket* bucket)
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
-            int spinCount = Constants.kMaxLockSpins;
 
-            for (; ; Thread.Yield())
+            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
             {
                 long expected_word = entry_word;
-                if (((expected_word & kExclusiveLatchBitMask) == 0) // not exclusively locked
-                    && (expected_word & kSharedLatchBitMask) != kSharedLatchBitMask) // shared lock is not full
+                if ((expected_word & kSharedLatchBitMask) != kSharedLatchBitMask) // shared lock is not full
                 {
                     if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word + kSharedLatchIncrement, expected_word))
-                        return true;
+                        break;
                 }
-                if (spinCount > 0 && --spinCount <= 0)
+                if (--spinCount <= 0)
                     return false;
             }
+
+            // Wait for any writer to drain. Another session may hold the XLock on this bucket and need an epoch refresh to unlock, so limit this to avoid deadlock.
+            for (var ii = 0; ii < Constants.kMaxWriterLockDrainSpins; ++ii)
+            {
+                if ((entry_word & kExclusiveLatchBitMask) == 0)
+                    return true;
+                Thread.Yield();
+            }
+
+            // Release the shared-latch increment we added and return false so the caller will retry the operation.
+            Interlocked.Add(ref entry_word, -kSharedLatchIncrement);
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -139,8 +149,8 @@ namespace FASTER.core
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
             // X and S latches means an X latch is still trying to drain readers, like this one.
-            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched record");
-            Debug.Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched record");
+            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched bucket");
+            Debug.Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched bucket");
             Interlocked.Add(ref entry_word, -kSharedLatchIncrement);
         }
 
@@ -151,10 +161,9 @@ namespace FASTER.core
         public static bool TryAcquireExclusiveLatch(HashBucket* bucket)
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
-            int spinCount = Constants.kMaxLockSpins;
 
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
-            for (; ; Thread.Yield())
+            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
             {
                 long expected_word = entry_word;
                 if ((expected_word & kExclusiveLatchBitMask) == 0)
@@ -162,11 +171,11 @@ namespace FASTER.core
                     if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word | kExclusiveLatchBitMask, expected_word))
                         break;
                 }
-                if (spinCount > 0 && --spinCount <= 0)
+                if (--spinCount <= 0)
                     return false;
             }
 
-            // Wait for readers to drain. Another session may hold an SLock on this record and need an epoch refresh to unlock, so limit this to avoid deadlock.
+            // Wait for readers to drain. Another session may hold an SLock on this bucket and need an epoch refresh to unlock, so limit this to avoid deadlock.
             for (var ii = 0; ii < Constants.kMaxReaderLockDrainSpins; ++ii)
             {
                 if ((entry_word & kSharedLatchBitMask) == 0)
@@ -185,6 +194,45 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryPromoteLatch(HashBucket* bucket)
+        {
+            ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
+
+            // Acquire shared lock
+            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
+            {
+                long expected_word = entry_word;
+                Debug.Assert((expected_word & kSharedLatchBitMask) != 0, "Trying to promote a bucket that is not S latched to X latch");
+                if ((expected_word & kExclusiveLatchBitMask) == 0)  // not exclusively locked
+                {
+                    long new_word = (expected_word | kExclusiveLatchBitMask) - kSharedLatchIncrement;
+                    if (expected_word == Interlocked.CompareExchange(ref entry_word, new_word, expected_word))
+                        break;
+                }
+                if (--spinCount <= 0)
+                    return false;
+            }
+
+            // Wait for readers to drain. Another session may hold an SLock on this bucket and need an epoch refresh to unlock, so limit this to avoid deadlock.
+            for (var ii = 0; ii < Constants.kMaxReaderLockDrainSpins; ++ii)
+            {
+                if ((entry_word & kSharedLatchBitMask) == 0)
+                    return true;
+                Thread.Yield();
+            }
+
+            // Reverse the shared-to-exclusive bit transition and return false so the caller will retry the operation. Since we still have readers, we must CAS.
+            for (; ; Thread.Yield())
+            {
+                long expected_word = entry_word;
+                long new_word = (expected_word & ~kExclusiveLatchBitMask) + kSharedLatchIncrement;
+                if (expected_word == Interlocked.CompareExchange(ref entry_word, new_word, expected_word))
+                    break;
+            }
+            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void ReleaseExclusiveLatch(ref HashEntryInfo hei) => ReleaseExclusiveLatch(hei.firstBucket);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -192,11 +240,10 @@ namespace FASTER.core
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
 
-            // We should not be calling this method unless we have successfully acquired the latch (all existing readers were drained).
-            Debug.Assert((entry_word & kSharedLatchBitMask) == 0, "Trying to X unlatch an S latched record");
-            Debug.Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched record");
+            // We allow shared locking to drain the write lock, so it is OK if we have shared latches.
+            Debug.Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched bucket");
 
-            // The address in the overflow bucket may change from unassigned to assigned, so retry
+            // CAS is necessary to preserve the reader count, and also the address in the overflow bucket may change from unassigned to assigned.
             for (; ; Thread.Yield())
             {
                 long expected_word = entry_word;
@@ -218,10 +265,7 @@ namespace FASTER.core
             => (bucket->bucket_entries[Constants.kOverflowBucketIndex] & kLatchBitMask) != 0;
 
         public static string ToString(HashBucket* bucket)
-        {
-            var locks = $"{(IsLatchedExclusive(bucket) ? "x" : string.Empty)}{NumLatchedShared(bucket)}";
-            return $"locks {locks}";
-        }
+            => $"locks {$"{(IsLatchedExclusive(bucket) ? "x" : string.Empty)}{NumLatchedShared(bucket)}"}";
     }
 
     // Long value layout: [1-bit tentative][15-bit TAG][48-bit address]
@@ -237,11 +281,11 @@ namespace FASTER.core
             set
             {
                 word &= ~Constants.kAddressMask;
-                word |= (value & Constants.kAddressMask);
+                word |= value & Constants.kAddressMask;
             }
         }
 
-        public long AbsoluteAddress => Utility.AbsoluteAddress(this.Address);
+        public readonly long AbsoluteAddress => Utility.AbsoluteAddress(this.Address);
 
         public ushort Tag
         {
@@ -249,19 +293,7 @@ namespace FASTER.core
             set
             {
                 word &= ~Constants.kTagPositionMask;
-                word |= ((long)value << Constants.kTagShift);
-            }
-        }
-
-        public bool Pending
-        {
-            readonly get => (word & Constants.kPendingBitMask) != 0;
-            set
-            {
-                if (value)
-                    word |= Constants.kPendingBitMask;
-                else
-                    word &= ~Constants.kPendingBitMask;
+                word |= (long)value << Constants.kTagShift;
             }
         }
 
@@ -289,11 +321,11 @@ namespace FASTER.core
             }
         }
 
-        public override string ToString()
+        public override readonly string ToString()
         {
             var addrRC = this.ReadCache ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            return $"addr {this.AbsoluteAddress}{addrRC}, tag {Tag}, tent {bstr(Tentative)}, pend {bstr(Pending)}";
+            return $"addr {this.AbsoluteAddress}{addrRC}, tag {Tag}, tent {bstr(Tentative)}";
         }
     }
 
@@ -434,7 +466,7 @@ namespace FASTER.core
             hei.slot = Constants.kInvalidEntrySlot;
             hei.entry = default;
 #if DEBUG
-            hei.LockCode = masked_entry_word;
+            hei.BucketIndex = masked_entry_word;
 #endif // DEBUG
 
             do
@@ -473,7 +505,7 @@ namespace FASTER.core
             var version = resizeInfo.version;
             var masked_entry_word = hei.hash & state[version].size_mask;
 #if DEBUG
-            hei.LockCode = masked_entry_word;
+            hei.BucketIndex = masked_entry_word;
 #endif // DEBUG
 
             while (true)
@@ -488,7 +520,6 @@ namespace FASTER.core
                 hei.entry = default;
                 hei.entry.Tag = hei.tag;
                 hei.entry.Address = Constants.kTempInvalidAddress;
-                hei.entry.Pending = false;
                 hei.entry.Tentative = true;
 
                 // Insert the tag into this slot. Failure means another session inserted a key into that slot, so continue the loop to find another free slot.

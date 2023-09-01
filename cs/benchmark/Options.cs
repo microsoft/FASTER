@@ -33,12 +33,12 @@ namespace FASTER.benchmark
                         "\n    (Checkpoints are stored in directories under " + TestLoader.DataPath + " in directories named by distribution, ycsb vs. synthetic data, and key counts)")]
         public bool BackupAndRestore { get; set; }
 
-        [Option('z', "locking", Required = false, Default = LockingMode.None,
-            HelpText = "Locking Implementation:" +
-                        $"\n    {nameof(LockingMode.None)} = No locking (default)" +
-                        $"\n    {nameof(LockingMode.Standard)} = Locking using main HashTable buckets" +
-                        $"\n    {nameof(LockingMode.Ephemeral)} = Locking only within concurrent IFunctions callbacks")]
-        public LockingMode LockingMode { get; set; }
+        [Option('z', "locking", Required = false, Default = ConcurrencyControlMode.None,
+             HelpText = "Locking Implementation:" +
+                       $"\n    {nameof(ConcurrencyControlMode.None)} = No Locking (default)" +
+                       $"\n    {nameof(ConcurrencyControlMode.LockTable)} = Locking using main HashTable buckets" +
+                       $"\n    {nameof(ConcurrencyControlMode.RecordIsolation)} = RecordInfo locking only within concurrent IFunctions callbacks")]
+        public ConcurrencyControlMode ConcurrencyControlMode { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
             HelpText = "Number of iterations of the test to run")]
@@ -118,7 +118,7 @@ namespace FASTER.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount}; t: {ThreadCount}; z: {LockingMode}; i: {IterationCount};"
+            return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount}; t: {ThreadCount}; z: {ConcurrencyControlMode}; i: {IterationCount};"
                         + $" hp: {HashPacking}; epoch-refresh {EpochRefreshOpCount}; sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
                         + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";

@@ -13,6 +13,13 @@ namespace FASTER.core
     {
         internal struct UpsertAsyncOperation<Input, Output, Context> : IAsyncOperation<Input, Output, Context, UpsertAsyncResult<Input, Output, Context>>
         {
+            UpsertOptions upsertOptions;
+
+            internal UpsertAsyncOperation(ref UpsertOptions upsertOptions)
+            {
+                this.upsertOptions = upsertOptions;
+            }
+
             /// <inheritdoc/>
             public UpsertAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
 
@@ -22,10 +29,12 @@ namespace FASTER.core
             {
                 output = default;
                 OperationStatus internalStatus;
+                ref var key = ref pendingContext.key.Get();
+                var keyHash = upsertOptions.KeyHash ?? fasterKV.comparer.GetHashCode64(ref key);
                 do
                 {
-                    internalStatus = fasterKV.InternalUpsert(ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref output, ref pendingContext.userContext, ref pendingContext, 
-                                                             fasterSession, pendingContext.serialNum);
+                    internalStatus = fasterKV.InternalUpsert(ref key, keyHash, ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref output,
+                                                            ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
                 } while (fasterKV.HandleImmediateRetryStatus(internalStatus, fasterSession, ref pendingContext));
                 return TranslateStatus(internalStatus);
             }
@@ -33,7 +42,7 @@ namespace FASTER.core
             /// <inheritdoc/>
             public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
-                => SlowUpsertAsync(fasterKV, fasterSession, pendingContext, token);
+                => SlowUpsertAsync(fasterKV, fasterSession, pendingContext, upsertOptions, token);
 
             /// <inheritdoc/>
             public bool HasPendingIO => false;
@@ -64,13 +73,13 @@ namespace FASTER.core
             }
 
             internal UpsertAsyncResult(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, TOutput, Context> fasterSession,
-                PendingContext<Input, TOutput, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo)
+                PendingContext<Input, TOutput, Context> pendingContext, ref UpsertOptions upsertOptions, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 this.Status = new(StatusCode.Pending);
                 this.Output = default;
                 this.RecordMetadata = default;
                 updateAsyncInternal = new AsyncOperationInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>>(
-                                        fasterKV, fasterSession, pendingContext, exceptionDispatchInfo, new ());
+                                        fasterKV, fasterSession, pendingContext, exceptionDispatchInfo, new (ref upsertOptions));
             }
 
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -101,7 +110,7 @@ namespace FASTER.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<UpsertAsyncResult<Input, Output, Context>> UpsertAsync<Input, Output, Context, FasterSession>(FasterSession fasterSession,
-                ref Key key, ref Input input, ref Value value, Context userContext, long serialNo, CancellationToken token = default)
+                ref Key key, ref Input input, ref Value value, ref UpsertOptions upsertOptions, Context userContext, long serialNo, CancellationToken token = default)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
@@ -111,9 +120,10 @@ namespace FASTER.core
             try
             {
                 OperationStatus internalStatus;
+                var keyHash = upsertOptions.KeyHash ?? comparer.GetHashCode64(ref key);
                 do
                 {
-                    internalStatus = InternalUpsert(ref key, ref input, ref value, ref output, ref userContext, ref pcontext, fasterSession, serialNo);
+                    internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref userContext, ref pcontext, fasterSession, serialNo);
                 } while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
                 if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
@@ -127,16 +137,16 @@ namespace FASTER.core
                 fasterSession.UnsafeSuspendThread();
             }
 
-            return SlowUpsertAsync(this, fasterSession, pcontext, token);
+            return SlowUpsertAsync(this, fasterSession, pcontext, upsertOptions, token);
         }
 
         private static async ValueTask<UpsertAsyncResult<Input, Output, Context>> SlowUpsertAsync<Input, Output, Context>(
             FasterKV<Key, Value> @this, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-            PendingContext<Input, Output, Context> pcontext, CancellationToken token = default)
+            PendingContext<Input, Output, Context> pcontext, UpsertOptions upsertOptions, CancellationToken token = default)
         {
             ExceptionDispatchInfo exceptionDispatchInfo = await WaitForFlushCompletionAsync(@this, pcontext.flushEvent, token).ConfigureAwait(false);
             pcontext.flushEvent = default;
-            return new UpsertAsyncResult<Input, Output, Context>(@this, fasterSession, pcontext, exceptionDispatchInfo);
+            return new UpsertAsyncResult<Input, Output, Context>(@this, fasterSession, pcontext, ref upsertOptions, exceptionDispatchInfo);
         }
     }
 }

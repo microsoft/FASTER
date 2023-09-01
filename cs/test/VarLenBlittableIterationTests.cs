@@ -67,7 +67,7 @@ namespace FASTER.test
             log = CreateTestDevice(deviceType, $"{path}{deviceType}.log");
             fht = new FasterKV<Key, VLValue>
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
-                 lockingMode: scanIteratorType == ScanIteratorType.Pull ? LockingMode.None : LockingMode.Standard);
+                 concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable);
 
             using var session = fht.NewSession(new VLFunctions());
             VarLenBlittablePushIterationTestFunctions scanIteratorFunctions = new();
@@ -186,7 +186,7 @@ namespace FASTER.test
         [Test]
         [Category(FasterKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void VarLenBlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] LockingMode lockingMode, [Values] ScanMode scanMode)
+        public unsafe void VarLenBlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ScanMode scanMode)
         {
             log = Devices.CreateLogDevice($"{path}lock_test.log");
             fht = new FasterKV<Key, VLValue>

@@ -101,18 +101,18 @@ namespace FASTER.test.LockTests
             log = Devices.CreateLogDevice(MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
 
-            var lockingMode = LockingMode.None;
+            var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is LockingMode lm)
+                if (arg is ConcurrencyControlMode ccm)
                 {
-                    lockingMode = lm;
+                    concurrencyControlMode = ccm;
                     continue;
                 }
             }
 
             fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, ReadCacheSettings = readCacheSettings },
-                comparer: new ChainComparer(mod), lockingMode: lockingMode);
+                comparer: new ChainComparer(mod), concurrencyControlMode: concurrencyControlMode);
             session = fkv.For(new Functions()).NewSession<Functions>();
         }
 
@@ -144,7 +144,7 @@ namespace FASTER.test.LockTests
         [Category(FasterKVTestCategory)]
         [Category(LockTestCategory)]
         //[Repeat(100)]
-        public async ValueTask SameKeyInsertAndCTTTest([Values(LockingMode.None, LockingMode.Ephemeral /* Standard will hang */)] LockingMode lockingMode, 
+        public async ValueTask SameKeyInsertAndCTTTest([Values(ConcurrencyControlMode.None, ConcurrencyControlMode.RecordIsolation /* Standard will hang */)] ConcurrencyControlMode concurrencyControlMode, 
                                                        [Values(ReadCopyTo.ReadCache, ReadCopyTo.MainLog)] ReadCopyTo readCopyTo)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)

@@ -25,19 +25,19 @@ namespace FASTER.core
     }
 
     /// <summary>
-    /// How FASTER should do record locking
+    /// How FASTER should do concurrency control
     /// </summary>
-    public enum LockingMode : byte
+    public enum ConcurrencyControlMode : byte
     {
         /// <summary>
-        /// Keys are locked based upon the session type, using hash buckets, and support manual locking.
+        /// Keys are locked using a LockTable. Currently the implementation latches the hash index buckets. Supports manual and transient locking, based on the session type.
         /// </summary>
-        Standard,
+        LockTable,
 
         /// <summary>
-        /// Keys are locked only for the duration of a concurrent IFunctions call (one that operates on data in the mutable region of the log).
+        /// Records are locked only for the duration of a concurrent IFunctions call (one that operates on data in the mutable region of the log), using the RecordInfo header.
         /// </summary>
-        Ephemeral,
+        RecordIsolation,
 
         /// <summary>
         /// Locking is not done in FASTER.
@@ -59,9 +59,9 @@ namespace FASTER.core
     public interface ILockableKey
     {
         /// <summary>
-        /// The lock code for a specific key, obtained from <see cref="ILockableContext{TKey}.GetLockCode(ref TKey, long)"/>
+        /// The hash code for a specific key, obtained from <see cref="IFasterContext{TKey}.GetKeyHash(ref TKey)"/>
         /// </summary>
-        public long LockCode { get; }
+        public long KeyHash { get; }
 
         /// <summary>
         /// The lock type for a specific key
@@ -80,14 +80,9 @@ namespace FASTER.core
         /// </summary>
         public TKey Key;
 
-        /// <summary>
-        /// The hash code of the key that is acquiring or releasing a lock
-        /// </summary>
-        public long KeyHash;
-
         #region ILockableKey
         /// <inheritdoc/>
-        public long LockCode { get; set; }
+        public long KeyHash { get; set; }
 
         /// <inheritdoc/>
         public LockType LockType { get; set; }
@@ -96,16 +91,16 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(TKey key, LockType lockType, ILockableContext<TKey> context) : this(ref key, lockType, context) { }
+        public FixedLengthLockableKeyStruct(TKey key, LockType lockType, IFasterContext<TKey> context) : this(ref key, lockType, context) { }
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(ref TKey key, LockType lockType, ILockableContext<TKey> context)
+        public FixedLengthLockableKeyStruct(ref TKey key, LockType lockType, IFasterContext<TKey> context)
         {
             Key = key;
             LockType = lockType;
-            LockCode = context.GetLockCode(ref key, out KeyHash);
+            KeyHash = context.GetKeyHash(ref key);
         }
         /// <summary>
         /// Constructor
@@ -120,7 +115,6 @@ namespace FASTER.core
             Key = key;
             KeyHash = keyHash;
             LockType = lockType;
-            LockCode = context.GetLockCode(ref key, keyHash);
         }
 
         /// <summary>
@@ -129,17 +123,14 @@ namespace FASTER.core
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="context"></param>
-        public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortLockCodes(keys);
+        public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortKeyHashes(keys);
 
         /// <inheritdoc/>
         public override string ToString()
         {
-            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
-            var hashSign = KeyHash < 0 ? "-" : string.Empty;
-            var absHash = this.KeyHash >= 0 ? this.KeyHash : -this.KeyHash;
-            return $"key {Key}, hash {hashSign}{absHash}, lockCode {LockCode}, {LockType}";
+            var hashStr = Utility.GetHashString(this.KeyHash);
+            return $"key {Key}, hash {hashStr}, {LockType}";
         }
-
     }
 
     /// <summary>

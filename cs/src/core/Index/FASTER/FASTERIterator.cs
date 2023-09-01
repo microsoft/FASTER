@@ -104,7 +104,7 @@ namespace FASTER.core
             }
 
             tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: fht.Comparer,
-                                              variableLengthStructSettings: variableLengthStructSettings, loggerFactory: loggerFactory, lockingMode: LockingMode.None);
+                                              variableLengthStructSettings: variableLengthStructSettings, loggerFactory: loggerFactory, concurrencyControlMode: ConcurrencyControlMode.None);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
             mainKvIter = fht.Log.Scan(fht.Log.BeginAddress, untilAddress);
             pushScanIterator = mainKvIter as IPushScanIterator<Key>;
