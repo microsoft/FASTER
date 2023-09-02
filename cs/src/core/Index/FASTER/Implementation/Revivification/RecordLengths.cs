@@ -43,9 +43,6 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long MinFreeRecordAddress(HashBucketEntry entry) => entry.Address >= this.hlog.ReadOnlyAddress ? entry.Address : this.hlog.ReadOnlyAddress;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetValueOffset(long physicalAddress, ref Value recordValue) => (int)((long)Unsafe.AsPointer(ref recordValue) - physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -171,11 +168,11 @@ namespace FASTER.core
         } 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryTakeFreeRecord<Input, Output, Context, FasterSession>(FasterSession fasterSession, int requiredSize, ref int allocatedSize, int newKeySize, HashBucketEntry entry, 
+        bool TryTakeFreeRecord<Input, Output, Context, FasterSession>(FasterSession fasterSession, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress, 
                     out long logicalAddress, out long physicalAddress)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (FreeRecordPoolHasSafeRecords && FreeRecordPool.TryTake(allocatedSize, MinFreeRecordAddress(entry), out logicalAddress))
+            if (FreeRecordPoolHasSafeRecords && FreeRecordPool.TryTake(allocatedSize, minRevivAddress, out logicalAddress))
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);

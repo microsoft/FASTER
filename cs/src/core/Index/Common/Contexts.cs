@@ -262,6 +262,14 @@ namespace FASTER.core
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 
+            public bool IsInV1 => this.phase switch
+            {
+                Phase.IN_PROGRESS => true,
+                Phase.WAIT_INDEX_CHECKPOINT => true,
+                Phase.WAIT_FLUSH => true,
+                _ => false,
+            };
+
             internal void MergeReadCopyOptions(ReadCopyOptions storeCopyOptions, ReadCopyOptions copyOptions)
                 => this.ReadCopyOptions = ReadCopyOptions.Merge(storeCopyOptions, copyOptions);
 

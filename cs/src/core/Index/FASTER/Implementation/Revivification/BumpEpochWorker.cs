@@ -55,8 +55,19 @@ namespace FASTER.core
                 // (the one that triggered the worker run), or possibly more that happened at about the same time. Otherwise we've
                 // looped up from below and already slept if needed. If not fromAdd, then we are here to update HasSafeRecords.
                 if (fromAdd)
-                { 
-                    recordPool.fkv.epoch.BumpCurrentEpoch();
+                {
+                    bool isProtected = recordPool.fkv.epoch.ThisInstanceProtected();
+                    if (!isProtected)
+                        recordPool.fkv.epoch.Resume();
+                    try
+                    {
+                        recordPool.fkv.epoch.BumpCurrentEpoch();
+                    }
+                    finally
+                    {
+                        if (!isProtected) 
+                            recordPool.fkv.epoch.Suspend();
+                    }
                     this.state = ScanOrQuiescent;   // Only set this if fromAdd, since we did not take BumpOrSleep state on entry in the non-fromAdd case
                 }
                 startMs = GetCurrentMilliseconds();

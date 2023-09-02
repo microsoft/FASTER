@@ -47,10 +47,19 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
-            if (recycle && GetAllocationForRetry(fasterSession, ref pendingContext, stackCtx.hei.Address, ref allocatedSize, newKeySize, out newLogicalAddress, out newPhysicalAddress))
+
+            var minRevivAddress = stackCtx.hei.Address >= this.hlog.ReadOnlyAddress ? stackCtx.hei.Address : this.hlog.ReadOnlyAddress;
+            if (fasterSession.Ctx.IsInV1)
+            {
+                var fuzzyStartAddress = _hybridLogCheckpoint.info.startLogicalAddress;
+                if (fuzzyStartAddress > minRevivAddress)
+                    minRevivAddress = fuzzyStartAddress;
+            }
+
+            if (recycle && GetAllocationForRetry(fasterSession, ref pendingContext, minRevivAddress, ref allocatedSize, newKeySize, out newLogicalAddress, out newPhysicalAddress))
                 return true;
 
-            if (TryTakeFreeRecord<Input, Output, Context, FasterSession>(fasterSession, actualSize, ref allocatedSize, newKeySize, stackCtx.hei.entry, out newLogicalAddress, out newPhysicalAddress))
+            if (TryTakeFreeRecord<Input, Output, Context, FasterSession>(fasterSession, actualSize, ref allocatedSize, newKeySize, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
                 return true;
 
             // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).

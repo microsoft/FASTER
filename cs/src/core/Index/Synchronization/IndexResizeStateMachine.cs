@@ -53,7 +53,18 @@ namespace FASTER.core
             switch (next.Phase)
             {
                 case Phase.PREPARE_GROW:
-                    faster.epoch.BumpCurrentEpoch(() => allThreadsInPrepareGrow = true);
+                    bool isProtected = faster.epoch.ThisInstanceProtected();
+                    if (!isProtected)
+                        faster.epoch.Resume();
+                    try
+                    {
+                        faster.epoch.BumpCurrentEpoch(() => allThreadsInPrepareGrow = true);
+                    }
+                    finally
+                    {
+                        if (!isProtected)
+                            faster.epoch.Suspend();
+                    }
                     break;
                 case Phase.IN_PROGRESS_GROW:
                 case Phase.REST:

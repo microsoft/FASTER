@@ -358,14 +358,21 @@ namespace FASTER.core
 
             var intermediate = VersionSchemeState.MakeIntermediate(oldState);
             if (!MakeTransition(oldState, intermediate)) return;
-            // Avoid upfront memory allocation by going to a function
-            StepMachineHeavy(machineLocal, oldState, nextState);
 
-            // Ensure that state machine is able to make progress if this thread is the only active thread
-            if (!epoch.ThisInstanceProtected())
-            {
+            // Ensure that state machine is able to make progress if this thread is the only active thread.
+            // Also, StepMachineHeavy calls BumpCurrentEpoch, which requires a protected thread.
+            bool isProtected = epoch.ThisInstanceProtected();
+            if (!isProtected)
                 epoch.Resume();
-                epoch.Suspend();
+            try
+            {
+                // Avoid upfront memory allocation by going to a function
+                StepMachineHeavy(machineLocal, oldState, nextState);
+            }
+            finally
+            {
+                if (!isProtected)
+                    epoch.Suspend();
             }
         }
 

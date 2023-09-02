@@ -17,10 +17,10 @@ namespace FASTER.core
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var version = sessionCtx.version;
-            Debug.Assert(sessionCtx.version == version);
-            Debug.Assert(sessionCtx.phase == Phase.PREPARE);
+            Debug.Assert(sessionCtx.version == version, $"sessionCtx.version ({sessionCtx.version}) should == version ({version})");
+            Debug.Assert(sessionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({sessionCtx.phase}) should == Phase.PREPARE");
             InternalRefresh<Input, Output, Context, FasterSession>(fasterSession);
-            Debug.Assert(sessionCtx.version > version);
+            Debug.Assert(sessionCtx.version > version, $"sessionCtx.version ({sessionCtx.version}) should be > version ({version})");
 
             pendingContext.version = sessionCtx.version;
         }
