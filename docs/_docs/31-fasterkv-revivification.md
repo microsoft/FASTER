@@ -7,7 +7,7 @@ toc: true
 ---
 
 ## Revivification in FasterKV
-Revivification in FasterKV refers to reusing ("revivifying") Tombstoned (deleted) records. This minimizes log growth (and unused space) for high-delete scenarios. It is done in the following cases:
+Revivification in FasterKV refers to reusing ("revivifying") Tombstoned (deleted) records, as well as in-memory source records for RCUs done by Upsert or RMW. This minimizes log growth (and unused space) for high-delete scenarios. It is done in the following cases:
 The FreeRecordList is used for:
 - An Upsert, RMW, or Delete that adds a new record
 - CopyToTail from Read or RMW that did IO (or from ReadFromImmutable copying to tail)
@@ -23,6 +23,8 @@ These are separate from the reuse of a record due to a RETRY return from `Create
 This struct indicates whether revivification is to be active:
 - `EnableRevivification`: If this is true, then at least in-chain revivification is done; otherwise, record revivification is not done (but Retry reuse still is).
 - `FreeListBins`: If this array of `RevivificationBin` is non-null, then revivification will include a freelist of records, as defined below.
+- `SearchNextHigherBin`: By default, when looking for FreeRecords we search only the bin for the specified size. If this is set, then if there are no records in the initial bin, then next-higher bin is search as well.
+- `MutablePercent`: It may be desirable not to use a record that is too close to the `ReadOnlyAddress`; some apps will prefer that a newly-inserted record remain in the mutable region as long as possible. `MutablePercent` limits the eligible range of revivification to be within this percent of the `TailAddress`; for example, if `MutablePercent` is 20, TailAddress is 100,000, and ReadOnlyAddress is 50,000, then the .2 x 50,000 = 10,000 records closest to the tail will be eligible for reuse. This is done on an address-space basis, not record count, so the actual number of records that can be revivified will vary for variable-length records.
 
 ## Maintaining Extra Value Length
 Because variable-length record Values can grow and shrink, we must store the actual length of the value in addition to the Value data. Fixed-length datatypes (including objects) do not need to store this, because their Value length does not change.
@@ -77,7 +79,7 @@ In-Chain revivification is active if `RevivificationSettings.EnableRevivificatio
 ## FreeList Revivification
 If `RevivificationSettings.FreeBinList` is not null, this creates the freelist according to the `RevivificationBin` elements of the array. If the data types are fixed, then there must be one element of the array; otherwise there can be many.
 
-When the FreeList is active and a record is deleted, if it is at the tail of the hash chain, is not locked, and its PreviousAddress points below BeginAddress, then it can be CASed (Compare-And-Swapped) out of the hash chain. If this succeeds, it is added to the freelist.
+When the FreeList is active and a record is deleted, if it is at the tail of the hash chain, is not locked, and its PreviousAddress points below BeginAddress, then it can be CASed (Compare-And-Swapped) out of the hash chain. If this succeeds, it is added to the freelist. Similar considerations apply to freelisting the source records of RCUs done by Upsert and RMW.
 
 FreeList revivification functions as follows:
 - `Delete()` checks to see if the record is at the tail of the hash chain (i.e. is the record in the `HashBucketEntry`). 
@@ -86,6 +88,8 @@ FreeList revivification functions as follows:
     - Otherwise, we try to CAS the newly-Tombstoned record's `.PreviousAddress` into the `HashBucketEntry`. 
         - It is possible to fail the CAS due to a concurrent insert
     - If this succeeds, then we `Add` the record onto the freelist. This Seals it, in case other threads are traversing the tag chain.
+        - If this `Add` fails, it will be due to the bin being full. Rather than lose the record entirely, FASTER attempts to re-insert it as a deleted record.
+- `Upsert` and `RMW` which perform RCU will check *before* doing the CAS to see that the source record is in the `HashBucketEntry`. If so and all other conditions apply, the source record is freelisted as for `Delete` (except that no attempt is made to reinsert it if `Add` to the freelist fails).
 - `Upsert()` and `RMW()` will try to revivify a freelist record if they must create a new record:
     - They call `TryTakeFreeRecord` to remove a record from the freelist.
     - If successful, `TryTakeFreeRecord` initializes the record by:

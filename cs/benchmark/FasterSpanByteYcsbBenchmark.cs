@@ -86,6 +86,9 @@ namespace FASTER.benchmark
                 _ => throw new ApplicationException("Invalid RevivificationLevel")
             };
 
+            if (revivificationSettings is not null)
+                revivificationSettings.MutablePercent = testLoader.Options.RevivMutablePercent;
+
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
             if (testLoader.Options.UseSmallMemoryLog)

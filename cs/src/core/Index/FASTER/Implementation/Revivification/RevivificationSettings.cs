@@ -107,7 +107,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public override string ToString() 
-            => $"enabled {EnableRevivification}, #bins {FreeRecordBins?.Length}, searchNextBin {SearchNextHigherBin}";
+            => $"enabled {EnableRevivification}, mutable% {MutablePercent}, #bins {FreeRecordBins?.Length}, searchNextBin {SearchNextHigherBin}";
     }
 
     /// <summary>
