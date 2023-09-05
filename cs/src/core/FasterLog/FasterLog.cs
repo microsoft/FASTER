@@ -322,18 +322,22 @@ namespace FASTER.core
         /// <param name="spinWait"> whether to spin until log completion becomes committed </param>
         public void CompleteLog(bool spinWait = false)
         {
-
-            // Ensure all currently started entries will enqueue before we declare log closed
-            epoch.BumpCurrentEpoch(() =>
-            {
-                CommitInternal(out _, out _, false, Array.Empty<byte>(), long.MaxValue, null);
-            });
-
-            // Ensure progress even if there is no thread in epoch table
-            if (!epoch.ThisInstanceProtected())
-            {
+            // Ensure progress even if there is no thread in epoch table. Also, BumpCurrentEpoch must be done on a protected thread.
+            bool isProtected = epoch.ThisInstanceProtected();
+            if (!isProtected)
                 epoch.Resume();
-                epoch.Suspend();
+            try
+            {
+                // Ensure all currently started entries will enqueue before we declare log closed
+                epoch.BumpCurrentEpoch(() =>
+                {
+                    CommitInternal(out _, out _, false, Array.Empty<byte>(), long.MaxValue, null);
+                });
+            }
+            finally
+            {
+                if (!isProtected)
+                    epoch.Suspend();
             }
 
             if (spinWait)
