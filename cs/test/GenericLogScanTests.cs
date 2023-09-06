@@ -72,7 +72,7 @@ namespace FASTER.test
             fht = new (128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      lockingMode: scanIteratorType == ScanIteratorType.Pull ? LockingMode.None : LockingMode.Standard
+                      concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable
                       );
 
             using var session = fht.For(new MyFunctions()).NewSession<MyFunctions>();
@@ -132,6 +132,59 @@ namespace FASTER.test
                     Assert.AreEqual(val, value.value, $"LogObserver.OnNext: value");
                     val++;
                 }
+            }
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+
+        public void BlittableScanJumpToBeginAddressTest()
+        {
+            log = Devices.CreateLogDevice($"{MethodTestDir}/test.log");
+            objlog = Devices.CreateLogDevice($"{MethodTestDir}/test.obj.log");
+            fht = new(128,
+                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
+                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
+                      concurrencyControlMode: ConcurrencyControlMode.None);
+
+            using var session = fht.For(new MyFunctions()).NewSession<MyFunctions>();
+
+            const int numRecords = 200;
+            const int numTailRecords = 10;
+            long shiftBeginAddressTo = 0;
+            int shiftToKey = 0;
+            for (int i = 0; i < numRecords; i++)
+            {
+                if (i == numRecords - numTailRecords)
+                {
+                    shiftBeginAddressTo = fht.Log.TailAddress;
+                    shiftToKey = i;
+                }
+                var key = new MyKey { key = i };
+                var value = new MyValue { value = i };
+                session.Upsert(ref key, ref value, Empty.Default, 0);
+            }
+
+            using var iter = fht.Log.Scan(fht.Log.HeadAddress, fht.Log.TailAddress);
+
+            for (int i = 0; i < 100; ++i)
+            {
+                Assert.IsTrue(iter.GetNext(out var recordInfo));
+                Assert.AreEqual(i, iter.GetKey().key);
+                Assert.AreEqual(i, iter.GetValue().value);
+            }
+
+            fht.Log.ShiftBeginAddress(shiftBeginAddressTo);
+
+            for (int i = 0; i < numTailRecords; ++i)
+            {
+                Assert.IsTrue(iter.GetNext(out var recordInfo));
+                if (i == 0)
+                    Assert.AreEqual(fht.Log.BeginAddress, iter.CurrentAddress);
+                var expectedKey = numRecords - numTailRecords + i;
+                Assert.AreEqual(expectedKey, iter.GetKey().key);
+                Assert.AreEqual(expectedKey, iter.GetValue().value);
             }
         }
     }

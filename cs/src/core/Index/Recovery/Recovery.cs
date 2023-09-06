@@ -150,6 +150,10 @@ namespace FASTER.core
         /// Hybrid log file end address
         /// </summary>
         public long hybridLogFileEndAddress;
+        /// <summary>
+        /// Delta log tail address
+        /// </summary>
+        public long deltaLogTailAddress;
     }
 
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
@@ -188,19 +192,21 @@ namespace FASTER.core
         /// Get size of snapshot files for token
         /// </summary>
         /// <param name="token"></param>
+        /// <param name="version"></param>
         /// <returns></returns>
-        public LogFileInfo GetLogFileSize(Guid token)
+        public LogFileInfo GetLogFileSize(Guid token, long version = -1)
         {
             using var current = new HybridLogCheckpointInfo();
             // We find the latest checkpoint metadata for the given token, including scanning the delta log for the latest metadata
             current.Recover(token, checkpointManager, hlog.LogPageSizeBits,
-                out var _, true);
+                out var _, true, version);
             long snapshotDeviceOffset = hlog.GetPage(current.info.snapshotStartFlushedLogicalAddress) << hlog.LogPageSizeBits;
             return new LogFileInfo
             {
                 snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
                 hybridLogFileStartAddress = hlog.GetPage(current.info.beginAddress) << hlog.LogPageSizeBits,
-                hybridLogFileEndAddress = current.info.flushedLogicalAddress
+                hybridLogFileEndAddress = current.info.flushedLogicalAddress,
+                deltaLogTailAddress = current.info.deltaTailAddress,
             };
         }
 
@@ -965,7 +971,6 @@ namespace FASTER.core
                     {
                         hei.entry.Address = pageLogicalAddress + pointer;
                         hei.entry.Tag = hei.tag;
-                        hei.entry.Pending = false;
                         hei.entry.Tentative = false;
                         hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
                     }
@@ -977,7 +982,6 @@ namespace FASTER.core
                         {
                             hei.entry.Address = info.PreviousAddress;
                             hei.entry.Tag = hei.tag;
-                            hei.entry.Pending = false;
                             hei.entry.Tentative = false;
                             hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
                         }

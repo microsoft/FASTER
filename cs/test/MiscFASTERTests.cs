@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using System;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test
@@ -102,18 +103,25 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public void ShouldCreateNewRecordIfConcurrentWriterReturnsFalse()
+        public void ForceRCUAndRecover([Values(UpdateOp.Upsert, UpdateOp.Delete)] UpdateOp updateOp)
         {
             var copyOnWrite = new FunctionsCopyOnWrite();
 
             // FunctionsCopyOnWrite
             var log = default(IDevice);
+            FasterKV<KeyStruct, ValueStruct> fht = default;
+            ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, IFunctions<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>> session = default;
+
             try
             {
-                log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
-                using var fht = new FasterKV<KeyStruct, ValueStruct>
-                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 }, lockingMode: LockingMode.None);
-                using var session = fht.NewSession(copyOnWrite);
+                var checkpointDir = MethodTestDir + $"/checkpoints";
+                log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
+                fht = new FasterKV<KeyStruct, ValueStruct>
+                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 },
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir },
+                    concurrencyControlMode: ConcurrencyControlMode.None);
+
+                session = fht.NewSession(copyOnWrite);
 
                 var key = default(KeyStruct);
                 var value = default(ValueStruct);
@@ -126,28 +134,58 @@ namespace FASTER.test
                 var status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
-                // ConcurrentWriter returns false, so we create a new record.
+                // ConcurrentWriter and InPlaceUpater return false, so we create a new record.
+                RecordMetadata recordMetadata2;
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
-                status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata2);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
-
+                if (updateOp == UpdateOp.Upsert)
+                { 
+                    status = session.Upsert(ref key, ref input, ref value, ref output, out recordMetadata2);
+                    Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
+                    Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                }
+                else
+                { 
+                    status = session.RMW(ref key, ref input, ref output, out recordMetadata2);
+                    Assert.AreEqual(1, copyOnWrite.InPlaceUpdaterCallCount);
+                    Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
+                }
                 Assert.Greater(recordMetadata2.Address, recordMetadata1.Address);
 
-                var recordCount = 0;
                 using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
                 {
-                    // We should get both the old and the new records.
-                    while (iterator.GetNext(out var info))
-                        recordCount++;
+                    Assert.True(iterator.GetNext(out var info));    // We should only get the new record...
+                    Assert.False(iterator.GetNext(out info));       // ... the old record was Sealed.
                 }
+                status = session.Read(ref key, ref output);
+                Assert.IsTrue(status.Found, status.ToString());
 
-                Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
-                Assert.AreEqual(2, recordCount);
+                fht.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
+                fht.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+
+                session.Dispose();
+                fht.Dispose();
+
+                fht = new FasterKV<KeyStruct, ValueStruct>
+                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 },
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir },
+                    concurrencyControlMode: ConcurrencyControlMode.None);
+
+                fht.Recover(token);
+                session = fht.NewSession(copyOnWrite);
+
+                using (var iterator = fht.Log.Scan(fht.Log.BeginAddress, fht.Log.TailAddress))
+                {
+                    Assert.True(iterator.GetNext(out var info));    // We should get both records...
+                    Assert.True(iterator.GetNext(out info));        // ... the old record was Unsealed by Recovery.
+                }
+                status = session.Read(ref key, ref output);
+                Assert.IsTrue(status.Found, status.ToString());
             }
             finally
             {
-                if (log != null)
-                    log.Dispose();
+                session?.Dispose();
+                fht?.Dispose();
+                log?.Dispose();
             }
         }
     }

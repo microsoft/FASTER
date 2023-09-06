@@ -13,6 +13,7 @@ namespace FASTER.core
         /// else inserts a new record with 'key' and 'value'.
         /// </summary>
         /// <param name="key">key of the record.</param>
+        /// <param name="keyHash"></param>
         /// <param name="input">input used to update the value.</param>
         /// <param name="value">value to be updated to (or inserted if key does not exist).</param>
         /// <param name="output">output where the result of the update can be placed</param>
@@ -41,14 +42,15 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Value value, ref Output output,
+        internal OperationStatus InternalUpsert<Input, Output, Context, FasterSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output,
                             ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession, long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
             var latchDestination = LatchDestination.NormalProcessing;
 
-            OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
+            OperationStackContext<Key, Value> stackCtx = new(keyHash);
+            pendingContext.keyHash = keyHash;
 
             if (fasterSession.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -346,8 +348,11 @@ namespace FASTER.core
                 PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newValue, ref output, ref newRecordInfo, ref upsertInfo, WriteReason.Upsert);
-                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal)
+
+                // Success should always Seal the old record if it's in mutable.
+                if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                     srcRecordInfo.UnlockExclusiveAndSeal();
+
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = newLogicalAddress;

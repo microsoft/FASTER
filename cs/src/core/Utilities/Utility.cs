@@ -410,5 +410,15 @@ namespace FASTER.core
             // make sure any exceptions in the task get unwrapped and exposed to the caller.
             return await task;
         }
+
+        internal static string GetHashString(long hash)
+        {
+            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
+            var hashSign = hash < 0 ? "-" : string.Empty;
+            var absHash = hash >= 0 ? hash : -hash;
+            return $"{hashSign}{absHash}";
+        }
+
+        internal static string GetHashString(long? hash) => hash.HasValue ? GetHashString(hash.Value) : "null";
     }
 }

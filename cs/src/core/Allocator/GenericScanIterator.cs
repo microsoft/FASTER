@@ -90,10 +90,7 @@ namespace FASTER.core
                 var headAddress = hlog.HeadAddress;
 
                 if (currentAddress < hlog.BeginAddress)
-                {
-                    epoch?.Suspend();
-                    throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
-                }
+                    currentAddress = hlog.BeginAddress;
 
                 // If currentAddress < headAddress and we're not buffering, fail.
                 if (frameSize == 0 && currentAddress < headAddress)

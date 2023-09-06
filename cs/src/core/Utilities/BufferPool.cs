@@ -140,7 +140,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Return()
         {
-            pool.Return(this);
+            pool?.Return(this);
+            pool = default;
         }
 
         /// <summary>

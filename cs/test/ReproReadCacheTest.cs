@@ -53,7 +53,7 @@ namespace FASTER.test.ReadCacheTests
             ReadCacheSettings readCacheSettings = default;
             string filename = MethodTestDir + "/BasicFasterTests.log";
 
-            var lockingMode = LockingMode.None;
+            var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCacheMode rcm)
@@ -67,9 +67,9 @@ namespace FASTER.test.ReadCacheTests
                         };
                     continue;
                 }
-                if (arg is LockingMode lm)
+                if (arg is ConcurrencyControlMode lm)
                 {
-                    lockingMode = lm;
+                    concurrencyControlMode = lm;
                     continue;
                 }
                 if (arg is DeviceType deviceType)
@@ -88,7 +88,7 @@ namespace FASTER.test.ReadCacheTests
                     MemorySizeBits = 15,
                     PageSizeBits = 12,
                     ReadCacheSettings = readCacheSettings,
-                }, lockingMode: lockingMode);
+                }, concurrencyControlMode: concurrencyControlMode);
         }
 
         [TearDown]
@@ -107,7 +107,7 @@ namespace FASTER.test.ReadCacheTests
         [Category(StressTestCategory)]
         //[Repeat(300)]
         public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
-                                                [Values] LockingMode lockingMode, [Values] ReadCacheMode readCacheMode,
+                                                [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ReadCacheMode readCacheMode,
 #if WINDOWS
                                                 [Values(DeviceType.LSD
 #else

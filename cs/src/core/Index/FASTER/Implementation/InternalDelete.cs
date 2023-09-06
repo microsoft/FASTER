@@ -13,6 +13,7 @@ namespace FASTER.core
         /// If at head, tries to remove item from hash chain
         /// </summary>
         /// <param name="key">Key of the record to be deleted.</param>
+        /// <param name="keyHash"></param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="fasterSession">Callback functions.</param>
@@ -38,14 +39,15 @@ namespace FASTER.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalDelete<Input, Output, Context, FasterSession>(ref Key key, ref Context userContext,
+        internal OperationStatus InternalDelete<Input, Output, Context, FasterSession>(ref Key key, long keyHash, ref Context userContext,
                             ref PendingContext<Input, Output, Context> pendingContext, FasterSession fasterSession, long lsn)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
             var latchDestination = LatchDestination.NormalProcessing;
 
-            OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
+            OperationStackContext<Key, Value> stackCtx = new(keyHash);
+            pendingContext.keyHash = keyHash;
 
             if (fasterSession.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -111,13 +113,12 @@ namespace FASTER.core
                         if (WriteDefaultOnDelete)
                             recordValue = default;
 
-                        // Try to update hash chain and completely elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
-                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && !fasterSession.IsManualLocking && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
+                        // Try to update hash chain to elide record iff previous address points to invalid address, to avoid re-enabling a prior version of this record.
+                        if (stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlog.BeginAddress)
                         {
                             // Ignore return value; this is a performance optimization to keep the hash table clean if we can, so if we fail it just means
-                            // the hashtable entry has already been updated by someone else.
-                            var address = (srcRecordInfo.PreviousAddress == Constants.kTempInvalidAddress) ? Constants.kInvalidAddress : srcRecordInfo.PreviousAddress;
-                            stackCtx.hei.TryCAS(address, tag: 0);
+                            // the hashtable entry has already been updated by someone else. Set the entry.word to zero.
+                            stackCtx.hei.TryCAS(Constants.kInvalidAddress, tag: 0);
                         }
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);

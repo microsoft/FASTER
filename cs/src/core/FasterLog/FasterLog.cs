@@ -2088,6 +2088,7 @@ namespace FASTER.core
             fixed (byte* bp = entryBody)
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryBody.Length, entryBody.Length);
             SetCommitRecordHeader(entryBody.Length, (byte*)physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
             // Return the commit tail
             return true;

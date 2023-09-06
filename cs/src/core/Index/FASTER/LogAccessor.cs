@@ -71,6 +71,11 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Maximum possible number of empty pages in Allocator
+        /// </summary>
+        public int MaxEmptyPageCount => allocator.MaxEmptyPageCount;
+
+        /// <summary>
         /// Set empty page count in allocator
         /// </summary>
         /// <param name="pageCount">New empty page count</param>

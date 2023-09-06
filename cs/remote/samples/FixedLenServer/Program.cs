@@ -39,7 +39,7 @@ namespace FasterFixedLenServer
                 builder.SetMinimumLevel(LogLevel.Error);
             });
 
-            using var server = new FixedLenServer<Key, Value, Input, Output, Functions>(opts.GetServerOptions(), () => new Functions(), lockingMode: LockingMode.Standard);
+            using var server = new FixedLenServer<Key, Value, Input, Output, Functions>(opts.GetServerOptions(), () => new Functions(), concurrencyControlMode: ConcurrencyControlMode.LockTable);
             server.Start();
             Console.WriteLine("Started server");
 
