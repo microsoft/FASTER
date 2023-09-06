@@ -77,12 +77,9 @@ namespace FASTER.benchmark
             if (!verifyOption(rumdPercents.Length == 4 && Options.RumdPercents.Sum() == 100 && !Options.RumdPercents.Any(x => x < 0), "rmud",
                     "Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] must be empty or must sum to 100 with no negative elements"))
                 return;
-            else
-            {
-                this.ReadPercent = rumdPercents[0];
-                this.UpsertPercent = this.ReadPercent + rumdPercents[1];
-                this.RmwPercent = this.UpsertPercent + rumdPercents[2];
-            }
+            this.ReadPercent = rumdPercents[0];
+            this.UpsertPercent = this.ReadPercent + rumdPercents[1];
+            this.RmwPercent = this.UpsertPercent + rumdPercents[2];
 
             this.InitCount = this.Options.UseSmallData ? 2500480 : 250000000;
             this.TxnCount = this.Options.UseSmallData ? 10000000 : 1000000000;

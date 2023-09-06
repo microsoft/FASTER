@@ -57,9 +57,9 @@ namespace FASTER.stress
             }
         }
 
-        public void Populate(int hashTableCacheLines, LogSettings logSettings, CheckpointSettings checkpointSettings)
+        public void Populate(int hashTableCacheLines, LogSettings logSettings, CheckpointSettings checkpointSettings, RevivificationSettings revivSettings)
         {
-            valueTester.Create(hashTableCacheLines, logSettings, checkpointSettings, new Comparer(testLoader));
+            valueTester.Create(hashTableCacheLines, logSettings, checkpointSettings, revivSettings, new Comparer(testLoader));
 
             for (int keyOrdinal = 0; keyOrdinal < testLoader.Options.KeyCount; ++keyOrdinal)
             {

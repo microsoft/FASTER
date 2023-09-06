@@ -5,9 +5,6 @@ using CommandLine;
 using FASTER.core;
 using NUnit.Framework;
 using System.Diagnostics;
-using System.Transactions;
-
-#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
 namespace FASTER.stress
 {
@@ -15,6 +12,9 @@ namespace FASTER.stress
     {
         internal const int MinDataLen = 8;
         internal readonly Options Options;
+
+        // RUMD percentages. Delete is not a percent; it will fire automatically if the others do not sum to 100, saving an 'if'.
+        internal readonly int ReadPercent, UpsertPercent, RmwPercent;
 
         internal readonly bool error;
 
@@ -98,16 +98,48 @@ namespace FASTER.stress
             if (!verifyOption(Options.LUCLockCount >= 0, "LUCPercent must be > 0"))
                 return;
 
-            if (!verifyOption(Options.ReadPercent >= 0 && Options.ReadPercent <= 100, "ReadPercent must be between 0 and 100"))
+            var rumdPercents = Options.RumdPercents.ToArray();  // Will be non-null because we specified a default
+            if (!verifyOption(rumdPercents.Length == 4 && Options.RumdPercents.Sum() == 100 && !Options.RumdPercents.Any(x => x < 0), 
+                    "Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] must be empty or must sum to 100 with no negative elements"))
                 return;
-            if (!verifyOption(Options.RMWPercent >= 0 && Options.RMWPercent <= 100, "RMWPercent must be between 0 and 100"))
-                return;
-            if (!verifyOption(Options.UpsertPercent >= 0 && Options.UpsertPercent <= 100, "UpsertPercent must be between 0 and 100"))
-                return;
-            if (!verifyOption(Options.DeletePercent >= 0 && Options.DeletePercent <= 100, "DeletePercent must be between 0 and 100"))
-                return;
-            if (!verifyOption(Options.ReadPercent + Options.RMWPercent + Options.UpsertPercent + Options.DeletePercent == 100, "Percentages for Read, RMW, Upsert, and Delete must total to 100"))
-                return;
+            this.ReadPercent = rumdPercents[0];
+            this.UpsertPercent = this.ReadPercent + rumdPercents[1];
+            this.RmwPercent = this.UpsertPercent + rumdPercents[2];
+
+            var revivBinRecordSizes = Options.RevivBinRecordSizes?.ToArray();
+            var revivBinRecordCounts = Options.RevivBinRecordCounts?.ToArray();
+            bool hasRecordSizes = revivBinRecordSizes?.Length > 0, hasRecordCounts = revivBinRecordCounts?.Length > 0;
+
+            if (hasRecordSizes)
+            {
+                if (hasRecordCounts && revivBinRecordCounts.Length > 1 && revivBinRecordCounts.Length != revivBinRecordSizes.Length)
+                    throw new Exception("Incompatible revivification record size and count cardinality.");
+                if (Options.UseRevivBinsPowerOf2)
+                    throw new Exception("Revivification cannot specify both record sizes and powerof2 bins.");
+                if (Options.RevivInChainOnly)
+                    throw new Exception("Revivification cannot specify both record sizes and in-chain-only.");
+            }
+            if (hasRecordCounts)
+            {
+                if (Options.UseRevivBinsPowerOf2)
+                    throw new Exception("Revivification cannot specify both record counts and powerof2 bins.");
+                if (!hasRecordSizes)
+                    throw new Exception("Revivification bin counts require bin sizes.");
+            }
+            if (Options.RevivBinBestFitScanLimit != 0)
+            {
+                if (!hasRecordSizes && !Options.UseRevivBinsPowerOf2)
+                    throw new Exception("Revivification cannot specify best fit scan limit without specifying bins.");
+                if (Options.RevivBinBestFitScanLimit < 0)
+                    throw new Exception("RevivBinBestFitScanLimi must be >= 0.");
+            }
+            if (Options.RevivMutablePercent != 0)
+            {
+                if (!hasRecordSizes && !Options.UseRevivBinsPowerOf2)
+                    throw new Exception("Revivification cannot specify mutable percent without specifying bins.");
+                if (Options.RevivMutablePercent < 0 || Options.RevivMutablePercent > 100)
+                    throw new Exception("RevivMutablePercent must be >= 0 and <= 100.");
+            }
 
             error = false;
 
@@ -125,7 +157,7 @@ namespace FASTER.stress
         internal bool UseCompact => this.Options.CompactIntervalSec > 0;
         internal bool UseLocks => this.Options.LUCLockCount > 0;
         internal bool UseReadCache => this.Options.ReadCache;
-        internal bool UseDelete => this.Options.DeletePercent > 0;
+        internal bool UseDelete => this.ReadPercent + this.UpsertPercent + this.RmwPercent < 100;
 
         internal bool HasObjects => this.Options.KeyType == DataType.String || this.Options.ValueType == DataType.String;
 
@@ -160,13 +192,13 @@ namespace FASTER.stress
         {
             // We've already guaranteed that the percentages are correctly distributed within 0-100.
             int rand = rng.Next(100);
-            int sel = Options.ReadPercent;
+            int sel = this.ReadPercent;
             if (rand < sel)
                 return OperationType.READ;
-            sel += Options.RMWPercent;
+            sel += this.RmwPercent;
             if (rand < sel)
                 return OperationType.RMW;
-            sel += Options.UpsertPercent;
+            sel += this.UpsertPercent;
             if (rand < sel)
                 return OperationType.UPSERT;
             return OperationType.DELETE;

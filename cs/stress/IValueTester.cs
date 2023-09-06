@@ -18,7 +18,7 @@ namespace FASTER.stress
 
     internal interface IValueTester<TKey> : IValueTester, IDisposable
     {
-        void Create(int hashTableCacheLines, LogSettings logSettings, CheckpointSettings checkpointSettings, IFasterEqualityComparer<TKey> comparer);
+        void Create(int hashTableCacheLines, LogSettings logSettings, CheckpointSettings checkpointSettings, RevivificationSettings revivSettings, IFasterEqualityComparer<TKey> comparer);
 
         void AddRecord(int keyOrdinal, ref TKey key);
 

@@ -9,7 +9,7 @@ namespace FASTER.stress
     {
         long GetAverageRecordSize();
 
-        void Populate(int hashTableCacheLines, LogSettings logSettings, CheckpointSettings checkpointSettings);
+        void Populate(int hashTableCacheLines, LogSettings logSettings, CheckpointSettings checkpointSettings, RevivificationSettings revivSettings);
 
         void Test();
         Task TestAsync();

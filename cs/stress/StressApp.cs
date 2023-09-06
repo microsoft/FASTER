@@ -47,7 +47,7 @@ namespace FASTER.stress
 
             // Create and populate the FasterKV instance: the KeyTester contains a ValueTester instance of the TKey/TValue types that "owns" the static FasterKV instance.
             Console.WriteLine($"Creating and populating FasterKV<{options.KeyType}, {options.ValueType}> with {options.KeyCount} records and {hashTableSize} hash table size");
-            tester.Populate(hashTableCacheLines, logSettings, checkpointSettings);
+            tester.Populate(hashTableCacheLines, logSettings, checkpointSettings, GetRevivificationSettings(options));
 
             long totalOps = (long)options.IterationCount * options.KeyCount * options.ThreadCount;
             Console.WriteLine($"Performing {options.IterationCount} iterations of {options.KeyCount} key operations over {options.ThreadCount} threads (total {totalOps})");
@@ -143,6 +143,50 @@ namespace FASTER.stress
                 if (logSettings.ReadCacheSettings.PageSizeBits < 1 || (1 << logSettings.ReadCacheSettings.PageSizeBits) < recordSize * 2)
                     throw new ApplicationException($"ReadCache PageSizeBits too small");
             }
+        }
+
+        private static RevivificationSettings GetRevivificationSettings(Options options)
+        {
+            RevivificationSettings revivSettings = default;
+            if (options.RevivInChainOnly)
+                revivSettings = RevivificationSettings.InChainOnly.Clone();
+            else if (options.UseRevivBinsPowerOf2)
+            {
+                revivSettings = RevivificationSettings.PowerOf2Bins.Clone();
+                revivSettings.SearchNextHigherBin = options.RevivBinSearchNextHighest;
+                revivSettings.MutablePercent = options.RevivMutablePercent;
+            }
+            else
+            {
+                var revivBinRecordSizes = options.RevivBinRecordSizes?.ToArray();
+                var revivBinRecordCounts = options.RevivBinRecordCounts?.ToArray();
+
+                if (revivBinRecordSizes?.Length > 0)
+                {
+                    revivSettings = new()
+                    {
+                        SearchNextHigherBin = options.RevivBinSearchNextHighest,
+                        FreeRecordBins = new RevivificationBin[revivBinRecordSizes.Length],
+                        MutablePercent = options.RevivMutablePercent
+                    };
+                    for (var ii = 0; ii < revivBinRecordSizes.Length; ++ii)
+                    {
+                        var recordCount = revivBinRecordCounts?.Length switch
+                        {
+                            0 => 128,
+                            1 => revivBinRecordCounts[0],
+                            _ => revivBinRecordCounts[ii]
+                        };
+                        revivSettings.FreeRecordBins[ii] = new()
+                        {
+                            RecordSize = revivBinRecordSizes[ii],
+                            NumberOfRecords = recordCount,
+                            BestFitScanLimit = options.RevivBinBestFitScanLimit
+                        };
+                    }
+                }
+            }
+            return revivSettings;
         }
     }
 }

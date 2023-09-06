@@ -32,10 +32,10 @@ namespace FASTER.stress
 
         public long GetAverageSize() => sizeof(int) + (testLoader.Options.ValueLength / (testLoader.UseRandom ? 2 : 1));
 
-        public void Create(int hashTableCacheLines, LogSettings logSettings, CheckpointSettings checkpointSettings, IFasterEqualityComparer<TKey> comparer)
+        public void Create(int hashTableCacheLines, LogSettings logSettings, CheckpointSettings checkpointSettings, RevivificationSettings revivSettings, IFasterEqualityComparer<TKey> comparer)
         {
             Assert.IsNull(fkv);
-            fkv = new FasterKV<TKey, SpanByte>(hashTableCacheLines, logSettings, checkpointSettings: checkpointSettings, comparer: comparer);
+            fkv = new FasterKV<TKey, SpanByte>(hashTableCacheLines, logSettings, checkpointSettings: checkpointSettings, revivificationSettings: revivSettings, comparer: comparer);
             PrepareTest();   // to create the sessions; this session will not be used in the actual test
             if (testLoader.Options.InitialEvict)
                 fkv.Log.FlushAndEvict(wait: true);
