@@ -274,8 +274,8 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool MakeTransition(VersionSchemeState expectedState, VersionSchemeState nextState)
         {
-            if (Interlocked.CompareExchange(ref state.Word, nextState.Word, expectedState.Word) !=
-                expectedState.Word) return false;
+            if (Interlocked.CompareExchange(ref state.Word, nextState.Word, expectedState.Word) != expectedState.Word) 
+                return false;
             Debug.WriteLine("Moved to {0}, {1}", nextState.Phase, nextState.Version);
             return true;
         }
@@ -358,28 +358,35 @@ namespace FASTER.core
 
             var intermediate = VersionSchemeState.MakeIntermediate(oldState);
             if (!MakeTransition(oldState, intermediate)) return;
+
             // Avoid upfront memory allocation by going to a function
             StepMachineHeavy(machineLocal, oldState, nextState);
-
-            // Ensure that state machine is able to make progress if this thread is the only active thread
-            if (!epoch.ThisInstanceProtected())
-            {
-                epoch.Resume();
-                epoch.Suspend();
-            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void StepMachineHeavy(VersionSchemeStateMachine machineLocal, VersionSchemeState old, VersionSchemeState next)
         {
-            epoch.BumpCurrentEpoch(() =>
+            // // Resume epoch to ensure that state machine is able to make progress
+            // if this thread is the only active thread. Also, StepMachineHeavy calls BumpCurrentEpoch, which requires a protected thread.
+            bool isProtected = epoch.ThisInstanceProtected();
+            if (!isProtected)
+                epoch.Resume();
+            try
             {
-                machineLocal.OnEnteringState(old, next);
-                var success = MakeTransition(VersionSchemeState.MakeIntermediate(old), next);
-                machineLocal.AfterEnteringState(next);
-                Debug.Assert(success);
-                TryStepStateMachine(machineLocal);
-            });
+                epoch.BumpCurrentEpoch(() =>
+                {
+                    machineLocal.OnEnteringState(old, next);
+                    var success = MakeTransition(VersionSchemeState.MakeIntermediate(old), next);
+                    machineLocal.AfterEnteringState(next);
+                    Debug.Assert(success);
+                    TryStepStateMachine(machineLocal);
+                });
+            }
+            finally
+            {
+                if (!isProtected)
+                    epoch.Suspend();
+            }
         }
 
         /// <summary>

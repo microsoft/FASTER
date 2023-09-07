@@ -116,27 +116,19 @@ namespace FASTER.core
 
             for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
             {
+                // Note: If reader starvation is encountered, consider rotating priority between reader and writer locks.
                 long expected_word = entry_word;
-                if ((expected_word & kSharedLatchBitMask) != kSharedLatchBitMask) // shared lock is not full
+                if ((expected_word & kExclusiveLatchBitMask) == 0) // not exclusively locked
                 {
-                    if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word + kSharedLatchIncrement, expected_word))
-                        break;
+                    if ((expected_word & kSharedLatchBitMask) != kSharedLatchBitMask) // shared lock is not full
+                    {
+                        if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word + kSharedLatchIncrement, expected_word))
+                            return true;
+                    }
                 }
                 if (--spinCount <= 0)
                     return false;
             }
-
-            // Wait for any writer to drain. Another session may hold the XLock on this bucket and need an epoch refresh to unlock, so limit this to avoid deadlock.
-            for (var ii = 0; ii < Constants.kMaxWriterLockDrainSpins; ++ii)
-            {
-                if ((entry_word & kExclusiveLatchBitMask) == 0)
-                    return true;
-                Thread.Yield();
-            }
-
-            // Release the shared-latch increment we added and return false so the caller will retry the operation.
-            Interlocked.Add(ref entry_word, -kSharedLatchIncrement);
-            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
