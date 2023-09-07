@@ -9,7 +9,7 @@ namespace FASTER.core
     public unsafe partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         /// <summary>
-        /// Copy a record to the tail of the log after caller has verifyied it does not exist within a specified range.
+        /// Copy a record to the tail of the log after caller has verified it does not exist within a specified range.
         /// </summary>
         /// <param name="fasterSession">Callback functions.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>

@@ -118,6 +118,7 @@ namespace FASTER.core
 
             for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
             {
+                // Note: If reader starvation is encountered, consider rotating priority between reader and writer locks.
                 long expected_word = entry_word;
                 if ((expected_word & kExclusiveLatchBitMask) == 0) // not exclusively locked
                 {

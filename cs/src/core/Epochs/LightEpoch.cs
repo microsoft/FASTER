@@ -226,7 +226,7 @@ namespace FASTER.core
         /// <returns></returns>
         internal long BumpCurrentEpoch()
         {
-            Debug.Assert(this.ThisInstanceProtected(), "BumpCurrentEpoch must be called on protected thread");
+            Debug.Assert(this.ThisInstanceProtected(), "BumpCurrentEpoch must be called on a protected thread");
             long nextEpoch = Interlocked.Increment(ref CurrentEpoch);
 
             if (drainCount > 0)
