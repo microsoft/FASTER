@@ -96,7 +96,7 @@ namespace FASTER.core
             // Try to CAS out of the hashtable and if successful, add it to the free list.
             Debug.Assert(srcRecordInfo.IsSealed, "Expected a Sealed record in TryTransferToFreeList");
 
-            if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
+            if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
             {
                 SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, fullRecordLength);
                 return FreeRecordPool.TryAdd(stackCtx.recSrc.LogicalAddress, fullRecordLength);

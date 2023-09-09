@@ -145,7 +145,7 @@ namespace FASTER.core
                                     // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
                                     srcRecordInfo.Unseal(makeValid: true);
                                 }
-                                else if (!isAdded)
+                                else if (!isAdded && this.unelideDeletedRecordsIfBinIsFull)
                                 {
                                     // The record was not added to the freelist, but was elided. See if we can put it back in as a normal Tombstone. Since we just
                                     // elided it and the elision criteria is that it is the only above-BeginAddress record in the chain, and elision sets the

@@ -130,15 +130,11 @@ namespace FASTER.stress
             {
                 if (!hasRecordSizes && !Options.UseRevivBinsPowerOf2)
                     throw new Exception("Revivification cannot specify best fit scan limit without specifying bins.");
-                if (Options.RevivBinBestFitScanLimit < 0)
-                    throw new Exception("RevivBinBestFitScanLimi must be >= 0.");
             }
-            if (Options.RevivMutablePercent != 0)
+            if (Options.RevivifiableFraction != RevivificationSettings.DefaultRevivifiableFraction)
             {
                 if (!hasRecordSizes && !Options.UseRevivBinsPowerOf2)
-                    throw new Exception("Revivification cannot specify mutable percent without specifying bins.");
-                if (Options.RevivMutablePercent < 0 || Options.RevivMutablePercent > 100)
-                    throw new Exception("RevivMutablePercent must be >= 0 and <= 100.");
+                    throw new Exception("RevivifiableFraction cannot be specified without specifying bins.");
             }
 
             error = false;

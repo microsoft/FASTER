@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Options;
+using System;
 using System.Collections.Generic;
 
 namespace FASTER.core
@@ -10,6 +12,11 @@ namespace FASTER.core
     /// </summary>
     public class RevivificationSettings
     {
+        /// <summary>
+        /// Default revivification to use the full mutable region; set <see cref="RevivifiableFraction"/> equal to <see cref="LogSettings.MutableFraction"/>.
+        /// </summary>
+        public const double DefaultRevivifiableFraction = -1;
+
         /// <summary>
         /// Indicates whether deleted record space should be reused.
         /// <list type="bullet">
@@ -24,10 +31,12 @@ namespace FASTER.core
         public bool EnableRevivification = true;
 
         /// <summary>
-        /// How much of the mutable address space, from the tail down, is eligible for revivification. This prevents revivifying records too close to
-        /// ReadOnly for the app's usage pattern--it may be important for recent records to remain near the tail. Default is to use the full mutable region.
+        /// Similar to <see cref="LogSettings.MutableFraction"/>, which this number must be &lt;= to, this is how much of the in-memory address space space, 
+        /// from the tail down, is eligible for revivification. This prevents revivifying records too close to ReadOnly for the app's usage pattern--it
+        /// may be important for recent records to remain near the tail. Default is to use the full mutable region. If this is -1, it is set equal to
+        /// <see cref="LogSettings.MutableFraction"/>.
         /// </summary>
-        public int MutablePercent = 100;
+        public double RevivifiableFraction = DefaultRevivifiableFraction;
 
         /// <summary>
         /// Bin definitions for the free list (in addition to any in the hash chains). These must be ordered by <see cref="RevivificationBin.RecordSize"/>.
@@ -43,6 +52,14 @@ namespace FASTER.core
         /// By default, when looking for FreeRecords we search only the bin for the specified size. This allows searching the next-highest bin as well.
         /// </summary>
         public bool SearchNextHigherBin;
+
+        /// <summary>
+        /// Deleted records that are to be added to a RevivificationBin are elided from the hash chain. If the bin is full, this option controls whether the
+        /// record is restored (if possible) to the hash chain. This preserves them as in-chain revivifiable records, at the potential cost of having the record
+        /// evicted to disk while part of the hash chain, and thus having to do an I/O only to find that the record is deleted and thus potentially unnecessary.
+        /// For applications that add and delete the same keys repeatedly, this option should be set true if the FreeList is used.
+        /// </summary>
+        public bool UnelideDeletedRecordsIfBinIsFull = false;
 
         /// <summary>
         /// Use power-of-2 bins with a single oversize bin.
@@ -73,12 +90,19 @@ namespace FASTER.core
         /// </summary>
         public static RevivificationSettings None { get; } = new() { EnableRevivification = false };
 
-        internal void Verify(bool isFixedRecordLength)
+        internal void Verify(bool isFixedRecordLength, double mutableFraction)
         {
             if (!EnableRevivification || FreeRecordBins?.Length == 0)
                 return;
             if (isFixedRecordLength && FreeRecordBins?.Length > 1)
                 throw new FasterException($"Only 1 bin may be specified with fixed-length datatypes (blittable or object)");
+            if (RevivifiableFraction != DefaultRevivifiableFraction)
+            {
+                if (RevivifiableFraction <= 0)
+                    throw new FasterException($"RevivifiableFraction cannot be <= zero (unless it is {DefaultRevivifiableFraction})");
+                if (RevivifiableFraction > mutableFraction)
+                    throw new FasterException($"RevivifiableFraction ({RevivifiableFraction}) must be <= to LogSettings.MutableFraction ({mutableFraction})");
+            }
             if (FreeRecordBins is not null)
             { 
                 foreach (var bin in FreeRecordBins)
@@ -94,7 +118,7 @@ namespace FASTER.core
             var settings = new RevivificationSettings()
             {
                 EnableRevivification = this.EnableRevivification,
-                MutablePercent = this.MutablePercent,
+                RevivifiableFraction = this.RevivifiableFraction,
                 SearchNextHigherBin = this.SearchNextHigherBin
             };
             if (this.FreeRecordBins is not null)
@@ -107,7 +131,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public override string ToString() 
-            => $"enabled {EnableRevivification}, mutable% {MutablePercent}, #bins {FreeRecordBins?.Length}, searchNextBin {SearchNextHigherBin}";
+            => $"enabled {EnableRevivification}, mutable% {RevivifiableFraction}, #bins {FreeRecordBins?.Length}, searchNextBin {SearchNextHigherBin}";
     }
 
     /// <summary>
@@ -184,6 +208,8 @@ namespace FASTER.core
                 throw new FasterException($"Invalid RecordSize {RecordSize}; must be >= {MinRecordSize} and <= {MaxRecordSize}");
             if (NumberOfRecords < MinRecordsPerBin)
                 throw new FasterException($"Invalid NumberOfRecords {NumberOfRecords}; must be > {MinRecordsPerBin}");
+            if (BestFitScanLimit < 0)
+                throw new Exception("BestFitScanLimit must be >= 0.");
         }
 
         /// <inheritdoc/>

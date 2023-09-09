@@ -163,10 +163,10 @@ namespace FASTER.core
                 return true;
             }
 
-            if (this.Address < minAddress)
+            if (this.Address < fkv.GetMinRevivifiableAddress())
                 SetEmpty();
             else
-                this.addedEpoch = oldRecord.addedEpoch;    // Restore for the next caller to try
+                this.addedEpoch = oldRecord.addedEpoch;    // Address is still valid; restore epoch for the next caller to try
             return false;
         }
 
@@ -498,7 +498,6 @@ namespace FASTER.core
         {
             this.fkv = fkv;
             this.IsFixedLength = fixedRecordLength > 0;
-            settings.Verify(this.IsFixedLength);
 
             bumpEpochWorker = new(this);
 
@@ -565,7 +564,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAdd(long logicalAddress, int size)
         {
-            var minAddress = fkv.GetMinRevivificationAddress();
+            var minAddress = fkv.GetMinRevivifiableAddress();
             int binIndex = 0;
             if (logicalAddress < minAddress || (!this.IsFixedLength && !GetBinIndex(size, out binIndex)))
                 return false;
@@ -579,7 +578,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAdd(long logicalAddress, long physicalAddress, int allocatedSize)
         {
-            var minAddress = fkv.GetMinRevivificationAddress();
+            var minAddress = fkv.GetMinRevivifiableAddress();
             if (logicalAddress < minAddress)
                 return false;
             var recordInfo = fkv.hlog.GetInfo(physicalAddress);
@@ -591,7 +590,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryTake(int recordSize, long minAddress, out long address)
         {
-            var minMutableAddress = fkv.GetMinRevivificationAddress();
+            var minMutableAddress = fkv.GetMinRevivifiableAddress();
             if (minAddress < minMutableAddress)
                 minAddress = minMutableAddress;
 

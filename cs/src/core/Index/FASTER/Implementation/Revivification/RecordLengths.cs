@@ -12,34 +12,36 @@ namespace FASTER.core
     {
         private bool IsFixedLengthReviv => valueLengthStruct is null;
         private IVariableLengthStruct<Value> valueLengthStruct;
-        internal VariableLengthBlittableAllocator<Key, Value> varLenAllocator;
+        internal bool unelideDeletedRecordsIfBinIsFull;
 
         // This has to be here instead of in the FreeRecordPool because it's also used for in-chain revivification and the FreeRecordPool may be null.
-        internal double mutableRevivificationMultiplier;
+        internal double revivifiableFraction;
 
-        private bool InitializeRevivification(RevivificationSettings settings)
+        private bool InitializeRevivification(RevivificationSettings settings, LogSettings logSettings)
         {
             // Set these first in case revivification is not enabled; they still tell us not to expect fixed-length.
             valueLengthStruct = (this.hlog as VariableLengthBlittableAllocator<Key, Value>)?.ValueLength;
 
-            this.mutableRevivificationMultiplier = settings is null ? 1.0 : settings.MutablePercent / 100.0;
+            this.revivifiableFraction = settings is null || settings.RevivifiableFraction == RevivificationSettings.DefaultRevivifiableFraction
+                ? logSettings.MutableFraction 
+                : settings.RevivifiableFraction;
 
             if (settings is null) 
                 return false;
-            settings.Verify(IsFixedLengthReviv);
+            settings.Verify(IsFixedLengthReviv, logSettings.MutableFraction);
             if (!settings.EnableRevivification)
                 return false;
             if (settings.FreeRecordBins?.Length > 0)
                 this.FreeRecordPool = new FreeRecordPool<Key, Value>(this, settings, IsFixedLengthReviv ? hlog.GetAverageRecordSize() : -1);
+            this.unelideDeletedRecordsIfBinIsFull = settings.UnelideDeletedRecordsIfBinIsFull;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetMinRevivificationAddress()
+        internal long GetMinRevivifiableAddress()
         {
-            var readOnlyAddress = hlog.ReadOnlyAddress;
             var tailAddress = hlog.GetTailAddress();
-            return tailAddress - (long)((tailAddress - readOnlyAddress) * this.mutableRevivificationMultiplier);
+            return tailAddress - (long)((tailAddress - hlog.HeadAddress) * this.revivifiableFraction);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

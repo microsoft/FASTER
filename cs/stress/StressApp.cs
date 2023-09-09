@@ -154,7 +154,7 @@ namespace FASTER.stress
             {
                 revivSettings = RevivificationSettings.PowerOf2Bins.Clone();
                 revivSettings.SearchNextHigherBin = options.RevivBinSearchNextHighest;
-                revivSettings.MutablePercent = options.RevivMutablePercent;
+                revivSettings.RevivifiableFraction = options.RevivifiableFraction;
             }
             else
             {
@@ -167,7 +167,7 @@ namespace FASTER.stress
                     {
                         SearchNextHigherBin = options.RevivBinSearchNextHighest,
                         FreeRecordBins = new RevivificationBin[revivBinRecordSizes.Length],
-                        MutablePercent = options.RevivMutablePercent
+                        RevivifiableFraction = options.RevivifiableFraction
                     };
                     for (var ii = 0; ii < revivBinRecordSizes.Length; ++ii)
                     {

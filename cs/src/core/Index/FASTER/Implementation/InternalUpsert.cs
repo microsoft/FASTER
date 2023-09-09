@@ -111,7 +111,7 @@ namespace FASTER.core
                     if (srcRecordInfo.Tombstone)
                     {
                         // This is safe to revivify even if the record's PreviousAddress points to a valid record, because it is revivified for the same key.
-                        if (!this.EnableRevivification || (stackCtx.recSrc.LogicalAddress < this.GetMinRevivificationAddress()))
+                        if (!this.EnableRevivification || (stackCtx.recSrc.LogicalAddress < this.GetMinRevivifiableAddress()))
                             goto CreateNewRecord;
 
                         // Try in-place revivification of the record.
@@ -421,7 +421,7 @@ namespace FASTER.core
                     // Try to transfer this to the freelist. We need to re-get the old record's length because rmwInfo has the new record's info.
                     // Ignore the return value; if elision fails, it will remain in the tag chain, Sealed; if freelist-add fails, it is invalidated.
                     var oldRecordFullLength = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo).fullRecordLength;
-                    TryElideAndTransferToFreeList(ref stackCtx, ref srcRecordInfo, oldRecordFullLength);
+                    TryTransferToFreeList(ref stackCtx, ref srcRecordInfo, oldRecordFullLength);
                 }
 
                 stackCtx.ClearNewRecord();

@@ -135,9 +135,9 @@ namespace FASTER.stress
                        "                                 Cannot be used with reviv-bins-powerof2")]
         public IEnumerable<int> RevivBinRecordCounts { get; set; }
 
-        [Option("reviv-mutable%", Separator = ',', Required = false, Default = 100,
-            HelpText = $"#: Percentage of in-memory mutable space, from the highest log address down, that is eligible for revivification")]
-        public int RevivMutablePercent { get; set; }
+        [Option("reviv-fraction", Separator = ',', Required = false, Default = RevivificationSettings.DefaultRevivifiableFraction,
+            HelpText = $"#: Percentage of in-memory log space, from the highest log address down, that is eligible for revivification")]
+        public int RevivifiableFraction { get; set; }
 
         [Option("reviv-bins-powerof2", Required = false, Default = false,
             HelpText = "A shortcut to specify revivification with power-of-2-sized bins." +

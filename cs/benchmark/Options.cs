@@ -69,9 +69,9 @@ namespace FASTER.benchmark
                        "    # (one value): All bins have this number of records, else error")]
         public int RevivBinRecordCount { get; set; }
 
-        [Option("reviv-mutable%", Separator = ',', Required = false, Default = 100,
-            HelpText = "Percentage of mutable region that is eligible for revivification")]
-        public int RevivMutablePercent { get; set; }
+        [Option("reviv-mutable%", Separator = ',', Required = false, Default = RevivificationSettings.DefaultRevivifiableFraction,
+            HelpText = "Percentage of in-memory region that is eligible for revivification")]
+        public double RevivifiableFraction { get; set; }
 
         [Option("synth", Required = false, Default = false,
             HelpText = "Use synthetic data")]
@@ -123,7 +123,7 @@ namespace FASTER.benchmark
         {
             static string boolStr(bool value) => value ? "y" : "n";
             return $"d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
-                        + $" revivmutable% {RevivMutablePercent}; t: {ThreadCount}; z: {ConcurrencyControlMode}; i: {IterationCount}; hp: {HashPacking}; epoch-refresh {EpochRefreshOpCount};"
+                        + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; z: {ConcurrencyControlMode}; i: {IterationCount}; hp: {HashPacking}; epoch-refresh {EpochRefreshOpCount};"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(this.UseSyntheticData)}; safectx: {boolStr(this.UseSafeContext)};"
                         + $" chkptms: {this.PeriodicCheckpointMilliseconds}; chkpttype: {(this.PeriodicCheckpointMilliseconds > 0 ? this.PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(this.PeriodicCheckpointTryIncremental)}";

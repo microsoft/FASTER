@@ -76,14 +76,17 @@ namespace FASTER.benchmark
             {
                 RevivificationLevel.None => default,
                 RevivificationLevel.Chain => new RevivificationSettings(),
-                RevivificationLevel.Full => RevivificationSettings.DefaultFixedLength,
+                RevivificationLevel.Full => RevivificationSettings.DefaultFixedLength.Clone(),
                 _ => throw new ApplicationException("Invalid RevivificationLevel")
             };
 
             if (testLoader.Options.RevivificationLevel == RevivificationLevel.Full)
                 revivificationSettings.FreeRecordBins[0].NumberOfRecords = testLoader.Options.RevivBinRecordCount;
             if (revivificationSettings is not null)
-                revivificationSettings.MutablePercent = testLoader.Options.RevivMutablePercent;
+            {
+                revivificationSettings.RevivifiableFraction = testLoader.Options.RevivifiableFraction;
+                revivificationSettings.UnelideDeletedRecordsIfBinIsFull = true;
+            }
 
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 

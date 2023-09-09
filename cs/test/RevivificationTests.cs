@@ -10,6 +10,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using static FASTER.core.Utility;
+using static FASTER.test.Revivification.RevivificationVarLenTests;
 using static FASTER.test.TestUtils;
 
 namespace FASTER.test.Revivification
@@ -20,10 +21,21 @@ namespace FASTER.test.Revivification
 
     public enum RevivificationEnabled { Reviv, NoReviv }
 
-    public enum MutablePercent { Mutable50 = 50 }
+    public enum RevivifiableFraction { Half }
+
+    public enum RecordElision { Elide, NoElide }
 
     static class RevivificationTestUtils
     {
+        internal const double HalfOfMutableFraction = 0.45;   // Half of the default LogSettings.MutableFraction
+
+        internal static double GetRevivifiableFraction(RevivifiableFraction frac) 
+            => frac switch
+            {
+                RevivifiableFraction.Half => HalfOfMutableFraction,
+                _ => throw new InvalidOperationException($"Invalid RevivifiableFraction enum value {frac}")
+            };
+
         internal static RMWInfo CopyToRMWInfo(ref UpsertInfo upsertInfo)
             => new()
             {
@@ -44,7 +56,7 @@ namespace FASTER.test.Revivification
             return temp;
         }
 
-        internal const int DefaultSafeWaitTimeout = BumpEpochWorker.DefaultBumpIntervalMs * 2;
+        internal const int DefaultSafeWaitTimeout = BumpEpochWorker.DefaultBumpIntervalMs * 4;
 
         internal static FreeRecordPool<TKey, TValue> CreateSingleBinFreeRecordPool<TKey, TValue>(FasterKV<TKey, TValue> fkv, RevivificationBin binDef, int fixedRecordLength = 0)
             => new (fkv, new RevivificationSettings() { FreeRecordBins = new[] { binDef } }, fixedRecordLength);
@@ -132,6 +144,12 @@ namespace FASTER.test.Revivification
             var recordInfo = fkv.hlog.GetInfo(fkv.hlog.GetPhysicalAddress(stackCtx.hei.Address));
             Assert.Less(recordInfo.PreviousAddress, fkv.hlog.BeginAddress, "AssertElidable: expected elidable key");
         }
+
+        internal static int GetRevivifiableRecordCount<TKey, TValue>(FasterKV<TKey, TValue> fkv, int numRecords) 
+            => (int)(numRecords * fkv.revivifiableFraction);
+
+        internal static int GetMinRevivifiableKey<TKey, TValue>(FasterKV<TKey, TValue> fkv, int numRecords)
+            => numRecords - GetRevivifiableRecordCount(fkv, numRecords);
     }
 
     internal readonly struct RevivificationSpanByteComparer : IFasterEqualityComparer<SpanByte>
@@ -184,7 +202,8 @@ namespace FASTER.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             var concurrencyControlMode = ConcurrencyControlMode.LockTable;
-            MutablePercent? mutablePercent = default;
+            double? revivifiableFraction = default;
+            RecordElision? recordElision = default;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ConcurrencyControlMode ccm)
@@ -192,17 +211,24 @@ namespace FASTER.test.Revivification
                     concurrencyControlMode = ccm;
                     continue;
                 }
-                if (arg is MutablePercent mp)
+                if (arg is RevivifiableFraction frac)
                 {
-                    mutablePercent = mp;
+                    revivifiableFraction = RevivificationTestUtils.GetRevivifiableFraction(frac);
+                    continue;
+                }
+                if (arg is RecordElision re)
+                {
+                    recordElision = re;
                     continue;
                 }
             }
 
             var revivificationSettings = RevivificationSettings.DefaultFixedLength.Clone();
-            if (mutablePercent.HasValue)
-                revivificationSettings.MutablePercent = (int)mutablePercent.Value;
-            fkv = new FasterKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
+            if (revivifiableFraction.HasValue)
+                revivificationSettings.RevivifiableFraction = revivifiableFraction.Value;
+            if (recordElision.HasValue)
+                revivificationSettings.UnelideDeletedRecordsIfBinIsFull = recordElision.Value == RecordElision.NoElide;
+            fkv = new FasterKV<int, int>(1L << 25, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
                                             concurrencyControlMode: concurrencyControlMode, revivificationSettings: revivificationSettings);
             functions = new RevivificationFixedLenFunctions();
             session = fkv.For(functions).NewSession<RevivificationFixedLenFunctions>();
@@ -241,7 +267,7 @@ namespace FASTER.test.Revivification
             if (stayInChain)
                 RevivificationTestUtils.SwapFreeRecordPool(fkv, default);
 
-            var deleteKey = 42;
+            var deleteKey = RevivificationTestUtils.GetMinRevivifiableKey(fkv, numRecords);
             if (!stayInChain)
                 RevivificationTestUtils.AssertElidable(fkv, deleteKey);
             var tailAddress = fkv.Log.TailAddress;
@@ -271,16 +297,58 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "mutableRange is used by Setup")]
-        public void SimpleMinAddressAddTest([Values] MutablePercent mutableRange)
+        public void UnelideTest([Values] RecordElision elision, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
 
-            // This should not go to FreeList because it's below the MutablePercent
+            var tailAddress = fkv.Log.TailAddress;
+
+            // First delete all keys. This will overflow the bin.
+            for (var key = 0; key < numRecords; ++key)
+            {
+                session.Delete(key);
+                Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
+            }
+
+            Assert.AreEqual(RevivificationBin.DefaultRecordsPerBin, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
+            RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
+
+            // Now re-add the keys.
+            for (var key = 0; key < numRecords; ++key)
+            {
+                var value = key + valueMult;
+                if (updateOp == UpdateOp.Upsert)
+                    session.Upsert(key, value);
+                else if (updateOp == UpdateOp.RMW)
+                    session.RMW(key, value);
+            }
+
+            // Now re-add the keys. For the elision case, we should see tailAddress grow sharply as only the records in the bin are available
+            // for revivification. For In-Chain, we will revivify records that were unelided after the bin overflowed. But we have some records
+            // ineligible for revivification due to revivifiableFraction.
+            var recordSize = RecordInfo.GetLength() + sizeof(int) * 2;
+            var numIneligibleRecords = numRecords - RevivificationTestUtils.GetRevivifiableRecordCount(fkv, numRecords);
+            var noElisionExpectedTailAddress = tailAddress + numIneligibleRecords * recordSize;
+
+            if (elision == RecordElision.NoElide)
+                Assert.AreEqual(noElisionExpectedTailAddress, fkv.Log.TailAddress, "Expected tail address not to grow (records were revivified)");
+            else
+                Assert.Less(noElisionExpectedTailAddress, fkv.Log.TailAddress, "Expected tail address to grow (records were not revivified)");
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "revivifiableFraction is used by Setup")]
+        public void SimpleMinAddressAddTest([Values] RevivifiableFraction revivifiableFraction)
+        {
+            Populate();
+
+            // This should not go to FreeList because it's below the RevivifiableFraction
             Assert.IsTrue(session.Delete(2).Found);
             Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
 
-            // This should go to FreeList because it's above the MutablePercent
+            // This should go to FreeList because it's above the RevivifiableFraction
             Assert.IsTrue(session.Delete(numRecords - 1).Found);
             Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
         }
@@ -288,12 +356,12 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "mutableRange is used by Setup")]
-        public void SimpleMinAddressTakeTest([Values] MutablePercent mutableRange, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "revivifiableFraction is used by Setup")]
+        public void SimpleMinAddressTakeTest([Values] RevivifiableFraction revivifiableFraction, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
 
-            // This should go to FreeList because it's above the MutablePercent
+            // This should go to FreeList because it's above the RevivifiableFraction
             Assert.IsTrue(session.Delete(numRecords - 1).Found);
             Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool));
             RevivificationTestUtils.WaitForSafeRecords(fkv, want: true);
@@ -301,7 +369,7 @@ namespace FASTER.test.Revivification
             // Detach the pool temporarily so the records aren't revivified by the next insertions.
             FreeRecordPool<int, int> pool = RevivificationTestUtils.SwapFreeRecordPool(fkv, default);
 
-            // Now add a bunch of records to drop the FreeListed address below the MutablePercent
+            // Now add a bunch of records to drop the FreeListed address below the RevivifiableFraction
             int maxRecord = numRecords * 2;
             for (int key = numRecords; key < maxRecord; key++)
             {
@@ -1079,7 +1147,8 @@ namespace FASTER.test.Revivification
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = session.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
-                deletedSlots.Add((byte)ii);
+                if (ii > RevivificationTestUtils.GetMinRevivifiableKey(fkv, numRecords))
+                    deletedSlots.Add((byte)ii);
             }
 
             // For this test we're still limiting to byte repetition
@@ -1136,7 +1205,7 @@ namespace FASTER.test.Revivification
                 Assert.IsTrue(status.Found, status.ToString());
             }
             Assert.AreEqual(tailAddress, fkv.Log.TailAddress);
-            Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"Expected numRecords ({numRecords}) free records");
+            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(fkv, numRecords), RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"Expected numRecords ({numRecords}) free records");
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromFixedSpan(inputVec);
@@ -1153,6 +1222,7 @@ namespace FASTER.test.Revivification
             RevivificationTestUtils.WaitForSafeLatestAddedEpoch(fkv, recordSize);
 
             // Revivify
+            var revivifiableKeyCount = RevivificationTestUtils.GetRevivifiableRecordCount(fkv, numRecords);
             for (var ii = 0; ii < numRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
@@ -1163,7 +1233,13 @@ namespace FASTER.test.Revivification
                     session.Upsert(ref key, ref input, ref input, ref output);
                 else if (updateOp == UpdateOp.RMW)
                     session.RMW(ref key, ref input);
-                Assert.AreEqual(tailAddress, fkv.Log.TailAddress, $"unexpected new record for key {ii}");
+                if (ii < revivifiableKeyCount)
+                    Assert.AreEqual(tailAddress, fkv.Log.TailAddress, $"unexpected new record for key {ii}");
+                else
+                    Assert.Less(tailAddress, fkv.Log.TailAddress, $"unexpected revivified record for key {ii}");
+
+                var status = session.Read(ref key, ref output);
+                Assert.IsTrue(status.Found, $"Expected to find key {ii}; status == {status}");
             }
 
             Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "expected no free records remaining");
@@ -1174,7 +1250,7 @@ namespace FASTER.test.Revivification
             {
                 keyVec.Fill((byte)ii);
                 var status = session.Read(ref key, ref output);
-                Assert.IsTrue(status.Found, status.ToString());
+                Assert.IsTrue(status.Found, $"Expected to find key {ii}; status == {status}");
             }
         }
 
@@ -1199,7 +1275,7 @@ namespace FASTER.test.Revivification
                 var status = session.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
             }
-            Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"Expected numRecords ({numRecords}) free records");
+            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(fkv, numRecords), RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"Expected numRecords ({numRecords}) free records");
 
             this.fkv.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).GetAwaiter().GetResult();
         }
@@ -1227,7 +1303,7 @@ namespace FASTER.test.Revivification
                 var status = session.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
             }
-            Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"Expected numRecords ({numRecords}) free records");
+            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(fkv, numRecords), RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"Expected numRecords ({numRecords}) free records");
 
             using var iterator = this.session.Iterate();
             while (iterator.GetNext(out _))
@@ -1306,13 +1382,15 @@ namespace FASTER.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        //[Repeat(3000)]
         public unsafe void LiveBinWrappingTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] WaitMode waitMode, [Values] DeleteDest deleteDest)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
             Populate();
 
             // Note: this test assumes no collisions (every delete goes to the FreeList)
-
-            long tailAddress = fkv.Log.TailAddress;
 
             Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromFixedSpan(keyVec);
@@ -1326,62 +1404,66 @@ namespace FASTER.test.Revivification
             Assert.AreEqual(3, binIndex);
             var bin = fkv.FreeRecordPool.bins[binIndex];
 
-            // Pick some number that 
+            // We should have a recordSize > min size record in the bin, to test wrapping.
             Assert.AreNotEqual(0, bin.GetSegmentStart(recordSize), "SegmentStart should not be 0, to test wrapping");
 
-            int maxIter = waitMode == WaitMode.Wait ? 5 : 100;
-            for (var iter = 0; iter < maxIter; ++iter)
+            // Delete 
+            functions.expectedInputLength = InitialLength;
+            for (var ii = 0; ii < numRecords; ++ii)
             {
-                // Delete 
-                functions.expectedInputLength = InitialLength;
-                for (var ii = 0; ii < numRecords; ++ii)
+                keyVec.Fill((byte)ii);
+                inputVec.Fill((byte)ii);
+
+                functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+                var status = session.Delete(ref key);
+                Assert.IsTrue(status.Found, $"{status} for key {ii}");
+                //Assert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"mismatched free record count for key {ii}, pt 1");
+            }
+
+            if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait)
+            { 
+                var actualNumRecords = RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool);
+                Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(fkv, numRecords), actualNumRecords, $"mismatched free record count");
+                RevivificationTestUtils.WaitForSafeLatestAddedEpoch(fkv, recordSize);
+            }
+
+            // Revivify
+            functions.expectedInputLength = InitialLength;
+            functions.expectedSingleDestLength = InitialLength;
+            functions.expectedConcurrentDestLength = InitialLength;
+            for (var ii = 0; ii < numRecords; ++ii)
+            {
+                keyVec.Fill((byte)ii);
+                inputVec.Fill((byte)ii);
+
+                functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+                long tailAddress = fkv.Log.TailAddress;
+
+                SpanByteAndMemory output = new();
+                if (updateOp == UpdateOp.Upsert)
+                    session.Upsert(ref key, ref input, ref input, ref output);
+                else if (updateOp == UpdateOp.RMW)
+                    session.RMW(ref key, ref input);
+                output.Memory?.Dispose();
+
+                if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait && tailAddress != fkv.Log.TailAddress)
                 {
-                    keyVec.Fill((byte)ii);
-                    inputVec.Fill((byte)ii);
-
-                    functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(iter == 0 ? InitialLength : InitialLength));
-                    var status = session.Delete(ref key);
-                    Assert.IsTrue(status.Found, $"{status} for key {ii}");
-                    //Assert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), $"mismatched free record count for key {ii}, pt 1");
-                }
-
-                if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait)
-                { 
-                    Assert.AreEqual(numRecords, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "mismatched free record count");
-                    RevivificationTestUtils.WaitForSafeLatestAddedEpoch(fkv, recordSize);
-                }
-
-                // Revivify
-                functions.expectedInputLength = InitialLength;
-                functions.expectedSingleDestLength = InitialLength;
-                functions.expectedConcurrentDestLength = InitialLength;
-                for (var ii = 0; ii < numRecords; ++ii)
-                {
-                    keyVec.Fill((byte)ii);
-                    inputVec.Fill((byte)ii);
-
-                    functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-
-                    SpanByteAndMemory output = new();
-                    if (updateOp == UpdateOp.Upsert)
-                        session.Upsert(ref key, ref input, ref input, ref output);
-                    else if (updateOp == UpdateOp.RMW)
-                        session.RMW(ref key, ref input);
-                    output.Memory?.Dispose();
-
-                    if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait && tailAddress != fkv.Log.TailAddress)
+                    var expectedReviv = ii < RevivificationTestUtils.GetRevivifiableRecordCount(fkv, numRecords);
+                    if (expectedReviv != (tailAddress == fkv.Log.TailAddress))
                     {
                         var freeRecs = RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool);
-                        Debugger.Launch();
-                        Assert.AreEqual(tailAddress, fkv.Log.TailAddress, $"failed to revivify record for key {ii} iter {iter}, freeRecs {freeRecs}");
+                        if (expectedReviv)
+                            Assert.AreEqual(tailAddress, fkv.Log.TailAddress, $"failed to revivify record for key {ii}, freeRecs {freeRecs}");
+                        else
+                            Assert.Less(tailAddress, fkv.Log.TailAddress, $"Unexpectedly revivified record for key {ii}, freeRecs {freeRecs}");
                     }
                 }
+            }
 
-                if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait)
-                { 
-                    Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "expected no free records remaining");
-                    RevivificationTestUtils.WaitForSafeRecords(fkv, want: false);
-                }
+            if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait)
+            { 
+                Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(fkv.FreeRecordPool), "expected no free records remaining");
+                RevivificationTestUtils.WaitForSafeRecords(fkv, want: false);
             }
         }
 
@@ -1625,7 +1707,7 @@ namespace FASTER.test.Revivification
         {
             Populate();
 
-            var deleteKey = 42;
+            var deleteKey = RevivificationTestUtils.GetMinRevivifiableKey(fkv, numRecords);
             var tailAddress = fkv.Log.TailAddress;
             session.Delete(new MyKey { key = deleteKey });
             Assert.AreEqual(tailAddress, fkv.Log.TailAddress);

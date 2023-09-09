@@ -24,7 +24,8 @@ This struct indicates whether revivification is to be active:
 - `EnableRevivification`: If this is true, then at least in-chain revivification is done; otherwise, record revivification is not done (but Retry reuse still is).
 - `FreeListBins`: If this array of `RevivificationBin` is non-null, then revivification will include a freelist of records, as defined below.
 - `SearchNextHigherBin`: By default, when looking for FreeRecords we search only the bin for the specified size. If this is set, then if there are no records in the initial bin, then next-higher bin is search as well.
-- `MutablePercent`: It may be desirable not to use a record that is too close to the `ReadOnlyAddress`; some apps will prefer that a newly-inserted record remain in the mutable region as long as possible. `MutablePercent` limits the eligible range of revivification to be within this percent of the `TailAddress`; for example, if `MutablePercent` is 20, TailAddress is 100,000, and ReadOnlyAddress is 50,000, then the .2 x 50,000 = 10,000 records closest to the tail will be eligible for reuse. This is done on an address-space basis, not record count, so the actual number of records that can be revivified will vary for variable-length records.
+- `RevivifiableFraction`: It may be desirable not to use a record that is too close to the `ReadOnlyAddress`; some apps will prefer that a newly-inserted record remain in the mutable region as long as possible. `RevivifiableFraction` limits the eligible range of revivification to be within this fraction of memory immediately belowthe `TailAddress`; it has the same semantics as `LogSettings.MutablePercent`, and cannot be greater than that. For example, if `RevivifiableFraction` is .2, TailAddress is 100,000, and HeadAddress is 50,000, then the .2 x 50,000 = 10,000 records closest to the tail will be eligible for reuse. This is done on an address-space basis, not record count, so the actual number of records that can be revivified will vary for variable-length records.
+- `UnelideDeletedRecordsIfBinIsFull` Deleted records that are to be added to a RevivificationBin are elided from the hash chain. If the bin is full, this option controls whether the record is restored (if possible) to the hash chain. This preserves them as in-chain revivifiable records, at the potential cost of having the record evicted to disk while part of the hash chain, and thus having to do an I/O only to find that the record is deleted and thus potentially unnecessary. For applications that add and delete the same keys repeatedly, this option should be set true if the FreeList is used.
 
 ## Maintaining Extra Value Length
 Because variable-length record Values can grow and shrink, we must store the actual length of the value in addition to the Value data. Fixed-length datatypes (including objects) do not need to store this, because their Value length does not change.
@@ -70,11 +71,11 @@ If the FreeList is not active, all Tombstoned records are left in the hash chain
 In-Chain revivification is active if `RevivificationSettings.EnableRevivification` is true. It functions as follows:
 - `Delete()` is done in the normal way; the Tombstone is set. If the Tombstoned record is at the tail of the tag chain (i.e. is the record in the `HashBucketEntry`) and the FreeList is enabled, then it will be moved to the FreeList. Otherwise (or if this move fails), it remains in the tag chain.
 - `Upsert()` and `RMW()` will try to revivify a Tombstoned record:
-    - If doing `Ephemeral` locking, we Seal the record so no other thread can access it; they will see the Seal and retry (so will not insert another record while this is going on).
+    - If doing `RecordIsolation` concurrency control, we Seal the record so no other thread can access it; they will see the Seal and retry (so will not insert another record while this is going on).
     - If the record is large enough, we Reinitialize its Value by:
         - Clearing the extra value length and filler and calls `DisposeForRevivification` as described in [Maintaining Extra Value Length](#maintaining-extra-value-length).
         - Removing the Tombstone.
-    - If doing `Ephemeral` locking, we Unseal the record.
+    - If doing `RecordIsolation` concurrency control, we Unseal the record.
 
 ## FreeList Revivification
 If `RevivificationSettings.FreeBinList` is not null, this creates the freelist according to the `RevivificationBin` elements of the array. If the data types are fixed, then there must be one element of the array; otherwise there can be many.

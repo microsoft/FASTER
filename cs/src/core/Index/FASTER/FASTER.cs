@@ -239,7 +239,7 @@ namespace FASTER.core
             Initialize(size, sectorSize);
 
             this.LockTable = new OverflowBucketLockTable<Key, Value>(concurrencyControlMode == ConcurrencyControlMode.LockTable ? this : null);
-            this.EnableRevivification = this.InitializeRevivification(revivificationSettings);
+            this.EnableRevivification = this.InitializeRevivification(revivificationSettings, logSettings);
 
             systemState = SystemState.Make(Phase.REST, 1);
 

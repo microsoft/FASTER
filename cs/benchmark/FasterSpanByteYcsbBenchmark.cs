@@ -8,6 +8,7 @@ using FASTER.core;
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading;
 
 namespace FASTER.benchmark
@@ -35,8 +36,8 @@ namespace FASTER.benchmark
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal const int kKeySize = 16;
-        internal const int kValueSize = 100;
+        internal const int kKeySize = 8; //16;
+        internal const int kValueSize = 8; //100;
 
         internal FasterSpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
         {
@@ -79,15 +80,26 @@ namespace FASTER.benchmark
             {
                 RevivificationLevel.None => default,
                 RevivificationLevel.Chain => new RevivificationSettings(),
-                RevivificationLevel.Full => new RevivificationSettings() { FreeRecordBins = new[] { new RevivificationBin() {
-                    RecordSize = RecordInfo.GetLength() + kKeySize + kValueSize + 8,    // extra to ensure rounding up of value
-                    NumberOfRecords = testLoader.Options.RevivBinRecordCount,
-                    BestFitScanLimit = RevivificationBin.UseFirstFit } } },
+                RevivificationLevel.Full => new RevivificationSettings()
+                    { 
+                        FreeRecordBins = new[]
+                        {
+                            new RevivificationBin()
+                            {
+                                RecordSize = RecordInfo.GetLength() + kKeySize + kValueSize + 8,    // extra to ensure rounding up of value
+                                NumberOfRecords = testLoader.Options.RevivBinRecordCount,
+                                BestFitScanLimit = RevivificationBin.UseFirstFit
+                            } 
+                        },
+                    },
                 _ => throw new ApplicationException("Invalid RevivificationLevel")
             };
 
             if (revivificationSettings is not null)
-                revivificationSettings.MutablePercent = testLoader.Options.RevivMutablePercent;
+            {
+                revivificationSettings.RevivifiableFraction = testLoader.Options.RevivifiableFraction;
+                revivificationSettings.UnelideDeletedRecordsIfBinIsFull = true;
+            }
 
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
