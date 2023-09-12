@@ -18,6 +18,7 @@ namespace FASTER.core
         /// at the time of last retrieval from the hash table.
         /// </summary>
         /// <param name="srcLog">The FasterKV's hlog</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetRecordSourceToHashEntry(AllocatorBase<Key, Value> srcLog) => this.recSrc.Set(hei.Address, srcLog);
 
         /// <summary>

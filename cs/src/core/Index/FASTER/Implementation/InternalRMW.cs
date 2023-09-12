@@ -164,8 +164,8 @@ namespace FASTER.core
                         goto CreateNewRecord;
                     }
 
-                    // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater, in the ephemeral lock.
-                    if (fasterSession.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, out stackCtx.recSrc.ephemeralLockResult)
+                    // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater, in RecordIsolation if needed.
+                    if (fasterSession.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, out stackCtx.recSrc.recordIsolationResult)
                         || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
@@ -177,7 +177,7 @@ namespace FASTER.core
                         goto LatchRelease;
                     }
 
-                    // Note: stackCtx.recSrc.ephemeralLockResult == Failed was already handled by 'out status' above
+                    // Note: stackCtx.recSrc.recordIsolationResult == Failed was already handled by 'out status' above
                     if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                         goto LatchRelease;
 
@@ -240,7 +240,7 @@ namespace FASTER.core
             {
                 // On success, we call UnlockAndSeal. Non-success includes the source address going below HeadAddress, in which case we rely on
                 // recordInfo.ClearBitsForDiskImages clearing locks and Seal.
-                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal && stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress && srcRecordInfo.IsLocked)
+                if (stackCtx.recSrc.recordIsolationResult == RecordIsolationResult.HoldForSeal && stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress && srcRecordInfo.IsLocked)
                     srcRecordInfo.UnlockExclusive();
                 stackCtx.HandleNewRecordOnException(this);
                 TransientXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
@@ -555,7 +555,7 @@ namespace FASTER.core
                     // Else it was a CopyUpdater so call PCU
                     fasterSession.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo);
 
-                    // Success should always Seal the old record. Ephemeral locking returns HoldForSeal in this case, so it is still locked here.
+                    // Success should always Seal the old record. RecordIsolation returns HoldForSeal in this case, so it is still locked here.
                     srcRecordInfo.UnlockExclusiveAndSeal();
 
                     if (tryTransferToFreeList && stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)

@@ -84,9 +84,9 @@ namespace FASTER.core
                         if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                         {
                             // If this succeeds, we don't need to copy to tail or readcache, so return success.
-                            if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref readInfo, out EphemeralLockResult lockResult))
+                            if (fasterSession.ConcurrentReader(ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output, ref readInfo, out RecordIsolationResult lockResult))
                                 return OperationStatus.SUCCESS;
-                            if (lockResult == EphemeralLockResult.Failed)
+                            if (lockResult == RecordIsolationResult.Failed)
                             {
                                 HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, fasterSession, ref pendingContext);
                                 continue;

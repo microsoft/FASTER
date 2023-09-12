@@ -923,9 +923,9 @@ namespace FASTER.core
                 => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out RecordIsolationResult lockResult)
             {
-                lockResult = EphemeralLockResult.Success;       // Ephemeral locking is not used with Lockable contexts
+                lockResult = RecordIsolationResult.Success;       // RecordIsolation is not used with Lockable contexts
                 return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
             }
 
@@ -947,9 +947,9 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out RecordIsolationResult lockResult)
             {
-                lockResult = EphemeralLockResult.Success;       // Ephemeral locking is not used with Lockable contexts
+                lockResult = RecordIsolationResult.Success;       // RecordIsolation is not used with Lockable contexts
                 (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.fht.GetRecordLengths(physicalAddress, ref dst, ref upsertInfo.RecordInfoRef);
                 if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo))
                     return false;
@@ -996,9 +996,9 @@ namespace FASTER.core
 
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, out EphemeralLockResult lockResult)
+            public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, out RecordIsolationResult lockResult)
             {
-                lockResult = EphemeralLockResult.Success;       // Ephemeral locking is not used with Lockable contexts
+                lockResult = RecordIsolationResult.Success;       // RecordIsolation is not used with Lockable contexts
                 (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.fht.GetRecordLengths(physicalAddress, ref value, ref rmwInfo.RecordInfoRef);
                 if (!_clientSession.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo.RecordInfoRef, ref rmwInfo, out status))
                     return false;
@@ -1026,9 +1026,9 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int allocatedSize, out EphemeralLockResult lockResult)
+            public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int allocatedSize, out RecordIsolationResult lockResult)
             {
-                lockResult = EphemeralLockResult.Success;       // Ephemeral locking is not used with Lockable contexts
+                lockResult = RecordIsolationResult.Success;       // RecordIsolation is not used with Lockable contexts
                 (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.fht.GetRecordLengths(physicalAddress, ref value, ref deleteInfo.RecordInfoRef);
                 if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo))
                     return false;

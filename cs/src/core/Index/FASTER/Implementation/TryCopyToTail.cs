@@ -65,7 +65,7 @@ namespace FASTER.core
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             bool success;
             OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
-            if (DoEphemeralLocking)
+            if (DoRecordIsolation)
                 newRecordInfo.InitializeLockShared();                   // For PostSingleWriter
             if (stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress)
             {

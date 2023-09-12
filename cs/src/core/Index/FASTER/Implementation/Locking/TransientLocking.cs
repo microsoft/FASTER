@@ -50,7 +50,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void LockForScan(ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
         {
-            stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.None;
+            stackCtx.recSrc.recordIsolationResult = RecordIsolationResult.None;
             stackCtx.recSrc.HasTransientLock = false;
             if (this.DoTransientLocking)
             {
@@ -63,11 +63,11 @@ namespace FASTER.core
 
                 stackCtx.recSrc.HasTransientLock = true;
             }
-            else if (this.DoEphemeralLocking)
+            else if (this.DoRecordIsolation)
             {
                 while (!recordInfo.TryLockShared())
                     this.epoch.ProtectAndDrain();
-                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.Success;
+                stackCtx.recSrc.recordIsolationResult = RecordIsolationResult.Success;
             }
         }
 
@@ -79,10 +79,10 @@ namespace FASTER.core
                 this.LockTable.UnlockShared(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.HasTransientLock = false;
             }
-            else if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Success)
+            else if (stackCtx.recSrc.recordIsolationResult == RecordIsolationResult.Success)
             { 
                 recordInfo.UnlockShared();
-                stackCtx.recSrc.ephemeralLockResult = EphemeralLockResult.None;
+                stackCtx.recSrc.recordIsolationResult = RecordIsolationResult.None;
             }
         }
     }

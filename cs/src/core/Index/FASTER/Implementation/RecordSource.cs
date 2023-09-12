@@ -65,9 +65,9 @@ namespace FASTER.core
         internal bool HasTransientLock;
 
         /// <summary>
-        /// Status of ephemeral locking, if applicable.
+        /// Status of RecordIsolation RecordInfo lock, if applicable.
         /// </summary>
-        internal EphemeralLockResult ephemeralLockResult;
+        internal RecordIsolationResult recordIsolationResult;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ref RecordInfo GetInfo() => ref Log.GetInfo(PhysicalAddress);
@@ -79,7 +79,7 @@ namespace FASTER.core
 
         internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
 
-        internal bool HasLock => HasTransientLock || ephemeralLockResult == EphemeralLockResult.Success;
+        internal bool HasLock => HasTransientLock || recordIsolationResult == RecordIsolationResult.Success;
 
         /// <summary>
         /// Initialize to the latest logical address from the caller.
@@ -94,7 +94,7 @@ namespace FASTER.core
             HasReadCacheSrc = default;
 
             // HasTransientLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
-            // ephemeralLockResult = ...; Do not clear this either
+            // recordIsolationResult = ...; Do not clear this either
 
             this.LatestLogicalAddress = this.LogicalAddress = AbsoluteAddress(latestLogicalAddress);
             this.Log = srcLog;
@@ -106,11 +106,11 @@ namespace FASTER.core
             var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            string ephLockResult = this.ephemeralLockResult switch
+            string ephLockResult = this.recordIsolationResult switch
             {
-                EphemeralLockResult.Success => "S",
-                EphemeralLockResult.Failed => "F",
-                EphemeralLockResult.HoldForSeal => "H",
+                RecordIsolationResult.Success => "S",
+                RecordIsolationResult.Failed => "F",
+                RecordIsolationResult.HoldForSeal => "H",
                 _ => "none"
             };
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"

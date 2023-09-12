@@ -45,7 +45,7 @@ namespace FASTER.core
         None
     }
 
-    internal enum EphemeralLockResult
+    internal enum RecordIsolationResult
     {
         None,           // Default; not tried
         Success,        // Lock succeeded

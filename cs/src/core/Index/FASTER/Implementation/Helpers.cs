@@ -122,9 +122,9 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CASRecordIntoChain(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long newLogicalAddress, ref RecordInfo newRecordInfo)
         {
-            // If Ephemeral locking, we consider this insertion to the mutable portion of the log as a "concurrent" operation, and
-            // we don't want other threads accessing this record until we complete Post* (which unlock if doing Ephemeral locking).
-            if (DoEphemeralLocking)
+            // If RecordIsolation, we consider this insertion to the mutable portion of the log as a "concurrent" operation, and
+            // we don't want other threads accessing this record until we complete Post* (which unlock if doing RecordIsolation).
+            if (DoRecordIsolation)
                 newRecordInfo.InitializeLockExclusive();
 
             var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress

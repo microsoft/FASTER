@@ -31,14 +31,14 @@ namespace FASTER.core
 
         #region Reads
         bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo);
-        bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out EphemeralLockResult lockResult);
+        bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out RecordIsolationResult lockResult);
         void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata);
         #endregion reads
 
         #region Upserts
         bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason);
         void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason);
-        bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult);
+        bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out RecordIsolationResult lockResult);
         #endregion Upserts
 
         #region RMWs
@@ -55,7 +55,7 @@ namespace FASTER.core
         #endregion CopyUpdater
 
         #region InPlaceUpdater
-        bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, out EphemeralLockResult lockResult);
+        bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, out RecordIsolationResult lockResult);
         #endregion InPlaceUpdater
 
         void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata);
@@ -64,7 +64,7 @@ namespace FASTER.core
         #region Deletes
         bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo);
         void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo);
-        bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int fullRecordLength, out EphemeralLockResult lockResult);
+        bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int fullRecordLength, out RecordIsolationResult lockResult);
         #endregion Deletes
 
         #region Disposal

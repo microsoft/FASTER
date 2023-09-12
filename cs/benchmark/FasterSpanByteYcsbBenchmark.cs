@@ -8,7 +8,6 @@ using FASTER.core;
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Threading;
 
 namespace FASTER.benchmark
@@ -36,8 +35,8 @@ namespace FASTER.benchmark
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal const int kKeySize = 8; //16;
-        internal const int kValueSize = 8; //100;
+        internal const int kKeySize = 16;
+        internal const int kValueSize = 100;
 
         internal FasterSpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
         {

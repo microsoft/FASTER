@@ -66,7 +66,7 @@ namespace FASTER.core
             if (srcRecordInfo.IsClosed)
                 return OperationStatus.RETRY_LATER;
 
-            // Note: we do not track pendingContext.Initial*Address because we don't have an InternalContinuePendingUpsert
+            // Note: we do not track pendingContext.InitialAddress because we don't have an InternalContinuePendingUpsert
 
             UpsertInfo upsertInfo = new()
             {
@@ -158,7 +158,7 @@ namespace FASTER.core
                         goto CreateNewRecord;
                     }
 
-                    if (fasterSession.ConcurrentWriter(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, out stackCtx.recSrc.ephemeralLockResult))
+                    if (fasterSession.ConcurrentWriter(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, out stackCtx.recSrc.recordIsolationResult))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
@@ -166,7 +166,7 @@ namespace FASTER.core
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto LatchRelease;
                     }
-                    if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
+                    if (stackCtx.recSrc.recordIsolationResult == RecordIsolationResult.Failed)
                     {
                         status = OperationStatus.RETRY_LATER;
                         goto LatchRelease;
@@ -216,7 +216,7 @@ namespace FASTER.core
             {
                 // On success, we call UnlockAndSeal. Non-success includes the source address going below HeadAddress, in which case we rely on
                 // recordInfo.ClearBitsForDiskImages clearing locks and Seal.
-                if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.HoldForSeal && stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress && srcRecordInfo.IsLocked)
+                if (stackCtx.recSrc.recordIsolationResult == RecordIsolationResult.HoldForSeal && stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress && srcRecordInfo.IsLocked)
                     srcRecordInfo.UnlockExclusive();
                 stackCtx.HandleNewRecordOnException(this);
                 TransientXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
@@ -413,8 +413,9 @@ namespace FASTER.core
 
                 fasterSession.PostSingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert);
 
-                // Success should always Seal the old record. Ephemeral locking returns HoldForSeal in this case, so it is still locked here.
+                // Success should always Seal the old record. RecordIsolation returns HoldForSeal in this case, so it is still locked here.
                 srcRecordInfo.UnlockExclusiveAndSeal();
+                stackCtx.recSrc.recordIsolationResult = RecordIsolationResult.None;
 
                 if (tryTransferToFreeList && stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                 {

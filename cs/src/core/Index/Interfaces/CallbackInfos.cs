@@ -74,6 +74,7 @@ namespace FASTER.core
         // and therefore must be a log address (with epoch protection), allocator-controlled, IO-record address, or pinned.
         internal IntPtr recordInfoPtr;
         internal readonly unsafe ref RecordInfo RecordInfoRef => ref Unsafe.AsRef<RecordInfo>((void*)recordInfoPtr);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SetRecordInfoAddress(ref RecordInfo recordInfo) => this.recordInfoPtr = (IntPtr)Unsafe.AsPointer(ref recordInfo);
 
         /// <summary>
@@ -225,6 +226,7 @@ namespace FASTER.core
         // The physical address of the RecordInfo start. See UpsertInfo for detailed comments.
         internal IntPtr recordInfoPtr;
         internal readonly unsafe ref RecordInfo RecordInfoRef => ref Unsafe.AsRef<RecordInfo>((void*)recordInfoPtr);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SetRecordInfoAddress(ref RecordInfo recordInfo) => this.recordInfoPtr = (IntPtr)Unsafe.AsPointer(ref recordInfo);
         internal void ClearRecordInfoAddress() => this.recordInfoPtr = IntPtr.Zero;
 
@@ -319,6 +321,7 @@ namespace FASTER.core
         // The physical address of the RecordInfo start. See UpsertInfo for detailed comments.
         private IntPtr recordInfoPtr;
         internal readonly unsafe ref RecordInfo RecordInfoRef => ref Unsafe.AsRef<RecordInfo>((void*)recordInfoPtr);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SetRecordInfoAddress(ref RecordInfo recordInfo) => this.recordInfoPtr = (IntPtr)Unsafe.AsPointer(ref recordInfo);
     }
 
@@ -371,6 +374,7 @@ namespace FASTER.core
         // The physical address of the RecordInfo start. See UpsertInfo for detailed comments.
         private IntPtr recordInfoPtr;
         internal readonly unsafe ref RecordInfo RecordInfoRef => ref Unsafe.AsRef<RecordInfo>((void*)recordInfoPtr);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SetRecordInfoAddress(ref RecordInfo recordInfo) => this.recordInfoPtr = (IntPtr)Unsafe.AsPointer(ref recordInfo);
     }
 }

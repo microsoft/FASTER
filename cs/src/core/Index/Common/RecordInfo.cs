@@ -87,8 +87,8 @@ namespace FASTER.core
         // We ignore locks and temp bits for disk images
         public void ClearBitsForDiskImages()
         {
-            // Locks can be evicted even with ephemeral locks, if the record is locked when BlockAllocate allows an epoch refresh
-            // that sends it below HeadAddress. Sealed records are normal. In Pending IO completions, Ephemeral locking does not
+            // Locks can be evicted even with RecordIsolation, if the record is locked when BlockAllocate allows an epoch refresh
+            // that sends it below HeadAddress. Sealed records are normal. In Pending IO completions, RecordIsolation does not
             // lock records read from disk (they should be found in memory). But a Sealed record may become current again during
             // recovery, if the RCU-inserted record was not written to disk during a crash, etc. So clear these bits here.
             word &= ~(kLockBitMask | kDirtyBitMask | kSealedBitMask);
@@ -130,7 +130,7 @@ namespace FASTER.core
             // Because we seal the source of an RCU and that source is likely locked, we cannot assert !IsSealed.
             // Debug.Assert(!IsSealed, "Trying to X unlock a Sealed record");
 
-            // For this we are Unlocking and Sealing without the cost of an "if EphemeralLocking", so do not assert this.
+            // For this we are Unlocking and Sealing without the cost of an "if RecordIsolation", so do not assert this.
             // Debug.Assert(IsLockedExclusive, "Trying to X unlock an unlocked record");
 
             word = (word & ~kExclusiveLockBitMask) | kSealedBitMask; // Safe because there should be no other threads (e.g., readers) updating the word at this point

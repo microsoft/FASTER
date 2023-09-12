@@ -63,8 +63,8 @@ namespace FASTER.core
         int maxSessionID;
 
         internal readonly bool DoTransientLocking;  // uses LockTable
-        internal readonly bool DoEphemeralLocking;  // uses RecordInfo
-        internal bool IsLocking => DoTransientLocking || DoEphemeralLocking;
+        internal readonly bool DoRecordIsolation;  // uses RecordInfo
+        internal bool IsLocking => DoTransientLocking || DoRecordIsolation;
         internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
         internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
@@ -140,7 +140,7 @@ namespace FASTER.core
             }
 
             this.DoTransientLocking = concurrencyControlMode == ConcurrencyControlMode.LockTable;
-            this.DoEphemeralLocking = concurrencyControlMode == ConcurrencyControlMode.RecordIsolation;
+            this.DoRecordIsolation = concurrencyControlMode == ConcurrencyControlMode.RecordIsolation;
 
             checkpointSettings ??= new CheckpointSettings();
 

@@ -114,9 +114,9 @@ namespace FASTER.core
                     deleteInfo.SetRecordInfoAddress(ref srcRecordInfo);
                     ref Value recordValue = ref stackCtx.recSrc.GetValue();
 
-                    // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside ConcurrentDeleter, in the ephemeral lock
+                    // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside ConcurrentDeleter, in RecordIsolation if needed
                     if (fasterSession.ConcurrentDeleter(stackCtx.recSrc.PhysicalAddress, ref stackCtx.recSrc.GetKey(), ref recordValue, 
-                            ref deleteInfo, out int fullRecordLength, out stackCtx.recSrc.ephemeralLockResult))
+                            ref deleteInfo, out int fullRecordLength, out stackCtx.recSrc.recordIsolationResult))
                     {
                         this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
 
@@ -163,7 +163,7 @@ namespace FASTER.core
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto LatchRelease;
                     }
-                    if (stackCtx.recSrc.ephemeralLockResult == EphemeralLockResult.Failed)
+                    if (stackCtx.recSrc.recordIsolationResult == RecordIsolationResult.Failed)
                     {
                         status = OperationStatus.RETRY_LATER;
                         goto LatchRelease;

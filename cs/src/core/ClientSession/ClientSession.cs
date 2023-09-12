@@ -1194,18 +1194,18 @@ namespace FASTER.core
                 => _clientSession.functions.SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out RecordIsolationResult lockResult)
             {
-                lockResult = EphemeralLockResult.Success;
-                return _clientSession.fht.DoEphemeralLocking
-                    ? ConcurrentReaderLockEphemeral(ref key, ref input, ref value, ref dst, ref readInfo, out lockResult)
+                lockResult = RecordIsolationResult.Success;
+                return _clientSession.fht.DoRecordIsolation
+                    ? ConcurrentReaderRecordIsolation(ref key, ref input, ref value, ref dst, ref readInfo, out lockResult)
                     : _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo);
             }
 
-            public bool ConcurrentReaderLockEphemeral(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentReaderRecordIsolation(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, out RecordIsolationResult lockResult)
             {
-                lockResult = readInfo.RecordInfoRef.TryLockShared() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
-                if (lockResult == EphemeralLockResult.Failed)
+                lockResult = readInfo.RecordInfoRef.TryLockShared() ? RecordIsolationResult.Success : RecordIsolationResult.Failed;
+                if (lockResult == RecordIsolationResult.Failed)
                     return false;
                 try
                 {
@@ -1230,8 +1230,8 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) 
             {
-                if (_clientSession.fht.DoEphemeralLocking)
-                    PostSingleWriterLockEphemeral(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
+                if (_clientSession.fht.DoRecordIsolation)
+                    PostSingleWriterRecordIsolation(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
                 else
                     PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
             }
@@ -1243,9 +1243,9 @@ namespace FASTER.core
                 _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
             }
 
-            public void PostSingleWriterLockEphemeral(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public void PostSingleWriterRecordIsolation(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
-                // Note: Ephemeral XLock was taken by CASRecordIntoChain().
+                // Note: RecordIsolation XLock was taken by CASRecordIntoChain().
                 try
                 {
                     PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
@@ -1260,11 +1260,11 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult)
+            public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out RecordIsolationResult lockResult)
             {
-                lockResult = EphemeralLockResult.Success;
-                return _clientSession.fht.DoEphemeralLocking
-                    ? ConcurrentWriterLockEphemeral(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, out lockResult)
+                lockResult = RecordIsolationResult.Success;
+                return _clientSession.fht.DoRecordIsolation
+                    ? ConcurrentWriterRecordIsolation(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, out lockResult)
                     : ConcurrentWriterNoLock(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref upsertInfo);
             }
 
@@ -1279,22 +1279,22 @@ namespace FASTER.core
                 return true;
             }
 
-            private bool ConcurrentWriterLockEphemeral(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out EphemeralLockResult lockResult)
+            private bool ConcurrentWriterRecordIsolation(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, out RecordIsolationResult lockResult)
             {
-                lockResult = upsertInfo.RecordInfoRef.TryLockExclusive() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
-                if (lockResult == EphemeralLockResult.Failed)
+                lockResult = upsertInfo.RecordInfoRef.TryLockExclusive() ? RecordIsolationResult.Success : RecordIsolationResult.Failed;
+                if (lockResult == RecordIsolationResult.Failed)
                     return false;
                 try
                 {
                     if (ConcurrentWriterNoLock(physicalAddress, ref key, ref input, ref src, ref dst, ref output, ref upsertInfo))
                         return true;
                     if (upsertInfo.Action != UpsertAction.CancelOperation)
-                        lockResult = EphemeralLockResult.HoldForSeal;
+                        lockResult = RecordIsolationResult.HoldForSeal;
                     return false;
                 }
                 finally
                 {
-                    if (lockResult != EphemeralLockResult.HoldForSeal)
+                    if (lockResult != RecordIsolationResult.HoldForSeal)
                         upsertInfo.RecordInfoRef.UnlockExclusive();
                 }
             }
@@ -1313,8 +1313,8 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) 
             {
-                if (_clientSession.fht.DoEphemeralLocking)
-                    PostInitialUpdaterLockEphemeral(ref key, ref input, ref value, ref output, ref rmwInfo);
+                if (_clientSession.fht.DoRecordIsolation)
+                    PostInitialUpdaterRecordIsolation(ref key, ref input, ref value, ref output, ref rmwInfo);
                 else
                     PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref rmwInfo);
             }
@@ -1327,9 +1327,9 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PostInitialUpdaterLockEphemeral(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
+            private void PostInitialUpdaterRecordIsolation(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
             {
-                // Note: Ephemeral XLock was taken by CASRecordIntoChain().
+                // Note: RecordIsolation XLock was taken by CASRecordIntoChain().
                 try
                 { 
                     PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref rmwInfo);
@@ -1353,8 +1353,8 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) 
             {
-                if (_clientSession.fht.DoEphemeralLocking)
-                    PostCopyUpdaterLockEphemeral(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
+                if (_clientSession.fht.DoRecordIsolation)
+                    PostCopyUpdaterRecordIsolation(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
                 else
                     PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
             }
@@ -1367,9 +1367,9 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdaterLockEphemeral(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
+            public void PostCopyUpdaterRecordIsolation(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
             {
-                // Note: Ephemeral XLock was taken by CASRecordIntoChain().
+                // Note: RecordIsolation XLock was taken by CASRecordIntoChain().
                 try
                 {
                     PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
@@ -1384,11 +1384,11 @@ namespace FASTER.core
             #region InPlaceUpdater
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status,
-                                       out EphemeralLockResult lockResult)
+                                       out RecordIsolationResult lockResult)
             {
-                lockResult = EphemeralLockResult.Success;
-                return _clientSession.fht.DoEphemeralLocking
-                                ? InPlaceUpdaterLockEphemeral(physicalAddress, ref key, ref input, ref value, ref output, ref rmwInfo, out status, out lockResult)
+                lockResult = RecordIsolationResult.Success;
+                return _clientSession.fht.DoRecordIsolation
+                                ? InPlaceUpdaterRecordIsolation(physicalAddress, ref key, ref input, ref value, ref output, ref rmwInfo, out status, out lockResult)
                                 : InPlaceUpdaterNoLock(physicalAddress, ref key, ref input, ref value, ref output, ref rmwInfo, out status);
             }
 
@@ -1403,10 +1403,10 @@ namespace FASTER.core
                 return true;
             }
 
-            public bool InPlaceUpdaterLockEphemeral(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, out EphemeralLockResult lockResult)
+            public bool InPlaceUpdaterRecordIsolation(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, out RecordIsolationResult lockResult)
             {
-                lockResult = rmwInfo.RecordInfoRef.TryLockExclusive() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
-                if (lockResult == EphemeralLockResult.Failed)
+                lockResult = rmwInfo.RecordInfoRef.TryLockExclusive() ? RecordIsolationResult.Success : RecordIsolationResult.Failed;
+                if (lockResult == RecordIsolationResult.Failed)
                 {
                     status = OperationStatus.RETRY_LATER;
                     return false;
@@ -1417,12 +1417,12 @@ namespace FASTER.core
                         return true;
                     // Expiration sets additional bits beyond SUCCESS, and Cancel does not set SUCCESS.
                     if (status == OperationStatus.SUCCESS)
-                        lockResult = EphemeralLockResult.HoldForSeal;
+                        lockResult = RecordIsolationResult.HoldForSeal;
                     return false;
                 }
                 finally
                 {
-                    if (lockResult != EphemeralLockResult.HoldForSeal)
+                    if (lockResult != RecordIsolationResult.HoldForSeal)
                         rmwInfo.RecordInfoRef.UnlockExclusive();
                 }
             }
@@ -1441,8 +1441,8 @@ namespace FASTER.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) 
             {
-                if (_clientSession.fht.DoEphemeralLocking)
-                    PostSingleDeleterLockEphemeral(ref key, ref deleteInfo);
+                if (_clientSession.fht.DoRecordIsolation)
+                    PostSingleDeleterRecordIsolation(ref key, ref deleteInfo);
                 else
                     PostSingleDeleterNoLock(ref key, ref deleteInfo);
             }
@@ -1455,7 +1455,7 @@ namespace FASTER.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleterLockEphemeral(ref Key key, ref DeleteInfo deleteInfo)
+            public void PostSingleDeleterRecordIsolation(ref Key key, ref DeleteInfo deleteInfo)
             {
                 try
                 {
@@ -1467,11 +1467,11 @@ namespace FASTER.core
                 }
             }
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int fullRecordLength, out EphemeralLockResult lockResult)
+            public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int fullRecordLength, out RecordIsolationResult lockResult)
             {
-                lockResult = EphemeralLockResult.Success;
-                return _clientSession.fht.DoEphemeralLocking
-                    ? ConcurrentDeleterLockEphemeral(physicalAddress, ref key, ref value, ref deleteInfo, out fullRecordLength, out lockResult)
+                lockResult = RecordIsolationResult.Success;
+                return _clientSession.fht.DoRecordIsolation
+                    ? ConcurrentDeleterRecordIsolation(physicalAddress, ref key, ref value, ref deleteInfo, out fullRecordLength, out lockResult)
                     : ConcurrentDeleterNoLock(physicalAddress, ref key, ref value, ref deleteInfo, out fullRecordLength);
             }
 
@@ -1486,10 +1486,10 @@ namespace FASTER.core
                 return true;
             }
 
-            public bool ConcurrentDeleterLockEphemeral(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int fullRecordLength, out EphemeralLockResult lockResult)
+            public bool ConcurrentDeleterRecordIsolation(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, out int fullRecordLength, out RecordIsolationResult lockResult)
             {
-                lockResult = deleteInfo.RecordInfoRef.TryLockExclusive() ? EphemeralLockResult.Success : EphemeralLockResult.Failed;
-                if (lockResult == EphemeralLockResult.Failed)
+                lockResult = deleteInfo.RecordInfoRef.TryLockExclusive() ? RecordIsolationResult.Success : RecordIsolationResult.Failed;
+                if (lockResult == RecordIsolationResult.Failed)
                 { 
                     fullRecordLength = 0;
                     return false;

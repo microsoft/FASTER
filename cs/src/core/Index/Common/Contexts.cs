@@ -108,6 +108,7 @@ namespace FASTER.core
 
         internal static OperationStatus BasicOpCode(OperationStatus status) => status & OperationStatus.BASIC_MASK;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static OperationStatus AdvancedOpCode(OperationStatus status, StatusCode advancedStatusCode) => status | (OperationStatus)((int)advancedStatusCode << OpStatusToStatusCodeShift);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

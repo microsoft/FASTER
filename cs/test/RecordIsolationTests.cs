@@ -8,10 +8,10 @@ using FASTER.test.ReadCacheTests;
 using System.Threading.Tasks;
 using static FASTER.test.TestUtils;
 
-namespace FASTER.test.EphemeralLocking
+namespace FASTER.test.RecordIsolation
 {
-    // Functions for ephemeral locking--locking only for the duration of a concurrent IFunctions call.
-    internal class EphemeralLockingTestFunctions : SimpleFunctions<long, long>
+    // Functions for RecordIsolation--locking only for the duration of a concurrent IFunctions call.
+    internal class RecordIsolationTestFunctions : SimpleFunctions<long, long>
     {
         internal bool failInPlace;
 
@@ -23,7 +23,7 @@ namespace FASTER.test.EphemeralLocking
     }
 
     [TestFixture]
-    class EphemeralLockingTests
+    class RecordIsolationTests
     {
         const int numRecords = 1000;
         const int useNewKey = 1010;
@@ -31,11 +31,11 @@ namespace FASTER.test.EphemeralLocking
 
         const int valueMult = 1_000_000;
 
-        EphemeralLockingTestFunctions functions;
+        RecordIsolationTestFunctions functions;
         LongFasterEqualityComparer comparer;
 
         private FasterKV<long, long> fht;
-        private ClientSession<long, long, long, long, Empty, EphemeralLockingTestFunctions> session;
+        private ClientSession<long, long, long, long, Empty, RecordIsolationTestFunctions> session;
         private IDevice log;
 
         [SetUp]
@@ -65,11 +65,11 @@ namespace FASTER.test.EphemeralLocking
             }
 
             comparer = new LongFasterEqualityComparer();
-            functions = new EphemeralLockingTestFunctions();
+            functions = new RecordIsolationTestFunctions();
 
             fht = new FasterKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
                                             checkpointSettings: checkpointSettings, comparer: comparer, concurrencyControlMode: ConcurrencyControlMode.RecordIsolation);
-            session = fht.For(functions).NewSession<EphemeralLockingTestFunctions>();
+            session = fht.For(functions).NewSession<RecordIsolationTestFunctions>();
         }
 
         [TearDown]
@@ -294,7 +294,7 @@ namespace FASTER.test.EphemeralLocking
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void StressEphemeralLocks([Values(2, 8)] int numThreads)
+        public void StressRecordIsolation([Values(2, 8)] int numThreads)
         {
             Populate();
 
@@ -304,11 +304,11 @@ namespace FASTER.test.EphemeralLocking
             const int numIncrement = 5;
             const int numIterations = 1000;
 
-            void runLEphemeralLockOpThread(int tid)
+            void runRecordIsolationOpThread(int tid)
             {
                 Random rng = new(tid + 101);
 
-                using var localSession = fht.For(new EphemeralLockingTestFunctions()).NewSession<EphemeralLockingTestFunctions>();
+                using var localSession = fht.For(new RecordIsolationTestFunctions()).NewSession<RecordIsolationTestFunctions>();
                 var basicContext = localSession.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
@@ -331,7 +331,7 @@ namespace FASTER.test.EphemeralLocking
             for (int t = 0; t < numThreads; t++)
             {
                 var tid = t;
-                tasks[t] = Task.Factory.StartNew(() => runLEphemeralLockOpThread(tid));
+                tasks[t] = Task.Factory.StartNew(() => runRecordIsolationOpThread(tid));
             }
             Task.WaitAll(tasks);
 
@@ -345,7 +345,7 @@ namespace FASTER.test.EphemeralLocking
             var storedKey = fht.hlog.GetKey(pa);
             Assert.AreEqual(expectedKey, storedKey);
 
-            // Verify we've no orphaned ephemeral lock.
+            // Verify we've no orphaned RecordIsolation lock.
             ref RecordInfo recordInfo = ref fht.hlog.GetInfo(pa);
             Assert.IsFalse(recordInfo.IsLocked);
         }

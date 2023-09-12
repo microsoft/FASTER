@@ -150,7 +150,7 @@ An alternative to size-based partitioning would be to use the thread id, as `Lig
 
 ###### Best-Fit and First-Fit
 As the names imply, we have the option of first-fit or best-fit to satisfy a request. We allow both, via `RevivificationBin.BestFitScanLimit`:
-- `UseFirstFit`: The value is zero, so we do not scan; when a record is requested from the bin, it returns the first one that has a size >= the requested size, has an addedEpoch > CurrentEpoch, and has an address >= the minAddress passed to the Take call.
+- `UseFirstFit`: The value is zero, so we do not scan; when a record is requested from the bin, it returns the first one that has a size >= the requested size, has an addedEpoch >= SafeToReclaimEpoch, and has an address >= the minAddress passed to the Take call.
 - `BestFitScanAll`: The value is Int.MaxValue, so we scan the entire bin (possibly wrapping), keeping track of the best fit, then try to return that (which may fail if another thread returned it first, in which case we retry). If at any point there is an exact fit, that bin attempts to return that record.
 - Some other number < bin record count: Similar to `BestFitScanAll` except that it limits the number of records to scan.
 
