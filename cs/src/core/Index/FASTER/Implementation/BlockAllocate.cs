@@ -56,10 +56,9 @@ namespace FASTER.core
                     minRevivAddress = fuzzyStartAddress;
             }
 
-            if (recycle && GetAllocationForRetry(fasterSession, ref pendingContext, minRevivAddress, ref allocatedSize, newKeySize, out newLogicalAddress, out newPhysicalAddress))
+            if (recycle && pendingContext.retryNewLogicalAddress != Constants.kInvalidAddress && GetAllocationForRetry(fasterSession, ref pendingContext, minRevivAddress, ref allocatedSize, newKeySize, out newLogicalAddress, out newPhysicalAddress))
                 return true;
-
-            if (TryTakeFreeRecord<Input, Output, Context, FasterSession>(fasterSession, actualSize, ref allocatedSize, newKeySize, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
+            if (FreeRecordPoolHasSafeRecords && TryTakeFreeRecord<Input, Output, Context, FasterSession>(fasterSession, actualSize, ref allocatedSize, newKeySize, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
                 return true;
 
             // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
@@ -146,7 +145,7 @@ namespace FASTER.core
             pendingContext.retryNewLogicalAddress = logicalAddress < hlog.HeadAddress ? Constants.kInvalidAddress : logicalAddress;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        // Do not inline, to keep TryAllocateRecord lean
         bool GetAllocationForRetry<Input, Output, Context, FasterSession>(FasterSession fasterSession, ref PendingContext<Input, Output, Context> pendingContext, long minAddress,
                 ref int allocatedSize, int newKeySize, out long newLogicalAddress, out long newPhysicalAddress)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>

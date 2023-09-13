@@ -169,12 +169,13 @@ namespace FASTER.core
             recordInfo.Filler = false;
         } 
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryTakeFreeRecord<Input, Output, Context, FasterSession>(FasterSession fasterSession, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress, 
+        // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
+        bool TryTakeFreeRecord<Input, Output, Context, FasterSession>(FasterSession fasterSession, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            if (FreeRecordPoolHasSafeRecords && FreeRecordPool.TryTake(allocatedSize, minRevivAddress, out logicalAddress))
+            // Caller checks for FreeRecordPoolHasSafeRecords
+            if (FreeRecordPool.TryTake(allocatedSize, minRevivAddress, out logicalAddress))
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);

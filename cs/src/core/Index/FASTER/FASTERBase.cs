@@ -80,8 +80,6 @@ namespace FASTER.core
         public const long kTempInvalidAddress = 1;
         public const long kUnknownAddress = 2;
         public const int kFirstValidAddress = 64;
-
-        public const int DefaultMaxFreeRecordsInBin = 1024;
     }
 
     [StructLayout(LayoutKind.Explicit, Size = Constants.kEntriesPerBucket * 8)]
