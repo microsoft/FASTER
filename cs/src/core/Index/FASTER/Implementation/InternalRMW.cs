@@ -116,50 +116,11 @@ namespace FASTER.core
 
                     if (srcRecordInfo.Tombstone)
                     {
-                        // This is safe to revivify even if the record's PreviousAddress points to a valid record, because it is revivified for the same key.
-                        if (!this.EnableRevivification || (stackCtx.recSrc.LogicalAddress < this.GetMinRevivifiableAddress()))
-                            goto CreateNewRecord;
-
-                        // Try in-place revivification of the record.
-                        if (!this.LockTable.IsEnabled && !srcRecordInfo.TrySeal(invalidate: false))
-                            return OperationStatus.RETRY_NOW;
-                        bool ok = true;
-                        try
-                        {
-                            if (srcRecordInfo.Tombstone)
-                            {
-                                srcRecordInfo.Tombstone = false;
-
-                                if (IsFixedLengthReviv)
-                                    rmwInfo.UsedValueLength = rmwInfo.FullValueLength = FixedLengthStruct<Value>.Length;
-                                else
-                                {
-                                    var recordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
-                                    rmwInfo.FullValueLength = recordLengths.fullValueLength;
-
-                                    // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
-                                    var (requiredSize, _, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
-                                    (ok, rmwInfo.UsedValueLength) = TryReinitializeTombstonedValue<Input, Output, Context, FasterSession>(fasterSession, 
-                                            ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
-                                }
-
-                                if (ok && fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo))
-                                {
-                                    this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
-                                    pendingContext.recordInfo = srcRecordInfo;
-                                    pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                                    goto LatchRelease;
-                                }
-                            }
-                        }
-                        finally
-                        {
-                            if (ok)
-                                SetExtraValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
-                            else
-                                SetTombstoneAndExtraValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
-                            srcRecordInfo.Unseal(makeValid: false);
+                        if (this.EnableRevivification && stackCtx.recSrc.LogicalAddress >= this.GetMinRevivifiableAddress())
+                        { 
+                            if (TryRevivify(ref key, ref input, ref output, ref pendingContext, fasterSession, ref stackCtx, ref srcRecordInfo, ref rmwInfo, out status, ref recordValue)
+                                    || status != OperationStatus.SUCCESS)
+                                goto LatchRelease;
                         }
                         goto CreateNewRecord;
                     }
@@ -286,6 +247,62 @@ namespace FASTER.core
             #endregion
 
             return status;
+        }
+
+        private bool TryRevivify<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref PendingContext<Input, Output, Context> pendingContext, 
+                FasterSession fasterSession, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, ref RMWInfo rmwInfo, out OperationStatus status, ref Value recordValue)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            // Try in-place revivification of the record.
+            if (!this.LockTable.IsEnabled && !srcRecordInfo.TrySeal(invalidate: false))
+            { 
+                status = OperationStatus.RETRY_NOW;
+                return false;
+            }
+
+            // This record is safe to revivify even if its PreviousAddress points to a valid record, because it is revivified for the same key.
+            bool ok = true;
+            try
+            {
+                if (srcRecordInfo.Tombstone)
+                {
+                    srcRecordInfo.Tombstone = false;
+
+                    if (IsFixedLengthReviv)
+                        rmwInfo.UsedValueLength = rmwInfo.FullValueLength = FixedLengthStruct<Value>.Length;
+                    else
+                    {
+                        var recordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
+                        rmwInfo.FullValueLength = recordLengths.fullValueLength;
+
+                        // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
+                        var (requiredSize, _, _) = hlog.GetInitialRecordSize(ref key, ref input, fasterSession);
+                        (ok, rmwInfo.UsedValueLength) = TryReinitializeTombstonedValue<Input, Output, Context, FasterSession>(fasterSession,
+                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
+                    }
+
+                    if (ok && fasterSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo))
+                    {
+                        this.MarkPage(stackCtx.recSrc.LogicalAddress, fasterSession.Ctx);
+                        pendingContext.recordInfo = srcRecordInfo;
+                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        return true;
+                    }
+                }
+            }
+            finally
+            {
+                if (ok)
+                    SetExtraValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                else
+                    SetTombstoneAndExtraValueLength(ref recordValue, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);    // Restore tombstone and ensure default value on inability to update in place
+                srcRecordInfo.Unseal(makeValid: false);
+            }
+
+            // Successful non-revivification; move to CreateNewRecord
+            status = OperationStatus.SUCCESS;
+            return false;
         }
 
         private LatchDestination CheckCPRConsistencyRMW(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
