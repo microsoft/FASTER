@@ -141,7 +141,6 @@ namespace FASTER.core
         public void Return()
         {
             pool?.Return(this);
-            pool = default;
         }
 
         /// <summary>
