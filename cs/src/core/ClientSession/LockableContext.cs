@@ -105,11 +105,10 @@ namespace FASTER.core
                 ref var key = ref keys[keyIdx];
                 if (keyIdx == start || clientSession.fht.LockTable.GetBucketIndex(key.KeyHash) != clientSession.fht.LockTable.GetBucketIndex(keys[keyIdx - 1].KeyHash))
                 {
-                    OperationStatus status = OperationStatus.RETRY_LATER;
-                    bool fail = false;
                     for (int numRetriesForKey = 0; ;)
-                    { 
-                        status = clientSession.fht.InternalLock(key.KeyHash, new(LockOperationType.Lock, key.LockType));
+                    {
+                        OperationStatus status = clientSession.fht.InternalLock(key.KeyHash, new(LockOperationType.Lock, key.LockType));
+                        bool fail = false;
                         if (status == OperationStatus.SUCCESS)
                         {
                             if (key.LockType == LockType.Exclusive)
@@ -117,7 +116,8 @@ namespace FASTER.core
                             else if (key.LockType == LockType.Shared)
                                 ++clientSession.sharedLockCount;
 
-                            break;  // Success, out of the retry loop
+                            if (keyIdx == end)
+                                break;  // out of the retry loop
                         }
                         else
                             fail = maxRetriesPerKey >= 0 && ++numRetriesForKey > maxRetriesPerKey;
@@ -125,12 +125,14 @@ namespace FASTER.core
                         // CancellationToken can accompany either of the other two mechanisms
                         fail |= timeout.Ticks > 0 && DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks;
                         fail |= cancellationToken.IsCancellationRequested;
-                        if (fail)
-                            break;  // Failure and out of retries, break out of the retry loop
-                    }
+                        if (!fail)
+                        {
+                            if (status == OperationStatus.SUCCESS)
+                                break; // Out of the retry loop
 
-                    if (fail)
-                    {
+                            continue; // Retry in next iteration
+                        }
+
                         clientSession.fht.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession);
 
                         // Failure (including timeout/cancellation after a successful Lock before we've completed all keys). Unlock anything we already locked.
@@ -205,7 +207,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, 0, keys.Length);
-        
+
         /// <inheritdoc/>
         public void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey
@@ -225,8 +227,8 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int maxRetriesPerKey, CancellationToken cancellationToken = default) 
-            where TLockableKey : ILockableKey 
+        public bool TryLock<TLockableKey>(TLockableKey[] keys, int maxRetriesPerKey, CancellationToken cancellationToken = default)
+            where TLockableKey : ILockableKey
             => TryLock(keys, 0, keys.Length, maxRetriesPerKey, default, cancellationToken);
 
         /// <inheritdoc/>
@@ -236,7 +238,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         public bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout, CancellationToken cancellationToken = default)
-            where TLockableKey : ILockableKey 
+            where TLockableKey : ILockableKey
             => TryLock(keys, 0, keys.Length, -1, timeout, cancellationToken);
 
         /// <inheritdoc/>
@@ -395,7 +397,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0) 
+        public Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0)
             => Read(ref key, ref input, ref output, ref readOptions, out _, userContext, serialNo);
 
         /// <inheritdoc/>
@@ -524,7 +526,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, ref ReadOptions readOptions, Context context = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, ref ReadOptions readOptions, Context context = default, long serialNo = 0, CancellationToken token = default)
             => ReadAsync(ref key, ref input, ref readOptions, context, serialNo, token);
 
         /// <inheritdoc/>
@@ -546,7 +548,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Context context = default, long serialNo = 0, CancellationToken token = default) 
+        public ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Context context = default, long serialNo = 0, CancellationToken token = default)
             => ReadAsync(ref key, context, serialNo, token);
 
         /// <inheritdoc/>
@@ -723,7 +725,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref Output output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0) 
+        public Status RMW(ref Key key, ref Input input, ref Output output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
             => RMW(ref key, rmwOptions.KeyHash ?? clientSession.fht.comparer.GetHashCode64(ref key), ref input, ref output, out recordMetadata, userContext, serialNo);
 
         /// <inheritdoc/>
@@ -824,7 +826,7 @@ namespace FASTER.core
         /// <inheritdoc/>
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ref Key key, ref DeleteOptions deleteOptions, Context userContext = default, long serialNo = 0) 
+        public Status Delete(ref Key key, ref DeleteOptions deleteOptions, Context userContext = default, long serialNo = 0)
             => Delete(ref key, deleteOptions.KeyHash ?? clientSession.fht.comparer.GetHashCode64(ref key), userContext, serialNo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -988,7 +990,7 @@ namespace FASTER.core
                 => _clientSession.functions.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo) 
+            public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
             {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
@@ -1018,7 +1020,7 @@ namespace FASTER.core
                 => _clientSession.functions.SingleDeleter(ref key, ref value, ref deleteInfo);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo) 
+            public void PostSingleDeleter(ref Key key, ref RecordInfo recordInfo, ref DeleteInfo deleteInfo)
             {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
