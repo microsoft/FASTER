@@ -104,11 +104,12 @@ namespace FASTER.core
             {
                 ref var key = ref keys[keyIdx];
                 if (keyIdx == start || clientSession.fht.LockTable.GetBucketIndex(key.KeyHash) != clientSession.fht.LockTable.GetBucketIndex(keys[keyIdx - 1].KeyHash))
-                { 
+                {
+                    OperationStatus status = OperationStatus.RETRY_LATER;
+                    bool fail = false;
                     for (int numRetriesForKey = 0; ;)
                     { 
-                        OperationStatus status = clientSession.fht.InternalLock(key.KeyHash, new(LockOperationType.Lock, key.LockType));
-                        bool fail = false;
+                        status = clientSession.fht.InternalLock(key.KeyHash, new(LockOperationType.Lock, key.LockType));
                         if (status == OperationStatus.SUCCESS)
                         {
                             if (key.LockType == LockType.Exclusive)
@@ -116,8 +117,7 @@ namespace FASTER.core
                             else if (key.LockType == LockType.Shared)
                                 ++clientSession.sharedLockCount;
 
-                            if (keyIdx == end)
-                                break;  // out of the retry loop
+                            break;  // Success, out of the retry loop
                         }
                         else
                             fail = maxRetriesPerKey >= 0 && ++numRetriesForKey > maxRetriesPerKey;
@@ -125,9 +125,12 @@ namespace FASTER.core
                         // CancellationToken can accompany either of the other two mechanisms
                         fail |= timeout.Ticks > 0 && DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks;
                         fail |= cancellationToken.IsCancellationRequested;
-                        if (!fail && status == OperationStatus.SUCCESS)
-                            break;  // out of the retry loop
+                        if (fail)
+                            break;  // Failure and out of retries, break out of the retry loop
+                    }
 
+                    if (fail)
+                    {
                         clientSession.fht.HandleImmediateNonPendingRetryStatus<Input, Output, Context, FasterSession>(status, fasterSession);
 
                         // Failure (including timeout/cancellation after a successful Lock before we've completed all keys). Unlock anything we already locked.
