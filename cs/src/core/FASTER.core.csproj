@@ -2,67 +2,33 @@
 
   <PropertyGroup>
     <TargetFrameworks>net7.0;net6.0;netstandard2.1;netstandard2.0</TargetFrameworks>
-  </PropertyGroup>
-
-  <PropertyGroup>
-    <Platforms>AnyCPU;x64</Platforms>
-    <LangVersion>latest</LangVersion>
-  </PropertyGroup>
-
-  <PropertyGroup>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>FASTER.core</RootNamespace>
     <AssemblyName>FASTER.core</AssemblyName>
-    <ErrorReport>prompt</ErrorReport>
     <SignAssembly>true</SignAssembly>
-    <ApplicationIcon />
-    <OutputType>Library</OutputType>
-    <StartupObject />
     <AssemblyOriginatorKeyFile>../../FASTER.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
-	<EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <DefineConstants>DEBUG</DefineConstants>
-    <DebugType>full</DebugType>
-    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
+  <PropertyGroup>
+    <PackageId>Microsoft.FASTER.Core</PackageId>
+    <Title>FASTER</Title>
+    <Authors>Microsoft</Authors>
+    <PackageProjectUrl>https://github.com/microsoft/FASTER</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <Description>FASTER is a fast concurrent persistent log and key-value store with cache for larger-than-memory data.</Description>
+    <PackageReleaseNotes>See the FASTER project website at https://github.com/microsoft/FASTER for more details.</PackageReleaseNotes>
+    <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <PackageTags>FASTER key-value store cache log  microsoft dictionary hashtable concurrent persistent</PackageTags>
+    <RepositoryUrl>https://github.com/microsoft/FASTER</RepositoryUrl>
   </PropertyGroup>
-  
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DefineConstants></DefineConstants>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\$(Platform)\Release\</OutputPath>
-  </PropertyGroup>
-  
-  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net6.0|AnyCPU'&#xD;&#xA;				 Or '$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net7.0|AnyCPU'">
-    <WarningsAsErrors>;NU1605</WarningsAsErrors>
-  </PropertyGroup>
-  
+
+
   <ItemGroup>
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
-	<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-  </ItemGroup>
-  
-  <ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.1'">
-    <PackageReference Include="System.Memory" Version="4.5.5" />
-    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="7.0.0" />
     <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
   </ItemGroup>
-
-  <Choose>
-	<When Condition="'$(TargetFramework)' == 'netstandard2.0' Or '$(TargetFramework)' == 'netstandard2.1'">
-      <ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.Logging" Version="3.1.26" />
-	  </ItemGroup>
-	</When>
-    <Otherwise>
-	  <ItemGroup>
-		<PackageReference Include="Microsoft.Extensions.Logging" Version="7.0.0" />
-	  </ItemGroup>
-	</Otherwise>
-  </Choose>
 
 </Project>

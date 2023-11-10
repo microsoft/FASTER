@@ -1,39 +1,32 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFrameworks>net7.0;net6.0;netstandard2.1;netstandard2.0</TargetFrameworks>
+		<SignAssembly>true</SignAssembly>
+		<AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
+		<DelaySign>false</DelaySign>
+	</PropertyGroup>
 
   <PropertyGroup>
-    <TargetFrameworks>net7.0;net6.0;netstandard2.1;netstandard2.0</TargetFrameworks>
+    <PackageId>Microsoft.FASTER.Client</PackageId>
+    <Title>Remote Client Extension for FASTER</Title>
+    <Authors>Microsoft</Authors>
+    <PackageProjectUrl>https://github.com/microsoft/FASTER</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <Description>This is a client library that can be used to access a remote FASTER server created using Microsoft.FASTER.Server. FASTER is a fast concurrent persistent log and key-value store with cache for larger-than-memory data.</Description>
+    <PackageReleaseNotes>See the FASTER project website at https://github.com/microsoft/FASTER for more details.</PackageReleaseNotes>
+    <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <PackageTags>FASTER remote key-value store cache log azure storage device microsoft dictionary hashtable concurrent persistent</PackageTags>
+    <RepositoryUrl>https://github.com/microsoft/FASTER</RepositoryUrl>
   </PropertyGroup>
 
-  <PropertyGroup>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Platforms>AnyCPU</Platforms>
-    <LangVersion>latest</LangVersion>
-    <SignAssembly>true</SignAssembly>
-    <AssemblyOriginatorKeyFile>../../../FASTER.snk</AssemblyOriginatorKeyFile>
-    <DelaySign>false</DelaySign>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
-  </PropertyGroup>
+	<ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.1'">
+		<PackageReference Include="System.Memory" Version="4.5.5" />
+	</ItemGroup>
 
-  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <DefineConstants>DEBUG</DefineConstants>
-    <DebugType>full</DebugType>
-    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DefineConstants></DefineConstants>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\$(Platform)\Release\</OutputPath>
-  </PropertyGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.1'">
-    <PackageReference Include="System.Memory" Version="4.5.5" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\FASTER.common\FASTER.common.csproj" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-  </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\FASTER.common\FASTER.common.csproj" />
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
+	</ItemGroup>
 
 </Project>
