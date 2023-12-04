@@ -181,7 +181,7 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Enter the thread into the protected code region
+        /// Enter the thread into the protected code region.
         /// </summary>
         /// <returns>Current epoch</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -225,7 +225,6 @@ namespace FASTER.core
         /// <returns></returns>
         long BumpCurrentEpoch()
         {
-            Debug.Assert(this.ThisInstanceProtected(), "BumpCurrentEpoch must be called on a protected thread");
             long nextEpoch = Interlocked.Increment(ref CurrentEpoch);
 
             if (drainCount > 0)
@@ -235,14 +234,16 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Increment current epoch and associate trigger action
-        /// with the prior epoch
+        /// Increment current epoch and associate trigger action with the prior epoch. The trigger action will execute
+        /// on a protected thread only after the prior epoch is safe (i.e., after all active threads have advanced past it)
         /// </summary>
         /// <param name="onDrain">Trigger action</param>
-        /// <returns></returns>
         public void BumpCurrentEpoch(Action onDrain)
         {
-            long PriorEpoch = BumpCurrentEpoch() - 1;
+            long priorEpoch = BumpCurrentEpoch() - 1;
+            // track whether we acquired protection when calling from unprotected thread, so we restore the thread to
+            // its pre-call protection status after we are done
+            var acquiredProtection = false;
 
             int i = 0;
             while (true)
@@ -253,7 +254,7 @@ namespace FASTER.core
                     if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, long.MaxValue) == long.MaxValue)
                     {
                         drainList[i].action = onDrain;
-                        drainList[i].epoch = PriorEpoch;
+                        drainList[i].epoch = priorEpoch;
                         Interlocked.Increment(ref drainCount);
                         break;
                     }
@@ -264,12 +265,18 @@ namespace FASTER.core
 
                     if (triggerEpoch <= SafeToReclaimEpoch)
                     {
+                        // Protection is required whenever we may execute a trigger action
+                        if (!acquiredProtection && !ThisInstanceProtected())
+                        {
+                            acquiredProtection = true;
+                            Resume();
+                        }
                         // This was a slot with an epoch that was safe to reclaim. If it still is, execute its trigger, then assign this action/epoch to the slot.
                         if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, triggerEpoch) == triggerEpoch)
                         {
                             var triggerAction = drainList[i].action;
                             drainList[i].action = onDrain;
-                            drainList[i].epoch = PriorEpoch;
+                            drainList[i].epoch = priorEpoch;
                             triggerAction();
                             break;
                         }
@@ -279,14 +286,34 @@ namespace FASTER.core
                 if (++i == kDrainListSize)
                 {
                     // We are at the end of the drain list and found no empty or reclaimable slot. ProtectAndDrain, which should clear one or more slots.
-                    ProtectAndDrain();
+                    if (!acquiredProtection && !ThisInstanceProtected())
+                    {
+                        acquiredProtection = true;
+                        Resume();
+                    }
+                    else
+                    {
+                        ProtectAndDrain();
+                    }
+
                     i = 0;
                     Thread.Yield();
                 }
             }
 
-            // Now ProtectAndDrain, which may execute the action we just added.
-            ProtectAndDrain();
+            if (!acquiredProtection && !ThisInstanceProtected())
+            {
+                acquiredProtection = true;
+                Resume();
+            }
+            else
+            {
+                // Now ProtectAndDrain, which may execute the action we just added.
+                ProtectAndDrain();
+            }
+            
+            if (acquiredProtection)
+                Release();
         }
 
         /// <summary>
