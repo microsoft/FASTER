@@ -218,87 +218,107 @@ namespace FASTER.core
             Acquire();
             ProtectAndDrain();
         }
+        
+        /// <summary>
+        /// Increment current epoch.
+        /// </summary>
+        /// <returns>new epoch of the system</returns>
+        public long BumpCurrentEpoch()
+        {
+            var nextEpoch = Interlocked.Increment(ref CurrentEpoch);
+            
+            if (drainCount > 0)
+            {
+                // track whether we acquired protection when calling from unprotected thread, so we restore the thread to
+                // its pre-call protection status after we are done
+                if (!ThisInstanceProtected())
+                {
+                    Resume();
+                    Release();
+                }
+                else
+                {
+                    ProtectAndDrain();
+                }
+            }
+            
+            return nextEpoch;
+        }
 
         /// <summary>
         /// Increment current epoch and associate trigger action with the prior epoch. The trigger action will execute
         /// on a protected thread only after the prior epoch is safe (i.e., after all active threads have advanced past it)
         /// </summary>
-        /// <param name="onDrain">Trigger action, or null if none is necessary</param>
+        /// <param name="onDrain">Trigger action</param>
         /// <returns>new epoch of the system</returns>
-        public long BumpCurrentEpoch(Action onDrain = null)
+        public long BumpCurrentEpoch(Action onDrain)
         {
+            Debug.Assert(onDrain != null);
+            
             var nextEpoch = Interlocked.Increment(ref CurrentEpoch);
             var priorEpoch = nextEpoch - 1;
             // track whether we acquired protection when calling from unprotected thread, so we restore the thread to
             // its pre-call protection status after we are done
             var acquiredProtection = false;
-
-            if (onDrain != null)
+            
+            for (int i = 0;;)
             {
-                for (int i = 0;;)
+                if (drainList[i].epoch == long.MaxValue)
                 {
-                    if (drainList[i].epoch == long.MaxValue)
+                    // This was an empty slot. If it still is, assign this action/epoch to the slot.
+                    if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, long.MaxValue) ==
+                        long.MaxValue)
                     {
-                        // This was an empty slot. If it still is, assign this action/epoch to the slot.
-                        if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, long.MaxValue) ==
-                            long.MaxValue)
-                        {
-                            drainList[i].action = onDrain;
-                            drainList[i].epoch = priorEpoch;
-                            Interlocked.Increment(ref drainCount);
-                            break;
-                        }
+                        drainList[i].action = onDrain;
+                        drainList[i].epoch = priorEpoch;
+                        Interlocked.Increment(ref drainCount);
+                        break;
                     }
-                    else
+                }
+                else
+                {
+                    var triggerEpoch = drainList[i].epoch;
+
+                    if (triggerEpoch <= SafeToReclaimEpoch)
                     {
-                        var triggerEpoch = drainList[i].epoch;
-
-                        if (triggerEpoch <= SafeToReclaimEpoch)
-                        {
-                            // Protection is required whenever we may execute a trigger action
-                            if (!acquiredProtection && !ThisInstanceProtected())
-                            {
-                                acquiredProtection = true;
-                                Resume();
-                            }
-
-                            // This was a slot with an epoch that was safe to reclaim. If it still is, execute its trigger, then assign this action/epoch to the slot.
-                            if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, triggerEpoch) ==
-                                triggerEpoch)
-                            {
-                                var triggerAction = drainList[i].action;
-                                drainList[i].action = onDrain;
-                                drainList[i].epoch = priorEpoch;
-                                triggerAction();
-                                break;
-                            }
-                        }
-                    }
-
-                    if (++i == kDrainListSize)
-                    {
-                        // We are at the end of the drain list and found no empty or reclaimable slot. ProtectAndDrain, which should clear one or more slots.
+                        // Protection is required whenever we may execute a trigger action
                         if (!acquiredProtection && !ThisInstanceProtected())
                         {
                             acquiredProtection = true;
                             Resume();
                         }
-                        else
-                        {
-                            ProtectAndDrain();
-                        }
 
-                        i = 0;
-                        Thread.Yield();
+                        // This was a slot with an epoch that was safe to reclaim. If it still is, execute its trigger, then assign this action/epoch to the slot.
+                        if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, triggerEpoch) ==
+                            triggerEpoch)
+                        {
+                            var triggerAction = drainList[i].action;
+                            drainList[i].action = onDrain;
+                            drainList[i].epoch = priorEpoch;
+                            triggerAction();
+                            break;
+                        }
                     }
                 }
+
+                if (++i == kDrainListSize)
+                {
+                    // We are at the end of the drain list and found no empty or reclaimable slot. ProtectAndDrain, which should clear one or more slots.
+                    if (!acquiredProtection && !ThisInstanceProtected())
+                    {
+                        acquiredProtection = true;
+                        Resume();
+                    }
+                    else
+                    {
+                        ProtectAndDrain();
+                    }
+                    i = 0;
+                    Thread.Yield();
+                }
             }
-            // If just bumping epoch without adding any actions, there is no need to drain
-            else if (drainCount == 0)
-            {
-                return nextEpoch;
-            }
-            
+
+                
             if (!acquiredProtection && !ThisInstanceProtected())
             {
                 acquiredProtection = true;
