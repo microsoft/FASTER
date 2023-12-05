@@ -293,9 +293,11 @@ namespace FASTER.core
                     }
                 }
             }
-
             // If just bumping epoch without adding any actions, there is no need to drain
-            if (drainCount == 0) return nextEpoch;
+            else if (drainCount == 0)
+            {
+                return nextEpoch;
+            }
             
             if (!acquiredProtection && !ThisInstanceProtected())
             {
