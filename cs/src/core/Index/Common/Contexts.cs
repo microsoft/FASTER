@@ -437,7 +437,9 @@ namespace FASTER.core
             string value = reader.ReadLine();
             var cversion = int.Parse(value);
 
-            if (cversion != CheckpointVersion)
+            bool translateV4toV5 = (cversion == 4 && CheckpointVersion == 5);
+
+            if (cversion != CheckpointVersion && !translateV4toV5)
                 throw new FasterException($"Invalid checkpoint version {cversion} encountered, current version is {CheckpointVersion}, cannot recover with this checkpoint");
 
             value = reader.ReadLine();
@@ -458,8 +460,15 @@ namespace FASTER.core
             value = reader.ReadLine();
             flushedLogicalAddress = long.Parse(value);
 
-            value = reader.ReadLine();
-            snapshotStartFlushedLogicalAddress = long.Parse(value);
+            if (!translateV4toV5)
+            {
+                value = reader.ReadLine();
+                snapshotStartFlushedLogicalAddress = long.Parse(value);
+            }
+            else
+            {
+                snapshotStartFlushedLogicalAddress = flushedLogicalAddress;
+            }
 
             value = reader.ReadLine();
             startLogicalAddress = long.Parse(value);
