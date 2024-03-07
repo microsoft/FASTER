@@ -225,7 +225,8 @@ namespace FASTER.core
         /// <returns></returns>
         long BumpCurrentEpoch()
         {
-            Debug.Assert(this.ThisInstanceProtected(), "BumpCurrentEpoch must be called on a protected thread");
+            // TODO(Tianyu): Temporarily disabling because DARQ relies on bumping outside of protection
+            // Debug.Assert(this.ThisInstanceProtected(), "BumpCurrentEpoch must be called on a protected thread");
             long nextEpoch = Interlocked.Increment(ref CurrentEpoch);
 
             if (drainCount > 0)

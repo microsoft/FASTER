@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -12,20 +11,29 @@ namespace FASTER.common
     /// Object pool
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class SimpleObjectPool<T> : IDisposable where T : class, IDisposable
+    public class SimpleObjectPool<T> : IDisposable where T : class
     {
         private readonly Func<T> factory;
+        private readonly Action<T> destructor;
         private readonly LightConcurrentStack<T> stack;
         private int allocatedObjects;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="factory"></param>
-        /// <param name="maxObjects"></param>
-        public SimpleObjectPool(Func<T> factory, int maxObjects = 128)
+        /// <param name="factory"> method used to create new objects of type T </param>
+        /// <param name="maxObjects">
+        /// Max number of objects that will be retained and recycled in this object pool.
+        /// Objects exceeding this count are created and destroyed on demand
+        /// </param>
+        /// <param name="destructor"> method used to dispose retained objects when they go out of scope.
+        /// WARNING: NOT invoked on retained objects before reuse
+        /// </param>
+
+        public SimpleObjectPool(Func<T> factory, int maxObjects = 128, Action<T> destructor = null)
         {
             this.factory = factory;
+            this.destructor = destructor;
             stack = new LightConcurrentStack<T>(maxObjects);
             allocatedObjects = 0;
         }
@@ -39,7 +47,7 @@ namespace FASTER.common
             {
                 while (stack.TryPop(out var elem))
                 {
-                    elem.Dispose();
+                    destructor?.Invoke(elem);
                     Interlocked.Decrement(ref allocatedObjects);
                 }
                 Thread.Yield();
@@ -69,7 +77,7 @@ namespace FASTER.common
         {
             if (!stack.TryPush(obj))
             {
-                obj.Dispose();
+                destructor?.Invoke(obj);
                 Interlocked.Decrement(ref allocatedObjects);
             }
         }

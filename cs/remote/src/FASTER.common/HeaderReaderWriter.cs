@@ -34,7 +34,22 @@ namespace FASTER.common
         public unsafe bool Write(MessageType s, ref byte* dst, int length)
         {
             if (length < 1) return false;
-            *dst++ = (byte)s;
+            *dst++ = (byte) s;
+            return true;
+        }
+        
+        /// <summary>
+        /// Write message type to memory
+        /// </summary>
+        /// <param name="s">Message type</param>
+        /// <param name="dst">Destination memory</param>
+        /// <param name="length">Length of destination</param>
+        /// <returns>Whether write succeeded</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe bool Write(byte s, ref byte* dst, int length)
+        {
+            if (length < 1) return false;
+            *dst++ = s;
             return true;
         }
 

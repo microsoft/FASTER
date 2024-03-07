@@ -112,7 +112,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        internal static string PrettySize(long value)
+        public static string PrettySize(long value)
         {
             char[] suffix = new char[] { 'K', 'M', 'G', 'T', 'P' };
             double v = value;

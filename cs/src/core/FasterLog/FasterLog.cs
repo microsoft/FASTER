@@ -450,6 +450,57 @@ namespace FASTER.core
             return logicalAddress;
         }
 
+        public unsafe bool TryEnqueue(IReadOnlySpanBatch readOnlySpanBatch, Action<IReadOnlySpanBatch, int, long> criticalSection)
+        {
+            int totalEntries = readOnlySpanBatch.TotalEntries();
+            var allocatedLength = 0;
+            for (int i = 0; i < totalEntries; i++)
+            {
+                allocatedLength += Align(readOnlySpanBatch.Get(i).Length) + headerSize;
+            }
+
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+
+            var logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            var currentLogicalAddress = logicalAddress;
+            for (int i = 0; i < totalEntries; i++)
+            {
+                var span = readOnlySpanBatch.Get(i);
+                var entryLength = span.Length;
+                fixed (byte* bp = &span.GetPinnableReference())
+                    Buffer.MemoryCopy(bp, (void*) (headerSize + physicalAddress), entryLength, entryLength);
+                SetHeader(entryLength, (byte*) physicalAddress);
+                var usedSpace = Align(entryLength) + headerSize;
+                
+                criticalSection?.Invoke(readOnlySpanBatch, i, currentLogicalAddress);
+                currentLogicalAddress += usedSpace;
+                physicalAddress += usedSpace;
+            }
+            
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+
+            epoch.Suspend();
+            return true;
+        }
+        
+        public void Enqueue(IReadOnlySpanBatch batch, Action<IReadOnlySpanBatch, int, long> criticalSection)
+        {
+            while (!TryEnqueue(batch, criticalSection))
+                Thread.Yield();
+        }
+        
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
         /// </summary>

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
+using System.Threading;
 
 namespace FASTER.common
 {
@@ -92,7 +93,8 @@ namespace FASTER.common
         private readonly LinkedList<CircularBuffer<T>> buffers;
         private LinkedListNode<CircularBuffer<T>> head;
         private LinkedListNode<CircularBuffer<T>> tail;
-
+        private int count;
+        
         /// <summary>
         /// Constructor
         /// </summary>
@@ -103,6 +105,9 @@ namespace FASTER.common
             buffers.AddFirst(node);
             tail = head = node;
         }
+        
+        public int ApproxCount => count;
+
 
         /// <summary>
         /// Enqueue
@@ -111,6 +116,8 @@ namespace FASTER.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Enqueue(ref T value)
         {
+            Interlocked.Increment(ref count);
+
             if (tail.Value.IsFull())
             {
                 tail.Value.Sealed = true;
@@ -158,6 +165,7 @@ namespace FASTER.common
                 if (head == null) head = buffers.First;
                 temp.Value.Sealed = false;
             }
+            Interlocked.Decrement(ref count);
             return head.Value.Dequeue();
         }
 
