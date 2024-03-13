@@ -42,6 +42,7 @@ namespace FASTER.core
         readonly Queue<(long, FasterLogRecoveryInfo)> ongoingCommitRequests;
         readonly List<FasterLogRecoveryInfo> coveredCommits = new();
         long commitNum, commitCoveredAddress;
+        private bool logClosing = false;
 
         readonly LogCommitPolicy commitPolicy;
 
@@ -73,6 +74,7 @@ namespace FASTER.core
         /// Log safe read-only address
         /// </summary>
         public long SafeTailAddress;
+
 
         /// <summary>
         /// Dictionary of recovered iterators and their committed until addresses
@@ -231,6 +233,7 @@ namespace FASTER.core
             CommittedUntilAddress = beginAddress;
             CommittedBeginAddress = beginAddress;
             SafeTailAddress = beginAddress;
+            logClosing = false;
 
             commitNum = 0;
             this.beginAddress = beginAddress;
@@ -268,6 +271,8 @@ namespace FASTER.core
 
             commitNum = lastCommitNum;
             this.beginAddress = beginAddress;
+            logClosing = false;
+
 
             if (lastCommitNum > 0) logCommitManager.OnRecovery(lastCommitNum);
         }
@@ -322,24 +327,15 @@ namespace FASTER.core
         /// <param name="spinWait"> whether to spin until log completion becomes committed </param>
         public void CompleteLog(bool spinWait = false)
         {
-            // Ensure progress even if there is no thread in epoch table. Also, BumpCurrentEpoch must be done on a protected thread.
-            bool isProtected = epoch.ThisInstanceProtected();
-            if (!isProtected)
-                epoch.Resume();
-            try
+            // Use this to signal to future enqueue calls that they should stop as we are closing the log
+            logClosing = true;
+            // use a bump to ensure that any concurrent enqueues that have marched passed the check will finish before
+            // we close the log
+            epoch.BumpCurrentEpoch(() =>
             {
-                // Ensure all currently started entries will enqueue before we declare log closed
-                epoch.BumpCurrentEpoch(() =>
-                {
-                    CommitInternal(out _, out _, false, Array.Empty<byte>(), long.MaxValue, null);
-                });
-            }
-            finally
-            {
-                if (!isProtected)
-                    epoch.Suspend();
-            }
-
+                CommitInternal(out _, out _, false, Array.Empty<byte>(), long.MaxValue, null);
+            });
+            
             if (spinWait)
                 WaitForCommit(TailAddress, long.MaxValue);
         }
@@ -480,6 +476,7 @@ namespace FASTER.core
         #endregion
 
         #region TryEnqueue
+
         /// <summary>
         /// Try to enqueue entry to log (in memory). If it returns true, we are
         /// done. If it returns false, we need to retry.
@@ -497,7 +494,7 @@ namespace FASTER.core
 
             epoch.Resume();
 
-            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -538,7 +535,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
 
@@ -578,8 +575,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -619,8 +615,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -654,8 +649,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -689,6 +683,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = AllocateBlock(allocatedLength);
 
@@ -715,6 +710,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = AllocateBlock(allocatedLength);
 
@@ -743,6 +739,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = AllocateBlock(allocatedLength);
 
@@ -772,8 +769,9 @@ namespace FASTER.core
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
-            epoch.Resume();
-
+            epoch.Resume();            
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+            
             logicalAddress = AllocateBlock(allocatedLength);
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
@@ -801,6 +799,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = AllocateBlock(allocatedLength);
 
@@ -862,6 +861,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -901,6 +901,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -938,6 +939,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
@@ -2533,7 +2535,7 @@ namespace FASTER.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-            if (commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
+            if (logClosing || commitNum == long.MaxValue) throw new FasterException("Attempting to enqueue into a completed log");
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
 
@@ -2779,16 +2781,8 @@ namespace FASTER.core
             }
 
             // Otherwise, move to set read-only tail and flush 
-            try
-            {
-                epoch.Resume();
-                if (!allocator.ShiftReadOnlyToTail(out _, out _))
-                    CommitMetadataOnly(ref info);
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
+            if (!allocator.ShiftReadOnlyToTail(out _, out _))
+                CommitMetadataOnly(ref info);
             return true;
         }
 
