@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace FASTER.core
@@ -29,11 +30,8 @@ namespace FASTER.core
         /// <remarks>It is assumed that the span provided is already unmanaged or externally pinned</remarks>
         public UnmanagedMemoryManager(Span<T> span)
         {
-            fixed (T* ptr = &MemoryMarshal.GetReference(span))
-            {
-                _pointer = ptr;
-                _length = span.Length;
-            }
+            _pointer = (T*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span));
+            _length = span.Length;
         }
 
         /// <summary>
