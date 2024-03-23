@@ -154,6 +154,10 @@ namespace FASTER.core
         /// <returns></returns>
         internal static bool IsBlittable<T>()
         {
+#if NETSTANDARD2_1_OR_GREATER || NET6_0_OR_GREATER
+            return !RuntimeHelpers.IsReferenceOrContainsReferences<T>();
+#else
+
             if (default(T) == null)
                 return false;
 
@@ -168,6 +172,7 @@ namespace FASTER.core
                 return false;
             }
             return true;
+#endif
         }
 
         /// <summary>
