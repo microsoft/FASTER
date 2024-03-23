@@ -13,7 +13,7 @@ namespace FASTER.core
     {
         private readonly Record<Key, Value>[][] frame;
         public readonly int frameSize, pageSize;
-        private readonly int recordSize = Unsafe.SizeOf<Record<Key, Value>>();
+        private static readonly int recordSize = Unsafe.SizeOf<Record<Key, Value>>();
 
         public GenericFrame(int frameSize, int pageSize)
         {
