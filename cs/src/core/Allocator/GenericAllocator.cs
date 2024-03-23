@@ -34,7 +34,7 @@ namespace FASTER.core
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
         // Record sizes
-        private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
+        private static readonly int recordSize = Unsafe.SizeOf<Record<Key, Value>>();
         private readonly SerializerSettings<Key, Value> SerializerSettings;
         private readonly bool keyBlittable = Utility.IsBlittable<Key>();
         private readonly bool valueBlittable = Utility.IsBlittable<Value>();

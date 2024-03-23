@@ -5,7 +5,7 @@ using CommandLine;
 using FASTER.core;
 using NUnit.Framework;
 using System.Diagnostics;
-using System.Transactions;
+using System.Runtime.CompilerServices;
 
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
@@ -133,7 +133,7 @@ namespace FASTER.stress
         internal string MissingValueTypeHandler => $"Missing DataType handler for value type {this.Options.ValueType}";
 
         // Averages for initial record size estimation
-        internal int AverageStringLength => Utility.GetSize(default(string));
+        internal int AverageStringLength => Unsafe.SizeOf<string>();
         internal int AverageSpanByteLength => sizeof(int) + (this.UseRandom ? this.Options.ValueLength / 2 : this.Options.ValueLength);
 
         // Actual value lengths on a per-operation basis
