@@ -12,7 +12,7 @@ namespace FASTER.core
     /// <typeparam name="T"></typeparam>
     internal readonly struct FixedLengthStruct<T> : IVariableLengthStruct<T>
     {
-        private static readonly int size = Utility.GetSize(default(T));
+        private static readonly int size = Unsafe.SizeOf<T>();
 
         /// <summary>
         /// Get average length
