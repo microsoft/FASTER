@@ -58,7 +58,8 @@ namespace FASTER.core
         /// </summary>
         public int available_bytes;
 
-        private readonly int level;
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0044:Add readonly modifier", Justification = "mutable when CHECK_FREE defined")]
+        private int level;
         internal int Level => this.level
 #if CHECK_FREE
             & ~kFreeBitMask
