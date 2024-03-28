@@ -46,8 +46,8 @@ namespace FASTER.core
         /// <summary>
         /// The original address of this hash entry (at the time of FindTag, etc.)
         /// </summary>
-        internal long Address => entry.Address;
-        internal long AbsoluteAddress => Utility.AbsoluteAddress(this.Address);
+        internal readonly long Address => entry.Address;
+        internal readonly long AbsoluteAddress => Utility.AbsoluteAddress(this.Address);
 
         /// <summary>
         /// The current address of this hash entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
@@ -63,7 +63,7 @@ namespace FASTER.core
         /// <summary>
         /// Whether the original address for this hash entry (at the time of FindTag, etc.) is a readcache address.
         /// </summary>
-        internal bool IsReadCache => entry.ReadCache;
+        internal readonly bool IsReadCache => entry.ReadCache;
 
         /// <summary>
         /// Whether the current address for this hash entry (possibly modified after FindTag, etc.) is a readcache address.

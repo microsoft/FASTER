@@ -47,7 +47,7 @@ namespace FASTER.core
         /// </summary>
         private int numPending = 0;
 
-        private IntPtr ioCompletionPort;
+        private readonly IntPtr ioCompletionPort;
 
         /// <summary>
         /// Constructor
@@ -120,7 +120,7 @@ namespace FASTER.core
                 ioCompletionPort = Native32.CreateIoCompletionPort(new SafeFileHandle(new IntPtr(-1), false), IntPtr.Zero, UIntPtr.Zero, (uint)(workerThreads + NumCompletionThreads));
                 for (int i = 0; i < NumCompletionThreads; i++)
                 {
-                    var thread = new Thread(() => new LocalStorageDeviceCompletionWorker().Start(ioCompletionPort, _callback))
+                    var thread = new Thread(() => LocalStorageDeviceCompletionWorker.Start(ioCompletionPort, _callback))
                     {
                         IsBackground = true
                     };
@@ -555,9 +555,9 @@ namespace FASTER.core
 #if NET5_0_OR_GREATER
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 #endif
-    unsafe sealed class LocalStorageDeviceCompletionWorker
+    unsafe static class LocalStorageDeviceCompletionWorker
     {
-        public void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)
+        public static void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)
         {
             while (true)
             {

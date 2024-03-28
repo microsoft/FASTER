@@ -73,7 +73,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override string ToString()
+        public override readonly string ToString()
         {
             var delimiter = "    ";  // Environment.NewLine doesn't display in VS
             return $"hei: {hei}{delimiter}newLA {newLogicalAddress}{delimiter}recSrc: {recSrc}";

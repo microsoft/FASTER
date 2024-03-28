@@ -18,19 +18,19 @@ namespace FASTER.benchmark
         public long value;
 
 
-        public override string ToString()
+        public override readonly string ToString()
         {
             return "{ " + value + " }";
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetHashCode64(ref Key k)
+        public readonly long GetHashCode64(ref Key k)
         {
             return Utility.GetHashCode(k.value);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Equals(ref Key k1, ref Key k2)
+        public readonly bool Equals(ref Key k1, ref Key k2)
         {
             return k1.value == k2.value;
         }

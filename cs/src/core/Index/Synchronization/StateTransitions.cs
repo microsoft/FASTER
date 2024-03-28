@@ -90,7 +90,7 @@ namespace FASTER.core
         /// </summary>
         public Phase Phase
         {
-            get
+            readonly get
             {
                 return (Phase)((Word >> kPhaseShiftInWord) & kPhaseMaskInInteger);
             }
@@ -106,7 +106,7 @@ namespace FASTER.core
         /// </summary>
         public long Version
         {
-            get
+            readonly get
             {
                 return Word & kVersionMaskInWord;
             }
@@ -165,7 +165,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override string ToString()
+        public override readonly string ToString()
         {
             return $"[{Phase},{Version}]";
         }
@@ -173,13 +173,13 @@ namespace FASTER.core
         /// <summary>
         /// Compare the current <see cref="SystemState"/> to <paramref name="obj"/> for equality if obj is also a <see cref="SystemState"/>
         /// </summary>
-        public override bool Equals(object obj)
+        public override readonly bool Equals(object obj)
         {
             return obj is SystemState other && Equals(other);
         }
 
         /// <inheritdoc/>
-        public override int GetHashCode()
+        public override readonly int GetHashCode()
         {
             return Word.GetHashCode();
         }
@@ -187,7 +187,7 @@ namespace FASTER.core
         /// <summary>
         /// Compare the current <see cref="SystemState"/> to <paramref name="other"/> for equality
         /// </summary>
-        private bool Equals(SystemState other)
+        private readonly bool Equals(SystemState other)
         {
             return Word == other.Word;
         }

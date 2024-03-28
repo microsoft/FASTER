@@ -11,19 +11,19 @@ namespace FASTER.core
     public struct SpanByteVarLenStruct : IVariableLengthStruct<SpanByte>
     {
         /// <inheritdoc />
-        public int GetInitialLength() => sizeof(int);
+        public readonly int GetInitialLength() => sizeof(int);
 
         /// <inheritdoc />
-        public int GetLength(ref SpanByte t) => sizeof(int) + t.Length;
+        public readonly int GetLength(ref SpanByte t) => sizeof(int) + t.Length;
 
         /// <inheritdoc />
-        public unsafe void Serialize(ref SpanByte source, void* destination) => source.CopyTo((byte*)destination);
+        public readonly unsafe void Serialize(ref SpanByte source, void* destination) => source.CopyTo((byte*)destination);
 
         /// <inheritdoc />
-        public unsafe ref SpanByte AsRef(void* source) => ref Unsafe.AsRef<SpanByte>(source);
+        public readonly unsafe ref SpanByte AsRef(void* source) => ref Unsafe.AsRef<SpanByte>(source);
 
         /// <inheritdoc />
-        public unsafe void Initialize(void* source, void* dest) { *(int*)source = (int)((byte*)dest - (byte*)source) - sizeof(int); }
+        public readonly unsafe void Initialize(void* source, void* dest) { *(int*)source = (int)((byte*)dest - (byte*)source) - sizeof(int); }
     }
 
     /// <summary>
@@ -32,13 +32,13 @@ namespace FASTER.core
     public struct SpanByteVarLenStructForSpanByteInput : IVariableLengthStruct<SpanByte, SpanByte>
     {
         /// <inheritdoc />
-        public int GetInitialLength(ref SpanByte input) => sizeof(int) + input.Length;
+        public readonly int GetInitialLength(ref SpanByte input) => sizeof(int) + input.Length;
 
         /// <summary>
         /// Length of resulting object when doing RMW with given value and input. Here we set the length
         /// to the max of input and old value lengths. You can provide a custom implementation for other cases.
         /// </summary>
-        public int GetLength(ref SpanByte t, ref SpanByte input)
+        public readonly int GetLength(ref SpanByte t, ref SpanByte input)
             => sizeof(int) + (t.Length > input.Length ? t.Length : input.Length);
     }
 }

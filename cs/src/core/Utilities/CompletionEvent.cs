@@ -35,11 +35,11 @@ namespace FASTER.core
             }
         }
 
-        internal bool IsDefault() => this.semaphore is null;
+        internal readonly bool IsDefault() => this.semaphore is null;
 
-        internal void Wait(CancellationToken token = default) => this.semaphore.Wait(token);
+        internal readonly void Wait(CancellationToken token = default) => this.semaphore.Wait(token);
 
-        internal Task WaitAsync(CancellationToken token = default) => this.semaphore.WaitAsync(token);
+        internal readonly Task WaitAsync(CancellationToken token = default) => this.semaphore.WaitAsync(token);
 
         /// <inheritdoc/>
         public void Dispose()

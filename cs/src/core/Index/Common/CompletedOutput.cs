@@ -86,12 +86,12 @@ namespace FASTER.core
         /// <summary>
         /// The key for this pending operation.
         /// </summary>
-        public ref TKey Key => ref keyContainer.Get();
+        public readonly ref TKey Key => ref keyContainer.Get();
 
         /// <summary>
         /// The input for this pending operation.
         /// </summary>
-        public ref TInput Input => ref inputContainer.Get();
+        public readonly ref TInput Input => ref inputContainer.Get();
 
         /// <summary>
         /// The output for this pending operation. It is the caller's responsibility to dispose this if necessary; <see cref="Dispose()"/> will not try to dispose this member.
