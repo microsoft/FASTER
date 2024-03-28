@@ -120,7 +120,7 @@ namespace FASTER.core
             {
                 if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                 {
-                    faster.IssueCompletionCallback(ctx, fasterSession);
+                    FasterKV<Key,Value>.IssueCompletionCallback(ctx, fasterSession);
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                 }
             }
