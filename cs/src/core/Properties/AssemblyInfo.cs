@@ -24,6 +24,8 @@ using System.Runtime.InteropServices;
 [assembly: InternalsVisibleTo("FASTER.test" + AssemblyRef.FASTERPublicKey)]
 [assembly: InternalsVisibleTo("FASTER.stress" + AssemblyRef.FASTERPublicKey)]
 
+[module: SkipLocalsInit]
+
 /// <summary>
 /// Sets public key string for friend assemblies.
 /// </summary>
@@ -36,3 +38,11 @@ static class AssemblyRef
         "140e41eeba38fdbc0579d3121605db53fc75512976026dc518e85a5ecb76fcc319fd56b1291782" +
         "9d137ec7";
 }
+
+#if !NET5_0_OR_GREATER
+namespace System.Runtime.CompilerServices
+{
+    [AttributeUsage(AttributeTargets.Module | AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Constructor | AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Event | AttributeTargets.Interface, Inherited = false)]
+    sealed file class SkipLocalsInitAttribute : Attribute { }
+}
+#endif
