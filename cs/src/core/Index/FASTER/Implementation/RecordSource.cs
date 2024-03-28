@@ -70,16 +70,16 @@ namespace FASTER.core
         internal EphemeralLockResult ephemeralLockResult;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ref RecordInfo GetInfo() => ref Log.GetInfo(PhysicalAddress);
-        internal ref Key GetKey() => ref Log.GetKey(PhysicalAddress);
+        internal readonly ref RecordInfo GetInfo() => ref Log.GetInfo(PhysicalAddress);
+        internal readonly ref Key GetKey() => ref Log.GetKey(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ref Value GetValue() => ref Log.GetValue(PhysicalAddress);
+        internal readonly ref Value GetValue() => ref Log.GetValue(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long SetPhysicalAddress() => this.PhysicalAddress = Log.GetPhysicalAddress(LogicalAddress);
 
-        internal bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
+        internal readonly bool HasInMemorySrc => HasMainLogSrc || HasReadCacheSrc;
 
-        internal bool HasLock => HasTransientLock || ephemeralLockResult == EphemeralLockResult.Success;
+        internal readonly bool HasLock => HasTransientLock || ephemeralLockResult == EphemeralLockResult.Success;
 
         /// <summary>
         /// Initialize to the latest logical address from the caller.
@@ -100,7 +100,7 @@ namespace FASTER.core
             this.Log = srcLog;
         }
 
-        public override string ToString()
+        public override readonly string ToString()
         {
             var isRC = "(rc)";
             var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;

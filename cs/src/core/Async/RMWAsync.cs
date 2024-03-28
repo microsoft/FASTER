@@ -23,7 +23,7 @@ namespace FASTER.core
             }
 
             /// <inheritdoc/>
-            public RmwAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new(status, output, recordMetadata);
+            public readonly RmwAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new(status, output, recordMetadata);
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
@@ -39,12 +39,12 @@ namespace FASTER.core
             }
 
             /// <inheritdoc/>
-            public ValueTask<RmwAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public readonly ValueTask<RmwAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
                 => SlowRmwAsync(fasterKV, fasterSession, pendingContext, rmwOptions, diskRequest, token);
 
             /// <inheritdoc/>
-            public bool HasPendingIO => !this.diskRequest.IsDefault();
+            public readonly bool HasPendingIO => !this.diskRequest.IsDefault();
         }
 
         /// <summary>
@@ -84,19 +84,19 @@ namespace FASTER.core
 
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
             /// <returns>ValueTask for RMW result. User needs to await again if result status is pending.</returns>
-            public ValueTask<RmwAsyncResult<Input, TOutput, Context>> CompleteAsync(CancellationToken token = default) 
+            public readonly ValueTask<RmwAsyncResult<Input, TOutput, Context>> CompleteAsync(CancellationToken token = default) 
                 => this.Status.IsPending
                     ? updateAsyncInternal.CompleteAsync(token)
                     : new ValueTask<RmwAsyncResult<Input, TOutput, Context>>(new RmwAsyncResult<Input, TOutput, Context>(this.Status, this.Output, this.RecordMetadata));
 
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O synchronously if needed.</summary>
             /// <returns>Status of RMW operation</returns>
-            public (Status status, TOutput output) Complete() 
+            public readonly (Status status, TOutput output) Complete() 
                 => Complete(out _);
 
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O synchronously if needed.</summary>
             /// <returns>Status of RMW operation</returns>
-            public (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
+            public readonly (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
             {
                 if (!this.Status.IsPending)
                 {

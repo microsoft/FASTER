@@ -380,7 +380,7 @@ namespace FASTER.core
             overflowBucketsAllocator.Dispose();
         }
 
-        private void Free(int version)
+        private static void Free(int version)
         {
 #if !NET5_0_OR_GREATER
             if (state[version].tableHandle.IsAllocated)

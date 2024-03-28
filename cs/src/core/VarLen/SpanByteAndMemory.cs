@@ -46,7 +46,7 @@ namespace FASTER.core
         /// </summary>
         public int Length
         {
-            get => SpanByte.Length;
+            readonly get => SpanByte.Length;
             set => SpanByte.Length = value;
         }
 
@@ -93,6 +93,6 @@ namespace FASTER.core
         /// <summary>
         /// Is it allocated as SpanByte (on stack)?
         /// </summary>
-        public bool IsSpanByte => !SpanByte.Invalid;
+        public readonly bool IsSpanByte => !SpanByte.Invalid;
     }
 }

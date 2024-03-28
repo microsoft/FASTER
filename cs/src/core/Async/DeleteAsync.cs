@@ -21,10 +21,10 @@ namespace FASTER.core
             }
 
             /// <inheritdoc/>
-            public DeleteAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new DeleteAsyncResult<Input, Output, Context>(status);
+            public readonly DeleteAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new DeleteAsyncResult<Input, Output, Context>(status);
 
             /// <inheritdoc/>
-            public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public readonly Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             out Output output)
             {
                 OperationStatus internalStatus;
@@ -39,12 +39,12 @@ namespace FASTER.core
             }
 
             /// <inheritdoc/>
-            public ValueTask<DeleteAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public readonly ValueTask<DeleteAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
                 => SlowDeleteAsync(fasterKV, fasterSession, pendingContext, deleteOptions, token);
 
             /// <inheritdoc/>
-            public bool HasPendingIO => false;
+            public readonly bool HasPendingIO => false;
         }
 
         /// <summary>
@@ -73,14 +73,14 @@ namespace FASTER.core
 
             /// <summary>Complete the Delete operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
             /// <returns>ValueTask for Delete result. User needs to await again if result status is Status.PENDING.</returns>
-            public ValueTask<DeleteAsyncResult<Input, Output, Context>> CompleteAsync(CancellationToken token = default)
+            public readonly ValueTask<DeleteAsyncResult<Input, Output, Context>> CompleteAsync(CancellationToken token = default)
                 => this.Status.IsPending
                     ? updateAsyncInternal.CompleteAsync(token)
                     : new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(this.Status));
 
             /// <summary>Complete the Delete operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status of Delete operation</returns>
-            public Status Complete() => this.Status.IsPending ? updateAsyncInternal.CompleteSync().Status : this.Status;
+            public readonly Status Complete() => this.Status.IsPending ? updateAsyncInternal.CompleteSync().Status : this.Status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

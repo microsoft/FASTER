@@ -21,7 +21,7 @@ namespace FASTER.core
         // The current state machine in the system. The value could be stale and point to the previous state machine
         // if no state machine is active at this time.
         private ISynchronizationStateMachine currentSyncStateMachine;
-        private List<IStateMachineCallback> callbacks = new List<IStateMachineCallback>();
+        private readonly List<IStateMachineCallback> callbacks = new List<IStateMachineCallback>();
         internal long lastVersion;
 
         /// <summary>
@@ -139,7 +139,7 @@ namespace FASTER.core
 
         // Given the current global state, return the starting point of the state machine cycle
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private SystemState StartOfCurrentCycle(SystemState currentGlobalState)
+        private static SystemState StartOfCurrentCycle(SystemState currentGlobalState)
         {
             return currentGlobalState.Phase < Phase.REST
                 ? SystemState.Make(Phase.REST, currentGlobalState.Version - 1)
@@ -149,7 +149,7 @@ namespace FASTER.core
         // Given the current thread state and global state, fast forward the thread state to the
         // current state machine cycle if needed
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private SystemState FastForwardToCurrentCycle(SystemState threadState, SystemState targetStartState)
+        private static SystemState FastForwardToCurrentCycle(SystemState threadState, SystemState targetStartState)
         {
             if (threadState.Version < targetStartState.Version ||
                 threadState.Version == targetStartState.Version && threadState.Phase < targetStartState.Phase)
@@ -310,7 +310,7 @@ namespace FASTER.core
         /// <summary>
         /// Issue completion callback if needed, for the given context's prevCtx
         /// </summary>
-        internal void IssueCompletionCallback<Input, Output, Context, FasterSession>(FasterExecutionContext<Input, Output, Context> ctx, FasterSession fasterSession)
+        internal static void IssueCompletionCallback<Input, Output, Context, FasterSession>(FasterExecutionContext<Input, Output, Context> ctx, FasterSession fasterSession)
              where FasterSession : IFasterSession
         {
             CommitPoint commitPoint = default;

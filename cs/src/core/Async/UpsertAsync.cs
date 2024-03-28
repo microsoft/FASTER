@@ -21,10 +21,10 @@ namespace FASTER.core
             }
 
             /// <inheritdoc/>
-            public UpsertAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
+            public readonly UpsertAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
 
             /// <inheritdoc/>
-            public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public readonly Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             out Output output)
             {
                 output = default;
@@ -40,12 +40,12 @@ namespace FASTER.core
             }
 
             /// <inheritdoc/>
-            public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public readonly ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
                 => SlowUpsertAsync(fasterKV, fasterSession, pendingContext, upsertOptions, token);
 
             /// <inheritdoc/>
-            public bool HasPendingIO => false;
+            public readonly bool HasPendingIO => false;
         }
 
         /// <summary>
@@ -84,18 +84,18 @@ namespace FASTER.core
 
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
             /// <returns>ValueTask for Upsert result. User needs to await again if result status is Status.PENDING.</returns>
-            public ValueTask<UpsertAsyncResult<Input, TOutput, Context>> CompleteAsync(CancellationToken token = default) 
+            public readonly ValueTask<UpsertAsyncResult<Input, TOutput, Context>> CompleteAsync(CancellationToken token = default) 
                 => this.Status.IsPending
                     ? updateAsyncInternal.CompleteAsync(token)
                     : new ValueTask<UpsertAsyncResult<Input, TOutput, Context>>(new UpsertAsyncResult<Input, TOutput, Context>(this.Status, this.Output, this.RecordMetadata));
 
             /// <summary>Complete the Upsert operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status of Upsert operation</returns>
-            public Status Complete() => this.Status.IsPending ? updateAsyncInternal.CompleteSync().Status : this.Status;
+            public readonly Status Complete() => this.Status.IsPending ? updateAsyncInternal.CompleteSync().Status : this.Status;
 
             /// <summary>Complete the Upsert operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status and Output of Upsert operation</returns>
-            public (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
+            public readonly (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
             {
                 if (!this.Status.IsPending)
                 {

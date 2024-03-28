@@ -205,7 +205,7 @@ namespace FASTER.core
         /// <summary>
         /// </summary>
         /// <returns> size of this recovery info serialized </returns>
-        public int SerializedSize()
+        public readonly int SerializedSize()
         {
             var iteratorSize = sizeof(int);
             if (Iterators != null)
@@ -238,7 +238,7 @@ namespace FASTER.core
         /// Update iterators after persistence
         /// </summary>
         /// <param name="persistedIterators">Persisted iterators</param>
-        public void CommitIterators(ConcurrentDictionary<string, FasterLogScanIterator> persistedIterators)
+        public readonly void CommitIterators(ConcurrentDictionary<string, FasterLogScanIterator> persistedIterators)
         {
             if (Iterators?.Count > 0)
             {
@@ -253,7 +253,7 @@ namespace FASTER.core
         /// <summary>
         /// Print checkpoint info for debugging purposes
         /// </summary>
-        public void DebugPrint()
+        public readonly void DebugPrint()
         {
             Debug.WriteLine("******** Log Commit Info ********");
 

@@ -9,10 +9,10 @@ namespace FASTER.core
     /// <summary>
     /// Equality comparer for SpanByte
     /// </summary>
-    public struct SpanByteComparer : IFasterEqualityComparer<SpanByte>
+    public readonly struct SpanByteComparer : IFasterEqualityComparer<SpanByte>
     {
         /// <inheritdoc />
-        public unsafe long GetHashCode64(ref SpanByte spanByte) => StaticGetHashCode64(ref spanByte);
+        public readonly unsafe long GetHashCode64(ref SpanByte spanByte) => StaticGetHashCode64(ref spanByte);
 
         /// <summary>
         /// Get 64-bit hash code
@@ -33,7 +33,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public unsafe bool Equals(ref SpanByte k1, ref SpanByte k2) => StaticEquals(ref k1, ref k2);
+        public readonly unsafe bool Equals(ref SpanByte k1, ref SpanByte k2) => StaticEquals(ref k1, ref k2);
 
         /// <summary>
         /// Equality comparison

@@ -23,7 +23,7 @@ namespace FASTER.core
             }
 
             /// <inheritdoc/>
-            public ReadAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new(status, output, recordMetadata);
+            public readonly ReadAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new(status, output, recordMetadata);
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext,
@@ -39,12 +39,12 @@ namespace FASTER.core
             }
 
             /// <inheritdoc/>
-            public ValueTask<ReadAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
+            public readonly ValueTask<ReadAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
                 => SlowReadAsync(fasterKV, fasterSession, pendingContext, this.readOptions, this.diskRequest, token);
 
             /// <inheritdoc/>
-            public bool HasPendingIO => !this.diskRequest.IsDefault();
+            public readonly bool HasPendingIO => !this.diskRequest.IsDefault();
         }
 
         /// <summary>
@@ -83,12 +83,12 @@ namespace FASTER.core
 
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O synchronously if needed.</summary>
             /// <returns>Status of RMW operation</returns>
-            public (Status status, TOutput output) Complete()
+            public readonly (Status status, TOutput output) Complete()
                 => Complete(out _);
 
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O synchronously if needed.</summary>
             /// <returns>Status of RMW operation</returns>
-            public (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
+            public readonly (Status status, TOutput output) Complete(out RecordMetadata recordMetadata)
             {
                 if (!this.Status.IsPending)
                 {

@@ -62,7 +62,7 @@ namespace FASTER.core
             ExceptionDispatchInfo _exception;
             readonly FasterKV<Key, Value> _fasterKV;
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
-            TAsyncOperation _asyncOperation;
+            readonly TAsyncOperation _asyncOperation;
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 

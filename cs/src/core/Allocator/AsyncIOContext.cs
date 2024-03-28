@@ -71,7 +71,7 @@ namespace FASTER.core
         /// <summary>
         /// Indicates whether this is a default instance with no pending operation
         /// </summary>
-        public bool IsDefault() => this.callbackQueue is null && this.asyncOperation is null && this.completionEvent is null;
+        public readonly bool IsDefault() => this.callbackQueue is null && this.asyncOperation is null && this.completionEvent is null;
 
         /// <summary>
         /// Dispose

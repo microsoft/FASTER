@@ -10,26 +10,26 @@ namespace FASTER.core
 {
     internal struct OverflowBucketLockTable<TKey, TValue> : ILockTable<TKey>
     {
-        FasterKV<TKey, TValue> fht;
+        readonly FasterKV<TKey, TValue> fht;
 
-        internal long NumBuckets => IsEnabled ? fht.state[fht.resizeInfo.version].size_mask + 1 : 0;
+        internal readonly long NumBuckets => IsEnabled ? fht.state[fht.resizeInfo.version].size_mask + 1 : 0;
 
-        internal bool IsEnabled => this.fht is not null;
+        internal readonly bool IsEnabled => this.fht is not null;
 
         internal OverflowBucketLockTable(FasterKV<TKey, TValue> f) => this.fht = f;
 
         [Conditional("DEBUG")]
-        void AssertLockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking lock when locking mode is not {ConcurrencyControlMode.LockTable}");
+        readonly void AssertLockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking lock when locking mode is not {ConcurrencyControlMode.LockTable}");
 
         [Conditional("DEBUG")]
-        void AssertUnlockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking unlock when locking mode is not {ConcurrencyControlMode.LockTable}");
+        readonly void AssertUnlockAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking unlock when locking mode is not {ConcurrencyControlMode.LockTable}");
 
         [Conditional("DEBUG")]
-        void AssertQueryAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking query when locking mode is not {ConcurrencyControlMode.LockTable}");
+        readonly void AssertQueryAllowed() => Debug.Assert(IsEnabled, $"Attempt to do Manual-locking query when locking mode is not {ConcurrencyControlMode.LockTable}");
 
-        internal long GetSize() => fht.state[fht.resizeInfo.version].size_mask;
+        internal readonly long GetSize() => fht.state[fht.resizeInfo.version].size_mask;
 
-        public bool NeedKeyHash => IsEnabled;
+        public readonly bool NeedKeyHash => IsEnabled;
 
         static OverflowBucketLockTable()
         {
@@ -41,25 +41,25 @@ namespace FASTER.core
             => keyCode & size_mask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetBucketIndex(long keyCode)
+        internal readonly long GetBucketIndex(long keyCode)
             => GetBucketIndex(keyCode, fht.state[fht.resizeInfo.version].size_mask);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe HashBucket* GetBucket(long keyCode)
+        internal readonly unsafe HashBucket* GetBucket(long keyCode)
             => fht.state[fht.resizeInfo.version].tableAligned + GetBucketIndex(keyCode);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockManual(ref TKey key, ref HashEntryInfo hei, LockType lockType) 
+        public readonly unsafe bool TryLockManual(ref TKey key, ref HashEntryInfo hei, LockType lockType) 
             => TryLockManual(hei.firstBucket, lockType);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockManual(long keyCode, LockType lockType) 
+        public readonly unsafe bool TryLockManual(long keyCode, LockType lockType) 
             => TryLockManual(GetBucket(keyCode), lockType);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe bool TryLockManual(HashBucket* bucket, LockType lockType)
+        private readonly unsafe bool TryLockManual(HashBucket* bucket, LockType lockType)
         {
             AssertLockAllowed();
             return lockType switch
@@ -72,7 +72,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryPromoteLockManual(long keyCode)
+        public readonly unsafe bool TryPromoteLockManual(long keyCode)
         {
             AssertLockAllowed();
             return HashBucket.TryPromoteLatch(GetBucket(keyCode));
@@ -80,12 +80,12 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockTransient(ref TKey key, ref HashEntryInfo hei, LockType lockType) 
+        public readonly unsafe bool TryLockTransient(ref TKey key, ref HashEntryInfo hei, LockType lockType) 
             => lockType == LockType.Shared ? TryLockTransientShared(ref key, ref hei) : TryLockTransientExclusive(ref key, ref hei);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockTransientShared(ref TKey key, ref HashEntryInfo hei)
+        public readonly unsafe bool TryLockTransientShared(ref TKey key, ref HashEntryInfo hei)
         {
             AssertLockAllowed();
             return HashBucket.TryAcquireSharedLatch(hei.firstBucket);
@@ -93,7 +93,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockTransientExclusive(ref TKey key, ref HashEntryInfo hei)
+        public readonly unsafe bool TryLockTransientExclusive(ref TKey key, ref HashEntryInfo hei)
         {
             AssertLockAllowed();
             return HashBucket.TryAcquireExclusiveLatch(hei.firstBucket);
@@ -101,7 +101,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void Unlock(ref TKey key, ref HashEntryInfo hei, LockType lockType)
+        public readonly unsafe void Unlock(ref TKey key, ref HashEntryInfo hei, LockType lockType)
         {
             AssertUnlockAllowed();
             if (lockType == LockType.Shared)
@@ -115,7 +115,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void Unlock(long keyCode, LockType lockType)
+        public readonly unsafe void Unlock(long keyCode, LockType lockType)
         {
             AssertUnlockAllowed();
             HashBucket* bucket = GetBucket(keyCode);
@@ -130,7 +130,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void UnlockShared(ref TKey key, ref HashEntryInfo hei)
+        public readonly unsafe void UnlockShared(ref TKey key, ref HashEntryInfo hei)
         {
             AssertUnlockAllowed();
             HashBucket.ReleaseSharedLatch(ref hei);
@@ -138,7 +138,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void UnlockExclusive(ref TKey key, ref HashEntryInfo hei)
+        public readonly unsafe void UnlockExclusive(ref TKey key, ref HashEntryInfo hei)
         {
             AssertUnlockAllowed();
             HashBucket.ReleaseExclusiveLatch(ref hei);
@@ -146,7 +146,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool IsLockedShared(ref TKey key, ref HashEntryInfo hei)
+        public readonly unsafe bool IsLockedShared(ref TKey key, ref HashEntryInfo hei)
         {
             AssertQueryAllowed();
             return HashBucket.NumLatchedShared(hei.firstBucket) > 0;
@@ -154,7 +154,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool IsLockedExclusive(ref TKey key, ref HashEntryInfo hei)
+        public readonly unsafe bool IsLockedExclusive(ref TKey key, ref HashEntryInfo hei)
         {
             AssertQueryAllowed();
             return HashBucket.IsLatchedExclusive(hei.firstBucket);
@@ -162,7 +162,7 @@ namespace FASTER.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool IsLocked(ref TKey key, ref HashEntryInfo hei)
+        public readonly unsafe bool IsLocked(ref TKey key, ref HashEntryInfo hei)
         {
             AssertQueryAllowed();
             return HashBucket.IsLatched(hei.firstBucket);
@@ -190,22 +190,22 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        internal int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) 
+        internal readonly int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) 
             where TLockableKey : ILockableKey 
             => KeyHashComparer(key1, key2, fht.state[fht.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
-        internal int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) 
+        internal readonly int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) 
             where TLockableKey : ILockableKey
             => KeyHashComparer(key1, key2, fht.state[fht.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
-        internal void SortKeyHashes<TLockableKey>(TLockableKey[] keys) 
+        internal readonly void SortKeyHashes<TLockableKey>(TLockableKey[] keys) 
             where TLockableKey : ILockableKey 
             => Array.Sort(keys, new KeyComparer<TLockableKey>(fht.state[fht.resizeInfo.version].size_mask));
 
         /// <inheritdoc/>
-        internal void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count)
+        internal readonly void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey 
             => Array.Sort(keys, start, count, new KeyComparer<TLockableKey>(fht.state[fht.resizeInfo.version].size_mask));
 
@@ -219,11 +219,11 @@ namespace FASTER.core
 
             internal KeyComparer(long s) => size_mask = s;
 
-            public int Compare(TLockableKey key1, TLockableKey key2) => KeyHashComparer(key1, key2, size_mask);
+            public readonly int Compare(TLockableKey key1, TLockableKey key2) => KeyHashComparer(key1, key2, size_mask);
         }
 
         /// <inheritdoc/>
-        public void Dispose() { }
+        public readonly void Dispose() { }
     }
 }
 

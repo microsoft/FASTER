@@ -93,7 +93,7 @@ namespace FASTER.core
         private int checkpointCallbackCount;
         private SemaphoreSlim checkpointSemaphore;
 
-        private ConcurrentQueue<long> freeList;
+        private readonly ConcurrentQueue<long> freeList;
 
         readonly ILogger logger;
 

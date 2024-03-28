@@ -2815,6 +2815,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="length"></param>
         /// <returns></returns>
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Shipped as public")]
         public int UnsafeAlign(int length)
             => Align(length);
 

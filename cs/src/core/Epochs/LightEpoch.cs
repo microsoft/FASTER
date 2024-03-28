@@ -542,14 +542,14 @@ namespace FASTER.core
             [FieldOffset(16)]
             public fixed long markers[6];
 
-            public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}, re-ent {reentrant}";
+            public override readonly string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}, re-ent {reentrant}";
         }
         struct EpochActionPair
         {
             public long epoch;
             public Action action;
 
-            public override string ToString() => $"epoch = {epoch}, action = {(action is null ? "n/a" : action.Method.ToString())}";
+            public override readonly string ToString() => $"epoch = {epoch}, action = {(action is null ? "n/a" : action.Method.ToString())}";
         }
     }
 }
