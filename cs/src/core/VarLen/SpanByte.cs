@@ -278,7 +278,8 @@ namespace FASTER.core
         /// <returns></returns>
         public static SpanByte FromFixedSpan(Span<byte> span)
         {
-            return new SpanByte(span.Length, (IntPtr)Unsafe.AsPointer(ref span[0]));
+            var ptr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(span));
+            return new SpanByte(span.Length, (IntPtr)ptr);
         }
 
         /// <summary>
@@ -288,10 +289,8 @@ namespace FASTER.core
         /// <returns></returns>
         public static SpanByte FromFixedSpan(ReadOnlySpan<byte> span)
         {
-            fixed (byte* ptr = span)
-            {
-                return new SpanByte(span.Length, (IntPtr)ptr);
-            }
+            var ptr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(span));
+            return new SpanByte(span.Length, (IntPtr)ptr);
         }
 
         /// <summary>
