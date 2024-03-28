@@ -58,7 +58,7 @@ namespace FASTER.core
         /// </summary>
         public int available_bytes;
 
-        private int level;
+        private readonly int level;
         internal int Level => this.level
 #if CHECK_FREE
             & ~kFreeBitMask

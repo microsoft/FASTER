@@ -62,7 +62,8 @@ namespace FASTER.core
             ExceptionDispatchInfo _exception;
             readonly FasterKV<Key, Value> _fasterKV;
             readonly IFasterSession<Key, Value, Input, Output, Context> _fasterSession;
-            readonly TAsyncOperation _asyncOperation;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0044:Add readonly modifier", Justification = "Possible call side-effects?")]
+            TAsyncOperation _asyncOperation;
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 

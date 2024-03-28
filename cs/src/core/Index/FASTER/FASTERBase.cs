@@ -380,6 +380,7 @@ namespace FASTER.core
             overflowBucketsAllocator.Dispose();
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "stateful on down-level")]
         private void Free(int version)
         {
 #if !NET5_0_OR_GREATER
