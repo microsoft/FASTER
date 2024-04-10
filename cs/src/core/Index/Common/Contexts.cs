@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -156,6 +155,7 @@ namespace FASTER.core
             internal const ushort kNoOpFlags = 0;
             internal const ushort kNoKey = 0x0001;
             internal const ushort kIsAsync = 0x0002;
+            internal const ushort kHadStartAddress = 0x0004;
 
             internal ReadCopyOptions readCopyOptions;
 
@@ -214,6 +214,12 @@ namespace FASTER.core
             {
                 get => (operationFlags & kIsAsync) != 0;
                 set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
+            }
+
+            internal bool HadStartAddress
+            {
+                get => (operationFlags & kHadStartAddress) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kHadStartAddress) : (ushort)(operationFlags & ~kHadStartAddress);
             }
 
             internal long InitialEntryAddress
@@ -555,7 +561,7 @@ namespace FASTER.core
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
         }
-        
+
         /// <summary>
         ///  Recover info from token
         /// </summary>
@@ -582,7 +588,7 @@ namespace FASTER.core
                 deltaTailAddress = deltaLog.NextAddress;
             }
             var cookie = s.ReadToEnd();
-            commitCookie =  cookie.Length == 0 ? null : Convert.FromBase64String(cookie);
+            commitCookie = cookie.Length == 0 ? null : Convert.FromBase64String(cookie);
         }
 
         /// <summary>

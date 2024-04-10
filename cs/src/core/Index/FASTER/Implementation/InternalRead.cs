@@ -66,6 +66,7 @@ namespace FASTER.core
             {
                 if (startAddress < hlog.BeginAddress)
                     return OperationStatus.NOTFOUND;
+                pendingContext.HadStartAddress = true;
                 stackCtx.hei.entry.Address = startAddress;
             }
 

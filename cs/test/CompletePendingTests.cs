@@ -1,27 +1,45 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using FASTER.core;
 using NUnit.Framework;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
+    public struct LocalKeyStructComparer : IFasterEqualityComparer<KeyStruct>
+    {
+        internal long? forceCollisionHash;
+
+        public long GetHashCode64(ref KeyStruct key)
+        {
+            return forceCollisionHash.HasValue ? forceCollisionHash.Value : Utility.GetHashCode(key.kfield1);
+        }
+        public bool Equals(ref KeyStruct k1, ref KeyStruct k2)
+        {
+            return k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
+        }
+
+        public override string ToString() => $"forceHashCollision: {forceCollisionHash}";
+    }
+
     [TestFixture]
     class CompletePendingTests
     {
         private FasterKV<KeyStruct, ValueStruct> fht;
         private IDevice log;
+        LocalKeyStructComparer comparer = new();
 
         [SetUp]
         public void Setup()
         {
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
+            DeleteDirectory(MethodTestDir, wait: true);
 
-            log = Devices.CreateLogDevice($"{TestUtils.MethodTestDir}/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
-            fht = new FasterKV<KeyStruct, ValueStruct>(128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+            log = Devices.CreateLogDevice($"{MethodTestDir}/CompletePendingTests.log", preallocateFile: true, deleteOnClose: true);
+            fht = new FasterKV<KeyStruct, ValueStruct>(128, new LogSettings { LogDevice = log, MemorySizeBits = 29 }, comparer: comparer);
         }
 
         [TearDown]
@@ -31,7 +49,7 @@ namespace FASTER.test
             fht = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
         }
 
         const int numRecords = 1000;
@@ -39,7 +57,7 @@ namespace FASTER.test
         static KeyStruct NewKeyStruct(int key) => new() { kfield1 = key, kfield2 = key + numRecords * 10 };
         static ValueStruct NewValueStruct(int key) => new() { vfield1 = key, vfield2 = key + numRecords * 10 };
 
-        static InputStruct NewInputStruct(int key) => new(){ ifield1 = key + numRecords * 30, ifield2 = key + numRecords * 40 };
+        static InputStruct NewInputStruct(int key) => new() { ifield1 = key + numRecords * 30, ifield2 = key + numRecords * 40 };
         static ContextStruct NewContextStruct(int key) => new() { cfield1 = key + numRecords * 50, cfield2 = key + numRecords * 60 };
 
         static void VerifyStructs(int key, ref KeyStruct keyStruct, ref InputStruct inputStruct, ref OutputStruct outputStruct, ref ContextStruct contextStruct, bool useRMW)
@@ -126,7 +144,7 @@ namespace FASTER.test
 
         [Test]
         [Category("FasterKV")]
-        public async ValueTask ReadAndCompleteWithPendingOutput([Values]bool useRMW, [Values]bool isAsync)
+        public async ValueTask ReadAndCompleteWithPendingOutput([Values] bool useRMW, [Values] bool isAsync)
         {
             using var session = fht.For(new FunctionsWithContext<ContextStruct>()).NewSession<FunctionsWithContext<ContextStruct>>();
             Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
@@ -213,6 +231,145 @@ namespace FASTER.test
                 Assert.IsFalse(status.IsPending);
                 Assert.AreEqual(address, recordMetadata.Address);
             }
+        }
+
+        public enum StartAddressMode
+        {
+            UseStartAddress,
+            NoStartAddress
+        }
+
+        public class PendingReadFunctions<TContext> : FunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
+        {
+            public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            {
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(key.kfield1, output.value.vfield1);
+                // Do not compare field2; that's our updated value, and the key won't be found if we change kfield2
+            }
+
+            // Read functions
+            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
+            {
+                Assert.IsFalse(readInfo.RecordInfo.IsNull());
+                dst.value = value;
+                return true;
+            }
+
+            public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
+                => SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public void ReadPendingWithNewSameKey([Values] StartAddressMode startAddressMode, [Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode secondRecordFlushMode)
+        {
+            const int valueMult = 1000;
+
+            using var session = fht.For(new PendingReadFunctions<ContextStruct>()).NewSession<PendingReadFunctions<ContextStruct>>();
+
+            // Store off startAddress before initial upsert
+            var startAddress = startAddressMode == StartAddressMode.UseStartAddress ? fht.Log.TailAddress : Constants.kInvalidAddress;
+
+            // Insert first record
+            var firstValue = 0; // same as key
+            var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
+            var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
+            session.Upsert(ref keyStruct, ref valueStruct);
+
+            // Flush to make the Read() go pending.
+            fht.Log.FlushAndEvict(wait: true);
+
+            ReadOptions readOptions = new() { StartAddress = startAddress };
+            var (status, outputStruct) = session.Read(keyStruct, ref readOptions);
+            Assert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
+
+            // Insert next record with the same key and flush this too if requested.
+            var secondValue = firstValue + 1;
+            valueStruct.vfield2 = secondValue * valueMult;
+            session.Upsert(ref keyStruct, ref valueStruct);
+            if (secondRecordFlushMode == FlushMode.OnDisk)
+                fht.Log.FlushAndEvict(wait: true);
+
+            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            (status, outputStruct) = GetSinglePendingResult(completedOutputs);
+
+            if (startAddressMode == StartAddressMode.UseStartAddress)
+                Assert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "UseStartAddress should have returned first value");
+            else
+                Assert.AreEqual(secondValue * valueMult, outputStruct.value.vfield2, "NoStartAddress should have returned second value");
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public void ReadPendingWithNewDifferentKeyInChain([Values] StartAddressMode startAddressMode, [Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode secondRecordFlushMode)
+        {
+            const int valueMult = 1000;
+
+            using var session = fht.For(new PendingReadFunctions<ContextStruct>()).NewSession<PendingReadFunctions<ContextStruct>>();
+
+            // Store off startAddress before initial upsert
+            var startAddress = startAddressMode == StartAddressMode.UseStartAddress ? fht.Log.TailAddress : Constants.kInvalidAddress;
+
+            // Insert first record
+            var firstValue = 0; // same as key
+            var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
+            var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
+            session.Upsert(ref keyStruct, ref valueStruct);
+
+            // Force collisions to test having another key in the chain
+            comparer.forceCollisionHash = keyStruct.GetHashCode64(ref keyStruct);
+
+            // Flush to make the Read() go pending.
+            fht.Log.FlushAndEvict(wait: true);
+
+            ReadOptions readOptions = new() { StartAddress = startAddress };
+            var (status, outputStruct) = session.Read(keyStruct, ref readOptions);
+            Assert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
+
+            // Insert next record with a different key and flush this too if requested.
+            var secondValue = firstValue + 1;
+            keyStruct = new() { kfield1 = secondValue, kfield2 = secondValue * valueMult };
+            valueStruct = new() { vfield1 = secondValue, vfield2 = secondValue * valueMult };
+            session.Upsert(ref keyStruct, ref valueStruct);
+            if (secondRecordFlushMode == FlushMode.OnDisk)
+                fht.Log.FlushAndEvict(wait: true);
+
+            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            (status, outputStruct) = GetSinglePendingResult(completedOutputs);
+
+            Assert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        public void ReadPendingWithNoNewKey([Values] StartAddressMode startAddressMode)
+        {
+            // Basic test of pending read
+            const int valueMult = 1000;
+
+            using var session = fht.For(new PendingReadFunctions<ContextStruct>()).NewSession<PendingReadFunctions<ContextStruct>>();
+
+            // Store off startAddress before initial upsert
+            var startAddress = startAddressMode == StartAddressMode.UseStartAddress ? fht.Log.TailAddress : Constants.kInvalidAddress;
+
+            // Insert first record
+            var firstValue = 0; // same as key
+            var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
+            var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
+            session.Upsert(ref keyStruct, ref valueStruct);
+
+            // Flush to make the Read() go pending.
+            fht.Log.FlushAndEvict(wait: true);
+
+            ReadOptions readOptions = new() { StartAddress = startAddress };
+            var (status, outputStruct) = session.Read(keyStruct, ref readOptions);
+            Assert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
+
+            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            (status, outputStruct) = GetSinglePendingResult(completedOutputs);
+
+            Assert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
         }
     }
 }
