@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 
 namespace FASTER.core
 {
@@ -48,16 +47,42 @@ namespace FASTER.core
                         Debug.Fail("Expected to FindTag in InternalContinuePendingRead");
                     stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                    // During the pending operation, a record for the key may have been added to the log or readcache.
                     ref var value = ref hlog.GetContextRecordValue(ref request);
-                    if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
-                    {
-                        srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
-                        // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
-                        if (fasterSession.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
-                            return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
-                        value = ref stackCtx.recSrc.GetValue();
+                    // During the pending operation, a record for the key may have been added to the log or readcache. If we had a StartAddress we ignore this.
+                    if (!pendingContext.HadStartAddress)
+                    {
+                        if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
+                        {
+                            srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+
+                            // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
+                            if (fasterSession.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
+                                return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
+                            value = ref stackCtx.recSrc.GetValue();
+                        }
+                        else
+                        {
+                            // We didn't find a record for the key in memory, but if recSrc.LogicalAddress (which is the .PreviousAddress of the lowest record
+                            // above InitialLatestLogicalAddress we could reach) is > InitialLatestLogicalAddress, then it means InitialLatestLogicalAddress is
+                            // now below HeadAddress and there is at least one record below HeadAddress but above InitialLatestLogicalAddress. Reissue the Read(),
+                            // using the LogicalAddress we just found as minAddress. We will either find an in-memory version of the key that was added after the
+                            // TryFindRecordInMemory we just did, or do IO and find the record we just found or one above it. Read() updates InitialLatestLogicalAddress,
+                            // so if we do IO, the next time we come to CompletePendingRead we will only search for a newer version of the key in any records added
+                            // after our just-completed TryFindRecordInMemory.
+                            if (stackCtx.recSrc.LogicalAddress > pendingContext.InitialLatestLogicalAddress
+                                && (!pendingContext.HasMinAddress || stackCtx.recSrc.LogicalAddress >= pendingContext.minAddress))
+                            {
+                                OperationStatus internalStatus;
+                                do
+                                {
+                                    internalStatus = InternalRead(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
+                                        startAddress: Constants.kInvalidAddress, ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
+                                }
+                                while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pendingContext));
+                                return internalStatus;
+                            }
+                        }
                     }
 
                     if (!TryTransientSLock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx, out var status))
@@ -193,7 +218,7 @@ namespace FASTER.core
                 // above InitialLatestLogicalAddress we could reach) is > InitialLatestLogicalAddress, then it means InitialLatestLogicalAddress is
                 // now below HeadAddress and there is at least one record below HeadAddress but above InitialLatestLogicalAddress. We must do InternalRMW.
                 if (stackCtx.recSrc.LogicalAddress > pendingContext.InitialLatestLogicalAddress)
-                { 
+                {
                     Debug.Assert(pendingContext.InitialLatestLogicalAddress < hlog.HeadAddress, "Failed to search all in-memory records");
                     break;
                 }
@@ -217,7 +242,7 @@ namespace FASTER.core
                     TransientXUnlock<Input, Output, Context, FasterSession>(fasterSession, ref key, ref stackCtx);
                 }
 
-                // Must do this *after* Unlocking. Retries should drop down to InternalRMW
+            // Must do this *after* Unlocking. Retries should drop down to InternalRMW
             CheckRetry:
                 if (!HandleImmediateRetryStatus(status, fasterSession, ref pendingContext))
                     return status;
