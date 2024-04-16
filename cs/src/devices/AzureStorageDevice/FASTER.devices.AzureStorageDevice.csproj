@@ -36,7 +36,7 @@
     <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+  <ItemGroup>
     <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
   </ItemGroup>
 

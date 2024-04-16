@@ -48,7 +48,6 @@
     <PackageReference Include="System.Memory" Version="4.5.5" />
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="7.0.0" />
-    <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
   </ItemGroup>
 
   <Choose>
