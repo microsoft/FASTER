@@ -10,6 +10,7 @@
 #include <mutex>
 #include <thread>
 
+#include "common/log.h"
 #include "device/file_system_disk.h"
 #include "address.h"
 #include "async_result_types.h"
@@ -264,6 +265,10 @@ class PersistentMemoryMalloc {
     , pre_allocate_log_{ pre_allocate_log }
     , has_no_backing_storage_{ has_no_backing_storage } {
     assert(start_address.page() <= Address::kMaxPage);
+
+    log_debug("Log size: %.3lf MiB", static_cast<double>(log_size) / (1 << 20));
+    log_debug("Mutable fraction: %.3lf", log_mutable_fraction);
+    log_debug("Pre-allocate: %s", pre_allocate_log ? "TRUE" : "FALSE");
 
     InitializeBuffer(log_size, log_mutable_fraction);
   }
@@ -590,16 +595,24 @@ class PersistentMemoryMalloc {
     // The latest N pages should be mutable.
     // If mutable fraction is 0, then allocate minimum size possible (i.e. 2 mutable pages)
     num_mutable_pages_ = (log_mutable_fraction > 0) ? static_cast<uint32_t>(log_mutable_fraction * buffer_size_) : 2;
+    log_debug("Num mutable_pages = %u", num_mutable_pages_);
+
     if(num_mutable_pages_ <= 1) {
       // Need at least two mutable pages: one to write to, and one to open up when the previous
       // mutable page is full.
       throw std::invalid_argument{ "Must have at least 2 mutable pages" };
     }
+
     // Make sure we have at least 'kNumHeadPages' immutable pages.
     // Otherwise, we will not be able to dump log to disk when our in-memory log is full.
     // If the user is certain that we will never need to dump anything to disk
     // (this is the case in compaction), skip this check.
     if(!has_no_backing_storage_ && buffer_size_ - num_mutable_pages_ < kNumHeadPages) {
+      log_error("Number of non-mutable pages (%u) is less than 'kNumHeadPages' (4)", buffer_size_ - num_mutable_pages_, kNumHeadPages);
+      log_info("For given log size (%.3lf MiB) set mutable fraction to *no more* than %.3lf.",
+        static_cast<double>(log_size) / (1 << 20),
+        1.0 - static_cast<double>((kNumHeadPages * kPageSize))/static_cast<double>(log_size));
+
       throw std::invalid_argument{ "Must have at least 'kNumHeadPages' immutable pages" };
     }
 
