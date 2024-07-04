@@ -31,7 +31,11 @@ namespace core {
 namespace FASTER {
 namespace index {
 
-template<class D, class HID = ColdLogHashIndexDefinition>
+// 32 entries -- 4 buckets in chunk w/ 8 entries per chunk bucket [256 bytes]
+constexpr static uint8_t DEFAULT_NUM_ENTRIES = 32;
+
+//template<class D, class HID = ColdLogHashIndexVariableSizeDefinition>
+template<class D, class HID = ColdLogHashIndexDefinition<DEFAULT_NUM_ENTRIES>>
 class FasterIndex : public IHashIndex<D> {
  public:
   typedef D disk_t;
@@ -44,28 +48,17 @@ class FasterIndex : public IHashIndex<D> {
   typedef typename HID::hash_bucket_entry_t hash_bucket_entry_t;
   typedef typename HID::hash_bucket_chunk_entry_t hash_bucket_chunk_entry_t;
 
-  typedef FasterIndexReadContext read_context_t;
-  typedef FasterIndexRmwContext rmw_context_t;
-  typedef HashIndexChunkEntry hash_index_chunk_t;
+  typedef FasterIndexReadContext<HID> read_context_t;
+  typedef FasterIndexRmwContext<HID> rmw_context_t;
+
+  typedef HashIndexChunkKey<key_hash_t> hash_index_chunk_key_t;
+  typedef HashIndexChunkEntry<HID::kNumBuckets> hash_index_chunk_entry_t;
 
   typedef HashIndex<D, HID> hash_index_t;
-  typedef FasterKv<HashIndexChunkKey, hash_index_chunk_t, disk_t, hash_index_t, hash_index_t> store_t;
+  typedef FasterKv<hash_index_chunk_key_t, hash_index_chunk_entry_t, disk_t, hash_index_t, hash_index_t> store_t;
 
   typedef GcStateFasterIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
-
-  // 256k rows x 8 entries each = 2M entries
-  // 16MB in-mem index (w/o overflow) [2M x 8 bytes each]
-  const uint64_t kDefaultHashIndexNumEntries = 256 * 1024;
-  // ~4M rows x 8 entries each = ~32M entries
-  // 256 MB in-mem index (w/o overflow) [32M x 8 bytes each]
-  //const uint64_t kHashIndexNumEntries = 4 * 1024 * 1024;
-  // Stick to 768 MB for now -- can use remaining (~256 MB) for read cache.
-  //const uint64_t kInMemSize = 768_MiB;
-  const uint64_t kInMemSize = 9_GiB;
-  // 90% of 768MB (~691 MB) constitute the mutable region
-  const double dMutablePercentage = 0.75;
-  //const double dMutablePercentage = 0.85;
 
   FasterIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
               gc_state_t& gc_state, grow_state_t& grow_state)
@@ -305,7 +298,7 @@ template <class C>
 inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context, C& pending_context) const {
   key_hash_t hash{ pending_context.get_key_hash() };
   // Use the hash from the original key to form the hash for the cold-index
-  HashIndexChunkKey key{ hash.chunk_id(table_size_), hash.tag() };
+  hash_index_chunk_key_t key{ hash.chunk_id(table_size_), hash.tag() };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
 
   // TODO: avoid incrementing io_id for every request if possible
@@ -417,7 +410,7 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
                                                 bool force_update) {
   key_hash_t hash{ pending_context.get_key_hash() };
   // Use the hash from the original key to form the hash for the cold-index
-  HashIndexChunkKey key{ hash.chunk_id(table_size_), hash.tag() };
+  hash_index_chunk_key_t key{ hash.chunk_id(table_size_), hash.tag() };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
 
   // FIXME: avoid incrementing io_id for every request if possible
@@ -453,7 +446,7 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
 
 template <class D, class HID>
 void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, Status result) {
-  CallbackContext<FasterIndexContext> context{ ctxt };
+  CallbackContext<FasterIndexContext<HID>> context{ ctxt };
   // Result here is wrt to FASTER operation (i.e., Read / Rmw) result
   assert(result == Status::Ok || result == Status::NotFound);
   if (result == Status::Ok) {

@@ -7,6 +7,7 @@
 namespace FASTER {
 namespace index {
 
+template <class KeyHash>
 class HashIndexChunkKey {
  public:
   HashIndexChunkKey(uint64_t key_, uint16_t tag_)
@@ -19,7 +20,7 @@ class HashIndexChunkKey {
     return static_cast<uint32_t>(sizeof(HashIndexChunkKey));
   }
   inline core::KeyHash GetHash() const {
-    core::ColdLogIndexKeyHash hash{ key, tag };
+    KeyHash hash{ key, tag };
     return core::KeyHash{ hash.control() };
   }
 
@@ -39,32 +40,32 @@ struct HashIndexChunkPos {
   uint8_t tag;
 };
 
-/// A chunk consisting of 64 hash buckets -- 512 bucket entries (no overflow entries)
+/// A chunk consisting of `NB` hash buckets -- 8 * `NB` bucket entries (no overflow entries) [64 bytes each]
+template<unsigned NB>
 struct alignas(Constants::kCacheLineBytes) HashIndexChunkEntry {
   HashIndexChunkEntry() {
-    std::memset(&entries, 0, sizeof(HashIndexChunkEntry));
+    std::memset(&entries, 0, sizeof(HashIndexChunkEntry<NB>));
   }
   inline static constexpr uint32_t size() {
-    return static_cast<uint32_t>(sizeof(HashIndexChunkEntry));
+    return static_cast<uint32_t>(sizeof(HashIndexChunkEntry<NB>));
   }
-  /// Number of entries per bucket
-  //static constexpr uint32_t kNumEntries = 64;   // 4096B
-  //static constexpr uint32_t kNumEntries = 32;   // 2048B
-  //static constexpr uint32_t kNumEntries = 16;   // 1024B
-  //static constexpr uint32_t kNumEntries = 8;    //  512B
-  static constexpr uint32_t kNumEntries = 4;    //  256B
-  //static constexpr uint32_t kNumEntries = 2;    //  128B
-  //static constexpr uint32_t kNumEntries = 1;    //  64B
+  /// Number of buckets
+  constexpr static uint32_t kNumBuckets = NB;
+  static_assert(kNumBuckets >= 1 && kNumBuckets <= 64,
+    "HashIndexChunkEntry: Number of buckets should be between 1 and 64.");
+  static_assert(core::is_power_of_2(kNumBuckets),
+    "HashIndexChunkEntry: Number of buckets should be a power of 2.");
+
   /// The entries.
-  ColdLogIndexHashBucket entries[kNumEntries];
+  ColdLogIndexHashBucket entries[kNumBuckets];
 };
-//static_assert(sizeof(HashIndexChunkEntry) == 4096, "sizeof(HashIndexChunkEntry) != 4kB");
-//static_assert(sizeof(HashIndexChunkEntry) == 2048, "sizeof(HashIndexChunkEntry) != 2kB");
-//static_assert(sizeof(HashIndexChunkEntry) == 1024, "sizeof(HashIndexChunkEntry) != 1kB");
-//static_assert(sizeof(HashIndexChunkEntry) == 512, "sizeof(HashIndexChunkEntry) != 512B");
-static_assert(sizeof(HashIndexChunkEntry) == 256, "sizeof(HashIndexChunkEntry) != 256B");
-//static_assert(sizeof(HashIndexChunkEntry) == 128, "sizeof(HashIndexChunkEntry) != 128B");
-//static_assert(sizeof(HashIndexChunkEntry) == 64, "sizeof(HashIndexChunkEntry) != 64B");
+static_assert(sizeof(HashIndexChunkEntry<64>) == 4096, "sizeof(HashIndexChunkEntry) != 4kB");
+static_assert(sizeof(HashIndexChunkEntry<32>) == 2048, "sizeof(HashIndexChunkEntry) != 2kB");
+static_assert(sizeof(HashIndexChunkEntry<16>) == 1024, "sizeof(HashIndexChunkEntry) != 1kB");
+static_assert(sizeof(HashIndexChunkEntry<8>) == 512, "sizeof(HashIndexChunkEntry) != 512B");
+static_assert(sizeof(HashIndexChunkEntry<4>) == 256, "sizeof(HashIndexChunkEntry) != 256B");
+static_assert(sizeof(HashIndexChunkEntry<2>) == 128, "sizeof(HashIndexChunkEntry) != 128B");
+static_assert(sizeof(HashIndexChunkEntry<1>) == 64, "sizeof(HashIndexChunkEntry) != 64B");
 
 enum class HashIndexOp : uint8_t {
   FIND_ENTRY = 0,
@@ -75,14 +76,17 @@ enum class HashIndexOp : uint8_t {
   INVALID,
 };
 
+template <class HID>
 class FasterIndexContext : public IAsyncContext {
  public:
-  typedef HashIndexChunkKey key_t;
-  typedef HashIndexChunkEntry value_t;
+  typedef typename HID::key_hash_t key_hash_t;
+
+  typedef HashIndexChunkKey<key_hash_t> key_t;
+  typedef HashIndexChunkEntry<HID::kNumBuckets> value_t;
 
   FasterIndexContext(OperationType op_type_, IAsyncContext& caller_context_, uint64_t io_id_,
                     concurrent_queue<AsyncIndexIOContext*>* thread_io_responses_,
-                    HashBucketEntry entry_, HashIndexChunkKey key, HashIndexChunkPos pos)
+                    HashBucketEntry entry_, key_t key, HashIndexChunkPos pos)
     : op_type{ op_type_ }
     , caller_context{ &caller_context_ }
     , io_id{ io_id_ }
@@ -114,7 +118,7 @@ class FasterIndexContext : public IAsyncContext {
   }
 
   /// The implicit and explicit interfaces require a key() accessor.
-  inline const HashIndexChunkKey& key() const {
+  inline const key_t& key() const {
     return key_;
   }
 
@@ -136,7 +140,7 @@ class FasterIndexContext : public IAsyncContext {
 
  protected:
   /// Used to identify which hash index chunk to update
-  HashIndexChunkKey key_;
+  key_t key_;
   /// Used to identify which hash bucket entry (inside chunk) to update
   HashIndexChunkPos pos_;
 
@@ -152,12 +156,16 @@ class FasterIndexContext : public IAsyncContext {
 };
 
 /// Used by FindEntry hash index method
-class FasterIndexReadContext : public FasterIndexContext {
+template <class HID>
+class FasterIndexReadContext : public FasterIndexContext<HID> {
  public:
+  typedef typename FasterIndexContext<HID>::key_t key_t;
+  typedef typename FasterIndexContext<HID>::value_t value_t;
+
   FasterIndexReadContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
                         concurrent_queue<AsyncIndexIOContext*>* thread_io_responses,
-                        HashIndexChunkKey key, HashIndexChunkPos pos)
-    : FasterIndexContext(op_type, caller_context, io_id, thread_io_responses,
+                        key_t key, HashIndexChunkPos pos)
+    : FasterIndexContext<HID>(op_type, caller_context, io_id, thread_io_responses,
                           HashBucketEntry::kInvalidEntry, key, pos) {
 #ifdef STATISTICS
     hash_index_op = HashIndexOp::FIND_ENTRY;
@@ -165,37 +173,41 @@ class FasterIndexReadContext : public FasterIndexContext {
   }
   /// Copy (and deep-copy) constructor.
   FasterIndexReadContext(const FasterIndexReadContext& other, IAsyncContext* caller_context_)
-    : FasterIndexContext(other, caller_context_) {
+    : FasterIndexContext<HID>(other, caller_context_) {
   }
 
-  inline void Get(const HashIndexChunkEntry& value) {
-    const AtomicHashBucketEntry& atomic_entry = value.entries[pos_.index].entries[pos_.tag];
-    entry = atomic_entry.load();
-    result = (entry != HashBucketEntry::kInvalidEntry) ? Status::Ok : Status::NotFound;
+  inline void Get(const value_t& value) {
+    const AtomicHashBucketEntry& atomic_entry = value.entries[this->pos_.index].entries[this->pos_.tag];
+    this->entry = atomic_entry.load();
+    this->result = (this->entry != HashBucketEntry::kInvalidEntry) ? Status::Ok : Status::NotFound;
   }
-  inline bool GetAtomic(const HashIndexChunkEntry& value) {
-    const AtomicHashBucketEntry& atomic_entry = value.entries[pos_.index].entries[pos_.tag];
-    entry = atomic_entry.load();
-    result = (entry != HashBucketEntry::kInvalidEntry) ? Status::Ok : Status::NotFound;
+  inline bool GetAtomic(const value_t& value) {
+    const AtomicHashBucketEntry& atomic_entry = value.entries[this->pos_.index].entries[this->pos_.tag];
+    this->entry = atomic_entry.load();
+    this->result = (this->entry != HashBucketEntry::kInvalidEntry) ? Status::Ok : Status::NotFound;
     return true;
   }
 
  protected:
   /// The explicit interface requires a DeepCopy_Internal() implementation.
   Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-    return IAsyncContext::DeepCopy_Internal(*this, caller_context, context_copy);
+    return IAsyncContext::DeepCopy_Internal(*this, this->caller_context, context_copy);
   }
 };
 
 /// Used by FindOrCreateEntry, TryUpdateEntry & UpdateEntry hash index methods
 /// NOTE: force argument distinguishes between the update-related methods
-class FasterIndexRmwContext : public FasterIndexContext {
+template <class HID>
+class FasterIndexRmwContext : public FasterIndexContext<HID> {
  public:
+  typedef typename FasterIndexContext<HID>::key_t key_t;
+  typedef typename FasterIndexContext<HID>::value_t value_t;
+
   FasterIndexRmwContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
                         concurrent_queue<AsyncIndexIOContext*>* thread_io_responses,
-                        HashIndexChunkKey key, HashIndexChunkPos pos, bool force,
+                        key_t key, HashIndexChunkPos pos, bool force,
                         HashBucketEntry expected_entry, HashBucketEntry desired_entry)
-    : FasterIndexContext(op_type, caller_context, io_id,
+    : FasterIndexContext<HID>(op_type, caller_context, io_id,
                         thread_io_responses, expected_entry, key, pos)
     , desired_entry_{ desired_entry }
     , force_{ force } {
@@ -209,31 +221,31 @@ class FasterIndexRmwContext : public FasterIndexContext {
   }
   /// Copy (and deep-copy) constructor.
   FasterIndexRmwContext(const FasterIndexRmwContext& other, IAsyncContext* caller_context_)
-    : FasterIndexContext(other, caller_context_)
+    : FasterIndexContext<HID>(other, caller_context_)
     , desired_entry_{ other.desired_entry_ }
     , force_{ other.force_ } {
   }
 
   inline static constexpr uint32_t value_size() {
-    return sizeof(HashIndexChunkEntry);
+    return sizeof(value_t);
   }
-  inline static constexpr uint32_t value_size(const HashIndexChunkEntry& old_value) {
-    return sizeof(HashIndexChunkEntry);
+  inline static constexpr uint32_t value_size(const value_t& old_value) {
+    return sizeof(value_t);
   }
 
-  inline void RmwInitial(HashIndexChunkEntry& value) {
+  inline void RmwInitial(value_t& value) {
     // Initialize chunk to free hash bucket entries
-    std::memset(&value, 0, sizeof(HashIndexChunkEntry));
+    std::memset(&value, 0, sizeof(value_t));
     // Perform update
     UpdateEntry(value);
   }
-  inline void RmwCopy(const HashIndexChunkEntry& old_value, HashIndexChunkEntry& value) {
+  inline void RmwCopy(const value_t& old_value, value_t& value) {
     // Duplicate old chunk
-    std::memcpy(&value, &old_value, sizeof(HashIndexChunkEntry));
+    std::memcpy(&value, &old_value, sizeof(value_t));
     // Perform update
     UpdateEntry(value);
   }
-  inline bool RmwAtomic(HashIndexChunkEntry& value) {
+  inline bool RmwAtomic(value_t& value) {
     // Perform in-place update
     UpdateEntry(value);
     return true;
@@ -248,36 +260,36 @@ class FasterIndexRmwContext : public FasterIndexContext {
     return record_address() == Address::kInvalidAddress;
   }
 
-  inline void UpdateEntry(HashIndexChunkEntry& value) {
+  inline void UpdateEntry(value_t& value) {
     // (Try to) update single hash bucket entry
-    AtomicHashBucketEntry* atomic_entry = &value.entries[pos_.index].entries[pos_.tag];
-    HashBucketEntry local_expected_entry{ expected_entry };
+    AtomicHashBucketEntry* atomic_entry = &value.entries[this->pos_.index].entries[this->pos_.tag];
+    HashBucketEntry local_expected_entry{ this->expected_entry };
 
     if (!is_find_or_create_entry_request()) {
       if (!force_) { // TryUpdateEntry
         bool success = atomic_entry->compare_exchange_strong(local_expected_entry, desired_entry_);
-        result = success ? Status::Ok : Status::Aborted;
-        entry = success ? desired_entry_ : local_expected_entry;
+        this->result = success ? Status::Ok : Status::Aborted;
+        this->entry = success ? desired_entry_ : local_expected_entry;
       } else { // UpdateEntry
         atomic_entry->store(desired_entry_);
-        entry = desired_entry_;
-        result = Status::Ok;
+        this->entry = desired_entry_;
+        this->result = Status::Ok;
       }
     } else { // FindOrCreateEntry
       assert(desired_entry_.address() == Address::kInvalidAddress);
       bool success = atomic_entry->compare_exchange_strong(local_expected_entry, desired_entry_);
       // update entry with latest bucket value
-      entry = success ? desired_entry_ : local_expected_entry;
-      result = Status::Ok;
+      this->entry = success ? desired_entry_ : local_expected_entry;
+      this->result = Status::Ok;
     }
     // NOTE: this->entry has the most recent value of atomic_entry
-    assert(entry != HashBucketEntry::kInvalidEntry);
+    assert(this->entry != HashBucketEntry::kInvalidEntry);
   }
 
  protected:
   /// The explicit interface requires a DeepCopy_Internal() implementation.
   Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-    return IAsyncContext::DeepCopy_Internal(*this, caller_context, context_copy);
+    return IAsyncContext::DeepCopy_Internal(*this, this->caller_context, context_copy);
   }
 
  private:

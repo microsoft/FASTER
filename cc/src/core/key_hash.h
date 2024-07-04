@@ -108,7 +108,7 @@ struct IndexKeyHash {
 static_assert(Constants::kCacheLineBytes == 64);
 
 // Hot index hash bucket definition -- no chunks
-typedef IndexKeyHash<index::HotLogIndexBucketEntryDef, 0, 0> HotLogIndexKeyHash;
+//typedef IndexKeyHash<index::HotLogIndexBucketEntryDef, 0, 0> HotLogIndexKeyHash;
 
 // Cold index hash bucket definition (4096 bytes) -- 64 buckets in chunk, 8 entries per chunk bucket
 //typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 6, 3> ColdLogIndexKeyHash;
@@ -123,7 +123,7 @@ typedef IndexKeyHash<index::HotLogIndexBucketEntryDef, 0, 0> HotLogIndexKeyHash;
 //typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 3, 3> ColdLogIndexKeyHash;
 
 // Cold index hash chunk definition (256 bytes)-- 4 buckets in chunk, 8 entries per chunk bucket
-typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 2, 3> ColdLogIndexKeyHash;
+//typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 2, 3> ColdLogIndexKeyHash;
 
 // Cold index hash chunk definition (128 bytes)-- 2 buckets in chunk, 8 entries per chunk bucket
 //typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 1, 3> ColdLogIndexKeyHash;

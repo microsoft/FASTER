@@ -26,14 +26,24 @@ namespace index {
 
 class HotLogHashIndexDefinition {
  public:
-  typedef HotLogIndexKeyHash key_hash_t;
+  typedef IndexKeyHash<HotLogIndexBucketEntryDef, 0, 0> key_hash_t;
   typedef HotLogIndexHashBucket hash_bucket_t;
   typedef HotLogIndexHashBucketEntry hash_bucket_entry_t;
 };
 
+template <uint8_t N>
 class ColdLogHashIndexDefinition {
  public:
-  typedef ColdLogIndexKeyHash key_hash_t;
+  constexpr static uint16_t kNumEntries = N;                          // Total number of hash bucket entries
+  constexpr static uint16_t kNumBuckets = (N >> 3);                   // Each bucket holds 8 hash bucket entries
+  constexpr static uint8_t kInChunkIndexBits = core::log2((N >> 3));  // How many bits to index all different buckets?
+
+  static_assert(kNumEntries >= 8 && kNumEntries <= 512,
+    "ColdLogHashIndexDefinition: Total number of entries should be between 8 and 512");
+  static_assert(core::is_power_of_2(kNumEntries),
+    "ColdLogHashIndexDefinition: Total number of entries should be a power of 2");
+
+  typedef IndexKeyHash<ColdLogIndexBucketEntryDef, kInChunkIndexBits, 3> key_hash_t;
   typedef ColdLogIndexHashBucket hash_bucket_t;
   typedef ColdLogIndexHashBucketEntry hash_bucket_entry_t;
   typedef ColdLogIndexHashBucketEntry hash_bucket_chunk_entry_t;
@@ -61,7 +71,7 @@ class HashIndex : public IHashIndex<D> {
   typedef GcStateInMemIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
 
-  static constexpr bool HasOverflowBucket = has_overflow_entry<typeof(hash_bucket_t)>::value;
+  static constexpr bool HasOverflowBucket = has_overflow_entry<typename HID::hash_bucket_t>::value;
   friend struct HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>;
 
   // Make friend all templated instances of this class

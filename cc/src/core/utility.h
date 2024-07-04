@@ -22,6 +22,13 @@ constexpr uint64_t operator""_GiB(unsigned long long const x) {
   return static_cast<uint64_t>(x * (1 << 30));
 }
 
+constexpr size_t log2(size_t n) {
+  return ( (n < 2) ? 0 : 1 + log2(n >> 1));
+}
+constexpr bool is_power_of_2(size_t v) {
+    return v && ((v & (v - 1)) == 0);
+}
+
 class Utility {
  public:
   static inline uint64_t Rotr64(uint64_t x, std::size_t n) {
