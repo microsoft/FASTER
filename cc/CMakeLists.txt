@@ -43,6 +43,16 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 ##### END GOOGLE TEST INSTALLATION #####
 
+#### BEGIN TOML11 INSTALLATION #####
+FetchContent_Declare(
+  toml11
+  GIT_REPOSITORY https://github.com/ToruNiina/toml11
+  GIT_TAG v3.8.1
+)
+FetchContent_MakeAvailable(toml11)
+include_directories(${toml11_SOURCE_DIR})
+#### END TOML11 INSTALLATION #####
+
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
 # Set the directory targets when build in libs and binaries
@@ -79,6 +89,7 @@ FUNCTION(ADD_FASTER_TEST TEST_NAME HEADERS)
   add_executable(${TEST_NAME} ${HEADERS} ${TEST_NAME}.cc)
 
   target_link_libraries(${TEST_NAME} ${FASTER_TEST_LINK_LIBS})
+  target_include_directories(${TEST_NAME} PRIVATE ${toml11_SOURCE_DIR})
   add_test(${TEST_NAME} ${CMAKE_BINARY_DIR}/${TEST_NAME})
 ENDFUNCTION()
 
@@ -87,6 +98,7 @@ FUNCTION(ADD_FASTER_BENCHMARK BENCHMARK_NAME)
   add_executable(${BENCHMARK_NAME} ${BENCHMARK_HEADERS} ${BENCHMARK_NAME}.cc)
 
   target_link_libraries(${BENCHMARK_NAME} ${FASTER_BENCHMARK_LINK_LIBS})
+  target_include_directories(${BENCHMARK_NAME} PRIVATE ${toml11_SOURCE_DIR})
 ENDFUNCTION()
 
 # Build each subdirectory

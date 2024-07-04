@@ -206,11 +206,15 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
-  bool readcache = std::get<1>(args);
+  bool rc_enabled = std::get<1>(args);
   bool auto_compaction = std::get<2>(args);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = true;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled
+  };
 
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
@@ -501,11 +505,15 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
-  bool readcache = std::get<1>(args);
+  bool rc_enabled = std::get<1>(args);
   bool auto_compaction = std::get<2>(args);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = true;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled
+  };
 
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
@@ -764,11 +772,15 @@ TEST_P(PagingTestParam, Rmw) {
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
-  bool readcache = std::get<1>(args);
+  bool rc_enabled = std::get<1>(args);
   bool auto_compaction = std::get<2>(args);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = true;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled
+  };
 
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
@@ -953,11 +965,15 @@ TEST_P(PagingTestParam, Rmw_Large) {
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
-  bool readcache = std::get<1>(args);
+  bool rc_enabled = std::get<1>(args);
   bool auto_compaction = std::get<2>(args);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = true;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled
+  };
 
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
@@ -1250,11 +1266,15 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
-  bool readcache = std::get<1>(args);
+  bool rc_enabled = std::get<1>(args);
   bool auto_compaction = std::get<2>(args);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = true;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled
+  };
 
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
@@ -1524,11 +1544,15 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
-  bool readcache = std::get<1>(args);
+  bool rc_enabled = std::get<1>(args);
   bool auto_compaction = std::get<2>(args);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = true;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled
+  };
 
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };

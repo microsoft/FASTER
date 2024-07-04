@@ -25,7 +25,6 @@ class IHashIndex {
   IHashIndex() { }
   ~IHashIndex() { }
 
-  void Initialize(uint64_t new_size);
   void SetRefreshCallback(void* faster, RefreshCallback callback);
 
   template <class C>

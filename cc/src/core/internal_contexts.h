@@ -187,11 +187,11 @@ class AsyncPendingReadContext : public PendingContext<K> {
   typedef K key_t;
  protected:
   AsyncPendingReadContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_,
-                          bool abort_if_tombstone_, Address min_search_offset_, uint64_t num_compaction_truncs_)
+                          bool abort_if_tombstone_, Address min_search_offset_, uint64_t num_compaction_truncations_)
     : PendingContext<key_t>(OperationType::Read, caller_context_, caller_callback_)
     , abort_if_tombstone{ abort_if_tombstone_ }
     , min_search_offset{ min_search_offset_ }
-    , num_compaction_truncs{ num_compaction_truncs_ }
+    , num_compaction_truncations{ num_compaction_truncations_ }
     , expected_hlog_address{ Address::kInvalidAddress } {
   }
   /// The deep copy constructor.
@@ -199,7 +199,7 @@ class AsyncPendingReadContext : public PendingContext<K> {
     : PendingContext<key_t>(other, caller_context)
     , abort_if_tombstone{ other.abort_if_tombstone }
     , min_search_offset{ other.min_search_offset }
-    , num_compaction_truncs{ other.num_compaction_truncs }
+    , num_compaction_truncations{ other.num_compaction_truncations }
     , expected_hlog_address{ other.expected_hlog_address } {
   }
  public:
@@ -212,7 +212,7 @@ class AsyncPendingReadContext : public PendingContext<K> {
   /// Used when partially retrying Read to address Read-Compaction race condition
   Address min_search_offset;
   /// Used to infer whether a log truncation took place, after compacting entries to the log tail
-  uint64_t num_compaction_truncs;
+  uint64_t num_compaction_truncations;
   /// Keeps latest hlog address, as found by hash index entry (after skipping read cache)
   Address expected_hlog_address;
 };
@@ -227,9 +227,9 @@ class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
   typedef Record<key_t, value_t> record_t;
 
   PendingReadContext(read_context_t& caller_context_, AsyncCallback caller_callback_,
-                      bool abort_if_tombstone_, Address min_search_offset_, uint64_t num_compaction_truncs_)
+                      bool abort_if_tombstone_, Address min_search_offset_, uint64_t num_compaction_truncations_)
     : AsyncPendingReadContext<key_t>(caller_context_, caller_callback_, abort_if_tombstone_,
-                                      min_search_offset_, num_compaction_truncs_) {
+                                      min_search_offset_, num_compaction_truncations_) {
   }
   /// The deep copy constructor.
   PendingReadContext(PendingReadContext& other, IAsyncContext* caller_context_)

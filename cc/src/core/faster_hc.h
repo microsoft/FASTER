@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "config.h"
 #include "faster.h"
 #include "guid.h"
 #include "hc_internal_contexts.h"
@@ -17,8 +18,18 @@ template<class K, class V, class D>
 class FasterKvHC {
 public:
 
-  typedef FasterKv<K, V, D, HashIndex<D>, FasterIndex<D>> hot_faster_store_t;
-  typedef FasterKv<K, V, D, FasterIndex<D>, HashIndex<D>> cold_faster_store_t;
+  typedef HashIndex<D> HHI;   // hot hash index
+  typedef FasterIndex<D> CHI; // cold hash index
+
+  typedef FasterKv<K, V, D, HHI, CHI> hot_faster_store_t;
+  typedef FasterKv<K, V, D, CHI, HHI> cold_faster_store_t;
+
+  typedef typename hot_faster_store_t::IndexConfig HotIndexConfig;
+  typedef typename cold_faster_store_t::IndexConfig ColdIndexConfig;
+
+  typedef FasterStoreConfig<HHI> hot_faster_store_config_t;
+  typedef FasterStoreConfig<CHI> cold_faster_store_config_t;
+
 
   typedef FasterKvHC<K, V, D> faster_hc_t;
   typedef AsyncHotColdReadContext<K, V> async_hc_read_context_t;
@@ -29,24 +40,13 @@ public:
   typedef K key_t;
   typedef V value_t;
 
-  constexpr static ReadCacheConfig default_rc_config{ 256_MiB, 0.85, false, true };
-  constexpr static HCCompactionConfig default_hc_compaction_config{
-    // hot-log compaction policy
-    // check every 250ms, trigger at 80% of 1GB, compact min(20% of total size, 256MB), 4 threads
-    HlogCompactionConfig { 250ms, 0.8, 0.2, 256_MiB, 1_GiB, 4, true },
-    // cold-log compaction policy
-    // check every 250ms, trigger at 90% of 8GB, compact min(10% of total size, 1GB), 4 threads
-    HlogCompactionConfig { 250ms, 0.9, 0.1, 1_GiB, 8_GiB, 4, true }
-  };
-
-
-  FasterKvHC(uint64_t hot_log_table_size, uint64_t hot_log_mem_size, const std::string& hot_log_filename,
-            uint64_t cold_log_table_size, uint64_t cold_log_mem_size, const std::string& cold_log_filename,
-            double hot_log_mutable_perc = 0.6, double cold_log_mutable_perc = 0,
-            ReadCacheConfig rc_config = default_rc_config,
-            HCCompactionConfig hc_compaction_config = default_hc_compaction_config)
-  : hot_store{ hot_log_table_size, hot_log_mem_size, hot_log_filename, hot_log_mutable_perc, rc_config }
-  , cold_store{ cold_log_table_size, cold_log_mem_size, cold_log_filename, cold_log_mutable_perc }
+  FasterKvHC(const HotIndexConfig& hot_index_config, uint64_t hot_log_mem_size, const std::string& hot_log_filename,
+            const ColdIndexConfig& cold_index_config, uint64_t cold_log_mem_size, const std::string& cold_log_filename,
+            double hot_log_mutable_pct = 0.6, double cold_log_mutable_pct = 0,
+            ReadCacheConfig rc_config = DEFAULT_READ_CACHE_CONFIG,
+            HCCompactionConfig hc_compaction_config = DEFAULT_HC_COMPACTION_CONFIG)
+  : hot_store{ hot_index_config, hot_log_mem_size, hot_log_filename, hot_log_mutable_pct, rc_config }  // FasterKv auto-compaction is disabled
+  , cold_store{ cold_index_config, cold_log_mem_size, cold_log_filename, cold_log_mutable_pct }        // FasterKv auto-compaction is disabled
   , hc_compaction_config_{ hc_compaction_config }
   , auto_compaction_active_{ false }
   , auto_compaction_scheduled_{ false }
@@ -54,21 +54,17 @@ public:
     hot_store.SetOtherStore(&cold_store);
     cold_store.SetOtherStore(&hot_store);
 
-    if (hc_compaction_config.hot_store.enabled || hc_compaction_config.cold_store.enabled) {
-      //
-      if (hc_compaction_config.hot_store.hlog_size_budget < 64_MiB) {
-        throw std::runtime_error{ "HCComapctionConfig: Hot log size too small (<64 MB)" };
-      }
-      if (hc_compaction_config.cold_store.hlog_size_budget < 64_MiB) {
-        throw std::runtime_error{ "HCComapctionConfig: Cold log size too small (<64 MB)" };
-      }
-      // Launch background compaction check thread
-      auto_compaction_active_.store(true);
-      auto_compaction_thread_ = std::move(std::thread(&FasterKvHC::CheckInternalLogsSize, this));
-    } else {
-      log_warn("Automatic HC compaction is disabled");
-    }
+
+    InitializeCompaction();
   }
+
+  FasterKvHC(const hot_faster_store_config_t& hot_config_, const cold_faster_store_config_t& cold_config_)
+  : FasterKvHC(hot_config_.index_config, hot_config_.hlog_config.in_mem_size, hot_config_.filepath,
+              cold_config_.index_config, cold_config_.hlog_config.in_mem_size, cold_config_.filepath,
+              hot_config_.hlog_config.mutable_fraction, cold_config_.hlog_config.mutable_fraction,
+              hot_config_.rc_config, { hot_config_.hlog_compaction_config, cold_config_.hlog_compaction_config }) {
+  }
+
   // No copy constructor.
   FasterKvHC(const FasterKvHC& other) = delete;
 
@@ -83,6 +79,9 @@ public:
       auto_compaction_thread_.join();
     }
   }
+
+ private:
+  void InitializeCompaction();
 
  public:
   /// Thread-related operations
@@ -132,6 +131,11 @@ public:
                       int n_threads = hot_faster_store_t::kNumCompactionThreads);
   bool CompactColdLog(uint64_t until_address, bool shift_begin_address,
                       int n_threads = cold_faster_store_t::kNumCompactionThreads);
+
+  #ifdef TOML_CONFIG
+  static FasterKvHC<K, V, D> FromConfigString(const std::string& config);
+  static FasterKvHC<K, V, D> FromConfigFile(const std::string& filepath);
+  #endif
 
   /// Statistics
   inline uint64_t Size() const {
@@ -195,6 +199,23 @@ public:
   std::atomic<bool> auto_compaction_active_;
   std::atomic<bool> auto_compaction_scheduled_;
 };
+
+template<class K, class V, class D>
+inline void FasterKvHC<K, V, D>::InitializeCompaction() {
+  if (hc_compaction_config_.hot_store.enabled || hc_compaction_config_.cold_store.enabled) {
+    if (hc_compaction_config_.hot_store.hlog_size_budget < 64_MiB) {
+      throw std::runtime_error{ "HCCompactionConfig: Hot log size too small (<64 MB)" };
+    }
+    if (hc_compaction_config_.cold_store.hlog_size_budget < 64_MiB) {
+      throw std::runtime_error{ "HCCompactionConfig: Cold log size too small (<64 MB)" };
+    }
+    // Launch background compaction check thread
+    auto_compaction_active_.store(true);
+    auto_compaction_thread_ = std::move(std::thread(&FasterKvHC::CheckInternalLogsSize, this));
+  } else {
+    log_warn("Automatic HC compaction is disabled");
+  }
+}
 
 template<class K, class V, class D>
 inline Guid FasterKvHC<K, V, D>::StartSession() {
@@ -576,9 +597,9 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
   cold_store.max_hlog_size_ = cold_compaction_config.hlog_size_budget;
 
   uint64_t hot_log_size_threshold = static_cast<uint64_t>(
-    hot_compaction_config.hlog_size_budget * hot_compaction_config.trigger_perc);
+    hot_compaction_config.hlog_size_budget * hot_compaction_config.trigger_pct);
   uint64_t cold_log_size_threshold = static_cast<uint64_t>(
-    cold_compaction_config.hlog_size_budget * cold_compaction_config.trigger_perc);
+    cold_compaction_config.hlog_size_budget * cold_compaction_config.trigger_pct);
 
   std::chrono::milliseconds check_interval = std::min(
     hot_compaction_config.check_interval,
@@ -600,7 +621,7 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       uint64_t safe_head_address = hot_store.hlog.safe_head_address.control();
       // calculate until address
       uint64_t until_address = begin_address + (
-                  static_cast<uint64_t>(hot_store.Size() * hot_compaction_config.compact_perc));
+                  static_cast<uint64_t>(hot_store.Size() * hot_compaction_config.compact_pct));
       // respect user-imposed limit
       until_address = std::min(until_address, begin_address + hot_compaction_config.max_compacted_size);
       // do not compact in-memory regions
@@ -625,7 +646,7 @@ inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
       uint64_t safe_head_address = cold_store.hlog.safe_head_address.control();
       // calculate until address
       uint64_t until_address = begin_address + (
-                    static_cast<uint64_t>(cold_store.Size() * cold_compaction_config.compact_perc));
+                    static_cast<uint64_t>(cold_store.Size() * cold_compaction_config.compact_pct));
       // respect user-imposed limit
       until_address = std::min(until_address, begin_address + cold_compaction_config.max_compacted_size);
       // do not compact in-memory regions
@@ -681,6 +702,25 @@ inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
     context->caller_callback(context->caller_context, status);
   }
 }
+
+#ifdef TOML_CONFIG
+template<class K, class V, class D>
+inline FasterKvHC<K, V, D> FasterKvHC<K, V, D>::FromConfigString(const std::string& config) {
+  hot_faster_store_config_t hot_store_config = hot_faster_store_t::Config::FromConfigString(config, "f2", "hot");
+  cold_faster_store_config_t cold_store_config = cold_faster_store_t::Config::FromConfigString(config, "f2", "cold");
+
+  // NOTE: Compactions config are handled by constructor(s)
+  return { hot_store_config, cold_store_config };
+}
+
+template<class K, class V, class D>
+inline FasterKvHC<K, V, D> FasterKvHC<K, V, D>::FromConfigFile(const std::string& filepath) {
+  std::ifstream t(filepath);
+  std::string config(
+    (std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+  return FasterKvHC<K, V, D>::FromConfigString(config);
+}
+#endif
 
 }
 } // namespace FASTER::core

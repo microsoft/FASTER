@@ -282,7 +282,8 @@ TEST_P(ColdIndexTestParams, UpsertRead_Serial) {
   HlogCompactionConfig compaction_config{
     250ms, 0.8, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
-  faster_t store{ table_size, log_mem_size, root_path, log_mutable_frac,
+  faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
+  faster_t store{ index_config, log_mem_size, root_path, log_mutable_frac,
                   rc_config, compaction_config };
 
   constexpr size_t kNumRecords = 250'000;
@@ -405,7 +406,8 @@ TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
   double log_mutable_frac = std::get<2>(args);
   bool do_compaction = std::get<3>(args);
 
-  faster_t store{ table_size, log_mem_size, root_path, log_mutable_frac };
+  faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
+  faster_t store{ index_config, log_mem_size, root_path, log_mutable_frac };
 
   static constexpr size_t kNumRecords = 250'000;
   static constexpr size_t kNumThreads = 8;
@@ -549,7 +551,8 @@ TEST_P(ColdIndexTestParams, UpsertDeleteHalfRead) {
   bool do_compaction = std::get<3>(args);
   bool shift_begin_address = true;
 
-  faster_t store{ table_size, log_mem_size, root_path, log_mutable_frac };
+  faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
+  faster_t store{ index_config, log_mem_size, root_path, log_mutable_frac };
 
   int numRecords = 100'000;
 
@@ -648,7 +651,8 @@ TEST_P(ColdIndexTestParams, UpsertUpdateAll) {
   bool do_compaction = std::get<3>(args);
   bool shift_begin_address = true;
 
-  faster_t store{ table_size, log_mem_size, root_path, log_mutable_frac };
+  faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
+  faster_t store{ index_config, log_mem_size, root_path, log_mutable_frac };
 
   int numRecords = 100'000;
 

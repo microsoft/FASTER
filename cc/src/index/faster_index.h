@@ -79,21 +79,53 @@ class FasterIndex : public IHashIndex<D> {
       log_info("FasterIndex will be stored @ %s", index_root_path_.c_str());
   }
 
-  void Initialize(uint64_t new_size) {
+  struct Config {
+    Config(uint64_t table_size_, uint64_t in_mem_size_, double mutable_fraction_)
+      : table_size{ table_size_ }
+      , in_mem_size{ in_mem_size_ }
+      , mutable_fraction{ mutable_fraction_ } {
+    }
+
+    #ifdef TOML_CONFIG
+    explicit Config(const toml::value& table) {
+      table_size = toml::find<uint64_t>(table, "table_size");
+      in_mem_size = toml::find<uint64_t>(table, "in_mem_size_mb") * (1 << 20);
+      mutable_fraction = toml::find<double>(table, "mutable_fraction");
+
+      // Warn if unexpected fields are found
+      const std::vector<std::string> VALID_INDEX_FIELDS = { "table_size", "in_mem_size_mb", "mutable_fraction" };
+      for (auto& it : toml::get<toml::table>(table)) {
+        if (std::find(VALID_INDEX_FIELDS.begin(), VALID_INDEX_FIELDS.end(), it.first) == VALID_INDEX_FIELDS.end()) {
+          fprintf(stderr, "WARNING: Ignoring invalid *index* field '%s'\n", it.first.c_str());
+        }
+      }
+    }
+    #endif
+
+    uint64_t table_size;      // Size of the hash index table
+    uint64_t in_mem_size;     // In-memory size of the hlog
+    double mutable_fraction;  // Hlog mutable region fraction
+  };
+
+  void Initialize(const Config& config) {
+    if(!Utility::IsPowerOfTwo(config.table_size)) {
+      throw std::invalid_argument{ "Index size is not a power of 2" };
+    }
+    if(config.table_size > INT32_MAX) {
+      throw std::invalid_argument{ "Cannot allocate such a large hash table" };
+    }
     this->resize_info.version = 0;
 
     assert(table_size_ == 0);
-    table_size_ = new_size;
+    table_size_ = config.table_size;
 
-    if(table_size_ != kDefaultHashIndexNumEntries) {
-      log_warn("FasterIndex # entries (%lu) is different than default (%lu)",
-                table_size_, kDefaultHashIndexNumEntries);
-    }
-    log_info("FasterIndex: %lu MB in-memory [~%lu MB IPU]",
-              kInMemSize / (1 << 20UL),
-              static_cast<uint64_t>(kInMemSize * dMutableFraction) / (1 << 20UL));
-    store_ = std::make_unique<store_t>(table_size_, kInMemSize,
-                                      index_root_path_, dMutableFraction);
+    log_info("FasterIndex: %lu HT entries -> %lu MiB in-memory [~%lu MiB mutable]",
+              config.in_mem_size / (1 << 20UL),
+              static_cast<uint64_t>(config.in_mem_size * config.mutable_fraction) / (1 << 20UL));
+
+    typename store_t::IndexConfig store_config{ table_size_ };
+    store_ = std::make_unique<store_t>(store_config, config.in_mem_size,
+                                      index_root_path_, config.mutable_fraction);
   }
   void SetRefreshCallback(void* faster, RefreshCallback callback) {
     store_->SetRefreshCallback(faster, callback);
@@ -170,10 +202,10 @@ class FasterIndex : public IHashIndex<D> {
     throw std::runtime_error{ "Not Implemented!" };
   }
 
-  uint64_t size() const {
+  inline uint64_t size() const {
     return store_->Size() + store_->hash_index_.size();
   }
-  uint64_t new_size() const {
+  inline uint64_t new_size() const {
     return store_->Size() + store_->hash_index_.new_size();
   }
   constexpr static bool IsSync() {

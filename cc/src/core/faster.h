@@ -110,7 +110,10 @@ class FasterKv {
 
   typedef H hash_index_t;
   typedef typename H::key_hash_t key_hash_t;
+  typedef typename H::Config IndexConfig;
   typedef FASTER::index::HashBucketEntry HashBucketEntry;
+
+  typedef FasterStoreConfig<hash_index_t> Config;
 
   typedef ReadCache<K, V, D, H> read_cache_t;
 
@@ -122,51 +125,46 @@ class FasterKv {
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
   typedef AsyncPendingConditionalInsertContext<key_t> async_pending_ci_context_t;
 
-  FasterKv(uint64_t table_size, uint64_t log_mem_size, const std::string& filename,
-           double log_mutable_fraction = 0.9, ReadCacheConfig rc_config = ReadCacheConfig(),
-           HlogCompactionConfig compaction_config = HlogCompactionConfig(),
+
+  FasterKv(IndexConfig index_config, uint64_t hlog_mem_size, const std::string& filepath,
+           double hlog_mutable_fraction = DEFAULT_HLOG_MUTABLE_FRACTION,
+           ReadCacheConfig rc_config = DEFAULT_READ_CACHE_CONFIG,
+           HlogCompactionConfig hlog_compaction_config = DEFAULT_HLOG_COMPACTION_CONFIG,
            bool pre_allocate_log = false, const std::string& config = "")
-    : min_table_size_{ table_size }
-    , disk{ filename, epoch_, config }
-    , hlog{ filename.empty() /*hasNoBackingStorage*/, log_mem_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
+    : min_index_table_size_{ index_config.table_size }
+    , disk{ filepath, epoch_, config }
+    , hlog{ filepath.empty() /*hasNoBackingStorage*/, hlog_mem_size, epoch_, disk, disk.log(), hlog_mutable_fraction, pre_allocate_log }
     , system_state_{ Action::None, Phase::REST, 1 }
     , grow_state_{ &hlog }
-    , hash_index_{ filename, disk, epoch_, gc_state_, grow_state_ }
+    , hash_index_{ filepath, disk, epoch_, gc_state_, grow_state_ }
     , read_cache_{ nullptr }
     , num_pending_ios_{ 0 }
-    , num_compaction_truncs_{ 0 }
+    , num_compaction_truncations_{ 0 }
     , next_hlog_begin_address_{ Address::kInvalidAddress }
     , num_active_sessions_{ 0 }
     , other_store_{ nullptr }
     , refresh_callback_store_{ nullptr }
     , refresh_callback_{ nullptr }
-    , compaction_config_{ compaction_config }
+    , hlog_compaction_config_{ hlog_compaction_config }
     , auto_compaction_active_{ false }
     , auto_compaction_scheduled_{ false } {
     log_init();
 
-    if(!Utility::IsPowerOfTwo(table_size)) {
-      throw std::invalid_argument{ " Size is not a power of 2" };
-    }
-    if(table_size > INT32_MAX) {
-      throw std::invalid_argument{ " Cannot allocate such a large hash table " };
-    }
-
-    log_debug("Hash Index Size: %lu", table_size);
-    hash_index_.Initialize(table_size);
+    log_debug("Hash Index Size: %lu", index_config.table_size);
+    hash_index_.Initialize(index_config);
     if (!hash_index_.IsSync()) {
       hash_index_.SetRefreshCallback(static_cast<void*>(this), DoRefreshCallback);
     }
 
-    log_debug("Read cache is %d", rc_config.enabled);
+    log_debug("Read cache is %s", rc_config.enabled ? "ENABLED" : "DISABLED");
     if (rc_config.enabled) {
       read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, hlog,
                                                   BlockAllocateReadCacheCallback, rc_config);
       read_cache_->SetFasterInstance(static_cast<void*>(this));
     }
 
-    log_debug("Auto compaction is %d", compaction_config.enabled);
-    if (compaction_config.enabled) {
+    log_debug("Auto compaction is %s", hlog_compaction_config.enabled ? "ENABLED" : "DISABLED");
+    if (hlog_compaction_config.enabled) {
       auto_compaction_active_.store(true);
       compaction_thread_ = std::move(std::thread(&FasterKv::AutoCompactHlog, this));
     }
@@ -174,6 +172,12 @@ class FasterKv {
     #ifdef STATISTICS
     InitializeStats();
     #endif
+  }
+
+  FasterKv(const Config& config)
+    : FasterKv{ config.index_config, config.hlog_config.in_mem_size, config.filepath,
+                config.hlog_config.mutable_fraction, config.rc_config,
+                config.hlog_compaction_config, config.hlog_config.pre_allocate } {
   }
 
   ~FasterKv() {
@@ -238,6 +242,11 @@ class FasterKv {
 
   /// Make the hash table larger.
   bool GrowIndex(GrowCompleteCallback caller_callback);
+
+  #ifdef TOML_CONFIG
+  static faster_t FromConfigString(const std::string& config);
+  static faster_t FromConfigFile(const std::string& filepath);
+  #endif
 
   /// Statistics
   inline uint64_t Size() const {
@@ -397,8 +406,8 @@ class FasterKv {
 
   bool fold_over_snapshot = true;
 
-  /// Initial size of the table
-  uint64_t min_table_size_;
+  /// Initial size of the index table
+  uint64_t min_index_table_size_;
 
   CheckpointLocks<key_hash_t> checkpoint_locks_;
 
@@ -415,7 +424,7 @@ class FasterKv {
   std::atomic<uint64_t> num_pending_ios_;
 
   /// Global count of number of truncations after compaction
-  std::atomic<uint64_t> num_compaction_truncs_;
+  std::atomic<uint64_t> num_compaction_truncations_;
 
   // Context of threads participating in the hybrid log compaction
   //CompactionThreadsContext<faster_t> compaction_context_;
@@ -438,7 +447,7 @@ class FasterKv {
   ThreadContext thread_contexts_[Thread::kMaxNumThreads];
 
   /// Hlog auto-compaction
-  HlogCompactionConfig compaction_config_;
+  HlogCompactionConfig hlog_compaction_config_;
 
   std::thread compaction_thread_;
   std::atomic<bool> auto_compaction_active_;
@@ -736,7 +745,7 @@ inline Status FasterKv<K, V, D, H, OH>::Read(RC& context, AsyncCallback callback
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
   pending_read_context_t pending_context{ context, callback, abort_if_tombstone,
-                                          Address::kInvalidAddress, num_compaction_truncs_.load() };
+                                          Address::kInvalidAddress, num_compaction_truncations_.load() };
   OperationStatus internal_status = InternalRead(pending_context);
 
   #ifdef STATISTICS
@@ -961,8 +970,8 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIoPendingRequests(ExecutionContext
       // Re-scan newly introduced log range (i.e. [expected_entry->address, tailAddress])
       assert(!read_pending_context->expected_hlog_address.in_readcache());
       read_pending_context->min_search_offset = read_pending_context->expected_hlog_address;
-      read_pending_context->num_compaction_truncs = num_compaction_truncs_.load();
-      // Retry reqeust with updated info
+      read_pending_context->num_compaction_truncations = num_compaction_truncations_.load();
+      // Retry request with updated info
       result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
                                      pending_context.async);
     }
@@ -1020,7 +1029,7 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
                                           pending_context.async);
         } else if (pending_context->index_op_type == IndexOperationType::Update) {
           if (pending_context->index_op_result == Status::Ok) {
-            // Request was sucessfully completed!
+            // Request was successfully completed!
             pending_context.async = false;
             result = Status::Ok;
           } else {
@@ -1061,7 +1070,7 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
         } else if (pending_context->index_op_type == IndexOperationType::Update) {
           //fprintf(stderr, "UPDATE: %d\n", pending_context->index_op_result);
           if (pending_context->index_op_result == Status::Ok) {
-            // Request was sucessfully completed!
+            // Request was successfully completed!
             pending_context.async = false;
             result = Status::Ok;
           } else {
@@ -1395,12 +1404,12 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   if(address >= read_only_address) {
     // Mutable region; try to update in place.
     // TODO: fix this in the cold log; UPDATE: it might just be the case that there is no need to fix anything here.
-    // NOTE: ;TLDR; cold log index cannot experience the lost-update anomally.
+    // NOTE: TLDR; cold log index cannot experience the lost-update anomaly.
     //       Cold log only receives upserts during hot-cold compaction
     //       During a single hot-cold compaction, a record with a given key, can be updated AT MOST once!
-    //       This is guarranteed by the lookup compaction algorithm, as only a single hot-cold compaction is active at any given time.
-    //       In case of hash collisions, there should be no problem, as different threads are upserting records with different keys.
-    //       Even when there is a concurrent cold-cold compaction occuring, these records are only being inserted *conditionally*.
+    //       This is guaranteed by the lookup compaction algorithm, as only a single hot-cold compaction is active at any given time.
+    //       In case of hash collisions, there should be no problem, as different threads are (up)inserting records with different keys.
+    //       Even when there is a concurrent cold-cold compaction occurring, these records are only being inserted *conditionally*.
     //       This means that there will be inserted at the tail, ONLY IF there is *no* other record present anywhere in the cold log.
     //       And since these records to be compacted are NOT located in the mutable region, then entering this if is impossible :)
     //
@@ -1970,7 +1979,7 @@ inline Status FasterKv<K, V, D, H, OH>::HandleOperationStatus(ExecutionContext& 
     async = true;
     return Status::Pending;
   case OperationStatus::ASYNC_TO_COLD_STORE:
-    // hot-cold only: live record upserted/deleted at cold store
+    // hot-cold only: live record (up)inserted/deleted at cold store
     assert(pending_context.type == OperationType::ConditionalInsert);
     async = false;
     // callback will be called when op finishes on other store
@@ -2201,7 +2210,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
 
   async_pending_read_context_t* pending_context = static_cast<async_pending_read_context_t*>(
         io_context.caller_context);
-  log_truncated = pending_context->num_compaction_truncs < num_compaction_truncs_.load();
+  log_truncated = pending_context->num_compaction_truncations < num_compaction_truncations_.load();
 
   OperationStatus op_status;
   if (pending_context->min_search_offset != Address::kInvalidAddress &&
@@ -3343,7 +3352,7 @@ bool FasterKv<K, V, D, H, OH>::ShiftBeginAddress(Address address,
     return false;
   }
   if (after_compaction) {
-    ++num_compaction_truncs_;
+    ++num_compaction_truncations_;
   }
   hlog.begin_address.store(address);
   log_debug("ShiftBeginAddress: [after-compaction=%d] log truncated to %lu",
@@ -3383,7 +3392,7 @@ bool FasterKv<K, V, D, H, OH>::GrowIndex(GrowCompleteCallback caller_callback) {
   return true;
 }
 
-// Some printing support for gtest
+// Some printing support for testing
 inline std::ostream& operator << (std::ostream& out, const Status s) {
   return out << (uint8_t)s;
 }
@@ -4104,7 +4113,7 @@ bool FasterKv<K, V, D, H, OH>::Compact(uint64_t untilAddress)
 
   if (size % pSize != 0) size += pSize - (size % pSize);
 
-  faster_t tempKv(min_table_size_, size, "");
+  faster_t tempKv(min_index_table_size_, size, "");
   tempKv.StartSession();
 
   // In the first phase of compaction, scan the hybrid-log between addresses
@@ -4265,14 +4274,14 @@ bool FasterKv<K, V, D, H, OH>::ContainsKeyInMemory(IndexContext<key_t, value_t> 
 template <class K, class V, class D, class H, class OH>
 void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
   uint64_t hlog_size_threshold = static_cast<uint64_t>(
-    compaction_config_.hlog_size_budget * compaction_config_.trigger_perc);
+    hlog_compaction_config_.hlog_size_budget * hlog_compaction_config_.trigger_pct);
 
-  max_hlog_size_ = compaction_config_.hlog_size_budget;
+  max_hlog_size_ = hlog_compaction_config_.hlog_size_budget;
 
   while (auto_compaction_active_.load()) {
     if (Size() < hlog_size_threshold) {
       auto_compaction_scheduled_.store(false);
-      std::this_thread::sleep_for(compaction_config_.check_interval);
+      std::this_thread::sleep_for(hlog_compaction_config_.check_interval);
       continue;
     }
     auto_compaction_scheduled_.store(true);
@@ -4282,9 +4291,9 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
 
     /// calculate until address
     // start with compaction percentage
-    uint64_t until_address = begin_address + static_cast<uint64_t>(Size() * compaction_config_.compact_perc);
+    uint64_t until_address = begin_address + static_cast<uint64_t>(Size() * hlog_compaction_config_.compact_pct);
     // respect user-imposed limit
-    until_address = std::min(until_address, begin_address + compaction_config_.max_compacted_size);
+    until_address = std::min(until_address, begin_address + hlog_compaction_config_.max_compacted_size);
     // do not compact in-memory region
     until_address = std::min(until_address, hlog.safe_head_address.control());
     // round down address to page bounds
@@ -4296,17 +4305,33 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
     log_error("Auto-compaction: [%lu %lu] -> [%lu %lu] {%lu}",
               begin_address, tail_address, until_address, tail_address, Size());
     StartSession();
-    bool success = CompactWithLookup(until_address, true, compaction_config_.num_threads);
+    bool success = CompactWithLookup(until_address, true, hlog_compaction_config_.num_threads);
     StopSession();
 
     log_error("Auto-compaction: Size: %.3f GB", static_cast<double>(Size()) / (1 << 30));
     if (!success) {
-      log_error("Hlog compaction was not successfull :( -- retry!");
+      log_error("Hlog compaction was not successful :( -- retry!");
     }
   }
   // no more auto-compactions
   auto_compaction_scheduled_.store(false);
 }
+
+#ifdef TOML_CONFIG
+template <class K, class V, class D, class H, class OH>
+inline FasterKv<K, V, D, H, OH> FasterKv<K, V, D, H, OH>::FromConfigString(const std::string& config) {
+  return Config::FromConfigString(config, "faster");
+}
+
+template <class K, class V, class D, class H, class OH>
+inline FasterKv<K, V, D, H, OH> FasterKv<K, V, D, H, OH>::FromConfigFile(const std::string& filepath) {
+  std::ifstream t(filepath);
+  std::string config(
+    (std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+  return FasterKv<K, V, D, H, OH>::FromConfigString(config);
+}
+#endif
+
 
 }
 } // namespace FASTER::core

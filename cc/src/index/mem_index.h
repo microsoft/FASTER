@@ -15,6 +15,10 @@
 #include "hash_table.h"
 #include "index.h"
 
+#ifdef TOML_CONFIG
+#include "toml.hpp"
+#endif
+
 using namespace FASTER::core;
 
 namespace FASTER {
@@ -73,9 +77,40 @@ class HashIndex : public IHashIndex<D> {
     , grow_state_{ &grow_state } {
   }
 
-  void Initialize(uint64_t new_size) {
+  struct Config {
+    // Used to support legacy API
+    // i.e., initializing FasterKv class with index_table_size as first arg
+    Config(uint64_t table_size_)
+      : table_size{ table_size_ } {
+    }
+
+    #ifdef TOML_CONFIG
+    explicit Config(const toml::value& table) {
+      table_size = toml::find<uint64_t>(table, "table_size");
+
+      // Warn if unexpected fields are found
+      const std::vector<std::string> VALID_INDEX_FIELDS = { "table_size" };
+      for (auto& it : toml::get<toml::table>(table)) {
+        if (std::find(VALID_INDEX_FIELDS.begin(), VALID_INDEX_FIELDS.end(), it.first) == VALID_INDEX_FIELDS.end()) {
+          fprintf(stderr, "WARNING: Ignoring invalid *index* field '%s'\n", it.first.c_str());
+        }
+      }
+    }
+    #endif
+
+    uint64_t table_size;  // Size of the hash index table
+  };
+
+  void Initialize(const Config& config) {
+    if(!Utility::IsPowerOfTwo(config.table_size)) {
+      throw std::invalid_argument{ "Index size is not a power of 2" };
+    }
+    if(config.table_size > INT32_MAX) {
+      throw std::invalid_argument{ "Cannot allocate such a large hash table" };
+    }
     this->resize_info.version = 0;
-    table_[0].Initialize(new_size, disk_.log().alignment());
+
+    table_[0].Initialize(config.table_size, disk_.log().alignment());
     overflow_buckets_allocator_[0].Initialize(disk_.log().alignment(), epoch_);
   }
   void SetRefreshCallback(void* faster, RefreshCallback callback) {
@@ -199,7 +234,7 @@ class HashIndex : public IHashIndex<D> {
   Address TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size, Address from_address,
                                       Address min_address, uint8_t side);
 
-  // Remove tantative entries from the index
+  // Remove tentative entries from the index
   void ClearTentativeEntries();
 
  private:

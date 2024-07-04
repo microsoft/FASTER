@@ -253,8 +253,12 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
   log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = rc_enabled;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled,
+  };
 
   HCCompactionConfig hc_compaction_config;
   hc_compaction_config.hot_store = HlogCompactionConfig{
@@ -262,8 +266,9 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
   hc_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
+  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      table_size, 192_MiB, cold_fp,
+                      cold_index_config, 192_MiB, cold_fp,
                       0.4, 0, rc_config, hc_compaction_config };
 
   uint32_t num_records = 100000; // ~800 MB of data
@@ -391,8 +396,12 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
   log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = rc_enabled;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled,
+  };
 
   HCCompactionConfig hc_compaction_config;
   hc_compaction_config.hot_store = HlogCompactionConfig{
@@ -400,8 +409,9 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
   hc_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 2_GiB, 4, auto_compaction };
 
+  faster_hc_t::ColdIndexConfig cold_index_config{ 8192, 256_MiB, 0.6 };
   faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      8192, 192_MiB, cold_fp,
+                      cold_index_config, 192_MiB, cold_fp,
                       0.4, 0, rc_config, hc_compaction_config };
 
   uint32_t num_records = 500'000; // ~500 MB of data
@@ -485,8 +495,12 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
   log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = rc_enabled;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled,
+  };
 
   HCCompactionConfig hc_compaction_config;
   hc_compaction_config.hot_store = HlogCompactionConfig{
@@ -494,8 +508,9 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
   hc_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
+  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      table_size, 192_MiB, cold_fp,
+                      cold_index_config, 192_MiB, cold_fp,
                       0.4, 0, rc_config, hc_compaction_config };
 
   uint32_t num_records = 100000; // ~800 MB of data
@@ -605,8 +620,12 @@ TEST_P(HotColdParameterizedTestParam, Rmw) {
   log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = rc_enabled;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled,
+  };
 
   HCCompactionConfig hc_compaction_config;
   hc_compaction_config.hot_store = HlogCompactionConfig{
@@ -614,8 +633,9 @@ TEST_P(HotColdParameterizedTestParam, Rmw) {
   hc_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
+  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      table_size, 192_MiB, cold_fp,
+                      cold_index_config, 192_MiB, cold_fp,
                       0.4, 0, rc_config, hc_compaction_config };
 
   uint32_t num_records = 20000; // ~160 MB of data
@@ -785,8 +805,12 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
   log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = rc_enabled;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled,
+  };
 
   HCCompactionConfig hc_compaction_config;
   hc_compaction_config.hot_store = HlogCompactionConfig{
@@ -794,8 +818,9 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
   hc_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
+  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      table_size, 192_MiB, cold_fp,
+                      cold_index_config, 192_MiB, cold_fp,
                       0.4, 0, rc_config, hc_compaction_config };
 
   static constexpr int num_records = 100000;
@@ -1113,8 +1138,12 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
   log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = rc_enabled;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled,
+  };
 
   HCCompactionConfig hc_compaction_config;
   hc_compaction_config.hot_store = HlogCompactionConfig{
@@ -1122,8 +1151,9 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
   hc_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
+  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      table_size, 192_MiB, cold_fp,
+                      cold_index_config, 192_MiB, cold_fp,
                       0.4, 0, rc_config, hc_compaction_config };
 
   int num_records = 17500;
@@ -1484,8 +1514,12 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
   log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
-  ReadCacheConfig rc_config;
-  rc_config.enabled = rc_enabled;
+  ReadCacheConfig rc_config {
+    .mem_size = 256_MiB,
+    .mutable_fraction = 0.5,
+    .pre_allocate_log = false,
+    .enabled = rc_enabled,
+  };
 
   HCCompactionConfig hc_compaction_config;
   hc_compaction_config.hot_store = HlogCompactionConfig{
@@ -1493,8 +1527,9 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
   hc_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
+  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      table_size, 192_MiB, cold_fp,
+                      cold_index_config, 192_MiB, cold_fp,
                       0.4, 0, rc_config, hc_compaction_config };
 
   int num_records = 17500;
