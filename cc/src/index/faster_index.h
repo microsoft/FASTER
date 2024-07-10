@@ -238,7 +238,7 @@ class FasterIndex : public IHashIndex<D> {
     return store_->hash_index_.size();
   }
   inline uint64_t new_size() const {
-    return store_->Size() + store_->hash_index_.new_size();
+    return store_->hash_index_.new_size();
   }
   constexpr static bool IsSync() {
     return false;

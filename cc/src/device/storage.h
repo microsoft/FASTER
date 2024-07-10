@@ -1087,7 +1087,7 @@ class StorageDevice {
   StorageDevice(const std::string& root, LightEpoch& lEpoch,
                 const std::string& remote, uint16_t id=1,
                 bool unBuffered=false, bool deleteOnClose=false)
-    : localRoot{ FormatPath(root) }
+    : localRoot{ FASTER::environment::NormalizePath(root) }
     , epoch{ &lEpoch }
     , unBuffered{ unBuffered }
     , deleteOnClose{ deleteOnClose }
@@ -1243,20 +1243,6 @@ class StorageDevice {
                                                Address::kMaxOffset + 1);
 
  private:
-  /// Formats a given filesystem path.
-  static std::string FormatPath(std::string path) {
-    // Append a separator to the end of 'path' if not already present. Required
-    // because the *_checkpoint_path() functions need to return a valid path to
-    // an index/cpr checkpoint directory.
-    //
-    // The .empty() check is to prevent undefined behavior.
-    if (path.empty() || path.back() != kPathSeparator[0]) {
-      path += kPathSeparator;
-    }
-
-    return path;
-  }
-
   /// Root path under which files and directories will be created.
   std::string localRoot;
 

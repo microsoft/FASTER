@@ -471,20 +471,11 @@ class FileSystemDisk {
   typedef FileSystemFile<handler_t> file_t;
   typedef FileSystemSegmentedFile<handler_t, S> log_file_t;
 
- private:
-  static std::string NormalizePath(std::string root_path) {
-    if(root_path.empty() || root_path.back() != FASTER::environment::kPathSeparator[0]) {
-      root_path += FASTER::environment::kPathSeparator;
-    }
-    return root_path;
-  }
-
- public:
   FileSystemDisk(const std::string& root_path, core::LightEpoch& epoch,
                  const std::string& config = "",
                  bool enablePrivileges = false, bool unbuffered = true,
                  bool delete_on_close = false)
-    : root_path{ NormalizePath(root_path) }
+    : root_path{ FASTER::environment::NormalizePath(root_path) }
     , handler_{ 16 /*max threads*/ }
     , default_file_options_{ unbuffered, delete_on_close }
     , log_{ root_path + "log.log", default_file_options_, &epoch} {
