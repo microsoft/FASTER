@@ -55,6 +55,22 @@ INSTANTIATE_TEST_CASE_P(
   )
 );
 
+// Parameterized recovery test definition
+using recovery_param_types = std::tuple<uint64_t, uint64_t, double>;
+class ColdIndexRecoveryTestParams : public ::testing::TestWithParam<recovery_param_types> {
+};
+INSTANTIATE_TEST_CASE_P(
+  ColdIndexRecoveryTests,
+  ColdIndexRecoveryTestParams,
+  ::testing::Values(
+    std::make_tuple(2048, 192_MiB, 0.4),
+    std::make_tuple(2048, 192_MiB, 0.0),
+    std::make_tuple((1 << 20), 192_MiB, 0.4),
+    std::make_tuple((1 << 20), 192_MiB, 0.0)
+  )
+);
+
+
 // Forward declaration
 class UpsertContext;
 class ReadContext;
@@ -264,11 +280,11 @@ class DeleteContext : public IAsyncContext {
 typedef FASTER::device::FileSystemDisk<handler_t, 64_MiB> disk_t;
 typedef FasterKv<Key, Value, disk_t, FasterIndex<disk_t>> faster_t;
 
-static std::string root_path{ "test_store/" };
+static std::string ROOT_PATH{ "test_store/" };
 constexpr size_t kCompletePendingInterval = 64;
 
 TEST_P(ColdIndexTestParams, UpsertRead_Serial) {
-  CreateNewLogDir(root_path);
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint64_t table_size = std::get<0>(args);
@@ -283,7 +299,7 @@ TEST_P(ColdIndexTestParams, UpsertRead_Serial) {
     250ms, 0.8, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
   faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
-  faster_t store{ index_config, log_mem_size, root_path, log_mutable_frac,
+  faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac,
                   rc_config, compaction_config };
 
   constexpr size_t kNumRecords = 250'000;
@@ -394,11 +410,11 @@ TEST_P(ColdIndexTestParams, UpsertRead_Serial) {
   ASSERT_EQ(kNumRecords, records_read.load());
 
   store.StopSession();
-  RemoveDir(root_path);
+  RemoveDir(ROOT_PATH);
 }
 
 TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
-  CreateNewLogDir(root_path);
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint64_t table_size = std::get<0>(args);
@@ -407,7 +423,7 @@ TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
   bool do_compaction = std::get<3>(args);
 
   faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
-  faster_t store{ index_config, log_mem_size, root_path, log_mutable_frac };
+  faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac };
 
   static constexpr size_t kNumRecords = 250'000;
   static constexpr size_t kNumThreads = 8;
@@ -538,11 +554,11 @@ TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
   ASSERT_EQ(kNumRecords, records_read.load());
 
   store.StopSession();
-  RemoveDir(root_path);
+  RemoveDir(ROOT_PATH);
 }
 
 TEST_P(ColdIndexTestParams, UpsertDeleteHalfRead) {
-  CreateNewLogDir(root_path);
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint64_t table_size = std::get<0>(args);
@@ -552,7 +568,7 @@ TEST_P(ColdIndexTestParams, UpsertDeleteHalfRead) {
   bool shift_begin_address = true;
 
   faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
-  faster_t store{ index_config, log_mem_size, root_path, log_mutable_frac };
+  faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac };
 
   int numRecords = 100'000;
 
@@ -638,11 +654,11 @@ TEST_P(ColdIndexTestParams, UpsertDeleteHalfRead) {
   store.CompletePending(true);
   store.StopSession();
 
-  RemoveDir(root_path);
+  RemoveDir(ROOT_PATH);
 }
 
 TEST_P(ColdIndexTestParams, UpsertUpdateAll) {
-  CreateNewLogDir(root_path);
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint64_t table_size = std::get<0>(args);
@@ -652,7 +668,7 @@ TEST_P(ColdIndexTestParams, UpsertUpdateAll) {
   bool shift_begin_address = true;
 
   faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
-  faster_t store{ index_config, log_mem_size, root_path, log_mutable_frac };
+  faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac };
 
   int numRecords = 100'000;
 
@@ -722,9 +738,151 @@ TEST_P(ColdIndexTestParams, UpsertUpdateAll) {
   store.CompletePending(true);
   store.StopSession();
 
-  //RemoveDir(root_path);
+  RemoveDir(ROOT_PATH);
 }
 
+TEST_P(ColdIndexRecoveryTestParams, Serial) {
+  CreateNewLogDir(ROOT_PATH);
+
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+  uint64_t log_mem_size = std::get<1>(args);
+  double log_mutable_frac = std::get<2>(args);
+
+  faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
+
+  int numRecords = 100'000;
+
+  Guid session_id;
+  Guid token;
+
+  static std::atomic<uint64_t> records_read{ 0 };
+
+  // Test checkpointing
+  {
+    faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac };
+
+    // Populate the store
+    session_id = store.StartSession();
+    for (size_t idx = 1; idx <= numRecords; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        CallbackContext<UpsertContext> context{ ctxt };
+        ASSERT_EQ(Status::Ok, result);
+      };
+      UpsertContext context{ Key{ idx }, static_cast<uint8_t>(idx % 256) };
+      Status result = store.Upsert(context, callback, 1);
+      ASSERT_TRUE(Status::Ok == result || Status::Pending == result);
+
+      if (idx % kCompletePendingInterval == 0) {
+        store.CompletePending(false);
+      }
+    }
+    store.CompletePending(true);
+
+    // Verify inserted entries
+    records_read.store(0);
+    for(size_t idx = 1; idx <= numRecords; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        ASSERT_EQ(Status::Ok, result);
+        CallbackContext<ReadContext> context{ ctxt };
+        context->CheckValue();
+        ++records_read;
+      };
+
+      if(idx % kCompletePendingInterval == 0) {
+        store.CompletePending(false);
+      }
+
+      ReadContext context{ Key{ idx } };
+      Status result = store.Read(context, callback, 1);
+      if(result == Status::Ok) {
+        context.CheckValue();
+        ++records_read;
+      } else {
+        ASSERT_EQ(Status::Pending, result);
+      }
+    }
+    store.CompletePending(true);
+
+    // Checkpoint the store
+    static std::atomic<size_t> num_threads_persistent{ 0 };
+    static std::atomic<bool> threads_persistent[Thread::kMaxNumThreads];
+    for(size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
+      threads_persistent[idx] = false;
+    }
+
+    auto hybrid_log_persistence_callback = [](Status result, uint64_t persistent_serial_num) {
+      bool expected = false;
+      ASSERT_EQ(Status::Ok, result);
+      ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected, true));
+      ++num_threads_persistent;
+    };
+
+    // checkpoint (transition from REST to INDEX_CHKPT)
+    log_debug("Issuing checkpoint...");
+    ASSERT_TRUE(store.Checkpoint(nullptr, hybrid_log_persistence_callback, token));
+    log_debug("Checkpoint issued!");
+
+    while(num_threads_persistent < 1) {
+      store.CompletePending(false);
+    }
+    bool result = store.CompletePending(true);
+    ASSERT_TRUE(result);
+    ASSERT_EQ(numRecords, records_read.load());
+
+    store.StopSession();
+    log_debug("Checkpoint finished!");
+  }
+
+  // Test recovery
+  {
+    faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac };
+
+    uint32_t version;
+    std::vector<Guid> session_ids;
+
+    log_debug("Issuing recover...");
+    Status status = store.Recover(token, token, version, session_ids);
+    log_debug("Recover done!");
+
+    ASSERT_EQ(Status::Ok, status);
+    ASSERT_EQ(1, session_ids.size());
+    ASSERT_EQ(session_id, session_ids[0]);
+    ASSERT_EQ(1, store.ContinueSession(session_id));
+
+    // Verify inserted entries
+    log_debug("Verifying previously inserted entries...");
+    records_read.store(0);
+    for(size_t idx = 1; idx <= numRecords; ++idx) {
+      auto callback = [](IAsyncContext* ctxt, Status result) {
+        ASSERT_EQ(Status::Ok, result);
+        CallbackContext<ReadContext> context{ ctxt };
+        context->CheckValue();
+        ++records_read;
+      };
+
+      if(idx % kCompletePendingInterval == 0) {
+        store.CompletePending(false);
+      }
+
+      ReadContext context{ Key{ idx } };
+      Status result = store.Read(context, callback, 1);
+      if(result == Status::Ok) {
+        context.CheckValue();
+        ++records_read;
+      } else {
+        ASSERT_EQ(Status::Pending, result);
+      }
+    }
+    store.CompletePending(true);
+    ASSERT_EQ(records_read.load(), numRecords);
+    store.StopSession();
+
+    log_debug("Success!");
+  }
+
+  RemoveDir(ROOT_PATH);
+}
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
