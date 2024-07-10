@@ -1,0 +1,6 @@
+
+add_executable(read_log_metadata read_log_metadata.cc)
+target_link_libraries(read_log_metadata ${FASTER_BENCHMARK_LINK_LIBS})
+
+add_executable(read_index_metadata read_index_metadata.cc)
+target_link_libraries(read_index_metadata ${FASTER_BENCHMARK_LINK_LIBS})
