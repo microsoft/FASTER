@@ -282,8 +282,11 @@ class FasterKv {
   template<class C>
   inline OperationStatus InternalDelete(C& pending_context, bool force_tombstone);
 
- private:
+  bool InternalCheckpoint(InternalIndexPersistenceCallback index_persistence_callback,
+                  InternalHybridLogPersistenceCallback hybrid_log_persistence_callback,
+                  Guid& token, void* callback_context);
 
+ private:
   void InternalContinuePendingRequest(ExecutionContext& ctx, AsyncIOContext& io_context);
   OperationStatus InternalContinuePendingRead(ExecutionContext& ctx,
       AsyncIOContext& io_context, bool& log_truncated);
@@ -453,7 +456,8 @@ class FasterKv {
   std::atomic<bool> auto_compaction_active_;
   std::atomic<bool> auto_compaction_scheduled_;
 
- public:
+  Guid last_guid_after_compaction_;
+
   // Hard limit of log size
   uint64_t max_hlog_size_;
 
@@ -669,6 +673,9 @@ inline Guid FasterKv<K, V, D, H, OH>::StartSession(Guid guid) {
 
 template <class K, class V, class D, class H, class OH>
 inline uint64_t FasterKv<K, V, D, H, OH>::ContinueSession(const Guid& session_id) {
+  // TODO: Look into whether we can have a mapping of log session ids -> hash index session ids
+  hash_index_.StartSession();
+
   auto iter = checkpoint_.continue_tokens.find(session_id);
   if(iter == checkpoint_.continue_tokens.end()) {
     throw std::invalid_argument{ "Unknown session ID" };
@@ -1104,6 +1111,15 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
         // NOTE: If needed in the future, implementation is similar to ConditionalInsert
         // but care should be taken wrt the race conditions related to atomic_entry.
         assert(false);
+        break;
+      case OperationType::Recovery:
+        // Recovery process of cold-log (i.e., when using cold-index, where index requests go pending)
+        // NOTE: Recovery is performed sequentially, and any synchronization is done explicitly
+        assert(pending_context->index_op_type == IndexOperationType::Update);
+        // no concurrent updates, thus no way for op to have been aborted
+        assert(pending_context->index_op_result == Status::Ok);
+        pending_context.async = false;
+        result = Status::Ok;
         break;
       default:
         // not reachable
@@ -2686,7 +2702,17 @@ Status FasterKv<K, V, D, H, OH>::RecoverHybridLogFromSnapshotFile() {
 
 template <class K, class V, class D, class H, class OH>
 Status FasterKv<K, V, D, H, OH>::RecoverFromPage(Address from_address, Address to_address) {
-  typedef IndexContext<K, V> index_context_t;
+  typedef RecoveryContext<K, V> recovery_context_t;
+  typedef PendingRecoveryContext<recovery_context_t> pending_recovery_context_t;
+
+  auto callback = [](IAsyncContext* ctxt, Status result) {
+    CallbackContext<recovery_context_t> context{ ctxt };
+    assert(result == Status::Ok);
+    // set update flag to true
+    context->flag->store(true);
+  };
+
+  std::atomic<bool> ready;
 
   assert(from_address.page() == to_address.page());
   for(Address address = from_address; address < to_address;) {
@@ -2700,9 +2726,17 @@ Status FasterKv<K, V, D, H, OH>::RecoverFromPage(Address from_address, Address t
       continue;
     }
 
-    index_context_t pending_context{ record };
+    recovery_context_t recovery_context{ record, &ready };
+    pending_recovery_context_t pending_context{ recovery_context, callback };
     Status status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
-    assert(status == Status::Ok);
+    assert(status == Status::Ok || status == Status::Pending);
+
+    if (status == Status::Pending) {
+      while (!ready.load()) {
+        CompletePending(false);
+        std::this_thread::yield();
+      }
+    }
 
     HashBucketEntry expected_entry{ pending_context.entry };
     KeyHash hash = record->key().GetHash();
@@ -2715,6 +2749,14 @@ Status FasterKv<K, V, D, H, OH>::RecoverFromPage(Address from_address, Address t
         hash_index_.UpdateEntry(thread_ctx(), pending_context, record->header.previous_address());
       }
     }
+
+    if (status == Status::Pending) {
+      while (!ready.load()) {
+        CompletePending(false);
+        std::this_thread::yield();
+      }
+    }
+
     address += record->size();
   }
 
@@ -2833,9 +2875,7 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
       }*/
 
       // Notify the host that the index checkpoint has completed.
-      if(checkpoint_.index_persistence_callback) {
-        checkpoint_.index_persistence_callback(Status::Ok);
-      }
+      checkpoint_.IssueIndexPersistenceCallback();
       break;
     case Phase::IN_PROGRESS: {
       assert(next_state.action != Action::CheckpointIndex);
@@ -2894,16 +2934,17 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
         if(hash_index_.WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
           checkpoint_.failed = true;
         }
-        auto index_persistence_callback = checkpoint_.index_persistence_callback;
+        //auto index_persistence_callback = checkpoint_.index_persistence_callback;
+        checkpoint_.IssueIndexPersistenceCallback();
         // The checkpoint is done; we can reset the contexts now. (Have to reset contexts before
         // another checkpoint can be started.)
         checkpoint_.CheckpointDone();
         // Checkpoint is done--no more work for threads to do.
         system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
-        if(index_persistence_callback) {
+        //if(index_persistence_callback) {
           // Notify the host that the index checkpoint has completed.
-          index_persistence_callback(Status::Ok);
-        }
+          //index_persistence_callback(Status::Ok);
+        //}
       }
       break;
     default:
@@ -3110,9 +3151,7 @@ void FasterKv<K, V, D, H, OH>::HandleSpecialPhases() {
         // Handle WAIT_FLUSH -> PERSISTENCE_CALLBACK and PERSISTENCE_CALLBACK -> PERSISTENCE_CALLBACK
         if(previous_state.phase == Phase::WAIT_FLUSH) {
           // Persistence callback
-          if(checkpoint_.hybrid_log_persistence_callback) {
-            checkpoint_.hybrid_log_persistence_callback(Status::Ok, prev_thread_ctx().serial_num);
-          }
+          checkpoint_.IssueHybridLogPersistenceCallback(prev_thread_ctx().serial_num);
           // Thread has finished checkpointing.
           thread_ctx().phase = Phase::REST;
           // Thread ack that it has finished checkpointing.
@@ -3225,6 +3264,46 @@ bool FasterKv<K, V, D, H, OH>::Checkpoint(IndexPersistenceCallback index_persist
                                      hlog.begin_address.load(),  hlog.GetTailAddress(), false,
                                      Address::kInvalidAddress, index_persistence_callback,
                                      hybrid_log_persistence_callback);
+
+  }
+  InitializeCheckpointLocks();
+  // Let other threads know that the checkpoint has started.
+  system_state_.store(desired.GetNextState());
+  return true;
+}
+
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::InternalCheckpoint(InternalIndexPersistenceCallback index_persistence_callback,
+                                    InternalHybridLogPersistenceCallback hybrid_log_persistence_callback,
+                                    Guid& token, void* callback_context) {
+
+  // Only one thread can initiate a checkpoint at a time.
+  SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
+  SystemState desired{ Action::CheckpointFull, Phase::REST, expected.version };
+  if(!system_state_.compare_exchange_strong(expected, desired)) {
+    // Can't start a new checkpoint while a checkpoint or recovery is already in progress.
+    return false;
+  }
+  // We are going to start a checkpoint.
+  epoch_.ResetPhaseFinished();
+  // Initialize all contexts
+  if (Guid::IsNull(token)) {
+    token = Guid::Create();
+  }
+  disk.CreateIndexCheckpointDirectory(token);
+  disk.CreateCprCheckpointDirectory(token);
+  // Obtain tail address for fuzzy index checkpoint
+  if(!fold_over_snapshot) {
+    checkpoint_.InitializeCheckpoint(token, desired.version, hash_index_.size(),
+                                     hlog.begin_address.load(),  hlog.GetTailAddress(), true,
+                                     hlog.flushed_until_address.load(),
+                                     index_persistence_callback,
+                                     hybrid_log_persistence_callback, callback_context);
+  } else {
+    checkpoint_.InitializeCheckpoint(token, desired.version, hash_index_.size(),
+                                     hlog.begin_address.load(),  hlog.GetTailAddress(), false,
+                                     Address::kInvalidAddress, index_persistence_callback,
+                                     hybrid_log_persistence_callback, callback_context);
 
   }
   InitializeCheckpointLocks();
@@ -3476,7 +3555,6 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     static std::atomic_flag hlog_threads_persisted[Thread::kMaxNumThreads];
     static std::atomic<Status> hlog_persisted_status;
     static std::atomic<size_t> hlog_num_threads_persisted;
-    Guid token; // TODO: expose it to user
     //
     static std::atomic<bool> ready_for_truncation;
 
@@ -3490,14 +3568,25 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 
     IndexPersistenceCallback index_persist_callback = [](Status status) {
       assert(index_persisted_status.load() == Status::Corruption);
+      if (index_persisted_status.load() != Status::Corruption) {
+        log_warn("Unexpected index persist status: expected = %s, actual = %s",
+                STATUS_STR[static_cast<int>(Status::Corruption)], STATUS_STR[static_cast<int>(status)]);
+      }
       index_persisted_status.store(status);
-      assert(status == Status::Ok); // TODO: Replace with warning
+
+      assert(status == Status::Ok);
+      if (status != Status::Ok) {
+        log_warn("Checkpoint: Index persist process finished with non-ok status -> %s", STATUS_STR[static_cast<int>(status)]);
+      }
     };
 
     HybridLogPersistenceCallback hlog_persist_callback =
         [](Status status, uint64_t persistent_serial_number) {
       bool expected = hlog_threads_persisted[Thread::id()].test_and_set();
       assert(expected == false);
+      if (expected) {
+        log_warn("Expected checkpoint thread-specific entry to *not* have been set!");
+      }
       ++hlog_num_threads_persisted;
 
       // Update global checkpoint status, if error or first thread to finish
@@ -3520,9 +3609,9 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     bool success;
     do {
       if (!to_other_store) {
-        success = Checkpoint(index_persist_callback, hlog_persist_callback, token);
+        success = Checkpoint(index_persist_callback, hlog_persist_callback, last_guid_after_compaction_);
       } else {
-        success = other_store_->Checkpoint(index_persist_callback, hlog_persist_callback, token);
+        success = other_store_->Checkpoint(index_persist_callback, hlog_persist_callback, last_guid_after_compaction_);
       }
       if (!success) {
         Refresh();

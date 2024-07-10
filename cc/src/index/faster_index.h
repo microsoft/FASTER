@@ -38,6 +38,8 @@ constexpr static uint8_t DEFAULT_NUM_ENTRIES = 32;
 template<class D, class HID = ColdLogHashIndexDefinition<DEFAULT_NUM_ENTRIES>>
 class FasterIndex : public IHashIndex<D> {
  public:
+  typedef FasterIndex<D, HID> faster_index_t;
+
   typedef D disk_t;
   typedef typename D::file_t file_t;
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
@@ -62,14 +64,19 @@ class FasterIndex : public IHashIndex<D> {
 
   FasterIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
               gc_state_t& gc_state, grow_state_t& grow_state)
-    : disk_{ disk }
-    , epoch_{ epoch }
+    : IHashIndex<D>(root_path, disk, epoch)
     , gc_state_{ &gc_state }
     , grow_state_{ &grow_state }
     , table_size_{ 0 }
-    , serial_num_{ 0 }
-    , index_root_path_{ root_path + "index_" } {
-      log_info("FasterIndex will be stored @ %s", index_root_path_.c_str());
+    , serial_num_{ 0 } {
+      // create faster index root path
+      this->root_path_ = FASTER::environment::NormalizePath(this->root_path_ + "faster-index");
+      log_info("FasterIndex will be stored @ %s", this->root_path_.c_str());
+      std::experimental::filesystem::create_directories(this->root_path_);
+
+      // checkpoint-related vars
+      checkpoint_pending_.store(false);
+      checkpoint_failed_.store(false);
   }
 
   struct Config {
@@ -113,12 +120,12 @@ class FasterIndex : public IHashIndex<D> {
     table_size_ = config.table_size;
 
     log_info("FasterIndex: %lu HT entries -> %lu MiB in-memory [~%lu MiB mutable]",
-              config.in_mem_size / (1 << 20UL),
+              table_size_, config.in_mem_size / (1 << 20UL),
               static_cast<uint64_t>(config.in_mem_size * config.mutable_fraction) / (1 << 20UL));
 
     typename store_t::IndexConfig store_config{ table_size_ };
     store_ = std::make_unique<store_t>(store_config, config.in_mem_size,
-                                      index_root_path_, config.mutable_fraction);
+                                      this->root_path_, config.mutable_fraction);
   }
   void SetRefreshCallback(void* faster, RefreshCallback callback) {
     store_->SetRefreshCallback(faster, callback);
@@ -175,28 +182,60 @@ class FasterIndex : public IHashIndex<D> {
 
   // Checkpointing methods
   Status Checkpoint(CheckpointState<file_t>& checkpoint) {
-    throw std::runtime_error{ "Not Implemented!" };
+    auto num_active_sessions = store_->NumActiveSessions();
+    if (num_active_sessions != 1) {
+      log_warn("Initiating cold-index checkpoint w/ %lu active sessions "
+              "(expected 1)", num_active_sessions);
+    }
+
+    // Callback called when hash chunk FasterKv checkpointing finishes
+    auto callback = [](Status result, uint64_t persistent_serial_num, void* context) {
+      auto* faster_index = static_cast<faster_index_t*>(context);
+
+      if (result != Status::Ok) {
+        log_warn("cold-index: checkpointing of hash chunk FasterKv store failed! [status: %s]",
+                  STATUS_STR[static_cast<int>(result)]);
+      }
+      faster_index->checkpoint_failed_.store(result != Status::Ok);
+      faster_index->checkpoint_pending_.store(false);
+    };
+    checkpoint_pending_.store(true);
+    checkpoint_failed_.store(false);
+
+    // Begin hash chunk FasterKv checkpointing...
+    if (!store_->InternalCheckpoint(nullptr, callback, checkpoint.index_token,
+                                    static_cast<faster_index_t*>(this))) {
+      return Status::Aborted;
+    }
+    checkpoint.index_checkpoint_started = true;
+    return Status::Ok;
   }
   Status CheckpointComplete() {
-    throw std::runtime_error{ "Not Implemented!" };
+    if (checkpoint_pending_) {
+      return Status::Pending;
+    }
+    return checkpoint_failed_ ? Status::IOError : Status::Ok;
   }
   Status WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint) {
-    throw std::runtime_error{ "Not Implemented!" };
+    return IHashIndex<D>::WriteCheckpointMetadata(checkpoint);
   }
 
   // Recovery methods
   Status Recover(CheckpointState<file_t>& checkpoint) {
-    throw std::runtime_error{ "Not Implemented!" };
+    std::vector<Guid> session_ids; // do not need these, since only (ephemeral) compaction threads are used
+    return store_->Recover(checkpoint.index_token, checkpoint.index_token,
+                          checkpoint.index_metadata.version, session_ids);
   }
   Status RecoverComplete() {
-    throw std::runtime_error{ "Not Implemented!" };
+    return Status::Ok; // Recovery is already completed (i.e., when Recovery function returns)
   }
   Status ReadCheckpointMetadata(const Guid& token, CheckpointState<file_t>& checkpoint) {
-    throw std::runtime_error{ "Not Implemented!" };
+    return IHashIndex<D>::ReadCheckpointMetadata(token, checkpoint);
   }
 
+  // Number of in-memory table entries
   inline uint64_t size() const {
-    return store_->Size() + store_->hash_index_.size();
+    return store_->hash_index_.size();
   }
   inline uint64_t new_size() const {
     return store_->Size() + store_->hash_index_.new_size();
@@ -221,18 +260,18 @@ class FasterIndex : public IHashIndex<D> {
     exec_context.pending_ios.insert({ io_id, hash });
   }
 
-  disk_t& disk_;
-  LightEpoch& epoch_;
   gc_state_t* gc_state_;
   grow_state_t* grow_state_;
 
  public:
   std::unique_ptr<store_t> store_;
 
+  std::atomic<bool> checkpoint_pending_;
+  std::atomic<bool> checkpoint_failed_;
+
  private:
   uint64_t table_size_;
   std::atomic<uint64_t> serial_num_;
-  std::string index_root_path_;
 
 #ifdef STATISTICS
  public:

@@ -41,6 +41,7 @@ enum class OperationType : uint8_t {
   Insert,
   Delete,
   ConditionalInsert,
+  Recovery,
 };
 
 enum class OperationStatus : uint8_t {
@@ -656,7 +657,108 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
   }
 };
 
-/// Context used for sync hash index operations
+
+// FASTER's internal Recovery contexts
+
+template <class K>
+class AsyncPendingRecoveryContext : public PendingContext<K> {
+ public:
+  typedef K key_t;
+ protected:
+  AsyncPendingRecoveryContext(IAsyncContext& caller_context_, AsyncCallback caller_callback_)
+    : PendingContext<key_t>(OperationType::Recovery, caller_context_, caller_callback_) {
+  }
+  /// The deep copy constructor.
+  AsyncPendingRecoveryContext(AsyncPendingRecoveryContext& other, IAsyncContext* caller_context)
+    : PendingContext<key_t>(other, caller_context) {
+  }
+};
+
+/// A synchronous Recovery context preserves its type information.
+template<class RC>
+class PendingRecoveryContext : public AsyncPendingRecoveryContext<typename RC::key_t> {
+ public:
+  typedef RC recovery_context_t;
+  typedef typename recovery_context_t::key_t key_t;
+  typedef typename recovery_context_t::value_t value_t;
+  typedef Record<key_t, value_t> record_t;
+
+  PendingRecoveryContext(recovery_context_t& caller_context_, AsyncCallback caller_callback_)
+    : AsyncPendingRecoveryContext<key_t>(caller_context_, caller_callback_) {
+  }
+  /// The deep copy constructor.
+  PendingRecoveryContext(PendingRecoveryContext& other, IAsyncContext* caller_context_)
+    : AsyncPendingRecoveryContext<key_t>(other, caller_context_) {
+  }
+ protected:
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    return IAsyncContext::DeepCopy_Internal(*this, PendingContext<key_t>::caller_context,
+                                            context_copy);
+  }
+ private:
+  const recovery_context_t& recovery_context() const {
+    return *static_cast<const recovery_context_t*>(PendingContext<key_t>::caller_context);
+  }
+  recovery_context_t& recovery_context() {
+    return *static_cast<recovery_context_t*>(PendingContext<key_t>::caller_context);
+  }
+ public:
+  /// Accessors.
+  inline uint32_t key_size() const final {
+    return hc_context_helper<false>::key_size(recovery_context());
+  }
+  inline void write_deep_key_at(key_t* dst) const final {
+    return hc_context_helper<false>::write_deep_key_at(recovery_context(), dst);
+  }
+  inline KeyHash get_key_hash() const final {
+    return hc_context_helper<false>::get_key_hash(recovery_context());
+  }
+  inline bool is_key_equal(const key_t& other) const final {
+    return hc_context_helper<false>::is_key_equal(recovery_context(), other);
+  }
+};
+
+template <class K, class V>
+class RecoveryContext : public IAsyncContext {
+ public:
+  typedef K key_t;
+  typedef V value_t;
+  typedef Record<key_t, value_t> record_t;
+  typedef std::atomic<bool> flag_t;
+
+  RecoveryContext(record_t* _record, flag_t* _flag)
+    : record_{ _record }
+    , flag{ _flag } {
+  }
+
+  RecoveryContext(const RecoveryContext& from)
+    : record_{ from.record_ }
+    , flag{ from.flag } {
+  }
+
+  inline const key_t& key() const {
+    return record_->key();
+  }
+
+ protected:
+  inline record_t* record() const {
+    return record_;
+  }
+  /// Copies this context into a passed-in pointer if the operation goes
+  /// asynchronous inside FASTER.
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+  }
+
+ private:
+  record_t* record_;
+
+ public:
+  flag_t* flag;
+};
+
+
+/// Context used for (sync or async) hash index operations
 template <class K, class V>
 class IndexContext : public IAsyncContext {
  public:
@@ -700,8 +802,11 @@ class IndexContext : public IAsyncContext {
   /// Pointer to the record
   record_t* record_;
  public:
-  ///
+  /// Type of index operation that went pending
+  IndexOperationType index_op_type;
+  /// Hash table entry that (indirectly) leads to the record being read or modified.
   HashBucketEntry entry;
+  /// Pointer to the atomic hash bucket entry (hot index only; nullptr for cold index)
   AtomicHashBucketEntry* atomic_entry;
 };
 

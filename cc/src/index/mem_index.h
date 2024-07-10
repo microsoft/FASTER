@@ -80,9 +80,7 @@ class HashIndex : public IHashIndex<D> {
 
   HashIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
             gc_state_t& gc_state, grow_state_t& grow_state)
-    : root_path_{ root_path }
-    , disk_{ disk }
-    , epoch_{ epoch }
+    : IHashIndex<D>(root_path, disk, epoch)
     , gc_state_{ &gc_state }
     , grow_state_{ &grow_state } {
   }
@@ -120,8 +118,8 @@ class HashIndex : public IHashIndex<D> {
     }
     this->resize_info.version = 0;
 
-    table_[0].Initialize(config.table_size, disk_.log().alignment());
-    overflow_buckets_allocator_[0].Initialize(disk_.log().alignment(), epoch_);
+    table_[0].Initialize(config.table_size, this->disk_.log().alignment());
+    overflow_buckets_allocator_[0].Initialize(this->disk_.log().alignment(), this->epoch_);
   }
   void SetRefreshCallback(void* faster, RefreshCallback callback) {
     throw std::runtime_error{ "This should never be called" };
@@ -175,7 +173,6 @@ class HashIndex : public IHashIndex<D> {
   // Recovery methods
   Status Recover(CheckpointState<file_t>& checkpoint);
   Status RecoverComplete();
-  Status ReadCheckpointMetadata(const Guid& token, CheckpointState<file_t>& checkpoint);
 
   void DumpDistribution() const;
 
@@ -190,27 +187,6 @@ class HashIndex : public IHashIndex<D> {
   }
 
  private:
-  // Checkpointing and recovery context
-  class CheckpointMetadataIoContext : public IAsyncContext {
-   public:
-    CheckpointMetadataIoContext(Status* result_, std::atomic<bool>* completed_)
-      : result{ result_ }
-      , completed{ completed_ } {
-    }
-    /// The deep-copy constructor
-    CheckpointMetadataIoContext(CheckpointMetadataIoContext& other)
-      : result{ other.result }
-      , completed{ other.completed } {
-    }
-   protected:
-    Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
-    }
-   public:
-    Status* result;
-    std::atomic<bool>* completed;
-  };
-
   bool GetNextBucket(hash_bucket_t*& current, uint8_t version) {
     return HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>::GetNextBucket(
       overflow_buckets_allocator_[version], current);
@@ -248,9 +224,6 @@ class HashIndex : public IHashIndex<D> {
   void ClearTentativeEntries();
 
  private:
-  std::string root_path_;
-  disk_t& disk_;
-  LightEpoch& epoch_;
   gc_state_t* gc_state_;
   grow_state_t* grow_state_;
 
@@ -717,8 +690,8 @@ inline void HashIndex<D, HID>::GrowSetup(GrowCompleteCallback callback) {
   grow_state_->Initialize(callback, current_version, num_chunks);
 
   // Initialize the next version of our hash table to be twice the size of the current version.
-  table_[next_version].Initialize(size() * 2, disk_.log().alignment());
-  overflow_buckets_allocator_[next_version].Initialize(disk_.log().alignment(), epoch_);
+  table_[next_version].Initialize(size() * 2, this->disk_.log().alignment());
+  overflow_buckets_allocator_[next_version].Initialize(this->disk_.log().alignment(), this->epoch_);
 }
 
 template <class D, class HID>
@@ -857,15 +830,15 @@ inline Address HashIndex<D, HID>::TraceBackForOtherChainStart(uint64_t old_size,
 template <class D, class HID>
 inline Status HashIndex<D, HID>::Checkpoint(CheckpointState<file_t>& checkpoint) {
   // Checkpoint the hash table
-  auto path = disk_.relative_index_checkpoint_path(checkpoint.index_token);
-  file_t ht_file = disk_.NewFile(path + "ht.dat");
-  RETURN_NOT_OK(ht_file.Open(&disk_.handler()));
-  RETURN_NOT_OK(table_[this->resize_info.version].Checkpoint(disk_, std::move(ht_file),
+  auto path = this->disk_.relative_index_checkpoint_path(checkpoint.index_token);
+  file_t ht_file = this->disk_.NewFile(path + "ht.dat");
+  RETURN_NOT_OK(ht_file.Open(&this->disk_.handler()));
+  RETURN_NOT_OK(table_[this->resize_info.version].Checkpoint(this->disk_, std::move(ht_file),
                                               checkpoint.index_metadata.num_ht_bytes));
   // Checkpoint overflow buckets
-  file_t ofb_file = disk_.NewFile(path + "ofb.dat");
-  RETURN_NOT_OK(ofb_file.Open(&disk_.handler()));
-  RETURN_NOT_OK(overflow_buckets_allocator_[this->resize_info.version].Checkpoint(disk_,
+  file_t ofb_file = this->disk_.NewFile(path + "ofb.dat");
+  RETURN_NOT_OK(ofb_file.Open(&this->disk_.handler()));
+  RETURN_NOT_OK(overflow_buckets_allocator_[this->resize_info.version].Checkpoint(this->disk_,
                 std::move(ofb_file), checkpoint.index_metadata.num_ofb_bytes));
 
   checkpoint.index_checkpoint_started = true;
@@ -891,59 +864,25 @@ inline Status HashIndex<D, HID>::WriteCheckpointMetadata(CheckpointState<file_t>
   checkpoint.index_metadata.ofb_count =
     overflow_buckets_allocator_[this->resize_info.version].count();
 
-  auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
-    CallbackContext<CheckpointMetadataIoContext> context{ ctxt };
-    // callback is called only once
-    assert(*(context->result) == Status::Corruption && context->completed->load() == false);
-    // mark request completed
-    *(context->result) = result;
-    context->completed->store(true);
-  };
-
-  Status write_result{ Status::Corruption };
-  std::atomic<bool> write_completed{ false };
-  CheckpointMetadataIoContext context{ &write_result, &write_completed };
-
-  // Create file
-  auto filepath = disk_.relative_index_checkpoint_path(checkpoint.index_token) + "info.dat";
-  file_t file = disk_.NewFile(filepath);
-  RETURN_NOT_OK(file.Open(&disk_.handler()));
-
-  // Create aligned buffer used in write async
-  uint32_t write_size = sizeof(checkpoint.index_metadata);
-  assert(write_size <= file.alignment());       // less than file alignment
-  write_size += file.alignment() - write_size;  // pad to file alignment
-  assert(write_size % file.alignment() == 0);
-  uint8_t* buffer = reinterpret_cast<uint8_t*>(core::aligned_alloc(file.alignment(), write_size));
-  memset(buffer, 0, write_size);
-  memcpy(buffer, &checkpoint.index_metadata, sizeof(checkpoint.index_metadata));
-  // Write to file
-  RETURN_NOT_OK(file.WriteAsync(buffer, 0, write_size, callback, context));
-
-  // Wait until disk I/O completes
-  while(!write_completed) {
-    disk_.TryComplete();
-    std::this_thread::yield();
-  }
-  core::aligned_free(reinterpret_cast<uint8_t*>(buffer));
-  return write_result;
+  // Write checkpoint object to disk
+  return IHashIndex<D>::WriteCheckpointMetadata(checkpoint);
 }
 
 template <class D, class HID>
 inline Status HashIndex<D, HID>::Recover(CheckpointState<file_t>& checkpoint) {
   uint8_t version = this->resize_info.version;
   assert(table_[version].size() == checkpoint.index_metadata.table_size);
-  auto path = disk_.relative_index_checkpoint_path(checkpoint.index_token);
+  auto path = this->disk_.relative_index_checkpoint_path(checkpoint.index_token);
 
   // Recover the main hash table.
-  file_t ht_file = disk_.NewFile(path + "ht.dat");
-  RETURN_NOT_OK(ht_file.Open(&disk_.handler()));
-  RETURN_NOT_OK(table_[version].Recover(disk_, std::move(ht_file),
+  file_t ht_file = this->disk_.NewFile(path + "ht.dat");
+  RETURN_NOT_OK(ht_file.Open(&this->disk_.handler()));
+  RETURN_NOT_OK(table_[version].Recover(this->disk_, std::move(ht_file),
                                               checkpoint.index_metadata.num_ht_bytes));
   // Recover the hash table's overflow buckets.
-  file_t ofb_file = disk_.NewFile(path + "ofb.dat");
-  RETURN_NOT_OK(ofb_file.Open(&disk_.handler()));
-  RETURN_NOT_OK(overflow_buckets_allocator_[version].Recover(disk_, std::move(ofb_file),
+  file_t ofb_file = this->disk_.NewFile(path + "ofb.dat");
+  RETURN_NOT_OK(ofb_file.Open(&this->disk_.handler()));
+  RETURN_NOT_OK(overflow_buckets_allocator_[version].Recover(this->disk_, std::move(ofb_file),
          checkpoint.index_metadata.num_ofb_bytes, checkpoint.index_metadata.ofb_count));
 
   return Status::Ok;
@@ -962,50 +901,6 @@ inline Status HashIndex<D, HID>::RecoverComplete() {
 
   ClearTentativeEntries();
   return Status::Ok;
-}
-
-template <class D, class HID>
-inline Status HashIndex<D, HID>::ReadCheckpointMetadata(const Guid& token,
-                                                      CheckpointState<file_t>& checkpoint) {
-
-  auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
-    CallbackContext<CheckpointMetadataIoContext> context{ ctxt };
-    // callback is called only once
-    assert(*(context->result) == Status::Corruption && context->completed->load() == false);
-    // mark request completed
-    *(context->result) = result;
-    context->completed->store(true);
-  };
-
-  Status read_result{ Status::Corruption };
-  std::atomic<bool> read_completed{ false };
-  CheckpointMetadataIoContext context{ &read_result, &read_completed };
-
-  // Read from file
-  auto filepath = disk_.relative_index_checkpoint_path(token) + "info.dat";
-  file_t file = disk_.NewFile(filepath);
-  RETURN_NOT_OK(file.Open(&disk_.handler()));
-
-  // Create aligned buffer used in read async
-  uint32_t read_size = sizeof(checkpoint.index_metadata);
-  assert(read_size <= file.alignment());      // less than file alignment
-  read_size += file.alignment() - read_size;  // pad to file alignment
-  assert(read_size % file.alignment() == 0);
-  uint8_t* buffer = reinterpret_cast<uint8_t*>(core::aligned_alloc(file.alignment(), read_size));
-  memset(buffer, 0, read_size);
-  // Write to file
-  RETURN_NOT_OK(file.ReadAsync(0, buffer, read_size, callback, context));
-
-  // Wait until disk I/O completes
-  while(!read_completed) {
-    disk_.TryComplete();
-    std::this_thread::yield();
-  }
-  // Copy from buffer to struct
-  memcpy(&checkpoint.index_metadata, buffer, sizeof(checkpoint.index_metadata));
-  core::aligned_free(reinterpret_cast<uint8_t*>(buffer));
-
-  return read_result;
 }
 
 template <class D, class HID>
