@@ -1175,13 +1175,17 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLive) {
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
-  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   int numRecords = 50000;
 
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
   int n_threads = std::get<2>(GetParam());
+
+  log_debug("Compaction Threads:  %d", n_threads);
+  log_debug("Shift Begin Address: %s", shift_begin_address ? "ENABLED" : "DISABLED");
+  log_debug("Checkpoint:          %s", checkpoint ? "ENABLED" : "DISABLED");
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1238,13 +1242,17 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
-  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   int numRecords = 50000;
 
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
   int n_threads = std::get<2>(GetParam());
+
+  log_debug("Compaction Threads:  %d", n_threads);
+  log_debug("Shift Begin Address: %s", shift_begin_address ? "ENABLED" : "DISABLED");
+  log_debug("Checkpoint:          %s", checkpoint ? "ENABLED" : "DISABLED");
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1319,13 +1327,17 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
-  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   uint32_t num_records = 20000; // ~160 MB of data
 
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
   int n_threads = std::get<2>(GetParam());
+
+  log_debug("Compaction Threads:  %d", n_threads);
+  log_debug("Shift Begin Address: %s", shift_begin_address ? "ENABLED" : "DISABLED");
+  log_debug("Checkpoint:          %s", checkpoint ? "ENABLED" : "DISABLED");
 
   store.StartSession();
   // Rmw initial (all records fit in-memory)
@@ -1466,13 +1478,17 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
-  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   int numRecords = 50000;
 
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
   int n_threads = std::get<2>(GetParam());
+
+  log_debug("Compaction Threads:  %d", n_threads);
+  log_debug("Shift Begin Address: %s", shift_begin_address ? "ENABLED" : "DISABLED");
+  log_debug("Checkpoint:          %s", checkpoint ? "ENABLED" : "DISABLED");
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1556,13 +1572,17 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
-  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
-  static constexpr int numRecords = 50000;
+  static constexpr int numRecords = 50'000;
 
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
   int n_threads = std::get<2>(GetParam());
+
+  log_debug("Compaction Threads:  %d", n_threads);
+  log_debug("Shift Begin Address: %s", shift_begin_address ? "ENABLED" : "DISABLED");
+  log_debug("Checkpoint:          %s", checkpoint ? "ENABLED" : "DISABLED");
 
   store.StartSession();
   // Populate initial keys
@@ -1577,8 +1597,8 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
   store.CompletePending(true);
 
   auto upsert_worker_func = [&store]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     store.StartSession();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     // Insert fresh entries for half the records
     for (size_t idx = 1; idx <= numRecords; ++idx) {
       if (idx % 3 == 0) {
@@ -1596,9 +1616,8 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
 
   auto delete_worker_func = [&store]() {
     // Delete every alternate key here.
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
     store.StartSession();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     for (size_t idx = 1; idx <= numRecords; ++idx) {
       if (idx % 3 == 1) {
         auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1649,7 +1668,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
     EXPECT_TRUE(result == Status::Ok || result == Status::NotFound || result == Status::Pending);
 
     if (result == Status::Ok) {
-      if (idx % 3 == 0) { // upserted
+      if (idx % 3 == 0) { // (up)inserted
         ASSERT_EQ(idx, context.output.value / 2);
       } else if (idx % 3 == 2) { // unmodified
         ASSERT_EQ(idx, context.output.value);
@@ -1675,7 +1694,7 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("tmp_store");
-  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
   static constexpr int numRecords = 50000;
   static constexpr int num_read_threads = 32;
@@ -1933,6 +1952,10 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
   int n_threads = std::get<2>(GetParam());
+
+  log_debug("Compaction Threads:  %d", n_threads);
+  log_debug("Shift Begin Address: %s", shift_begin_address ? "ENABLED" : "DISABLED");
+  log_debug("Checkpoint:          %s", checkpoint ? "ENABLED" : "DISABLED");
 
   store.StartSession();
   // Insert.
@@ -2282,6 +2305,10 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
   int n_threads = std::get<2>(GetParam());
+
+  log_debug("Compaction Threads:  %d", n_threads);
+  log_debug("Shift Begin Address: %s", shift_begin_address ? "ENABLED" : "DISABLED");
+  log_debug("Checkpoint:          %s", checkpoint ? "ENABLED" : "DISABLED");
 
   store.StartSession();
   // Insert.
