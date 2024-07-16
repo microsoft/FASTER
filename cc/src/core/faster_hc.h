@@ -6,6 +6,8 @@
 #include "config.h"
 #include "faster.h"
 #include "guid.h"
+
+#include "hc_checkpoint_state.h"
 #include "hc_internal_contexts.h"
 #include "internal_contexts.h"
 
@@ -40,6 +42,8 @@ public:
   typedef K key_t;
   typedef V value_t;
 
+  constexpr static auto kLazyCompactionMaxWait = 2s;
+
   FasterKvHC(const HotIndexConfig& hot_index_config, uint64_t hot_log_mem_size, const std::string& hot_log_filename,
             const ColdIndexConfig& cold_index_config, uint64_t cold_log_mem_size, const std::string& cold_log_filename,
             double hot_log_mutable_pct = 0.6, double cold_log_mutable_pct = 0,
@@ -48,14 +52,18 @@ public:
   : hot_store{ hot_index_config, hot_log_mem_size, hot_log_filename, hot_log_mutable_pct, rc_config }  // FasterKv auto-compaction is disabled
   , cold_store{ cold_index_config, cold_log_mem_size, cold_log_filename, cold_log_mutable_pct }        // FasterKv auto-compaction is disabled
   , hc_compaction_config_{ hc_compaction_config }
-  , auto_compaction_active_{ false }
-  , auto_compaction_scheduled_{ false }
+  , background_worker_active_{ false }
+  , compaction_scheduled_{ false }
   {
     hot_store.SetOtherStore(&cold_store);
     cold_store.SetOtherStore(&hot_store);
 
 
     InitializeCompaction();
+
+    // launch background thread
+    background_worker_active_.store(true);
+    background_worker_thread_ = std::move(std::thread(&FasterKvHC::CheckSystemState, this));
   }
 
   FasterKvHC(const hot_faster_store_config_t& hot_config_, const cold_faster_store_config_t& cold_config_)
@@ -73,10 +81,10 @@ public:
           cold_store.system_state_.phase() != Phase::REST ) {
       std::this_thread::yield();
     }
-    if (auto_compaction_thread_.joinable()) {
+    if (background_worker_thread_.joinable()) {
       // shut down compaction thread
-      auto_compaction_active_.store(false);
-      auto_compaction_thread_.join();
+      background_worker_active_.store(false);
+      background_worker_thread_.join();
     }
   }
 
@@ -106,26 +114,12 @@ public:
   bool CompletePending(bool wait = false);
 
   /// Checkpoint/recovery operations.
-  bool Checkpoint(IndexPersistenceCallback index_persistence_callback,
-                  HybridLogPersistenceCallback hybrid_log_persistence_callback,
-                  Guid& token);
-  bool CheckpointIndex(IndexPersistenceCallback index_persistence_callback, Guid& token);
-  bool CheckpointHybridLog(HybridLogPersistenceCallback hybrid_log_persistence_callback,
-                            Guid& token);
-  /*
-  Status Recover(const Guid& index_token, const Guid& hybrid_log_token, uint32_t& version,
-                 std::vector<Guid>& session_ids);
+  bool Checkpoint(HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                  Guid& token, bool lazy = true);
 
-  /// Log compaction entry method.
-  bool Compact(uint64_t untilAddress);
+  Status Recover(const Guid& token, uint32_t& version, std::vector<Guid>& session_ids);
 
-  /// Truncating the head of the log.
-  bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
-                         GcState::complete_callback_t complete_callback);
-
-  /// Make the hash table larger.
-  bool GrowIndex(GrowState::callback_t caller_callback);
-  */
+  static void HotStoreCheckpointedCallback(Status result, uint64_t persistent_serial_num, void* ctxt);
 
   bool CompactHotLog(uint64_t until_address, bool shift_begin_address,
                       int n_threads = hot_faster_store_t::kNumCompactionThreads);
@@ -150,7 +144,7 @@ public:
   }
   }
   inline bool AutoCompactionScheduled() const {
-    return auto_compaction_scheduled_.load();
+    return compaction_scheduled_.load();
   }
 
 #ifdef STATISTICS
@@ -178,26 +172,44 @@ public:
 
   // retry queue
   concurrent_queue<async_hc_rmw_context_t*> retry_rmw_requests;
+
  private:
+  enum StoreType : uint8_t {
+    HOT,
+    COLD
+  };
   static void AsyncContinuePendingRead(IAsyncContext* ctxt, Status result);
 
   template<class C>
   Status InternalRmw(C& pending_context);
+  void CompleteRmwRetryRequests();
+
   static void AsyncContinuePendingRmw(IAsyncContext* ctxt, Status result);
   static void AsyncContinuePendingRmwRead(IAsyncContext* ctxt, Status result);
   static void AsyncContinuePendingRmwConditionalInsert(IAsyncContext* ctxt, Status result);
 
-  void CheckInternalLogsSize();
-  void CompleteRmwRetryRequests();
+  void HeavyEnter();
 
-  uint64_t hot_log_disk_size_;
-  uint64_t cold_log_disk_size_;
+  void CheckSystemState();
+
+  template<class S>
+  bool ShouldCompactHlog(const S& store, StoreType store_type,
+                        const HlogCompactionConfig& compaction_config, uint64_t& until_address);
+  template<class S>
+  bool CompactLog(S& store, StoreType store_type, uint64_t until_address,
+                  bool shift_begin_address, int n_threads, bool checkpoint);
+
+ private:
+  // background thread
+  std::thread background_worker_thread_;
+  std::atomic<bool> background_worker_active_;
 
   // compaction-related
   HCCompactionConfig hc_compaction_config_;
-  std::thread auto_compaction_thread_;
-  std::atomic<bool> auto_compaction_active_;
-  std::atomic<bool> auto_compaction_scheduled_;
+  std::atomic<bool> compaction_scheduled_;
+
+  // checkpoint-related
+  HotColdCheckpointState checkpoint_;
 };
 
 template<class K, class V, class D>
@@ -209,9 +221,6 @@ inline void FasterKvHC<K, V, D>::InitializeCompaction() {
     if (hc_compaction_config_.cold_store.hlog_size_budget < 64_MiB) {
       throw std::runtime_error{ "HCCompactionConfig: Cold log size too small (<64 MB)" };
     }
-    // Launch background compaction check thread
-    auto_compaction_active_.store(true);
-    auto_compaction_thread_ = std::move(std::thread(&FasterKvHC::CheckInternalLogsSize, this));
   } else {
     log_warn("Automatic HC compaction is disabled");
   }
@@ -219,6 +228,9 @@ inline void FasterKvHC<K, V, D>::InitializeCompaction() {
 
 template<class K, class V, class D>
 inline Guid FasterKvHC<K, V, D>::StartSession() {
+  if (checkpoint_.phase.load() != CheckpointPhase::REST) {
+    throw std::runtime_error{ "Can start new session only in REST phase!" };
+  }
   Guid guid = Guid::Create();
   Guid ret_guid = hot_store.StartSession(guid);
   assert(ret_guid == guid);
@@ -229,6 +241,9 @@ inline Guid FasterKvHC<K, V, D>::StartSession() {
 
 template <class K, class V, class D>
 inline uint64_t FasterKvHC<K, V, D>::ContinueSession(const Guid& session_id) {
+  if (checkpoint_.phase.load() != CheckpointPhase::REST) {
+    throw std::runtime_error{ "Can continue session only in REST phase!" };
+  }
   uint64_t serial_num = hot_store.ContinueSession(session_id);
   cold_store.ContinueSession(session_id);
   return serial_num;
@@ -236,8 +251,10 @@ inline uint64_t FasterKvHC<K, V, D>::ContinueSession(const Guid& session_id) {
 
 template <class K, class V, class D>
 inline void FasterKvHC<K, V, D>::StopSession() {
-  // Finish pending ops before stopping session
-  while(!CompletePending(false)) {
+  // Finish pending ops and finish checkpointing before stopping session
+  CheckpointPhase phase;
+  while(!CompletePending(false) ||
+      ((phase = checkpoint_.phase.load()) != CheckpointPhase::REST)) {
     std::this_thread::yield();
   }
   hot_store.StopSession();
@@ -246,6 +263,9 @@ inline void FasterKvHC<K, V, D>::StopSession() {
 
 template<class K, class V, class D>
 inline void FasterKvHC<K, V, D>::Refresh() {
+  if (checkpoint_.phase.load() != CheckpointPhase::REST) {
+    HeavyEnter();
+  }
   hot_store.Refresh();
   cold_store.Refresh();
 }
@@ -259,6 +279,7 @@ inline bool FasterKvHC<K, V, D>::CompletePending(bool wait) {
     cold_store_done = cold_store.CompletePending(false);
 
     CompleteRmwRetryRequests();
+    Refresh();
 
     if(hot_store_done && cold_store_done &&
         retry_rmw_requests.empty()) {
@@ -533,141 +554,384 @@ inline Status FasterKvHC<K, V, D>::Delete(DC& context, AsyncCallback callback,
   return hot_store.Delete(context, callback, monotonic_serial_num, true);
 }
 
+template <class K, class V, class D>
+inline void FasterKvHC<K, V, D>::HeavyEnter() {
+  if (checkpoint_.phase.load() == CheckpointPhase::COLD_STORE_CHECKPOINT) {
+    StoreCheckpointStatus status = checkpoint_.cold_store_status.load();
+    if (status != StoreCheckpointStatus::FINISHED && status != StoreCheckpointStatus::FAILED) {
+      return;
+    }
+
+    // call user-provided callback for this active session (if not already)
+    uint64_t psn = checkpoint_.persistent_serial_nums[Thread::id()].load();
+    if (psn == 0) {
+      return;
+    }
+    Status result = (checkpoint_.hot_store_status.load() == StoreCheckpointStatus::FINISHED &&
+                      checkpoint_.cold_store_status.load() == StoreCheckpointStatus::FINISHED)
+                        ? Status::Ok : Status::IOError;
+    checkpoint_.store_persistence_callback(result, psn);
+
+    checkpoint_.persistent_serial_nums[Thread::id()].store(0);
+    if (--checkpoint_.threads_pending_issue_callback == 0) {
+      // all threads issued their callback -- atomically move to REST phase
+      CheckpointPhase phase;
+      if ((phase = checkpoint_.phase.load()) != CheckpointPhase::COLD_STORE_CHECKPOINT) {
+        log_error("Unexpected checkpoint phase [expected: COLD_STORE_CHECKPOINT, actual: %s]",
+                  CHECKPOINT_PHASE_STR[static_cast<int>(phase)]);
+        assert(false);
+      }
+
+      log_debug("Hot-cold checkpoint finished! Moving to REST phase");
+      checkpoint_.Reset();
+      checkpoint_.phase.store(CheckpointPhase::REST);
+    }
+  }
+}
 
 template<class K, class V, class D>
-inline bool FasterKvHC<K, V, D>::Checkpoint(IndexPersistenceCallback index_persistence_callback,
-                                            HybridLogPersistenceCallback hybrid_log_persistence_callback,
-                                            Guid& token) {
-  // TODO: handle case where one store returns false.
-//
-//  hot_store.Checkpoint(index_persistence_callback,
-//                      hybrid_log_persistence_callback, token);
-//  cold_store.Checkpoint(index_persistence_callback,
-//                      hybrid_log_persistence_callback, token);
-  return false;
+inline bool FasterKvHC<K, V, D>::Checkpoint(HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                                            Guid& token, bool lazy) {
+  CheckpointPhase expected_phase = CheckpointPhase::REST;
+  if (!checkpoint_.phase.compare_exchange_strong(expected_phase, CheckpointPhase::HOT_STORE_CHECKPOINT)) {
+    throw std::runtime_error{ "Can start checkpoint only when no other concurrent op" };
+  }
+
+  token = Guid::Create();
+  auto lazy_checkpoint_expired = HotColdCheckpointState::time_point_t::clock::now() + (lazy ? kLazyCompactionMaxWait : 0s);
+  checkpoint_.Initialize(hybrid_log_persistence_callback, token, lazy_checkpoint_expired);
+
+  // For now we just ask the background thread to do the checkpoint, on the next possible moment
+  checkpoint_.hot_store_status.store(StoreCheckpointStatus::REQUESTED);
+  return true;
+}
+
+template<class K, class V, class D>
+inline void FasterKvHC<K, V, D>::HotStoreCheckpointedCallback(Status result, uint64_t persistent_serial_num, void* ctxt) {
+  // This will be called multiple times (i.e., once for each active session)
+  auto checkpoint = static_cast<HotColdCheckpointState*>(ctxt);
+  assert(checkpoint->phase.load() == CheckpointPhase::HOT_STORE_CHECKPOINT);
+  assert(checkpoint->hot_store_status.load() == StoreCheckpointStatus::ACTIVE);
+
+  // store persistent serial number for this thread
+  uint64_t psn = checkpoint->persistent_serial_nums[Thread::id()].load();
+  if (psn > 0) {
+    log_warn("Persistent serial num for thread %u was already set [to %lu]. "
+            "Was callback called twice for the same thread?", Thread::id(), psn);
+    assert(false);
+  }
+  checkpoint->persistent_serial_nums[Thread::id()].store(persistent_serial_num);
+  log_debug("Checkpoint callback for hot store [tid=%u] called! [psn: %lu, result: %s]",
+            Thread::id(), psn, STATUS_STR[static_cast<int>(result)]);
+
+  // Update global result if (1) first thread to arrive, or (2) non-ok result
+  while (1) {
+    Status global_result = checkpoint->hot_store_checkpoint_result.load();
+    if (global_result == Status::Corruption || result != Status::Ok) {
+      if (checkpoint->hot_store_checkpoint_result.compare_exchange_strong(global_result, result)) {
+        break; // success on updated global result
+      }
+    }
+  }
+
+  if (--checkpoint->threads_pending_hot_store_persist == 0) {
+    // All threads finished checkpointing hot store
+    // Last thread responsible for moving to next phase (i.e., cold-store checkpointing)
+    StoreCheckpointStatus status;
+
+    // Mark hot store checkpoint status to finished (or failed)
+    Status global_result = checkpoint->hot_store_checkpoint_result.load();
+    log_debug("Hot store checkpoint result: %s", STATUS_STR[static_cast<int>(global_result)]);
+
+    status = (global_result == Status::Ok) ? StoreCheckpointStatus::FINISHED : StoreCheckpointStatus::FAILED;
+    checkpoint->hot_store_status.store(status);
+
+    // Request cold store checkpointing
+    CheckpointPhase phase;
+    if ((phase = checkpoint->phase.load()) != CheckpointPhase::HOT_STORE_CHECKPOINT) {
+      log_error("Unexpected checkpoint phase [expected: HOT_STORE_CHECKPOINT, actual: %s]",
+                CHECKPOINT_PHASE_STR[static_cast<int>(phase)]);
+    }
+    log_debug("Moving to cold-store checkpoint phase");
+    checkpoint->phase.store(CheckpointPhase::COLD_STORE_CHECKPOINT);
+
+    if ((status = checkpoint->cold_store_status.load()) != StoreCheckpointStatus::IDLE) {
+      log_error("Unexpected checkpoint status for COLD store [expected: IDLE, actual: %s]",
+                STORE_CHECKPOINT_STATUS_STR[static_cast<int>(status)]);
+      assert(false);
+    }
+    log_debug("Requesting cold store checkpoint...");
+    checkpoint->cold_store_status.store(StoreCheckpointStatus::REQUESTED);
+  }
+}
+
+template <class K, class V, class D>
+inline Status FasterKvHC<K, V, D>::Recover(const Guid& token, uint32_t& version, std::vector<Guid>& session_ids) {
+  CheckpointPhase phase = CheckpointPhase::REST;
+  if (!checkpoint_.phase.compare_exchange_strong(phase, CheckpointPhase::RECOVER)) {
+    log_error("Unexpected checkpoint phase during recovery [expected: REST, actual: %s]",
+              CHECKPOINT_PHASE_STR[static_cast<int>(phase)]);
+    return Status::Aborted;
+  }
+
+  uint32_t hot_store_version, cold_store_version;
+  if (hot_store.Recover(token, token, hot_store_version, session_ids) != Status::Ok) {
+    log_error("Failed to recover hot store!");
+    return Status::Aborted;
+  }
+
+  std::vector<Guid> temp_vector;
+  if (cold_store.Recover(token, token, cold_store_version, temp_vector) != Status::Ok) {
+    log_error("Failed to recover cold store!");
+    return Status::Aborted;
+  }
+
+  if (hot_store_version != cold_store_version) {
+    log_warn("Version of stores differ [hot: %u, cold %u]", hot_store_version, cold_store_version);
+  }
+
+  phase = CheckpointPhase::RECOVER;
+  if (!checkpoint_.phase.compare_exchange_strong(phase, CheckpointPhase::REST)) {
+    log_error("Unexpected checkpoint phase during recovery [expected: RECOVER, actual: %s]",
+              CHECKPOINT_PHASE_STR[static_cast<int>(phase)]);
+    return Status::Aborted;
+  }
+  return Status::Ok;
 }
 
 template<class K, class V, class D>
 inline bool FasterKvHC<K, V, D>::CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
-  uint64_t tail_address = hot_store.hlog.GetTailAddress().control();
-  log_error("Compact HOT: {%.2lf GB} {Goal %.2lf GB} [%lu %lu] -> [%lu %lu]",
-            static_cast<double>(hot_store.Size()) / (1 << 30),
-            static_cast<double>(tail_address - until_address) / (1 << 30),
-            hot_store.hlog.begin_address.control(), tail_address,
-            until_address, tail_address);
-
-  if (until_address > hot_store.hlog.safe_read_only_address.control()) {
-    throw std::invalid_argument{ "Can only compact until safe read-only region" };
-  }
-
-  bool success = hot_store.CompactWithLookup(until_address, shift_begin_address, n_threads, true);
-  log_error("Compact HOT [success=%d]: {Goal %.2lf} {Actual %.2lf GB} Done!", success,
-            static_cast<double>(tail_address - until_address) / (1 << 30),
-            static_cast<double>(hot_store.Size()) / (1 << 30));
-  return success;
+  return CompactLog(hot_store, StoreType::HOT, until_address, shift_begin_address, n_threads, false);
 }
 
 template<class K, class V, class D>
 inline bool FasterKvHC<K, V, D>::CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
-  uint64_t tail_address = cold_store.hlog.GetTailAddress().control();
-  log_error("Compact COLD: {%.2lf GB} {Goal %.2lf GB} [%lu %lu] -> [%lu %lu]",
-            static_cast<double>(cold_store.Size()) / (1 << 30),
-            static_cast<double>(tail_address - until_address) / (1 << 30),
-            cold_store.hlog.begin_address.control(), tail_address,
-            until_address, tail_address);
+  return CompactLog(cold_store, StoreType::COLD, until_address, shift_begin_address, n_threads, false);
+}
 
-  if (until_address > cold_store.hlog.safe_read_only_address.control()) {
+template <class K, class V, class D>
+template <class S>
+inline bool FasterKvHC<K, V, D>::CompactLog(S& store, StoreType store_type, uint64_t until_address,
+                                            bool shift_begin_address, int n_threads, bool checkpoint) {
+  const bool is_hot_store = (store_type == StoreType::HOT);
+
+  uint64_t tail_address = store.hlog.GetTailAddress().control();
+  log_error("Compact %s: {%.2lf GB} {Goal %.2lf GB} [%lu %lu] -> [%lu %lu]",
+            is_hot_store ? "HOT" : "COLD",
+            static_cast<double>(store.Size()) / (1 << 30),
+            static_cast<double>(tail_address - until_address) / (1 << 30),
+            store.hlog.begin_address.control(), tail_address,
+            until_address, tail_address);
+  if (until_address > store.hlog.safe_read_only_address.control()) {
     throw std::invalid_argument{ "Can only compact until safe read-only region" };
   }
 
-  bool success = cold_store.CompactWithLookup(until_address, shift_begin_address, n_threads);
-  log_error("Compact COLD [success=%d]: {Goal %.2lf} {Actual %.2lf GB} Done!", success,
+  StoreCheckpointStatus status;
+  if (checkpoint) {
+    assert(checkpoint_.phase.load() == CheckpointPhase::COLD_STORE_CHECKPOINT);
+    if ((status = checkpoint_.cold_store_status.load()) != StoreCheckpointStatus::REQUESTED) {
+      log_error("Unexpected checkpoint status [%s] for COLD store [expected: %s]",
+                STORE_CHECKPOINT_STATUS_STR[static_cast<int>(status)],
+                STORE_CHECKPOINT_STATUS_STR[static_cast<int>(StoreCheckpointStatus::REQUESTED)]);
+      assert(false);
+    }
+    checkpoint_.cold_store_status.store(StoreCheckpointStatus::ACTIVE);
+  }
+  Guid token = checkpoint ? checkpoint_.token : Guid::Create();
+  bool success = store.InternalCompactWithLookup(until_address, shift_begin_address,
+                                                n_threads, is_hot_store, checkpoint, token);
+  log_error("Compact %s [success=%d]: {Goal %.2lf} {Actual %.2lf GB} Done!",
+            is_hot_store ? "HOT": "COLD", success,
             static_cast<double>(tail_address - until_address) / (1 << 30),
-            static_cast<double>(cold_store.Size()) / (1 << 30));
+            static_cast<double>(store.Size()) / (1 << 30));
+
+  if (checkpoint) {
+    assert(checkpoint_.phase.load() == CheckpointPhase::COLD_STORE_CHECKPOINT);
+    if ((status = checkpoint_.cold_store_status.load()) != StoreCheckpointStatus::ACTIVE) {
+      log_error("Unexpected checkpoint status [%s] for COLD store [expected: %s]",
+                STORE_CHECKPOINT_STATUS_STR[static_cast<int>(status)],
+                STORE_CHECKPOINT_STATUS_STR[static_cast<int>(StoreCheckpointStatus::ACTIVE)]);
+      assert(false);
+    }
+    // TODO: get checkpoint result from store
+    checkpoint_.cold_store_status.store(StoreCheckpointStatus::FINISHED);
+  }
   return success;
 }
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::CheckInternalLogsSize() {
-  HlogCompactionConfig& hot_compaction_config = hc_compaction_config_.hot_store;
-  HlogCompactionConfig& cold_compaction_config = hc_compaction_config_.cold_store;
-
-  // Used for throttling incoming user writes when respective max hlog size has been reached
-  hot_store.max_hlog_size_ = hot_compaction_config.hlog_size_budget;
-  cold_store.max_hlog_size_ = cold_compaction_config.hlog_size_budget;
-
-  uint64_t hot_log_size_threshold = static_cast<uint64_t>(
-    hot_compaction_config.hlog_size_budget * hot_compaction_config.trigger_pct);
-  uint64_t cold_log_size_threshold = static_cast<uint64_t>(
-    cold_compaction_config.hlog_size_budget * cold_compaction_config.trigger_pct);
-
-  std::chrono::milliseconds check_interval = std::min(
-    hot_compaction_config.check_interval,
-    cold_compaction_config.check_interval
-  );
-
-  while(auto_compaction_active_.load()) {
-    if (hot_store.Size() < hot_log_size_threshold &&
-        cold_store.Size() < cold_log_size_threshold) {
-      auto_compaction_scheduled_.store(false);
-      std::this_thread::sleep_for(check_interval);
-      continue;
-    }
-    // At least one compaction will take place
-    auto_compaction_scheduled_.store(true);
-
-    if (hot_store.Size() >= hot_log_size_threshold) {
-      uint64_t begin_address = hot_store.hlog.begin_address.control();
-      uint64_t safe_head_address = hot_store.hlog.safe_head_address.control();
-      // calculate until address
-      uint64_t until_address = begin_address + (
-                  static_cast<uint64_t>(hot_store.Size() * hot_compaction_config.compact_pct));
-      // respect user-imposed limit
-      until_address = std::min(until_address, begin_address + hot_compaction_config.max_compacted_size);
-      // do not compact in-memory regions
-      until_address = std::min(until_address, safe_head_address);
-      // round down address to page bounds
-      until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
-      assert(until_address <= hot_store.hlog.safe_read_only_address.control());
-      assert(until_address % hot_store.hlog.kPageSize == 0);
-
-      // perform hot-cold compaction
-      if (until_address < safe_head_address) {
-        StartSession();
-        if (!CompactHotLog(until_address, true, hot_compaction_config.num_threads)) {
-          log_error("Compact HOT: *not* successful! :(");
-        }
-        StopSession();
-      }
-    }
-
-    if (cold_store.Size() >= cold_log_size_threshold) {
-      uint64_t begin_address = cold_store.hlog.begin_address.control();
-      uint64_t safe_head_address = cold_store.hlog.safe_head_address.control();
-      // calculate until address
-      uint64_t until_address = begin_address + (
-                    static_cast<uint64_t>(cold_store.Size() * cold_compaction_config.compact_pct));
-      // respect user-imposed limit
-      until_address = std::min(until_address, begin_address + cold_compaction_config.max_compacted_size);
-      // do not compact in-memory regions
-      until_address = std::min(until_address, safe_head_address);
-      // round down address to page bounds
-      until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
-      assert(until_address <= cold_store.hlog.safe_read_only_address.control());
-      assert(until_address % cold_store.hlog.kPageSize == 0);
-
-      // perform cold-cold compaction
-      if (until_address < safe_head_address) {
-        cold_store.StartSession();
-        if (!CompactColdLog(until_address, true, cold_compaction_config.num_threads)) {
-          log_error("Compact COLD: *not* successful! :(");
-        }
-        cold_store.StopSession();
-      }
-    }
+template <class K, class V, class D>
+template <class S>
+inline bool FasterKvHC<K, V, D>::ShouldCompactHlog(const S& store, StoreType store_type,
+                                                  const HlogCompactionConfig& compaction_config, uint64_t& until_address) {
+  until_address = Address::kInvalidAddress;
+  if (!compaction_config.enabled) {
+    return false;
   }
 
-  auto_compaction_scheduled_.store(false);
+  uint64_t hlog_size_threshold = static_cast<uint64_t>(
+    compaction_config.hlog_size_budget * compaction_config.trigger_pct);
+  if (store.Size() < hlog_size_threshold) {
+    return false; // hlog smaller than limit
+  }
+
+  CheckpointPhase phase = checkpoint_.phase.load();
+  switch (phase) {
+    case CheckpointPhase::REST:
+      break;
+    case CheckpointPhase::HOT_STORE_CHECKPOINT:
+      if (store_type == StoreType::HOT) {
+        // Cannot start hot-cold compaction when hot store is being checkpointed
+        // This is primarily due to the (destructive) SBA step of hot-cold compaction
+        // ------------------------------------------------------------------------------------------
+        // In theory, one could execute the compaction part w/ hot log checkpointing concurrently
+        // (with proper care for starting/stopping compaction threads), and then explicitly wait for
+        // hot-store checkpoint to finish, before issuing the final SBE part of hot-cold compaction
+        return false;
+      }
+      break;
+    case CheckpointPhase::COLD_STORE_CHECKPOINT:
+      // Cold store checkpoint started, without waiting for next compaction process (i.e., high-priority)
+      if (checkpoint_.cold_store_status.load() == StoreCheckpointStatus::ACTIVE) {
+        // StoreType::HOT
+        // ==============
+        // When we want to start a hot-cold compaction, we need to start sessions on both store.
+        // Yet, if a cold-store checkpoint is currently active, we cannot do so for the cold-store.
+        // ----------------------------------------------------------------------------------------------
+        // StoreType::COLD
+        // ===============
+        // Again, due to the (destructive) SBA step of the cold-cold compaction process, we need to wait..
+        return false;
+      }
+      break;
+    case CheckpointPhase::RECOVER:
+      // Recovery in-progress! Should wait until it finishes!
+      return false;
+    default:
+      assert(false); // not-reachable!
+  }
+
+  uint64_t begin_address = store.hlog.begin_address.control();
+  uint64_t safe_head_address = store.hlog.safe_head_address.control();
+  // calculate until address
+  until_address = begin_address + (
+              static_cast<uint64_t>(store.Size() * compaction_config.compact_pct));
+  // respect user-imposed limit
+  until_address = std::min(until_address, begin_address + compaction_config.max_compacted_size);
+  // do not compact in-memory regions
+  until_address = std::min(until_address, safe_head_address);
+  // round down address to page bounds
+  until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
+  assert(until_address <= store.hlog.safe_read_only_address.control());
+  assert(until_address % store.hlog.kPageSize == 0);
+
+  return (until_address < safe_head_address);
+}
+
+template<class K, class V, class D>
+inline void FasterKvHC<K, V, D>::CheckSystemState() {
+  const HlogCompactionConfig& hot_log_compaction_config = hc_compaction_config_.hot_store;
+  const HlogCompactionConfig& cold_log_compaction_config = hc_compaction_config_.cold_store;
+
+  // Used for throttling incoming user writes when respective max hlog size has been reached
+  hot_store.max_hlog_size_ = hot_log_compaction_config.hlog_size_budget;
+  cold_store.max_hlog_size_ = cold_log_compaction_config.hlog_size_budget;
+
+  const std::chrono::milliseconds check_interval = std::min(
+    hot_log_compaction_config.check_interval,
+    cold_log_compaction_config.check_interval
+  );
+  bool wait;
+  auto should_checkpoint_cold_store = [&cold_store_status = checkpoint_.cold_store_status]() {
+    return (cold_store_status == StoreCheckpointStatus::REQUESTED);
+  };
+  uint64_t until_address;
+
+  do {
+    compaction_scheduled_.store(true);
+
+    // Hot log checkpoint
+    if (checkpoint_.hot_store_status == StoreCheckpointStatus::REQUESTED) {
+      checkpoint_.SetNumActiveThreads(hot_store.NumActiveSessions()); // cannot be set previously due to other background ops
+      log_debug("Issuing hot store checkpoint... (active sessions: %u)", hot_store.NumActiveSessions());
+      bool success = hot_store.InternalCheckpoint(nullptr, FasterKvHC<K, V, D>::HotStoreCheckpointedCallback,
+                                  checkpoint_.token, static_cast<void*>(&checkpoint_));
+      if (!success) {
+        log_error("Hot store checkpoint failed!");
+      }
+
+      auto desired = success ? StoreCheckpointStatus::ACTIVE : StoreCheckpointStatus::FAILED;
+      checkpoint_.hot_store_status.store(desired);
+      log_debug("Hot store checkpoint issued! (status: %s)",
+                STORE_CHECKPOINT_STATUS_STR[static_cast<int>(checkpoint_.hot_store_status)]);
+    }
+
+    // Cold log checkpoint (high-priority)
+    if (should_checkpoint_cold_store() && checkpoint_.IsLazyCheckpointExpired()) {
+      auto callback = [](Status result, uint64_t persistent_serial_num, void* ctxt) {
+        auto checkpoint = static_cast<HotColdCheckpointState*>(ctxt);
+        assert(checkpoint->phase.load() == CheckpointPhase::COLD_STORE_CHECKPOINT);
+        assert(checkpoint->cold_store_status.load() == StoreCheckpointStatus::ACTIVE);
+
+        StoreCheckpointStatus status;
+        if ((status = checkpoint->cold_store_status.load()) != StoreCheckpointStatus::ACTIVE) {
+          log_error("Unexpected checkpoint status for COLD store [expected: %s, actual: %s]",
+                    STORE_CHECKPOINT_STATUS_STR[static_cast<int>(StoreCheckpointStatus::ACTIVE)],
+                    STORE_CHECKPOINT_STATUS_STR[static_cast<int>(status)]);
+          assert(false);
+        }
+
+        // Set checkpoint status for cold-log
+        status = (result == Status::Ok) ? StoreCheckpointStatus::FINISHED : StoreCheckpointStatus::FAILED;
+        checkpoint->cold_store_status.store(status);
+        log_debug("Cold store checkpoint result: %s", STATUS_STR[static_cast<int>(result)]);
+      };
+
+      log_debug("Issuing cold store checkpoint... (active sessions: %u)", cold_store.NumActiveSessions());
+      bool success = cold_store.InternalCheckpoint(nullptr, callback, checkpoint_.token,
+                                                  static_cast<void*>(&checkpoint_));
+      if (!success) {
+        log_error("Cold store checkpoint failed!");
+      }
+
+      auto desired = success ? StoreCheckpointStatus::ACTIVE : StoreCheckpointStatus::FAILED;
+      checkpoint_.cold_store_status.store(desired);
+      log_debug("Cold store checkpoint issued! (status: %s)",
+                STORE_CHECKPOINT_STATUS_STR[static_cast<int>(checkpoint_.cold_store_status)]);
+    }
+
+    // Hot-Cold compaction (optional cold-log checkpoint)
+    if (ShouldCompactHlog(hot_store, StoreType::HOT, hot_log_compaction_config, until_address)) {
+      hot_store.StartSession();
+      cold_store.StartSession();
+      if (!CompactLog(hot_store, StoreType::HOT, until_address, true,
+                      hot_log_compaction_config.num_threads, should_checkpoint_cold_store())) {
+        log_error("Compact HOT log failed! :(");
+      }
+      cold_store.StopSession();
+      hot_store.StopSession();
+    }
+
+    // Cold-Cold compaction (optional cold-log checkpoint)
+    if (ShouldCompactHlog(cold_store, StoreType::COLD, cold_log_compaction_config, until_address)) {
+      cold_store.StartSession();
+      if (!CompactLog(cold_store, StoreType::COLD, until_address, true,
+                      cold_log_compaction_config.num_threads, should_checkpoint_cold_store())) {
+        log_error("Compact COLD log failed!  :(");
+      }
+      cold_store.StopSession();
+    }
+
+    wait = (checkpoint_.hot_store_status != StoreCheckpointStatus::REQUESTED &&
+            !ShouldCompactHlog(hot_store, StoreType::HOT, hot_log_compaction_config, until_address) &&
+            !ShouldCompactHlog(cold_store, StoreType::COLD, cold_log_compaction_config, until_address));
+    if (wait) {
+      compaction_scheduled_.store(false);
+      std::this_thread::sleep_for(check_interval);
+    }
+
+  } while(background_worker_active_.load());
+
+  compaction_scheduled_.store(false);
 }
 
 template<class K, class V, class D>
@@ -676,7 +940,6 @@ inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
 
   async_hc_rmw_context_t* ctxt;
   while (retry_rmw_requests.try_pop(ctxt)) {
-    //log_debug("RMW RETRY");
     CallbackContext<async_hc_rmw_context_t> context{ ctxt };
     // Get hash bucket entry
     hc_index_context_t index_context{ context.get() };

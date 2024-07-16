@@ -15,6 +15,7 @@ set (FASTER_HEADERS
   core/grow_state.h
   core/guid.h
   core/internal_contexts.h
+  core/hc_checkpoint_state.h
   core/hc_internal_contexts.h
   core/key_hash.h
   core/light_epoch.h
