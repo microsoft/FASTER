@@ -282,10 +282,6 @@ class FasterKv {
   template<class C>
   inline OperationStatus InternalDelete(C& pending_context, bool force_tombstone);
 
-  bool InternalCheckpoint(InternalIndexPersistenceCallback index_persistence_callback,
-                  InternalHybridLogPersistenceCallback hybrid_log_persistence_callback,
-                  Guid& token, void* callback_context);
-
  private:
   void InternalContinuePendingRequest(ExecutionContext& ctx, AsyncIOContext& io_context);
   OperationStatus InternalContinuePendingRead(ExecutionContext& ctx,
@@ -294,6 +290,10 @@ class FasterKv {
       AsyncIOContext& io_context);
   OperationStatus InternalContinuePendingConditionalInsert(ExecutionContext& ctx,
       AsyncIOContext& io_context);
+
+  bool InternalCheckpoint(InternalIndexPersistenceCallback index_persistence_callback,
+                  InternalHybridLogPersistenceCallback hybrid_log_persistence_callback,
+                  Guid& token, void* callback_context);
 
   template<class F>
   inline void InternalCompact(int thread_id, uint32_t max_records);
@@ -2850,7 +2850,7 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
       assert(next_state.action != Action::CheckpointHybridLog);
       // Issue async request for fuzzy checkpoint
       assert(!checkpoint_.failed);
-      if(hash_index_.Checkpoint(checkpoint_) != Status::Ok) {
+      if(hash_index_.Checkpoint(checkpoint_, read_cache_.get()) != Status::Ok) {
         checkpoint_.failed = true;
       }
       /*if (UseReadCache()) {

@@ -181,7 +181,11 @@ class FasterIndex : public IHashIndex<D> {
   }
 
   // Checkpointing methods
-  Status Checkpoint(CheckpointState<file_t>& checkpoint) {
+  template <class RC>
+  Status Checkpoint(CheckpointState<file_t>& checkpoint, const RC* read_cache) {
+    if (read_cache != nullptr) {
+      log_warn("Cold-index should not be possible to be combined with read-cache. Ignoring...");
+    }
     auto num_active_sessions = store_->NumActiveSessions();
     if (num_active_sessions != 1) {
       log_warn("Initiating cold-index checkpoint w/ %lu active sessions "

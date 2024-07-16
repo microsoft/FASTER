@@ -166,7 +166,9 @@ class HashIndex : public IHashIndex<D> {
   void Refresh() { };
 
   // Checkpointing methods
-  Status Checkpoint(CheckpointState<file_t>& checkpoint);
+  template <class RC>
+  Status Checkpoint(CheckpointState<file_t>& checkpoint, const RC* read_cache);
+
   Status CheckpointComplete();
   Status WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint);
 
@@ -828,18 +830,19 @@ inline Address HashIndex<D, HID>::TraceBackForOtherChainStart(uint64_t old_size,
 }
 
 template <class D, class HID>
-inline Status HashIndex<D, HID>::Checkpoint(CheckpointState<file_t>& checkpoint) {
+template <class RC>
+inline Status HashIndex<D, HID>::Checkpoint(CheckpointState<file_t>& checkpoint, const RC* read_cache) {
   // Checkpoint the hash table
   auto path = this->disk_.relative_index_checkpoint_path(checkpoint.index_token);
   file_t ht_file = this->disk_.NewFile(path + "ht.dat");
   RETURN_NOT_OK(ht_file.Open(&this->disk_.handler()));
   RETURN_NOT_OK(table_[this->resize_info.version].Checkpoint(this->disk_, std::move(ht_file),
-                                              checkpoint.index_metadata.num_ht_bytes));
+                                              checkpoint.index_metadata.num_ht_bytes, read_cache));
   // Checkpoint overflow buckets
   file_t ofb_file = this->disk_.NewFile(path + "ofb.dat");
   RETURN_NOT_OK(ofb_file.Open(&this->disk_.handler()));
   RETURN_NOT_OK(overflow_buckets_allocator_[this->resize_info.version].Checkpoint(this->disk_,
-                std::move(ofb_file), checkpoint.index_metadata.num_ofb_bytes));
+                std::move(ofb_file), checkpoint.index_metadata.num_ofb_bytes, read_cache));
 
   checkpoint.index_checkpoint_started = true;
   return Status::Ok;

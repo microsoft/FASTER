@@ -113,6 +113,9 @@ class InternalHashTable {
 
   // Checkpointing and recovery.
   Status Checkpoint(disk_t& disk, file_t&& file, uint64_t& checkpoint_size);
+
+  template <class RC>
+  Status Checkpoint(disk_t& disk, file_t&& file, uint64_t& checkpoint_size, const RC* read_cache);
   inline Status CheckpointComplete(bool wait);
 
   Status Recover(disk_t& disk, file_t&& file, uint64_t checkpoint_size);
@@ -123,11 +126,18 @@ class InternalHashTable {
   class AsyncIoContext : public IAsyncContext {
    public:
     AsyncIoContext(InternalHashTable* table_)
-      : table{ table_ } {
+      : table{ table_ }
+      , memory{ nullptr } {
     }
+    AsyncIoContext(InternalHashTable* table_, hash_bucket_t* memory_)
+      : table{ table_ }
+      , memory{ memory_ } {
+    }
+
     /// The deep-copy constructor
     AsyncIoContext(AsyncIoContext& other)
-      : table{ other.table } {
+      : table{ other.table }
+      , memory{ other.memory } {
     }
    protected:
     Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
@@ -135,6 +145,7 @@ class InternalHashTable {
     }
    public:
     InternalHashTable* table;
+    hash_bucket_t* memory; // non-null only when read-cache is enabled
   };
 
  private:
@@ -157,6 +168,8 @@ template <class D, class HID>
 Status InternalHashTable<D, HID>::Checkpoint(disk_t& disk, file_t&& file, uint64_t& checkpoint_size) {
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<AsyncIoContext> context{ ctxt };
+    assert(!context->memory);
+
     if(result != Status::Ok) {
       context->table->checkpoint_failed_ = true;
     }
@@ -185,7 +198,63 @@ Status InternalHashTable<D, HID>::Checkpoint(disk_t& disk, file_t&& file, uint64
   for(uint32_t idx = 0; idx < Constants::kNumMergeChunks; ++idx) {
     AsyncIoContext context{ this };
     RETURN_NOT_OK(file_.WriteAsync(&bucket(idx * chunk_size), idx * write_size, write_size,
-                                   callback, context));
+                                  callback, context));
+  }
+  checkpoint_size = size_ * sizeof(hash_bucket_t);
+  return Status::Ok;
+}
+
+template <class D, class HID>
+template <class RC>
+Status InternalHashTable<D, HID>::Checkpoint(disk_t& disk, file_t&& file, uint64_t& checkpoint_size,
+                                            const RC* read_cache) {
+  auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
+    CallbackContext<AsyncIoContext> context{ ctxt };
+    if (context->memory != nullptr) {
+      aligned_free(context->memory);
+    }
+    if(result != Status::Ok) {
+      context->table->checkpoint_failed_ = true;
+    }
+    if(--context->table->pending_checkpoint_writes_ == 0) {
+      result = context->table->file_.Close();
+      if(result != Status::Ok) {
+        context->table->checkpoint_failed_ = true;
+      }
+      context->table->checkpoint_pending_ = false;
+    }
+  };
+
+  assert(size_ % Constants::kNumMergeChunks == 0);
+  disk_ = &disk;
+  file_ = std::move(file);
+
+  checkpoint_size = 0;
+  checkpoint_failed_ = false;
+  uint32_t chunk_size = static_cast<uint32_t>(size_ / Constants::kNumMergeChunks);
+  uint32_t write_size = static_cast<uint32_t>(chunk_size * sizeof(hash_bucket_t));
+  assert(write_size % file_.alignment() == 0);
+  assert(!checkpoint_pending_);
+  assert(pending_checkpoint_writes_ == 0);
+  checkpoint_pending_ = true;
+  pending_checkpoint_writes_ = Constants::kNumMergeChunks;
+  for(uint32_t idx = 0; idx < Constants::kNumMergeChunks; ++idx) {
+    if (!read_cache) {
+      AsyncIoContext context{ this };
+      RETURN_NOT_OK(file_.WriteAsync(&bucket(idx * chunk_size), idx * write_size, write_size,
+                                    callback, context));
+    } else {
+      hash_bucket_t* buckets_chunk = reinterpret_cast<hash_bucket_t*>(core::aligned_alloc(
+                                        file_.alignment(), chunk_size * sizeof(hash_bucket_t)));
+      memcpy(buckets_chunk, &bucket(idx * chunk_size), write_size);
+      for (uint32_t chunk = 0; chunk < chunk_size; chunk++) {
+        read_cache->SkipBucket(&buckets_chunk[chunk]);
+      }
+
+      AsyncIoContext context{ this, buckets_chunk };
+      RETURN_NOT_OK(file_.WriteAsync(buckets_chunk, idx * write_size, write_size,
+                                    callback, context));
+    }
   }
   checkpoint_size = size_ * sizeof(hash_bucket_t);
   return Status::Ok;

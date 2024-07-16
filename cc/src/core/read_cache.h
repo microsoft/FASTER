@@ -91,7 +91,7 @@ class ReadCache {
 
 
   Status Checkpoint(CheckpointState<file_t>& checkpoint);
-  void SkipBucket(hash_bucket_t* const bucket);
+  void SkipBucket(hash_bucket_t* const bucket) const;
 
   void Dump(const std::string& filename);
 
@@ -359,7 +359,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     while (context.atomic_entry && context.entry.rc_.readcache_ &&
             (context.entry.address().readcache_address() == address)) {
 
-      // Minor optimization when ReadCache evict runs concurent to HashIndex GC
+      // Minor optimization when ReadCache evict runs concurrent to HashIndex GC
       // If a to-be-evicted read cache entry points to a trimmed hlog address, try to elide the bucket entry
       // NOTE: there is still a chance that read-cache entry points to an invalid hlog address (race condition)
       //       this is handled by FASTER's Internal* methods
@@ -389,13 +389,34 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
 }
 
 template <class K, class V, class D, class H>
-inline void ReadCache<K, V, D, H>::SkipBucket(hash_bucket_t* const bucket) {
+inline void ReadCache<K, V, D, H>::SkipBucket(hash_bucket_t* const bucket) const {
+  Address begin_address = read_cache_.begin_address.load();
   assert(bucket != nullptr);
+
   for (uint32_t idx = 0; idx < hash_bucket_t::kNumEntries; idx++) {
-    auto* entry = static_cast<hash_bucket_entry_t*>(&(bucket->entries[idx]));
-    while (entry->in_readcache()) {
-      record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(entry->address_));
-      entry->address_ = record->header.previous_address_;
+    do {
+      auto* atomic_entry = reinterpret_cast<AtomicHashBucketEntry*>(&(bucket->entries[idx]));
+      hash_bucket_entry_t entry{ atomic_entry->load() };
+
+      if (!entry.address().in_readcache()) {
+        break;
+      }
+
+      // Retrieve hlog address, and replace entry with it
+      assert(entry.address().readcache_address() >= begin_address);
+      const record_t* record = reinterpret_cast<const record_t*>(read_cache_.Get(entry.address().readcache_address()));
+
+      hash_bucket_entry_t new_entry{ ReadCacheRecordInfo{ record->header }.previous_address(), entry.tag(), entry.tentative() };
+      assert(!new_entry.address().in_readcache());
+
+      HashBucketEntry expected_entry{ entry };
+      if(atomic_entry->compare_exchange_strong(expected_entry, new_entry)) {
+        break;
+      }
+    } while (true);
+  }
+}
+
     }
   }
 }

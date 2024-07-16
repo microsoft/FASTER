@@ -69,7 +69,7 @@ class IHashIndex {
                           GcState::complete_callback_t complete_callback);
 
   template<class RC>
-  bool GarbageCollect();
+  bool GarbageCollect(RC* read_cache);
 
   // Index grow methods
   void GrowSetup(GrowCompleteCallback callback);
@@ -85,7 +85,9 @@ class IHashIndex {
   void Refresh();
 
   // Checkpointing methods
-  Status Checkpoint(CheckpointState<file_t>& checkpoint);
+  template <class RC>
+  Status Checkpoint(CheckpointState<file_t>& checkpoint, const RC* read_cache);
+
   Status CheckpointComplete();
   Status WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint);
 
