@@ -91,7 +91,10 @@ class FasterKv {
  public:
   typedef FasterKv<K, V, D, H, OH> faster_t;
   typedef FasterKv<K, V, D, OH, H> other_faster_t;
+
   friend class FasterKvHC<K, V, D>;
+  friend class FASTER::index::FasterIndex<D, typename H::hash_index_definition_t>;
+
 
   // Make friend all templated instances of this class
   template <class Ki, class Vi, class Di, class Hi, class OHi>
@@ -291,6 +294,9 @@ class FasterKv {
   OperationStatus InternalContinuePendingConditionalInsert(ExecutionContext& ctx,
       AsyncIOContext& io_context);
 
+  inline bool InternalCompactWithLookup(uint64_t until_address, bool shift_begin_address,
+                                  int n_threads, bool to_other_store, bool checkpoint, Guid& token);
+
   bool InternalCheckpoint(InternalIndexPersistenceCallback index_persistence_callback,
                   InternalHybridLogPersistenceCallback hybrid_log_persistence_callback,
                   Guid& token, void* callback_context);
@@ -455,8 +461,6 @@ class FasterKv {
   std::thread compaction_thread_;
   std::atomic<bool> auto_compaction_active_;
   std::atomic<bool> auto_compaction_scheduled_;
-
-  Guid last_guid_after_compaction_;
 
   // Hard limit of log size
   uint64_t max_hlog_size_;
@@ -3420,10 +3424,8 @@ Status FasterKv<K, V, D, H, OH>::Recover(const Guid& index_token, const Guid& hy
 }
 
 template <class K, class V, class D, class H, class OH>
-bool FasterKv<K, V, D, H, OH>::ShiftBeginAddress(Address address,
-    GcState::truncate_callback_t truncate_callback,
-    GcState::complete_callback_t complete_callback,
-    bool after_compaction) {
+bool FasterKv<K, V, D, H, OH>::ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
+                                                GcState::complete_callback_t complete_callback, bool after_compaction) {
   SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
   if(!system_state_.compare_exchange_strong(expected,
       SystemState{ Action::GC, Phase::REST, expected.version })) {
@@ -3491,8 +3493,15 @@ inline std::ostream& operator << (std::ostream& out, const FixedPageAddress addr
 /// and by potentially going through the hash chains, rather than
 /// scanning the entire log from head to tail.
 template <class K, class V, class D, class H, class OH>
-bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool shift_begin_address,
-                                            int n_threads, bool to_other_store, bool checkpoint) {
+inline bool FasterKv<K, V, D, H, OH>::CompactWithLookup(uint64_t until_address, bool shift_begin_address, int n_threads,
+                                                  bool to_other_store, bool checkpoint) {
+  Guid token;
+  return InternalCompactWithLookup(until_address, shift_begin_address, n_threads, to_other_store, checkpoint, token);
+}
+
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address, bool shift_begin_address, int n_threads,
+                                                        bool to_other_store, bool checkpoint, Guid& checkpoint_token) {
   // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
 
   if (hlog.begin_address.load() > until_address) {
@@ -3516,7 +3525,6 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 
   ConcurrentLogPageIterator<faster_t> iter(&hlog, &disk, &epoch_, hlog.begin_address.load(), Address(until_address));
   compaction_context_.Initialize(&iter, n_threads-1, to_other_store);
-  compaction_context_.pages_available.store(true);
 
   // Spawn the threads first
   for (size_t idx = 0; idx < n_threads-1; ++idx) {
@@ -3550,52 +3558,45 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
 
   if (checkpoint) {
     // index checkpoint
-    static std::atomic<Status> index_persisted_status;
-    // hlog checkpoint
-    static std::atomic_flag hlog_threads_persisted[Thread::kMaxNumThreads];
-    static std::atomic<Status> hlog_persisted_status;
-    static std::atomic<size_t> hlog_num_threads_persisted;
-    //
-    static std::atomic<bool> ready_for_truncation;
+    CompactionCheckpointContext cc_context;
 
-    // Initialize static vars
-    index_persisted_status = hlog_persisted_status = Status::Corruption;
-    hlog_num_threads_persisted.store(0);
-    for (size_t idx = 0; idx < Thread::kMaxNumThreads; idx++) {
-      hlog_threads_persisted[idx].clear();
-    }
-    ready_for_truncation.store(0);
+    auto index_persist_callback = [](Status status, void* ctxt) {
+      auto* context = static_cast<CompactionCheckpointContext*>(ctxt);
 
-    IndexPersistenceCallback index_persist_callback = [](Status status) {
-      assert(index_persisted_status.load() == Status::Corruption);
-      if (index_persisted_status.load() != Status::Corruption) {
+      // callback should not have been called before (i.e., called only once!)
+      Status expected = Status::Corruption;
+      if (!context->index_persisted_status.compare_exchange_strong(expected, status)) {
         log_warn("Unexpected index persist status: expected = %s, actual = %s",
-                STATUS_STR[static_cast<int>(Status::Corruption)], STATUS_STR[static_cast<int>(status)]);
+                STATUS_STR[static_cast<int>(Status::Corruption)], STATUS_STR[static_cast<int>(expected)]);
+        assert(false);
+        context->index_persisted_status.store(status);
       }
-      index_persisted_status.store(status);
-
+      // assert index checkpoint was successful
       assert(status == Status::Ok);
       if (status != Status::Ok) {
-        log_warn("Checkpoint: Index persist process finished with non-ok status -> %s", STATUS_STR[static_cast<int>(status)]);
+        log_warn("Checkpoint: Index persist process finished with non-ok status -> %s",
+                STATUS_STR[static_cast<int>(status)]);
       }
     };
 
-    HybridLogPersistenceCallback hlog_persist_callback =
-        [](Status status, uint64_t persistent_serial_number) {
-      bool expected = hlog_threads_persisted[Thread::id()].test_and_set();
-      assert(expected == false);
-      if (expected) {
-        log_warn("Expected checkpoint thread-specific entry to *not* have been set!");
+    auto hlog_persist_callback = [](Status status, uint64_t persistent_serial_number, void* ctxt) {
+      auto* context = static_cast<CompactionCheckpointContext*>(ctxt);
+
+      bool expected = false;
+      if (!context->hlog_threads_persisted[Thread::id()].compare_exchange_strong(expected, true)) {
+        log_warn("Expected checkpoint thread-specific entry to *not* have been set! "
+                  "Was callback called *twice* for the same thread?");
+        assert(false);
       }
-      ++hlog_num_threads_persisted;
+      context->hlog_num_threads_persisted++;
 
       // Update global checkpoint status, if error or first thread to finish
       bool success;
       do {
         success = true;
-        Status global_status = hlog_persisted_status.load();
+        Status global_status = context->hlog_persisted_status.load();
         if (global_status == Status::Corruption || status != Status::Ok) {
-          success = hlog_persisted_status.compare_exchange_strong(global_status, status);
+          success = context->hlog_persisted_status.compare_exchange_strong(global_status, status);
         }
       } while (!success);
     };
@@ -3609,9 +3610,11 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     bool success;
     do {
       if (!to_other_store) {
-        success = Checkpoint(index_persist_callback, hlog_persist_callback, last_guid_after_compaction_);
+        success = InternalCheckpoint(index_persist_callback, hlog_persist_callback,
+                                    checkpoint_token, static_cast<void*>(&cc_context));
       } else {
-        success = other_store_->Checkpoint(index_persist_callback, hlog_persist_callback, last_guid_after_compaction_);
+        success = other_store_->InternalCheckpoint(index_persist_callback, hlog_persist_callback,
+                                                  checkpoint_token, static_cast<void*>(&cc_context));
       }
       if (!success) {
         Refresh();
@@ -3623,39 +3626,45 @@ bool FasterKv<K, V, D, H, OH>::CompactWithLookup (uint64_t until_address, bool s
     // wait until checkpoint has finished
     // NOTE: sessions cannot be started/stopped during checkpointing
     size_t num_threads_active = num_active_sessions_.load();
-    while (hlog_num_threads_persisted < num_threads_active) {
+    while (cc_context.hlog_num_threads_persisted.load() < num_threads_active) {
       CompletePending(false);
       if (to_other_store) {
         other_store_->CompletePending(false);
       }
       std::this_thread::yield();
     }
-    assert(index_persisted_status != Status::Corruption &&
-          hlog_persisted_status != Status::Corruption);
-    if (index_persisted_status != Status::Ok ||
-        hlog_persisted_status != Status::Ok) {
+
+    auto index_persisted_status = cc_context.index_persisted_status.load();
+    auto hlog_persisted_status = cc_context.hlog_persisted_status.load();
+    assert(index_persisted_status != Status::Corruption && hlog_persisted_status != Status::Corruption);
+    if (index_persisted_status != Status::Ok || hlog_persisted_status != Status::Ok) {
+      log_warn("Checkpoint failed [index_persisted_status: %s, hlog_persisted_status=%s]",
+                STATUS_STR[static_cast<int>(index_persisted_status)],
+                STATUS_STR[static_cast<int>(hlog_persisted_status)]);
       return false;
     }
 
     if (!to_other_store && shift_begin_address) {
       // Wait until all threads move to REST phase
-      // This ensures that initiating a log truncation operation will be successful
+      // This ensures that the imminent log truncation operation will be successful
       auto callback = [](IAsyncContext* ctxt) {
+        auto* context = static_cast<CompactionCheckpointContext*>(ctxt);
         bool success, expected = false;
-        success = ready_for_truncation.compare_exchange_strong(expected, true);
+        success = context->ready_for_truncation.compare_exchange_strong(expected, true);
         assert(success && expected == false);
       };
-      epoch_.BumpCurrentEpoch(callback, nullptr);
+      epoch_.BumpCurrentEpoch(callback, &cc_context);
 
       do {
         Refresh();
         std::this_thread::yield();
-      } while(!ready_for_truncation);
+      } while(!cc_context.ready_for_truncation.load());
     }
   }
 
   if (shift_begin_address) {
     // Truncate log & update hash index
+    // TODO: remove static contexts using InternalShiftBeginAddress
     static std::atomic<bool> log_truncated;
     static std::atomic<bool> gc_completed;
     // reset static vars

@@ -33,9 +33,9 @@ struct ConcurrentCompactionThreadsContext {
  public:
   ConcurrentCompactionThreadsContext()
     : iter{ nullptr }
+    , active_threads{ 0 }
+    , pages_available{ false }
     , to_other_store{ false } {
-      active_threads.store(0);
-      pages_available.store(false);
   }
   // non-copyable
   ConcurrentCompactionThreadsContext(const ConcurrentCompactionThreadsContext&) = delete;
@@ -48,6 +48,16 @@ struct ConcurrentCompactionThreadsContext {
     for (size_t idx = 0; idx < n_threads_; ++idx) {
       thread_finished.emplace_back(false);
     }
+    active_threads.store(0);
+    pages_available.store(true);
+  }
+
+  void Reset() {
+    iter = nullptr;
+    thread_finished.clear();
+    active_threads.store(0);
+    pages_available.store(0);
+    to_other_store = false;
   }
 
   ConcurrentLogPageIterator<F>* iter;
@@ -166,6 +176,45 @@ class CompactionConditionalInsertContext : public IAsyncContext {
   Address address_;
   /// Pointer to the records info map (stored in Compact method)
   void* pending_records_;
+};
+
+class CompactionCheckpointContext : public IAsyncContext {
+ public:
+  CompactionCheckpointContext()
+    : index_persisted_status{ Status::Corruption }
+    , hlog_persisted_status{ Status::Corruption }
+    , hlog_num_threads_persisted{ 0 }
+    , ready_for_truncation{ false } {
+      for (size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
+        hlog_threads_persisted[idx].store(false);
+      }
+  }
+  CompactionCheckpointContext(const CompactionCheckpointContext& from)
+    : index_persisted_status{ from.index_persisted_status.load() }
+    , hlog_persisted_status{ from.hlog_persisted_status.load() }
+    , hlog_num_threads_persisted{ from.hlog_num_threads_persisted.load() }
+    , ready_for_truncation{ from.ready_for_truncation.load() } {
+      for (size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
+        hlog_threads_persisted[idx] = from.hlog_threads_persisted[idx].load();
+      }
+  }
+
+ protected:
+  /// Copies this context into a passed-in pointer if the operation goes
+  /// asynchronous inside FASTER.
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+  }
+
+ public:
+  // index callback
+  std::atomic<Status> index_persisted_status;
+  // hlog callback
+  std::atomic<Status> hlog_persisted_status;
+  std::atomic<bool> hlog_threads_persisted[Thread::kMaxNumThreads];
+  std::atomic<size_t> hlog_num_threads_persisted;
+  //
+  std::atomic<bool> ready_for_truncation;
 };
 
 ///////////////////////////////////////////////////////////
