@@ -195,8 +195,8 @@ class FasterIndex : public IHashIndex<D> {
     }
 
     // Callback called when hash chunk FasterKv checkpointing finishes
-    auto callback = [](Status result, uint64_t persistent_serial_num, void* context) {
-      auto* faster_index = static_cast<faster_index_t*>(context);
+    auto callback = [](void* ctxt, Status result, uint64_t persistent_serial_num) {
+      auto* faster_index = static_cast<faster_index_t*>(ctxt);
 
       if (result != Status::Ok) {
         log_warn("cold-index: checkpointing of hash chunk FasterKv store failed! [status: %s]",

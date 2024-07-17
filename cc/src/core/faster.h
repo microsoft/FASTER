@@ -3587,7 +3587,7 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
     // index checkpoint
     CompactionCheckpointContext cc_context;
 
-    auto index_persist_callback = [](Status status, void* ctxt) {
+    auto index_persist_callback = [](void* ctxt, Status status) {
       auto* context = static_cast<CompactionCheckpointContext*>(ctxt);
 
       // callback should not have been called before (i.e., called only once!)
@@ -3606,7 +3606,7 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
       }
     };
 
-    auto hlog_persist_callback = [](Status status, uint64_t persistent_serial_number, void* ctxt) {
+    auto hlog_persist_callback = [](void* ctxt, Status status, uint64_t persistent_serial_number) {
       auto* context = static_cast<CompactionCheckpointContext*>(ctxt);
 
       bool expected = false;

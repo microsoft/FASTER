@@ -119,7 +119,7 @@ public:
 
   Status Recover(const Guid& token, uint32_t& version, std::vector<Guid>& session_ids);
 
-  static void HotStoreCheckpointedCallback(Status result, uint64_t persistent_serial_num, void* ctxt);
+  static void HotStoreCheckpointedCallback(void* ctxt, Status result, uint64_t persistent_serial_num);
 
   bool CompactHotLog(uint64_t until_address, bool shift_begin_address,
                       int n_threads = hot_faster_store_t::kNumCompactionThreads);
@@ -607,7 +607,7 @@ inline bool FasterKvHC<K, V, D>::Checkpoint(HybridLogPersistenceCallback hybrid_
 }
 
 template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::HotStoreCheckpointedCallback(Status result, uint64_t persistent_serial_num, void* ctxt) {
+inline void FasterKvHC<K, V, D>::HotStoreCheckpointedCallback(void* ctxt, Status result, uint64_t persistent_serial_num) {
   // This will be called multiple times (i.e., once for each active session)
   auto checkpoint = static_cast<HotColdCheckpointState*>(ctxt);
   assert(checkpoint->phase.load() == CheckpointPhase::HOT_STORE_CHECKPOINT);
@@ -867,7 +867,7 @@ inline void FasterKvHC<K, V, D>::CheckSystemState() {
 
     // Cold log checkpoint (high-priority)
     if (should_checkpoint_cold_store() && checkpoint_.IsLazyCheckpointExpired()) {
-      auto callback = [](Status result, uint64_t persistent_serial_num, void* ctxt) {
+      auto callback = [](void* ctxt, Status result, uint64_t persistent_serial_num) {
         auto checkpoint = static_cast<HotColdCheckpointState*>(ctxt);
         assert(checkpoint->phase.load() == CheckpointPhase::COLD_STORE_CHECKPOINT);
         assert(checkpoint->cold_store_status.load() == StoreCheckpointStatus::ACTIVE);

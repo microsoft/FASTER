@@ -6,22 +6,24 @@
 #include <atomic>
 #include <cstdint>
 #include <unordered_map>
+
 #include "address.h"
 #include "guid.h"
 #include "malloc_fixed_page_size.h"
 #include "status.h"
 #include "thread.h"
+#include "utility.h"
 
 namespace FASTER {
 namespace core {
 
-typedef void (*func_ptr)(void);
-
+// Used when no callback context was provided (i.e., Checkpoint())
 typedef void(*IndexPersistenceCallback)(Status result);
-typedef void(*InternalIndexPersistenceCallback)(Status result, void* context);
-
 typedef void(*HybridLogPersistenceCallback)(Status result, uint64_t persistent_serial_num);
-typedef void(*InternalHybridLogPersistenceCallback)(Status result, uint64_t persistent_serial_num, void* context);
+
+// Used when callback context was provided (i.e., InternalCheckpoint())
+typedef void(*InternalIndexPersistenceCallback)(void* ctxt, Status result);
+typedef void(*InternalHybridLogPersistenceCallback)(void* ctxt, Status result, uint64_t persistent_serial_num);
 
 /// Checkpoint metadata for the index itself.
 class IndexMetadata {
@@ -131,7 +133,7 @@ class CheckpointState {
     index_metadata.Initialize(version, table_size, log_begin_address, checkpoint_start_address);
     log_metadata.Reset();
     flush_pending = 0;
-    index_persistence_callback = reinterpret_cast<func_ptr>(callback);
+    index_persistence_callback = reinterpret_cast<func_ptr_t>(callback);
     hybrid_log_persistence_callback = nullptr;
     callback_context = nullptr;
   }
@@ -152,43 +154,36 @@ class CheckpointState {
       flush_pending = 0;
     }
     index_persistence_callback = nullptr;
-    hybrid_log_persistence_callback = reinterpret_cast<func_ptr>(callback);
+    hybrid_log_persistence_callback = reinterpret_cast<func_ptr_t>(callback);
     callback_context = nullptr;
   }
 
-  // Initializer used by client/user
+  template <class IPC, class LPC>
   void InitializeCheckpoint(const Guid& token, uint32_t version, uint64_t table_size,
                             Address log_begin_address, Address checkpoint_start_address,
                             bool use_snapshot_file, Address flushed_until_address,
-                            IndexPersistenceCallback index_persistence_callback_,
-                            HybridLogPersistenceCallback hybrid_log_persistence_callback_) {
+                            IPC index_persistence_callback_,
+                            LPC hybrid_log_persistence_callback_,
+                            void* callback_context_ = nullptr) {
+    // static check of callback supported types
+    static_assert((std::is_same<IPC, IndexPersistenceCallback>::value &&
+                  std::is_same<LPC, HybridLogPersistenceCallback>::value) ||
+                  (std::is_same<IPC, InternalIndexPersistenceCallback>::value &&
+                  std::is_same<LPC, InternalHybridLogPersistenceCallback>::value));
+
     InitializeCheckpoint(token, version, table_size, log_begin_address, checkpoint_start_address,
                             use_snapshot_file, flushed_until_address,
-                            reinterpret_cast<func_ptr>(index_persistence_callback_),
-                            reinterpret_cast<func_ptr>(hybrid_log_persistence_callback_),
-                            nullptr);
-  }
-
-  // Initializer used internally for (1) checkpointing under hot-cold compaction or (2) cold-index checkpointing
-  void InitializeCheckpoint(const Guid& token, uint32_t version, uint64_t table_size,
-                            Address log_begin_address, Address checkpoint_start_address,
-                            bool use_snapshot_file, Address flushed_until_address,
-                            InternalIndexPersistenceCallback index_persistence_callback_,
-                            InternalHybridLogPersistenceCallback hybrid_log_persistence_callback_,
-                            void* callback_context_) {
-    InitializeCheckpoint(token, version, table_size, log_begin_address, checkpoint_start_address,
-                          use_snapshot_file, flushed_until_address,
-                          reinterpret_cast<func_ptr>(index_persistence_callback_),
-                          reinterpret_cast<func_ptr>(hybrid_log_persistence_callback_),
-                          callback_context_);
+                            reinterpret_cast<func_ptr_t>(index_persistence_callback_),
+                            reinterpret_cast<func_ptr_t>(hybrid_log_persistence_callback_),
+                            callback_context_);
   }
 
  private:
   void InitializeCheckpoint(const Guid& token, uint32_t version, uint64_t table_size,
                             Address log_begin_address, Address checkpoint_start_address,
                             bool use_snapshot_file, Address flushed_until_address,
-                            func_ptr index_persistence_callback_,
-                            func_ptr hybrid_log_persistence_callback_,
+                            func_ptr_t index_persistence_callback_,
+                            func_ptr_t hybrid_log_persistence_callback_,
                             void* callback_context_) {
     failed = false;
     index_checkpoint_started = false;
@@ -215,7 +210,7 @@ class CheckpointState {
     // TODO: status was always Status::Ok on original FASTER code -- normally should check if failed is true
     if (callback_context) {
       const auto& callback = reinterpret_cast<InternalIndexPersistenceCallback>(index_persistence_callback);
-      callback(Status::Ok, callback_context);
+      callback(callback_context, Status::Ok);
     } else {
       const auto& callback = reinterpret_cast<IndexPersistenceCallback>(index_persistence_callback);
       callback(Status::Ok);
@@ -229,7 +224,7 @@ class CheckpointState {
     // TODO: status was always Status::Ok on original FASTER code -- normally should check if failed is true
     if (callback_context) {
       const auto& callback = reinterpret_cast<InternalHybridLogPersistenceCallback>(hybrid_log_persistence_callback);
-      callback(Status::Ok, serial_num, callback_context);
+      callback(callback_context, Status::Ok, serial_num);
     } else {
       const auto& callback = reinterpret_cast<HybridLogPersistenceCallback>(hybrid_log_persistence_callback);
       callback(Status::Ok, serial_num);
@@ -274,8 +269,8 @@ class CheckpointState {
   file_t snapshot_file;
   std::atomic<uint32_t> flush_pending;
 
-  func_ptr index_persistence_callback;
-  func_ptr hybrid_log_persistence_callback;
+  func_ptr_t index_persistence_callback;
+  func_ptr_t hybrid_log_persistence_callback;
   void* callback_context;
 
   std::unordered_map<Guid, uint64_t> continue_tokens;
