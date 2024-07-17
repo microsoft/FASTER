@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 #pragma once
 
 #include "../core/async.h"
@@ -168,7 +171,7 @@ class FasterIndexReadContext : public FasterIndexContext<HID> {
     : FasterIndexContext<HID>(op_type, caller_context, io_id, thread_io_responses,
                           HashBucketEntry::kInvalidEntry, key, pos) {
 #ifdef STATISTICS
-    hash_index_op = HashIndexOp::FIND_ENTRY;
+    this->hash_index_op = HashIndexOp::FIND_ENTRY;
 #endif
   }
   /// Copy (and deep-copy) constructor.
@@ -213,9 +216,9 @@ class FasterIndexRmwContext : public FasterIndexContext<HID> {
     , force_{ force } {
 #ifdef STATISTICS
     if (is_find_or_create_entry_request()) {
-      hash_index_op = HashIndexOp::FIND_OR_CREATE_ENTRY;
+      this->hash_index_op = HashIndexOp::FIND_OR_CREATE_ENTRY;
     } else {
-      hash_index_op = force_ ? HashIndexOp::UPDATE_ENTRY : HashIndexOp::TRY_UPDATE_ENTRY;
+      this->hash_index_op = force_ ? HashIndexOp::UPDATE_ENTRY : HashIndexOp::TRY_UPDATE_ENTRY;
     }
 #endif
   }

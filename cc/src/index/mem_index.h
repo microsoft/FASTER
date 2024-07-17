@@ -1032,7 +1032,6 @@ inline void HashIndex<D, HID>::PrintStats() const {
   DumpDistribution();
 }
 #endif
-}
 
 }
 } // namespace FASTER::index

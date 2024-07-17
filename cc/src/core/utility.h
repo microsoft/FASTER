@@ -24,6 +24,7 @@ constexpr uint64_t operator""_GiB(unsigned long long const x) {
   return static_cast<uint64_t>(x * (1 << 30));
 }
 
+// used for constexpr calculations/assertions on template parameters
 constexpr size_t log2(size_t n) {
   return ( (n < 2) ? 0 : 1 + log2(n >> 1));
 }

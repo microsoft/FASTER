@@ -176,7 +176,7 @@ union HotLogIndexBucketEntryDef {
   }
 
   static constexpr int kTagBits = 14;
-  static constexpr int kReservedBits = 1;
+  static constexpr int kReservedBits = 64 - 48 - kTagBits - 1;
 
   struct {
     uint64_t address    : 48;             // corresponds to logical address

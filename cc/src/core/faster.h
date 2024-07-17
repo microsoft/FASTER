@@ -15,6 +15,10 @@
 #include <algorithm>
 #include <unordered_set>
 
+#ifdef STATISTICS
+#include <chrono>
+#endif
+
 #include "common/log.h"
 #include "device/file_system_disk.h"
 #include "index/mem_index.h"
@@ -83,7 +87,7 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
   ExecutionContext contexts_[2];
   uint8_t cur_;
 };
-//static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
+static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
 
 /// The FASTER key-value store.
 template <class K, class V, class D, class H = HashIndex<D>, class OH = H>
@@ -128,6 +132,7 @@ class FasterKv {
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
   typedef AsyncPendingConditionalInsertContext<key_t> async_pending_ci_context_t;
 
+  static constexpr uint64_t kMaxPendingIOs = 128;
 
   FasterKv(IndexConfig index_config, uint64_t hlog_mem_size, const std::string& filepath,
            double hlog_mutable_fraction = DEFAULT_HLOG_MUTABLE_FRACTION,
@@ -151,7 +156,6 @@ class FasterKv {
     , hlog_compaction_config_{ hlog_compaction_config }
     , auto_compaction_active_{ false }
     , auto_compaction_scheduled_{ false } {
-    log_init();
 
     log_debug("Hash Index Size: %lu", index_config.table_size);
     hash_index_.Initialize(index_config);
@@ -329,10 +333,9 @@ class FasterKv {
                               bool& async);
   inline Status RetryLater(ExecutionContext& ctx, pending_context_t& pending_context,
                            bool& async);
-  inline constexpr uint32_t MinIoRequestSize() const;
   inline Status IssueAsyncIoRequest(ExecutionContext& ctx, pending_context_t& pending_context,
                                     bool& async);
-
+  void DoThrottling();
   void AsyncGetFromDisk(Address address, uint32_t num_records, AsyncIOCallback callback,
                         AsyncIOContext& context);
   static void AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status result,
@@ -371,7 +374,6 @@ class FasterKv {
   void GrowIndexBlocking();
 
   /// Compaction/Garbage collect methods
-  inline void CompactRecords();
   Address LogScanForValidity(Address from, faster_t* temp);
   bool ContainsKeyInMemory(IndexContext<key_t, value_t> key, Address offset);
 
@@ -387,6 +389,12 @@ class FasterKv {
   }
   ExecutionContext& prev_thread_ctx() {
     return thread_contexts_[Thread::id()].prev();
+  }
+
+  inline constexpr uint32_t MinIoRequestSize() const {
+    return static_cast<uint32_t>(
+            sizeof(value_t) + pad_alignment(record_t::min_disk_key_size(),
+                alignof(value_t)));
   }
 
   bool UseReadCache() const {
@@ -482,83 +490,82 @@ class FasterKv {
   }
 
   void PrintStats() const {
-    /*
-    double PERCENTILES[] = { 25, 50, 75, 95, 99, 99.5, 99.9 };
-    const std::vector<double> percentiles{
-      PERCENTILES, PERCENTILES + sizeof(PERCENTILES) / sizeof(double) };
-    */
-
     // Reads
-    printf("==== READS ====\n");
-    printf("Total Requests Served\t: %lu\n", reads_total_.load());
+    fprintf(stderr, "==== READS ====\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", reads_total_.load());
     if (reads_total_.load() > 0) {
-      printf("Sync Requests (%%)\t: %.2lf\n",
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
         (static_cast<double>(reads_sync_.load()) / reads_total_.load()) * 100.0);
-      printf("Total I/O operations\t: %lu\n", reads_iops_.load());
-      printf("I/O Op Per Request\t: %.2lf\n",
+      fprintf(stderr, "\nTotal I/O operations\t: %lu\n", reads_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
         static_cast<double>(reads_iops_.load()) / reads_total_.load());
       pprint_per_req_stats(reads_per_req_iops_, "I/O ops");
     }
     // Upserts
-    printf("\n==== UPSERTS ====\n");
-    printf("Total Requests Served\t: %lu\n", upserts_total_.load());
+    fprintf(stderr, "\n==== UPSERTS ====\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", upserts_total_.load());
     if (upserts_total_.load() > 0) {
-      printf("Sync Requests (%%)\t: %.2lf\n",
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
         (static_cast<double>(upserts_sync_.load()) / upserts_total_.load()) * 100.0);
-      printf("Total I/O operations\t: %lu\n", upserts_iops_.load());
-      printf("I/O Op Per Request\t: %.2lf\n",
+      fprintf(stderr, "\nTotal I/O operations\t: %lu\n", upserts_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
         static_cast<double>(upserts_iops_.load()) / upserts_total_.load());
       pprint_per_req_stats(upserts_per_req_iops_, "I/O ops");
       pprint_per_req_stats(upserts_per_req_record_invalidations_, "Record Invalidations");
     }
     // RMWs
-    printf("\n==== RMWs ====\n");
-    printf("Total Requests Served\t: %lu\n", rmw_total_.load());
+    fprintf(stderr, "\n==== RMWs ====\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", rmw_total_.load());
     if (rmw_total_.load() > 0) {
-      printf("Sync Requests (%%)\t: %.2lf\n",
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
         (static_cast<double>(rmw_sync_.load()) / rmw_total_.load()) * 100.0);
-      printf("Total I/O operations\t: %lu\n", rmw_iops_.load());
-      printf("I/O Op Per Request\t: %.2lf\n",
+      fprintf(stderr, "Total I/O operations\t: %lu\n", rmw_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
         static_cast<double>(rmw_iops_.load()) / rmw_total_.load());
       pprint_per_req_stats(rmw_per_req_iops_, "I/O ops");
       pprint_per_req_stats(rmw_per_req_record_invalidations_, "Record Invalidations");
     }
     // Deletes
-    printf("\n==== DELETES ====\n");
-    printf("Total Requests Served\t: %lu\n", deletes_total_.load());
+    fprintf(stderr, "\n==== DELETES ====\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", deletes_total_.load());
     if (deletes_total_.load() > 0) {
-      printf("Sync Requests (%%)\t: %.2lf\n",
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
         (static_cast<double>(deletes_sync_.load()) / deletes_total_.load()) * 100.0);
-      printf("Total I/O operations\t: %lu\n", deletes_iops_.load());
-      printf("I/O Op Per Request\t: %.2lf\n",
+      fprintf(stderr, "Total I/O operations\t: %lu\n", deletes_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
         static_cast<double>(deletes_iops_.load()) / deletes_total_.load());
       pprint_per_req_stats(deletes_per_req_iops_, "I/O ops");
       pprint_per_req_stats(deletes_per_req_record_invalidations_, "Record Invalidations");
     }
     // Conditional Inserts
-    printf("\n=== Conditional Inserts ===\n");
-    printf("Total Requests Served\t: %lu\n", ci_total_.load());
+    fprintf(stderr, "\n=== Conditional Inserts ===\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", ci_total_.load());
     if (ci_total_.load() > 0) {
-      printf("Sync Requests (%%)\t: %.2lf\n",
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
         (static_cast<double>(ci_sync_.load()) / ci_total_.load()) * 100.0);
-      printf("Total I/O operations \t: %lu\n", ci_iops_.load());
-      printf("I/O Op Per Request\t: %.2lf\n",
+      fprintf(stderr, "Total I/O operations \t: %lu\n", ci_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
         static_cast<double>(ci_iops_.load()) / ci_total_.load());
-      printf("Records Copied (%%)\t: %.2lf\n",
+      fprintf(stderr, "Records Copied (%%)\t: %.2lf\n",
         static_cast<double>(ci_copied_.load()) / ci_total_.load() * 100.0);
       pprint_per_req_stats(ci_per_req_iops_, "I/O ops");
       pprint_per_req_stats(ci_per_req_record_invalidations_, "Record Invalidations");
     }
+    // Misc
+    fprintf(stderr, "\n=== Misc ===\n");
+    fprintf(stderr, "Refresh()\t\tTime Spent\t: %ld ms\n", refresh_func_time_spent_.load() / 1000);
+    fprintf(stderr, "HandleSpecialPhases() Time Spent\t: %ld ms\n", special_phases_time_spent_.load() / 1000);
+    fprintf(stderr, "Throttling\t\tTime Spent\t: %ld ms\n", throttling_time_spent_.load() / 1000);
 
     // Print hash index stats
-    printf("\n ########## HASH INDEX #########\n");
+    fprintf(stderr, "\n ########## HASH INDEX #########\n");
     hash_index_.PrintStats();
-    printf("\n ########## ---------- #########\n");
+    fprintf(stderr, "\n ########## ---------- #########\n");
   }
 
  private:
   void InitializeStats() {
-    for (int i = 0; i < per_req_resolution; i++) {
+    for (int i = 0; i < kPerReqResolution; i++) {
       // iops
       reads_per_req_iops_[i].store(0);
       upserts_per_req_iops_[i].store(0);
@@ -610,54 +617,59 @@ class FasterKv {
     static const unsigned allDots = 60;
 
     uint64_t sum = 0;
-    for (int i = 0; i < per_req_resolution; i++) {
+    for (int i = 0; i < kPerReqResolution; i++) {
       sum += iops_arr[i].load();
     }
     if (sum == 0) return;
 
-    for (int i = 0; i < per_req_resolution; i++) {
+    for (int i = 0; i < kPerReqResolution; i++) {
       auto num_iops = iops_arr[i].load();
-      printf("%d%c  %s [%'10lu] {%6.2lf%%}: ", i,
-        (i != per_req_resolution - 1) ? ' ' : '+', prefix.c_str(),
+      fprintf(stderr, "%d%c  %s [%'10lu] {%6.2lf%%}: ", i,
+        (i != kPerReqResolution - 1) ? ' ' : '+', prefix.c_str(),
         num_iops, static_cast<double>(num_iops) / sum * 100.0);
       auto dots = (iops_arr[i].load() * allDots) / sum;
-      printf("%s\n", std::string(dots, '*').c_str());
+      fprintf(stderr, "%s\n", std::string(dots, '*').c_str());
     }
   }
 
-  static constexpr unsigned per_req_resolution = 6;
+  const double kSketchAccuracy = 0.01;
+  static constexpr unsigned kPerReqResolution = 6;
   bool collect_stats_{ true };
   // Reads
   std::atomic<uint64_t> reads_total_{ 0 };
   std::atomic<uint64_t> reads_sync_{ 0 };
   std::atomic<uint64_t> reads_iops_{ 0 };
-  std::atomic<uint64_t> reads_per_req_record_invalidations_[per_req_resolution];
-  std::atomic<uint64_t> reads_per_req_iops_[per_req_resolution];
+  std::atomic<uint64_t> reads_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> reads_per_req_iops_[kPerReqResolution];
   // Upserts
   std::atomic<uint64_t> upserts_total_{ 0 };
   std::atomic<uint64_t> upserts_sync_{ 0 };
   std::atomic<uint64_t> upserts_iops_{ 0 };
-  std::atomic<uint64_t> upserts_per_req_record_invalidations_[per_req_resolution];
-  std::atomic<uint64_t> upserts_per_req_iops_[per_req_resolution];
+  std::atomic<uint64_t> upserts_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> upserts_per_req_iops_[kPerReqResolution];
   // RMWs
   std::atomic<uint64_t> rmw_total_{ 0 };
   std::atomic<uint64_t> rmw_sync_{ 0 };
   std::atomic<uint64_t> rmw_iops_{ 0 };
-  std::atomic<uint64_t> rmw_per_req_record_invalidations_[per_req_resolution];
-  std::atomic<uint64_t> rmw_per_req_iops_[per_req_resolution];
+  std::atomic<uint64_t> rmw_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> rmw_per_req_iops_[kPerReqResolution];
   // Deletes
   std::atomic<uint64_t> deletes_total_{ 0 };
   std::atomic<uint64_t> deletes_sync_{ 0 };
   std::atomic<uint64_t> deletes_iops_{ 0 };
-  std::atomic<uint64_t> deletes_per_req_record_invalidations_[per_req_resolution];
-  std::atomic<uint64_t> deletes_per_req_iops_[per_req_resolution];
+  std::atomic<uint64_t> deletes_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> deletes_per_req_iops_[kPerReqResolution];
   // Conditional Inserts
   std::atomic<uint64_t> ci_total_{ 0 };
   std::atomic<uint64_t> ci_sync_{ 0 };
   std::atomic<uint64_t> ci_iops_{ 0 };
   std::atomic<uint64_t> ci_copied_{ 0 };
-  std::atomic<uint64_t> ci_per_req_record_invalidations_[per_req_resolution];
-  std::atomic<uint64_t> ci_per_req_iops_[per_req_resolution];
+  std::atomic<uint64_t> ci_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> ci_per_req_iops_[kPerReqResolution];
+  // Misc
+  std::atomic<int64_t> refresh_func_time_spent_{ 0 };
+  std::atomic<int64_t> throttling_time_spent_{ 0 };
+  std::atomic<int64_t> special_phases_time_spent_{ 0 };
 #endif
 };
 
@@ -702,6 +714,10 @@ inline uint64_t FasterKv<K, V, D, H, OH>::ContinueSession(const Guid& session_id
 
 template <class K, class V, class D, class H, class OH>
 inline void FasterKv<K, V, D, H, OH>::Refresh(bool from_callback) {
+  #ifdef STATISTICS
+  auto start_time = std::chrono::high_resolution_clock::now();
+  #endif
+
   if (!epoch_.IsProtected()) {
     log_warn("[FasterKv=%p] Thread [%lu] called Refresh(), with no active session",
               static_cast<void*>(this), Thread::id());
@@ -720,6 +736,12 @@ inline void FasterKv<K, V, D, H, OH>::Refresh(bool from_callback) {
   if(thread_ctx().phase == Phase::REST && new_state.phase == Phase::REST) {
     return;
   }
+
+  #ifdef STATISTICS
+  std::chrono::nanoseconds duration = std::chrono::high_resolution_clock::now() - start_time;
+  refresh_func_time_spent_ += duration.count();
+  #endif
+
   HandleSpecialPhases();
 }
 
@@ -1314,9 +1336,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   if(thread_ctx().phase != Phase::REST) {
     HeavyEnter();
   }
-  if (next_hlog_begin_address_.load() != Address::kInvalidAddress) {
-    CompactRecords();
-  }
 
   // Stamp request (if not stamped already)
   pending_context.try_stamp_request(thread_ctx().phase, thread_ctx().version);
@@ -1428,7 +1447,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   if(address >= read_only_address) {
     // Mutable region; try to update in place.
     // TODO: fix this in the cold log; UPDATE: it might just be the case that there is no need to fix anything here.
-    // NOTE: TLDR; cold log index cannot experience the lost-update anomaly.
+    // NOTE: TL;DR; cold log index cannot experience the lost-update anomaly.
     //       Cold log only receives upserts during hot-cold compaction
     //       During a single hot-cold compaction, a record with a given key, can be updated AT MOST once!
     //       This is guaranteed by the lookup compaction algorithm, as only a single hot-cold compaction is active at any given time.
@@ -1502,9 +1521,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
 
   if(phase != Phase::REST) {
     HeavyEnter();
-  }
-  if (next_hlog_begin_address_.load() != Address::kInvalidAddress) {
-    CompactRecords();
   }
 
   // Stamp request (if not stamped already)
@@ -2058,13 +2074,6 @@ inline Status FasterKv<K, V, D, H, OH>::RetryLater(ExecutionContext& ctx,
 }
 
 template <class K, class V, class D, class H, class OH>
-inline constexpr uint32_t FasterKv<K, V, D, H, OH>::MinIoRequestSize() const {
-  return static_cast<uint32_t>(
-           sizeof(value_t) + pad_alignment(record_t::min_disk_key_size(),
-               alignof(value_t)));
-}
-
-template <class K, class V, class D, class H, class OH>
 inline Status FasterKv<K, V, D, H, OH>::IssueAsyncIoRequest(ExecutionContext& ctx,
     pending_context_t& pending_context, bool& async) {
   // Issue asynchronous I/O request
@@ -2132,18 +2141,60 @@ inline void FasterKv<K, V, D, H, OH>::DoRefreshCallback(void* faster) {
 }
 
 template <class K, class V, class D, class H, class OH>
-void FasterKv<K, V, D, H, OH>::AsyncGetFromDisk(Address address, uint32_t num_records,
-    AsyncIOCallback callback, AsyncIOContext& context) {
+void FasterKv<K, V, D, H, OH>::DoThrottling() {
   if(epoch_.IsProtected()) {
-    /// Throttling. (Thread pool, unprotected threads are not throttled.)
-    while(num_pending_ios.load() > 120) {
+    /// User threads wait for user-issued requests
+    bool other_store_protected = (other_store_ != nullptr) && other_store_->epoch_.IsProtected();
+    while(num_pending_ios_.load() > kMaxPendingIOs) {
       disk.TryComplete();
+      hash_index_.CompletePending();
       std::this_thread::yield();
       epoch_.ProtectAndDrain();
-      if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->epoch_.ProtectAndDrain();
+      if (other_store_protected) {
+        other_store_->epoch_.ProtectAndDrain();
+      }
     }
   }
-  ++num_pending_ios;
+}
+
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::AsyncGetFromDisk(Address address, uint32_t num_records,
+    AsyncIOCallback callback, AsyncIOContext& context) {
+  #ifdef STATISTICS
+  auto start_time = std::chrono::high_resolution_clock::now();
+  #endif
+
+  DoThrottling();
+
+  #ifdef STATISTICS
+  std::chrono::nanoseconds duration = std::chrono::high_resolution_clock::now() - start_time;
+  throttling_time_spent_ += duration.count();
+  #endif
+
+  ++num_pending_ios_;
+
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    auto* pending_context = static_cast<pending_context_t*>(context.caller_context);
+    ++pending_context->num_iops;
+    switch (pending_context->type) {
+      case OperationType::Read:
+        ++reads_iops_;
+        break;
+      case OperationType::RMW:
+        ++rmw_iops_;
+        break;
+      case OperationType::ConditionalInsert:
+        ++ci_iops_;
+        break;
+      default:
+        // not reached
+        assert(false);
+        break;
+    }
+  }
+  #endif
+
   hlog.AsyncGetFromDisk(address, num_records, callback, context);
 }
 
@@ -3033,6 +3084,10 @@ void FasterKv<K, V, D, H, OH>::MarkAllPendingRequests() {
 
 template <class K, class V, class D, class H, class OH>
 void FasterKv<K, V, D, H, OH>::HandleSpecialPhases() {
+  #ifdef STATISTICS
+  auto start_time = std::chrono::high_resolution_clock::now();
+  #endif
+
   SystemState final_state = system_state_.load();
   if(final_state.phase == Phase::REST) {
     // Nothing to do; just reset thread context.
@@ -3239,6 +3294,11 @@ void FasterKv<K, V, D, H, OH>::HandleSpecialPhases() {
     thread_ctx().version = current_state.version;
     previous_state = current_state;
   } while(previous_state != final_state);
+
+  #ifdef STATISTICS
+  std::chrono::nanoseconds duration = std::chrono::high_resolution_clock::now() - start_time;
+  special_phases_time_spent_ += duration.count();
+  #endif
 }
 
 template <class K, class V, class D, class H, class OH>
@@ -4202,30 +4262,6 @@ create_record:
   }
 }
 
-template <class K, class V, class D, class H, class OH>
-void FasterKv<K, V, D, H, OH>::CompactRecords() {
-  constexpr static uint32_t kCompactionMaxRecords = 32;
-
-  if (compaction_context_.pages_available.load()) {
-    InternalCompact<faster_t>(-1, kCompactionMaxRecords);
-  }
-  if (Size() < max_hlog_size_) {
-    return;
-  }
-
-  log_warn("Max hlog size reached -> throttling active...");
-  while(Size() >= max_hlog_size_) {
-    Refresh();
-    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
-    if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
-
-    if (compaction_context_.pages_available.load()) {
-      InternalCompact<faster_t>(-1, std::numeric_limits<uint32_t>::max());
-    }
-  }
-  log_warn("Stopped throttling!");
-}
-
 /// When invoked, compacts the hybrid-log between the begin address and a
 /// passed in offset (`untilAddress`).
 template <class K, class V, class D, class H, class OH>
@@ -4376,8 +4412,6 @@ Address FasterKv<K, V, D, H, OH>::LogScanForValidity(Address from, faster_t* tem
 template <class K, class V, class D, class H, class OH>
 bool FasterKv<K, V, D, H, OH>::ContainsKeyInMemory(IndexContext<key_t, value_t> context, Address offset)
 {
-  typedef IndexContext<key_t, value_t> index_context_t;
-
   // First, retrieve the hash table entry corresponding to this key.
   Status status = hash_index_.FindEntry(thread_ctx(), context);
   assert(status == Status::Ok || status == Status::NotFound);

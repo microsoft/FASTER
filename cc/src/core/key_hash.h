@@ -107,30 +107,5 @@ struct IndexKeyHash {
 };
 static_assert(Constants::kCacheLineBytes == 64);
 
-// Hot index hash bucket definition -- no chunks
-//typedef IndexKeyHash<index::HotLogIndexBucketEntryDef, 0, 0> HotLogIndexKeyHash;
-
-// Cold index hash bucket definition (4096 bytes) -- 64 buckets in chunk, 8 entries per chunk bucket
-//typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 6, 3> ColdLogIndexKeyHash;
-
-// Cold index hash chunk definition (2048 bytes)-- 32 buckets in chunk, 8 entries per chunk bucket
-//typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 5, 3> ColdLogIndexKeyHash;
-
-// Cold index hash chunk definition (1024 bytes)-- 16 buckets in chunk, 8 entries per chunk bucket
-//typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 4, 3> ColdLogIndexKeyHash;
-
-// Cold index hash chunk definition (512 bytes)-- 8 buckets in chunk, 8 entries per chunk bucket
-//typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 3, 3> ColdLogIndexKeyHash;
-
-// Cold index hash chunk definition (256 bytes)-- 4 buckets in chunk, 8 entries per chunk bucket
-//typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 2, 3> ColdLogIndexKeyHash;
-
-// Cold index hash chunk definition (128 bytes)-- 2 buckets in chunk, 8 entries per chunk bucket
-//typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 1, 3> ColdLogIndexKeyHash;
-
-// Cold index hash chunk definition (64 bytes)-- 1 buckets in chunk, 8 entries per chunk bucket
-//typedef IndexKeyHash<index::ColdLogIndexBucketEntryDef, 0, 3> ColdLogIndexKeyHash;
-
-
 }
 } // namespace FASTER::core

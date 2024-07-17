@@ -89,11 +89,9 @@ class ReadCache {
     faster_ = faster;
   }
 
-
+  // Checkpoint-related methods
   Status Checkpoint(CheckpointState<file_t>& checkpoint);
   void SkipBucket(hash_bucket_t* const bucket) const;
-
-  void Dump(const std::string& filename);
 
  private:
   LightEpoch* epoch_;
@@ -414,10 +412,6 @@ inline void ReadCache<K, V, D, H>::SkipBucket(hash_bucket_t* const bucket) const
         break;
       }
     } while (true);
-  }
-}
-
-    }
   }
 }
 

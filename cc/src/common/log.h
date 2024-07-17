@@ -45,7 +45,7 @@ enum class Lvl {
 
 typedef std::chrono::high_resolution_clock log_clock_t;
 
-static std::chrono::time_point<log_clock_t> start;
+static std::chrono::time_point<log_clock_t> start = log_clock_t::now();
 
 /// Prints out a message with the current timestamp and code location.
 inline void log_msg(Lvl level, int line, const char* func,
@@ -86,8 +86,4 @@ inline void log_msg(Lvl level, int line, const char* func,
           FASTER::core::Thread::id(), l.c_str(), file, func, line, buffer);
 
   va_end(argptr);
-}
-
-inline void log_init() {
-  start = log_clock_t::now();
 }

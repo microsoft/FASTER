@@ -142,6 +142,8 @@ public:
     log_info("--- not implemented ---");
     //cold_store.DumpDistribution();
   }
+  inline uint32_t NumActiveSessions() const {
+    return std::max(hot_store.NumActiveSessions(), cold_store.NumActiveSessions());
   }
   inline bool AutoCompactionScheduled() const {
     return compaction_scheduled_.load();

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 #pragma once
 
 #include "../core/async.h"
@@ -248,6 +251,10 @@ class FasterIndex : public IHashIndex<D> {
   }
   constexpr static bool IsSync() {
     return false;
+  }
+
+  void DumpDistribution() const {
+    store_->hash_index_.DumpDistribution();
   }
 
  private:
