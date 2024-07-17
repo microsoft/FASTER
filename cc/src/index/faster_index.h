@@ -150,9 +150,11 @@ class FasterIndex : public IHashIndex<D> {
   Status UpdateEntry(ExecutionContext& exec_context, C& pending_context, Address new_address);
 
   // Garbage Collect methods
+  template <class TC, class CC>
   void GarbageCollectSetup(Address new_begin_address,
-                          GcState::truncate_callback_t truncate_callback,
-                          GcState::complete_callback_t complete_callback);
+                          TC truncate_callback,
+                          CC complete_callback,
+                          IAsyncContext* callback_context = nullptr);
 
   template <class RC>
   bool GarbageCollect(RC* read_cache);
@@ -542,12 +544,11 @@ void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, S
 }
 
 template <class D, class HID>
-void FasterIndex<D, HID>::GarbageCollectSetup(Address new_begin_address,
-                                            GcState::truncate_callback_t truncate_callback,
-                                            GcState::complete_callback_t complete_callback) {
-
-  uint64_t num_chunks = std::max(store_->hash_index_.size() / gc_state_t::kHashTableChunkSize, (uint64_t)1);
-  gc_state_->Initialize(new_begin_address, truncate_callback, complete_callback, num_chunks);
+template <class TC, class CC>
+void FasterIndex<D, HID>::GarbageCollectSetup(Address new_begin_address, TC truncate_callback,
+                                            CC complete_callback, IAsyncContext* callback_context) {
+  uint64_t num_chunks = std::max(store_->hash_index_.size() / gc_state_t::kHashTableChunkSize, ((uint64_t)1));
+  gc_state_->Initialize(new_begin_address, truncate_callback, complete_callback, callback_context, num_chunks);
 }
 
 template <class D, class HID>

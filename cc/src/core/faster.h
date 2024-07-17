@@ -241,7 +241,7 @@ class FasterKv {
 
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
-                         GcState::complete_callback_t complete_callback, bool after_compaction = false);
+                         GcState::complete_callback_t complete_callback);
 
   /// Make the hash table larger.
   bool GrowIndex(GrowCompleteCallback caller_callback);
@@ -300,6 +300,10 @@ class FasterKv {
   bool InternalCheckpoint(InternalIndexPersistenceCallback index_persistence_callback,
                   InternalHybridLogPersistenceCallback hybrid_log_persistence_callback,
                   Guid& token, void* callback_context);
+
+  bool InternalShiftBeginAddress(Address address, GcState::internal_truncate_callback_t truncate_callback,
+                                 GcState::internal_complete_callback_t complete_callback,
+                                 IAsyncContext* callback_context, bool after_compaction = false);
 
   template<class F>
   inline void InternalCompact(int thread_id, uint32_t max_records);
@@ -2966,14 +2970,12 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
     case Phase::GC_IN_PROGRESS:
       // GC_IO_PENDING -> GC_IN_PROGRESS
       // Tell the disk to truncate the log.
-      hlog.Truncate(gc_state_.truncate_callback);
+      hlog.Truncate(gc_state_);
       break;
     case Phase::REST:
       // GC_IN_PROGRESS -> REST
       // GC is done--no more work for threads to do.
-      if(gc_state_.complete_callback) {
-        gc_state_.complete_callback();
-      }
+      gc_state_.IssueCompleteCallback();
       system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
       break;
     default:
@@ -3425,12 +3427,35 @@ Status FasterKv<K, V, D, H, OH>::Recover(const Guid& index_token, const Guid& hy
 
 template <class K, class V, class D, class H, class OH>
 bool FasterKv<K, V, D, H, OH>::ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
-                                                GcState::complete_callback_t complete_callback, bool after_compaction) {
+                                                GcState::complete_callback_t complete_callback) {
   SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
   if(!system_state_.compare_exchange_strong(expected,
       SystemState{ Action::GC, Phase::REST, expected.version })) {
-    // Can't start a GC while an action is already in progress.
-    return false;
+    return false; // Can't start a GC while an action is already in progress.
+  }
+  hlog.begin_address.store(address);
+  log_debug("ShiftBeginAddress: log truncated to %lu", address.control());
+
+  // Each active thread will notify the epoch when all pending I/Os have completed.
+  epoch_.ResetPhaseFinished();
+  // Prepare for index garbage collection
+  hash_index_.GarbageCollectSetup(hlog.begin_address.load(),
+                                  truncate_callback, complete_callback);
+  // Let other threads know to complete their pending I/Os, so that the log can be truncated.
+  system_state_.store(SystemState{ Action::GC, Phase::GC_IO_PENDING, expected.version });
+  return true;
+}
+
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::InternalShiftBeginAddress(Address address,
+                                                         GcState::internal_truncate_callback_t truncate_callback,
+                                                         GcState::internal_complete_callback_t complete_callback,
+                                                         IAsyncContext* callback_context,
+                                                         bool after_compaction) {
+  SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
+  if(!system_state_.compare_exchange_strong(expected,
+      SystemState{ Action::GC, Phase::REST, expected.version })) {
+    return false; // Can't start a GC while an action is already in progress.
   }
   if (after_compaction) {
     ++num_compaction_truncations_;
@@ -3446,11 +3471,13 @@ bool FasterKv<K, V, D, H, OH>::ShiftBeginAddress(Address address, GcState::trunc
   epoch_.ResetPhaseFinished();
   // Prepare for index garbage collection
   hash_index_.GarbageCollectSetup(hlog.begin_address.load(),
-                                  truncate_callback, complete_callback);
+                                  truncate_callback, complete_callback,
+                                  callback_context);
   // Let other threads know to complete their pending I/Os, so that the log can be truncated.
   system_state_.store(SystemState{ Action::GC, Phase::GC_IO_PENDING, expected.version });
   return true;
 }
+
 
 template <class K, class V, class D, class H, class OH>
 bool FasterKv<K, V, D, H, OH>::GrowIndex(GrowCompleteCallback caller_callback) {
@@ -3664,24 +3691,30 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
 
   if (shift_begin_address) {
     // Truncate log & update hash index
-    // TODO: remove static contexts using InternalShiftBeginAddress
-    static std::atomic<bool> log_truncated;
-    static std::atomic<bool> gc_completed;
-    // reset static vars
-    log_truncated = gc_completed = false;
+    CompactionShiftBeginAddressContext context;
 
-    GcState::truncate_callback_t truncate_callback = [](uint64_t offset) {
-      log_truncated = true;
+    auto truncate_callback = [](IAsyncContext* ctxt, uint64_t offset) {
+      auto* context = reinterpret_cast<CompactionShiftBeginAddressContext*>(ctxt);
+      bool expected = false;
+      if (!context->log_truncated.compare_exchange_strong(expected, true)) {
+        log_warn("Unexpected log_truncated value! [expected: FALSE, actual: %s]",
+                  expected ? "TRUE" : "FALSE");
+      }
     };
-    GcState::complete_callback_t complete_callback = []() {
-      gc_completed = true;
+    auto complete_callback = [](IAsyncContext* ctxt) {
+      auto* context = reinterpret_cast<CompactionShiftBeginAddressContext*>(ctxt);
+      bool expected = false;
+      if (!context->gc_completed.compare_exchange_strong(expected, true)) {
+        log_warn("Unexpected gc_completed value! [expected: FALSE, actual: %s]",
+                  expected ? "TRUE" : "FALSE");
+      }
     };
 
     // try shift begin address
     bool success;
     do {
-      success = ShiftBeginAddress(Address(until_address), truncate_callback,
-                                  complete_callback, true);
+      success = InternalShiftBeginAddress(Address(until_address), truncate_callback,
+                                          complete_callback, static_cast<IAsyncContext*>(&context), true);
       if (!success) {
         Refresh();
         if (to_other_store) other_store_->Refresh();
@@ -3690,7 +3723,7 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
     } while(!success);
 
     // block until truncation & hash index update finishes
-    while (!log_truncated || !gc_completed) {
+    while (!context.log_truncated.load() || !context.gc_completed.load()) {
       CompletePending(false);
       if (to_other_store) {
         other_store_->CompletePending(false);

@@ -428,7 +428,7 @@ class PersistentMemoryMalloc {
     InitializeBuffer(log_size, log_mutable_perc);
   }
 
-  void Truncate(GcState::truncate_callback_t callback);
+  void Truncate(const GcState& gc_state);
 
   /// Action to be performed for when all threads have agreed that a page range is closed.
   class OnPagesClosed_Context : public IAsyncContext {
@@ -797,14 +797,14 @@ Address PersistentMemoryMalloc<D>::ShiftReadOnlyToTail() {
 }
 
 template <class D>
-void PersistentMemoryMalloc<D>::Truncate(GcState::truncate_callback_t callback) {
+void PersistentMemoryMalloc<D>::Truncate(const GcState& gc_state) {
   assert(sector_size > 0);
   assert(Utility::IsPowerOfTwo(sector_size));
   assert(sector_size <= UINT32_MAX);
   size_t alignment_mask = sector_size - 1;
   // Align read to sector boundary.
   uint64_t begin_offset = begin_address.control() & ~alignment_mask;
-  file->Truncate(begin_offset, callback);
+  file->Truncate(begin_offset, gc_state);
 }
 
 template <class D>

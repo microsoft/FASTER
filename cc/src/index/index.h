@@ -64,9 +64,11 @@ class IHashIndex {
   Status UpdateEntry(ExecutionContext& context, C& pending_context, Address new_address);
 
   // Garbage Collect methods
+  template <class TC, class CC>
   void GarbageCollectSetup(Address new_begin_address,
-                          GcState::truncate_callback_t truncate_callback,
-                          GcState::complete_callback_t complete_callback);
+                          TC truncate_callback,
+                          CC complete_callback,
+                          IAsyncContext* callback_context = nullptr);
 
   template<class RC>
   bool GarbageCollect(RC* read_cache);

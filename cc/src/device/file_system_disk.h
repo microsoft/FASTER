@@ -62,11 +62,9 @@ class FileSystemFile {
   core::Status Delete() {
     return file_.Delete();
   }
-  void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
+  void Truncate(uint64_t new_begin_offset, const core::GcState& gc_state) {
     // Truncation is a no-op.
-    if(callback) {
-      callback(new_begin_offset);
-    }
+    gc_state.IssueTruncateCallback(new_begin_offset);
   }
 
   core::Status ReadAsync(uint64_t source, void* dest, uint32_t length,
@@ -276,10 +274,10 @@ class FileSystemSegmentedFile {
   core::Status Delete() {
     return (files_) ? files_->Delete() : core::Status::Ok;
   }
-  void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
+  void Truncate(uint64_t new_begin_offset, const core::GcState& gc_state) {
     uint64_t new_begin_segment = new_begin_offset / kSegmentSize;
     begin_segment_ = new_begin_segment;
-    TruncateSegments(new_begin_segment, callback);
+    TruncateSegments(new_begin_segment, gc_state);
   }
 
   core::Status ReadAsync(uint64_t source, void* dest, uint32_t length, core::AsyncIOCallback callback,
@@ -387,20 +385,20 @@ class FileSystemSegmentedFile {
     return core::Status::Ok;
   }
 
-  void TruncateSegments(uint64_t new_begin_segment, core::GcState::truncate_callback_t caller_callback) {
+  void TruncateSegments(uint64_t new_begin_segment, const core::GcState& gc_state) {
     class Context : public core::IAsyncContext {
      public:
       Context(bundle_t* files_, uint64_t new_begin_segment_,
-              core::GcState::truncate_callback_t caller_callback_)
+              const core::GcState* gc_state_)
         : files{ files_ }
         , new_begin_segment{ new_begin_segment_ }
-        , caller_callback{ caller_callback_ } {
+        , gc_state{ gc_state_ } {
       }
       /// The deep-copy constructor.
       Context(const Context& other)
         : files{ other.files }
         , new_begin_segment{ other.new_begin_segment }
-        , caller_callback{ other.caller_callback } {
+        , gc_state{ other.gc_state } {
       }
      protected:
       core::Status DeepCopy_Internal(core::IAsyncContext*& context_copy) final {
@@ -409,7 +407,7 @@ class FileSystemSegmentedFile {
      public:
       bundle_t* files;
       uint64_t new_begin_segment;
-      core::GcState::truncate_callback_t caller_callback;
+      const core::GcState* gc_state;
     };
 
     auto callback = [](core::IAsyncContext* ctxt) {
@@ -420,9 +418,7 @@ class FileSystemSegmentedFile {
         file.Delete();
       }
       std::free(context->files);
-      if(context->caller_callback) {
-        context->caller_callback(context->new_begin_segment * kSegmentSize);
-      }
+      context->gc_state->IssueTruncateCallback(context->new_begin_segment * kSegmentSize);
     };
 
     // Only one thread can modify the list of files at a given time.
@@ -431,9 +427,7 @@ class FileSystemSegmentedFile {
     assert(files);
     if(files->begin_segment >= new_begin_segment) {
       // Segments have already been truncated.
-      if(caller_callback) {
-        caller_callback(files->begin_segment * kSegmentSize);
-      }
+      gc_state.IssueTruncateCallback(files->begin_segment * kSegmentSize);
       return;
     }
 
@@ -443,7 +437,7 @@ class FileSystemSegmentedFile {
         *files };
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
-    Context context{ files, new_begin_segment, caller_callback };
+    Context context{ files, new_begin_segment, &gc_state };
     core::IAsyncContext* context_copy;
     core::Status result = context.DeepCopy(context_copy);
     assert(result == core::Status::Ok);

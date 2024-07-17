@@ -11,6 +11,8 @@
 namespace FASTER {
 namespace core {
 
+typedef void (*func_ptr_t)(void);
+
 // kB, MB, GB literal helpers
 constexpr uint64_t operator""_KiB(unsigned long long const x) {
   return static_cast<uint64_t>(x * (1 << 10));

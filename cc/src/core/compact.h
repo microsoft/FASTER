@@ -217,6 +217,29 @@ class CompactionCheckpointContext : public IAsyncContext {
   std::atomic<bool> ready_for_truncation;
 };
 
+class CompactionShiftBeginAddressContext : public IAsyncContext {
+ public:
+  CompactionShiftBeginAddressContext()
+    : log_truncated{ false }
+    , gc_completed{ false } {
+  }
+  CompactionShiftBeginAddressContext(const CompactionShiftBeginAddressContext& from)
+    : log_truncated{ from.log_truncated.load() }
+    , gc_completed{ from.gc_completed.load() } {
+  }
+
+ protected:
+  /// Copies this context into a passed-in pointer if the operation goes
+  /// asynchronous inside FASTER.
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+  }
+
+ public:
+  std::atomic<bool> log_truncated;
+  std::atomic<bool> gc_completed;
+};
+
 ///////////////////////////////////////////////////////////
 /// [OLD] Methods used by the old compaction method
 ///////////////////////////////////////////////////////////

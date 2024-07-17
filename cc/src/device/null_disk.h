@@ -31,10 +31,8 @@ class NullFile {
   core::Status Delete() {
     return core::Status::Ok;
   }
-  void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
-    if(callback) {
-      callback(new_begin_offset);
-    }
+  void Truncate(uint64_t new_begin_offset, const core::GcState& gc_state) {
+    gc_state.IssueTruncateCallback(new_begin_offset);
   }
 
   core::Status ReadAsync(uint64_t source, void* dest, uint32_t length,

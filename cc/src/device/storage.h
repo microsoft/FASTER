@@ -709,8 +709,8 @@ class StorageFile {
   }
 
   /// Truncates the log below a particular offset. XXX Currently does nothing.
-  void Truncate(uint64_t newBeginOffset, GcState::truncate_callback_t cb) {
-    if (cb) cb(newBeginOffset);
+  void Truncate(uint64_t newBeginOffset, const GcState& gc_state) {
+    gc_state->IssueTruncateCallback(newBeginOffset);
   }
 
  private:
@@ -780,7 +780,7 @@ class StorageFile {
 
    protected:
     /// Copies the state from this context to the heap. Memory
-    /// allocation is performed internally. Usefull for when an
+    /// allocation is performed internally. Useful for when an
     /// operation goes asynchronous.
     Status DeepCopy_Internal(IAsyncContext*& context) {
       return IAsyncContext::DeepCopy_Internal(*this, context);
@@ -884,7 +884,7 @@ class StorageFile {
    protected:
     /// Method that copies an instance of this class from the stack
     /// to the heap. Required when the callback using this context
-    /// goes asynch on the epoch manager.
+    /// goes async on the epoch manager.
     Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
@@ -955,7 +955,7 @@ class StorageFile {
     Address currRemoteOffset = remoteOffset.load();
     Address currRemoteFlushed = remoteFlushed.load();
 
-    // Corner case wherin the StorageFile has not grown large enough yet.
+    // Corner case wherein the StorageFile has not grown large enough yet.
     if (tailFile < kDistance) return;
 
     // The desired remote offset. Always at a fixed distance from the tail.
@@ -1033,7 +1033,7 @@ class StorageFile {
   uint64_t kNumFiles;
 
   /// The distance between "remoteOffset" and "tailFile".
-  /// StorageFile will allways maintain this distance.
+  /// StorageFile will always maintain this distance.
   uint64_t kDistance;
 
   /// The total number of bytes that can be stored on local SSD.
