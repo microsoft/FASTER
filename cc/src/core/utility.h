@@ -90,16 +90,5 @@ struct FasterHashHelper {
 };
 
 
-    // The final scrambling helps with short keys that vary only on the high order bits.
-    // Low order bits are not always well distributed so shift them to the high end, where they'll
-    // form part of the 14-bit tag.
-    return Rotr64(kMagicNum * hashState, 6);
-  }
-
-  static constexpr inline bool IsPowerOfTwo(uint64_t x) {
-    return (x > 0) && ((x & (x - 1)) == 0);
-  }
-};
-
 }
 } // namespace FASTER::core

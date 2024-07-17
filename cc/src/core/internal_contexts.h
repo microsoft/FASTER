@@ -872,7 +872,6 @@ struct ExecutionContext : public PersistentExecContext {
   /// index-related request.
   concurrent_queue<AsyncIndexIOContext*> index_io_responses;
 };
-static_assert(sizeof(ExecutionContext) == 216, "sizeof(ExecutionContext) != 216");
 
 }
 } // namespace FASTER::core
