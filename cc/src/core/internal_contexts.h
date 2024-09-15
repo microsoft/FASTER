@@ -147,37 +147,37 @@ class PendingContext : public IAsyncContext {
   virtual KeyHash get_key_hash() const = 0;
   virtual bool is_key_equal(const key_t& other) const = 0;
 
-  /// Caller context.
-  IAsyncContext* caller_context;
-  /// Caller callback.
-  AsyncCallback caller_callback;
-  /// Checkpoint version.
-  uint32_t version;
   /// Checkpoint phase.
   Phase phase;
   /// Type of operation (Read, Upsert, RMW, etc.).
   OperationType type;
   /// Result of operation.
   Status result;
+  /// Checkpoint version.
+  uint32_t version;
+  /// Caller context.
+  IAsyncContext* caller_context;
+  /// Caller callback.
+  AsyncCallback caller_callback;
   /// Address of the record being read or modified.
   Address address;
-  // TODO: encapsulate the following into a single class
-  /// Type of index operation that went pending
-  IndexOperationType index_op_type;
-  // Result of index operation
-  Status index_op_result;
   /// Hash table entry that (indirectly) leads to the record being read or modified.
   HashBucketEntry entry;
   /// Pointer to the atomic hash bucket entry (hot index only; nullptr for cold index)
   AtomicHashBucketEntry* atomic_entry;
   /// Use (or skip) reading from read cache
   bool skip_read_cache;
+  /// Type of index operation that went pending
+  IndexOperationType index_op_type;
+  // Result of index operation
+  Status index_op_result;
 
 #ifdef STATISTICS
   uint32_t num_iops;
   uint32_t num_record_invalidations;
 #endif
 };
+
 
 /// FASTER's internal Read() context.
 
