@@ -451,7 +451,7 @@ struct HashBucketOverflowEntryHelper {
 
   typedef MallocFixedPageSize<hash_bucket_t, disk_t> overflow_buckets_allocator_t;
 
-  static bool GetNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+  static bool inline GetNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
                           hash_bucket_t*& current) {
     HashBucketOverflowEntry overflow_entry = current->overflow_entry.load();
     if(overflow_entry.unused()) {
@@ -463,7 +463,7 @@ struct HashBucketOverflowEntryHelper {
     return true;
   }
 
-  static bool GetNextBucket(const overflow_buckets_allocator_t& overflow_buckets_allocator_,
+  static bool inline GetNextBucket(const overflow_buckets_allocator_t& overflow_buckets_allocator_,
                             const hash_bucket_t*& current) {
     HashBucketOverflowEntry overflow_entry = current->overflow_entry.load();
     if(overflow_entry.unused()) {
@@ -524,14 +524,14 @@ struct HashBucketOverflowEntryHelper<D, HID, false> {
 
   typedef MallocFixedPageSize<hash_bucket_t, disk_t> overflow_buckets_allocator_t;
 
-  static bool GetNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
-                          hash_bucket_t*& current) {
+  static bool inline GetNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                                  hash_bucket_t*& current) {
     return false; // No overflow buckets
   }
 
-  static bool GetNextBucket(const overflow_buckets_allocator_t& overflow_buckets_allocator_,
-                            const hash_bucket_t*& current) {
-    return false;
+  static bool inline GetNextBucket(const overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                                  const hash_bucket_t*& current) {
+    return false; // No overflow buckets
   }
 
   static bool TryAllocateNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
@@ -565,8 +565,7 @@ inline AtomicHashBucketEntry* HashIndex<D, HID>::FindTentativeEntry(key_hash_t h
         continue;
       }
       if(hash.tag() == entry.tag() && !entry.tentative()) {
-        // Found a match. (So, the input hash matches the entry on 14 tag bits +
-        // log_2(table size) address bits.) Return it to caller.
+        // Found a match. Return it to caller.
         expected_entry = entry;
         return &bucket->entries[entry_idx];
       }
