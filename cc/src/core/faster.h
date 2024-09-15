@@ -146,6 +146,7 @@ class FasterKv {
     , grow_state_{ &hlog }
     , hash_index_{ filepath, disk, epoch_, gc_state_, grow_state_ }
     , read_cache_{ nullptr }
+    , read_cache_enabled_{ rc_config.enabled }
     , num_pending_ios_{ 0 }
     , num_compaction_truncations_{ 0 }
     , next_hlog_begin_address_{ Address::kInvalidAddress }
@@ -397,8 +398,8 @@ class FasterKv {
                 alignof(value_t)));
   }
 
-  bool UseReadCache() const {
-    return (read_cache_.get() != nullptr);
+  const bool UseReadCache() const {
+    return read_cache_enabled_;
   }
   void SetOtherStore(other_faster_t* other_store) {
     assert(other_store_ == nullptr); // set only once
@@ -425,7 +426,8 @@ class FasterKv {
   static constexpr bool kCopyReadsToTail = false;
   static constexpr int kNumCompactionThreads = 8;
 
-  bool fold_over_snapshot = true;
+  const bool fold_over_snapshot = true;
+  const bool read_cache_enabled_;
 
   /// Initial size of the index table
   uint64_t min_index_table_size_;
@@ -1223,15 +1225,16 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
 
   assert(pending_context.index_op_type != IndexOperationType::Update);
 
-  if(thread_ctx().phase != Phase::REST) {
+  const ExecutionContext& thread_context = thread_ctx();
+  if(thread_context.phase != Phase::REST) {
     const_cast<faster_t*>(this)->HeavyEnter();
   }
   // Stamp request (if not stamped already)
-  pending_context.try_stamp_request(thread_ctx().phase, thread_ctx().version);
+  pending_context.try_stamp_request(thread_context.phase, thread_context.version);
 
   Status index_status;
   if (pending_context.index_op_type == IndexOperationType::None) {
-    index_status = hash_index_.FindEntry(const_cast<ExecutionContext&>(thread_ctx()), pending_context);
+    index_status = hash_index_.FindEntry(const_cast<ExecutionContext&>(thread_context), pending_context);
     if (index_status == Status::Pending) {
       return OperationStatus::INDEX_ENTRY_ON_DISK;
     }
@@ -1262,10 +1265,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
   pending_context.expected_hlog_address = address;
   assert(!address.in_readcache());
 
-  Address begin_address = hlog.begin_address.load();
-  Address head_address = hlog.head_address.load();
-  Address safe_read_only_address = hlog.safe_read_only_address.load();
-  Address read_only_address = hlog.read_only_address.load();
+  const Address head_address{ hlog.head_address.load() };
   uint64_t latest_record_version = 0;
 
   if(address >= head_address) {
@@ -1284,7 +1284,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
     return OperationStatus::NOT_FOUND;
   }
 
-  switch(thread_ctx().phase) {
+  switch(thread_context.phase) {
   case Phase::PREPARE:
     // Reading old version (v).
     if(latest_record_version > thread_ctx().version) {
@@ -1298,7 +1298,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
     break;
   }
 
-  if(address >= safe_read_only_address) {
+  if(address >= hlog.safe_read_only_address.load()) {
     // Mutable or fuzzy region
     // concurrent read
     if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone) {
@@ -1318,7 +1318,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
     }
     pending_context.Get(hlog.Get(address));
     return OperationStatus::SUCCESS;
-  } else if(address >= begin_address) {
+  } else if(address >= hlog.begin_address.load()) {
     // Record not available in-memory
     pending_context.go_async(address);
     return OperationStatus::RECORD_ON_DISK;
@@ -1333,16 +1333,17 @@ template <class C>
 inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_context) {
   typedef C pending_upsert_context_t;
 
-  if(thread_ctx().phase != Phase::REST) {
+  ExecutionContext& thread_context = thread_ctx();
+  if(thread_context.phase != Phase::REST) {
     HeavyEnter();
   }
 
   // Stamp request (if not stamped already)
-  pending_context.try_stamp_request(thread_ctx().phase, thread_ctx().version);
+  pending_context.try_stamp_request(thread_context.phase, thread_context.version);
 
   Status index_status;
   if (pending_context.index_op_type == IndexOperationType::None) {
-    index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
+    index_status = hash_index_.FindOrCreateEntry(thread_context, pending_context);
     if (index_status == Status::Pending) {
       return OperationStatus::INDEX_ENTRY_ON_DISK;
     }
@@ -1355,19 +1356,19 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   }
   assert(index_status == Status::Ok);
 
-  HashBucketEntry expected_entry{ pending_context.entry };
-  AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
+  const HashBucketEntry expected_entry{ pending_context.entry };
+  const AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
-  Address address = expected_entry.address();
+  Address address{ expected_entry.address() };
 
   if (UseReadCache()) {
     address = read_cache_->SkipAndInvalidate(pending_context);
   }
-  Address hlog_address = address;
+  const Address hlog_address{ address };
   assert(!address.in_readcache());
 
-  Address head_address = hlog.head_address.load();
-  Address read_only_address = hlog.read_only_address.load();
+  const Address head_address{ hlog.head_address.load() };
+  const Address read_only_address{ hlog.read_only_address.load() };
   uint64_t latest_record_version = 0;
 
   if(address >= head_address) {
@@ -1383,7 +1384,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   CheckpointLockGuard<key_hash_t> lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
 
   // The common case
-  if(thread_ctx().phase == Phase::REST && address >= read_only_address) {
+  if(thread_context.phase == Phase::REST && address >= read_only_address) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
     if(!record->header.tombstone && pending_context.PutAtomic(record)) {
       return OperationStatus::SUCCESS;
@@ -1394,7 +1395,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   }
 
   // Acquire necessary locks.
-  switch(thread_ctx().phase) {
+  switch(thread_context.phase) {
   case Phase::PREPARE:
     // Working on old version (v).
     if(!lock_guard.try_lock_old()) {
@@ -1480,13 +1481,13 @@ create_record:
   assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
   new(record) record_t{
     RecordInfo{
-      static_cast<uint16_t>(thread_ctx().version), true, false, false,
+      static_cast<uint16_t>(thread_context.version), true, false, false,
       hlog_address },
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&record->key()));
   pending_context.Put(record);
 
-  index_status = hash_index_.TryUpdateEntry(thread_ctx(), pending_context, new_address);
+  index_status = hash_index_.TryUpdateEntry(thread_context, pending_context, new_address);
   if (index_status == Status::Ok) {
     // Installed the new record in the hash table.
     return OperationStatus::SUCCESS;
@@ -1516,24 +1517,25 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
   typedef C pending_rmw_context_t;
   assert(hash_index_.IsSync()); // cold log does not need to support RMWs requests
 
-  Phase phase = retrying ? pending_context.phase : thread_ctx().phase;
-  uint32_t version = retrying ? pending_context.version : thread_ctx().version;
+  ExecutionContext& thread_context = thread_ctx();
+  Phase phase = retrying ? pending_context.phase : thread_context.phase;
+  uint32_t version = retrying ? pending_context.version : thread_context.version;
 
   if(phase != Phase::REST) {
     HeavyEnter();
   }
 
   // Stamp request (if not stamped already)
-  pending_context.try_stamp_request(thread_ctx().phase, thread_ctx().version);
+  pending_context.try_stamp_request(thread_context.phase, thread_context.version);
 
-  Status index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
+  Status index_status = hash_index_.FindOrCreateEntry(thread_context, pending_context);
   assert(index_status == Status::Ok);
 
-  HashBucketEntry expected_entry{ pending_context.entry };
-  AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
+  const HashBucketEntry expected_entry{ pending_context.entry };
+  const AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
 
   // (Note that address will be Address::kInvalidAddress, if the entry was created.)
-  Address address = expected_entry.address();
+  Address address{ pending_context.entry.address() };
 
   if (UseReadCache()) {
     address = read_cache_->Skip(pending_context);
@@ -1541,10 +1543,9 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
   pending_context.expected_hlog_address = address;
   assert(!address.in_readcache());
 
-  Address begin_address = hlog.begin_address.load();
-  Address head_address = hlog.head_address.load();
-  Address read_only_address = hlog.read_only_address.load();
-  Address safe_read_only_address = hlog.safe_read_only_address.load();
+  Address head_address{ hlog.head_address.load() };
+  const Address read_only_address{ hlog.read_only_address.load() };
+  const Address safe_read_only_address{ hlog.safe_read_only_address.load() };
   uint64_t latest_record_version = 0;
 
   if(address >= head_address) {
@@ -1649,7 +1650,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
     return OperationStatus::RETRY_LATER;
   } else if(address >= head_address) {
     goto create_record;
-  } else if(address >= begin_address) {
+  } else if(address >= hlog.begin_address.load()) {
     // Need to obtain old record from disk.
     pending_context.go_async(address);
     return OperationStatus::RECORD_ON_DISK;
@@ -1689,7 +1690,7 @@ create_record:
   // Allocating a block may have the side effect of advancing the thread context's version and phase
   if(!retrying) {
     // Re-stamp request with new version/phase
-    pending_context.stamp_request(thread_ctx().phase, thread_ctx().version);
+    pending_context.stamp_request(thread_context.phase, thread_context.version);
   }
 
   assert(!pending_context.expected_hlog_address.in_readcache()); // hlog entries do *not* point to read cache
@@ -1716,7 +1717,7 @@ create_record:
     return OperationStatus::RECORD_ON_DISK;
   }
 
-  index_status = hash_index_.TryUpdateEntry(thread_ctx(), pending_context, new_address);
+  index_status = hash_index_.TryUpdateEntry(thread_context, pending_context, new_address);
   if (index_status == Status::Ok) {
     return OperationStatus::SUCCESS;
   } else {
@@ -1748,27 +1749,29 @@ template <class K, class V, class D, class H, class OH>
 template<class C>
 inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_context, bool force_tombstone) {
   typedef C pending_delete_context_t;
+
   assert(pending_context.index_op_type != IndexOperationType::Update);
 
-  if(thread_ctx().phase != Phase::REST) {
+  ExecutionContext& thread_context = thread_ctx();
+  if(thread_context.phase != Phase::REST) {
     HeavyEnter();
   }
   // Stamp request (if not stamped already)
-  pending_context.try_stamp_request(thread_ctx().phase, thread_ctx().version);
+  pending_context.try_stamp_request(thread_context.phase, thread_context.version);
 
   Address address;
   Address hlog_address{ 0 };
-  Address head_address = hlog.head_address.load();
-  Address read_only_address = hlog.read_only_address.load();
-  Address begin_address = hlog.begin_address.load();
+  const Address head_address{ hlog.head_address.load() };
+  const Address read_only_address{ hlog.read_only_address.load() };
+  const Address begin_address{ hlog.begin_address.load() };
   uint64_t latest_record_version = 0;
 
   Status index_status;
   if (pending_context.index_op_type == IndexOperationType::None) {
     if (!force_tombstone) {
-      index_status = hash_index_.FindEntry(thread_ctx(), pending_context);
+      index_status = hash_index_.FindEntry(thread_context, pending_context);
     } else {
-      index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
+      index_status = hash_index_.FindOrCreateEntry(thread_context, pending_context);
     }
     if (index_status == Status::Pending) {
       return OperationStatus::INDEX_ENTRY_ON_DISK;
@@ -1781,8 +1784,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_conte
     pending_context.clear_index_op();
   }
 
-  HashBucketEntry expected_entry{ pending_context.entry };
-
+  const HashBucketEntry expected_entry{ pending_context.entry };
   if(index_status == Status::NotFound) {
     // no record found
     if (!force_tombstone) {
@@ -1815,13 +1817,13 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_conte
     // NO optimization for most common case
 
     // Acquire necessary locks.
-    switch (thread_ctx().phase) {
+    switch (thread_context.phase) {
     case Phase::PREPARE:
       // Working on old version (v).
       if(!lock_guard.try_lock_old()) {
         pending_context.go_async(address);
         return OperationStatus::CPR_SHIFT_DETECTED;
-      } else if(latest_record_version > thread_ctx().version) {
+      } else if(latest_record_version > thread_context.version) {
         // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
         // what we've seen.
         pending_context.go_async(address);
@@ -1830,7 +1832,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_conte
       break;
     case Phase::IN_PROGRESS:
       // All other threads are in phase {PREPARE,IN_PROGRESS,WAIT_PENDING}.
-      if(latest_record_version < thread_ctx().version) {
+      if(latest_record_version < thread_context.version) {
         // Will create new record or update existing record to new version (v+1).
         if(!lock_guard.try_lock_new()) {
           pending_context.go_async(address);
@@ -1843,7 +1845,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_conte
       break;
     case Phase::WAIT_PENDING:
       // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
-      if(latest_record_version < thread_ctx().version) {
+      if(latest_record_version < thread_context.version) {
         if(lock_guard.old_locked()) {
           pending_context.go_async(address);
           return OperationStatus::RETRY_LATER;
@@ -1855,7 +1857,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_conte
       break;
     case Phase::WAIT_FLUSH:
       // All other threads are in phase {WAIT_PENDING,WAIT_FLUSH,PERSISTENCE_CALLBACK}.
-      if(latest_record_version < thread_ctx().version) {
+      if(latest_record_version < thread_context.version) {
         goto create_record;
       }
       break;
@@ -1873,7 +1875,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_conte
     if(hash_index_.IsSync() && expected_entry.address() == address) {
       Address previous_address = record->header.previous_address();
       if (previous_address < begin_address) {
-        hash_index_.TryUpdateEntry(thread_ctx(), pending_context, HashBucketEntry::kInvalidEntry);
+        hash_index_.TryUpdateEntry(thread_context, pending_context, HashBucketEntry::kInvalidEntry);
       }
     }
     record->header.tombstone = true;
@@ -1887,12 +1889,12 @@ create_record:
   assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
   new(record) record_t{
     RecordInfo{
-      static_cast<uint16_t>(thread_ctx().version), true, true, false,
+      static_cast<uint16_t>(thread_context.version), true, true, false,
       hlog_address },
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&record->key()));
 
-  index_status = hash_index_.TryUpdateEntry(thread_ctx(), pending_context, new_address);
+  index_status = hash_index_.TryUpdateEntry(thread_context, pending_context, new_address);
   if (index_status == Status::Ok) {
     return OperationStatus::SUCCESS;
   } else if (index_status == Status::Aborted) {
