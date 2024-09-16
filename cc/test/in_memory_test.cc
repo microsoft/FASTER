@@ -217,14 +217,14 @@ TEST_P(InMemTestParam, UpsertRead) {
 
 /// The hash always returns "0," so the FASTER store devolves into a linked list.
 TEST_P(InMemTestParam, UpsertRead_DummyHash) {
-  class DummyHash {
+  class DummyHashHelper {
    public:
-    inline size_t operator()(const uint16_t& key) const {
+    static inline size_t compute(const uint16_t& key) {
       return 42;
     }
   };
 
-  using Key = FixedSizeKey<uint16_t, DummyHash>;
+  using Key = FixedSizeKey<uint16_t, DummyHashHelper>;
   using Value = SimpleAtomicValue<uint16_t>;
   typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
@@ -1612,14 +1612,14 @@ TEST_P(InMemTestParam, Rmw_GrowString_Concurrent) {
 
 TEST_P(InMemTestParam, ConcurrentDelete) {
   using KeyData = std::pair<uint64_t, uint64_t>;
-  struct HashFn {
-    inline size_t operator()(const KeyData& key) const {
+  struct HashFnHelper {
+    static inline size_t compute(const KeyData& key) {
       std::hash<uint64_t> hash_fn;
       return hash_fn(key.first);
     }
   };
 
-  using Key = FixedSizeKey<KeyData, HashFn>;
+  using Key = FixedSizeKey<KeyData, HashFnHelper>;
   using Value = SimpleAtomicValue<int64_t>;
   typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
@@ -1985,8 +1985,7 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
         return static_cast<uint32_t>(sizeof(Key) + key_length_);
       }
       inline KeyHash GetHash() const {
-        FasterHashHelper<uint8_t> hash_fn;
-        return KeyHash{ hash_fn(buffer(), key_length_) };
+        return KeyHash{ FasterHashHelper<uint8_t>::compute(buffer(), key_length_) };
       }
 
       /// Comparison operators.
@@ -2018,8 +2017,7 @@ TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
         return Key::size(key_length_);
       }
       inline KeyHash GetHash() const {
-        FasterHashHelper<uint8_t> hash_fn;
-        return KeyHash{ hash_fn(key_data_, key_length_) };
+        return KeyHash{ FasterHashHelper<uint8_t>::compute(key_data_, key_length_) };
       }
       inline void write_deep_key_at(Key* dst) const {
         Key::Create(dst, key_length_, key_data_);

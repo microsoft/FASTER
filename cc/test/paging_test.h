@@ -672,8 +672,7 @@ TEST_P(PagingTestParam, Rmw) {
       return static_cast<uint32_t>(sizeof(Key));
     }
     inline KeyHash GetHash() const {
-      FasterHashHelper<uint64_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
+      return KeyHash{ FasterHashHelper<uint64_t>::compute(key_) };
     }
 
     /// Comparison operators.
@@ -1057,8 +1056,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
       return static_cast<uint32_t>(sizeof(Key));
     }
     inline KeyHash GetHash() const {
-      FasterHashHelper<uint64_t> hash_fn;
-      return KeyHash{ hash_fn(key_) };
+      return KeyHash{ FasterHashHelper<uint64_t>::compute(key_) };
     }
 
     /// Comparison operators.

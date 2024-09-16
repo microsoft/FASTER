@@ -13,7 +13,7 @@ namespace test {
 
 using namespace FASTER::core;
 
-template<class T, class HashFn = FasterHashHelper<T>>
+template<class T, class HashFnHelper = FasterHashHelper<T>>
 class FixedSizeKey {
  public:
   FixedSizeKey(T value)
@@ -27,8 +27,7 @@ class FixedSizeKey {
   }
 
   inline core::KeyHash GetHash() const {
-    HashFn hash_fn;
-    return core::KeyHash{ hash_fn(key) };
+    return core::KeyHash{ HashFnHelper::compute(key) };
   }
 
   inline bool operator==(const FixedSizeKey& other) const {
@@ -177,9 +176,8 @@ class VariableSizeKey : NonCopyable, NonMovable {
     return static_cast<uint32_t>(sizeof(VariableSizeKey) + key_length_ * sizeof(uint32_t));
   }
   inline KeyHash GetHash() const {
-    FasterHashHelper<uint16_t> hash_fn;
-    return KeyHash{ hash_fn(
-      reinterpret_cast<const uint16_t*>(buffer()), key_length_ * 2) };
+    return KeyHash{ FasterHashHelper<uint16_t>::compute(
+                      reinterpret_cast<const uint16_t*>(buffer()), key_length_ * 2) };
   }
 
   /// Comparison operators.
@@ -211,9 +209,8 @@ class VariableSizeShallowKey {
     return VariableSizeKey::size(key_length_);
   }
   inline KeyHash GetHash() const {
-    FasterHashHelper<uint16_t> hash_fn;
-    return KeyHash{ hash_fn(
-      reinterpret_cast<const uint16_t*>(key_data_), key_length_ * 2) };
+    return KeyHash{ FasterHashHelper<uint16_t>::compute(
+                      reinterpret_cast<const uint16_t*>(key_data_), key_length_ * 2) };
   }
   inline void write_deep_key_at(VariableSizeKey* dst) const {
     VariableSizeKey::Create(dst, key_length_, key_data_);

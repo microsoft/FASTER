@@ -34,7 +34,7 @@ constexpr bool is_power_of_2(size_t v) {
 
 class Utility {
  public:
-  static inline uint64_t Rotr64(uint64_t x, std::size_t n) {
+  static inline uint64_t Rotr64(const uint64_t x, const std::size_t n) {
     return (((x) >> n) | ((x) << (64 - n)));
   }
 
@@ -58,8 +58,8 @@ class Utility {
       return Utility::Rotr64(kMagicNum * hashState, 6);
     }
 
-    static inline uint64_t compute(uint64_t input) {
-      uint64_t local_rand = input;
+    static inline uint64_t compute(const uint64_t input) {
+      const uint64_t local_rand = input;
       uint64_t local_rand_hash = 8;
       local_rand_hash = 40343 * local_rand_hash + ((local_rand) & 0xFFFF);
       local_rand_hash = 40343 * local_rand_hash + ((local_rand >> 16) & 0xFFFF);
@@ -78,17 +78,16 @@ class Utility {
   }
 };
 
-
 template<typename T>
 struct FasterHashHelper {
-  inline uint64_t operator()(const T& key) {
+  static inline uint64_t compute(const T& key) {
     return Utility::FasterHash::compute(key);
   }
-  inline uint64_t operator()(const T* buffer, uint32_t len) {
+
+  static inline uint64_t compute(const T* buffer, size_t len) {
     return Utility::FasterHash::compute(buffer, len);
   }
 };
-
 
 }
 } // namespace FASTER::core
