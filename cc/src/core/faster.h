@@ -55,7 +55,7 @@ namespace FASTER {
 namespace core {
 
 // Forward class declaration
-template<class K, class V, class D>
+template<class K, class V, class D, class HHI, class CHI>
 class FasterKvHC;
 
 class alignas(Constants::kCacheLineBytes) ThreadContext {
@@ -96,7 +96,9 @@ class FasterKv {
   typedef FasterKv<K, V, D, H, OH> faster_t;
   typedef FasterKv<K, V, D, OH, H> other_faster_t;
 
-  friend class FasterKvHC<K, V, D>;
+  template <class Ki, class Vi, class Di, class HHIi, class CHIi>
+  friend class FasterKvHC;
+
   friend class FASTER::index::FasterIndex<D, typename H::hash_index_definition_t>;
 
 

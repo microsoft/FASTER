@@ -16,13 +16,9 @@
 namespace FASTER {
 namespace core {
 
-template<class K, class V, class D>
+template<class K, class V, class D, class HHI = HashIndex<D>, class CHI = FasterIndex<D>>
 class FasterKvHC {
-public:
-
-  typedef HashIndex<D> HHI;   // hot hash index
-  typedef FasterIndex<D> CHI; // cold hash index
-
+ public:
   typedef FasterKv<K, V, D, HHI, CHI> hot_faster_store_t;
   typedef FasterKv<K, V, D, CHI, HHI> cold_faster_store_t;
 
@@ -31,7 +27,6 @@ public:
 
   typedef FasterStoreConfig<HHI> hot_faster_store_config_t;
   typedef FasterStoreConfig<CHI> cold_faster_store_config_t;
-
 
   typedef FasterKvHC<K, V, D> faster_hc_t;
   typedef AsyncHotColdReadContext<K, V> async_hc_read_context_t;
@@ -127,8 +122,8 @@ public:
                       int n_threads = cold_faster_store_t::kNumCompactionThreads);
 
   #ifdef TOML_CONFIG
-  static FasterKvHC<K, V, D> FromConfigString(const std::string& config);
-  static FasterKvHC<K, V, D> FromConfigFile(const std::string& filepath);
+  static FasterKvHC<K, V, D, HHI, CHI> FromConfigString(const std::string& config);
+  static FasterKvHC<K, V, D, HHI, CHI> FromConfigFile(const std::string& filepath);
   #endif
 
   /// Statistics
@@ -214,8 +209,8 @@ public:
   HotColdCheckpointState checkpoint_;
 };
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::InitializeCompaction() {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::InitializeCompaction() {
   if (hc_compaction_config_.hot_store.enabled || hc_compaction_config_.cold_store.enabled) {
     if (hc_compaction_config_.hot_store.hlog_size_budget < 64_MiB) {
       throw std::runtime_error{ "HCCompactionConfig: Hot log size too small (<64 MB)" };
@@ -228,8 +223,8 @@ inline void FasterKvHC<K, V, D>::InitializeCompaction() {
   }
 }
 
-template<class K, class V, class D>
-inline Guid FasterKvHC<K, V, D>::StartSession() {
+template<class K, class V, class D, class HHI, class CHI>
+inline Guid FasterKvHC<K, V, D, HHI, CHI>::StartSession() {
   if (checkpoint_.phase.load() != CheckpointPhase::REST) {
     throw std::runtime_error{ "Can start new session only in REST phase!" };
   }
@@ -241,8 +236,8 @@ inline Guid FasterKvHC<K, V, D>::StartSession() {
   return guid;
 }
 
-template <class K, class V, class D>
-inline uint64_t FasterKvHC<K, V, D>::ContinueSession(const Guid& session_id) {
+template <class K, class V, class D, class HHI, class CHI>
+inline uint64_t FasterKvHC<K, V, D, HHI, CHI>::ContinueSession(const Guid& session_id) {
   if (checkpoint_.phase.load() != CheckpointPhase::REST) {
     throw std::runtime_error{ "Can continue session only in REST phase!" };
   }
@@ -251,8 +246,8 @@ inline uint64_t FasterKvHC<K, V, D>::ContinueSession(const Guid& session_id) {
   return serial_num;
 }
 
-template <class K, class V, class D>
-inline void FasterKvHC<K, V, D>::StopSession() {
+template <class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::StopSession() {
   // Finish pending ops and finish checkpointing before stopping session
   CheckpointPhase phase;
   while(!CompletePending(false) ||
@@ -263,8 +258,8 @@ inline void FasterKvHC<K, V, D>::StopSession() {
   cold_store.StopSession();
 }
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::Refresh() {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::Refresh() {
   if (checkpoint_.phase.load() != CheckpointPhase::REST) {
     HeavyEnter();
   }
@@ -272,8 +267,8 @@ inline void FasterKvHC<K, V, D>::Refresh() {
   cold_store.Refresh();
 }
 
-template<class K, class V, class D>
-inline bool FasterKvHC<K, V, D>::CompletePending(bool wait) {
+template<class K, class V, class D, class HHI, class CHI>
+inline bool FasterKvHC<K, V, D, HHI, CHI>::CompletePending(bool wait) {
   bool hot_store_done, cold_store_done;
   do {
     // Complete pending requests on both stores
@@ -291,10 +286,10 @@ inline bool FasterKvHC<K, V, D>::CompletePending(bool wait) {
   return false;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class HHI, class CHI>
 template <class RC>
-inline Status FasterKvHC<K, V, D>::Read(RC& context, AsyncCallback callback,
-                                      uint64_t monotonic_serial_num) {
+inline Status FasterKvHC<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback callback,
+                                                  uint64_t monotonic_serial_num) {
   typedef RC read_context_t;
   typedef HotColdReadContext<read_context_t> hc_read_context_t;
   typedef HotColdIndexContext<hc_read_context_t> hc_index_context_t;
@@ -335,8 +330,8 @@ inline Status FasterKvHC<K, V, D>::Read(RC& context, AsyncCallback callback,
   return status;
 }
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::AsyncContinuePendingRead(IAsyncContext* ctxt, Status result) {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRead(IAsyncContext* ctxt, Status result) {
   CallbackContext<async_hc_read_context_t> context{ ctxt };
   faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
 
@@ -379,17 +374,17 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRead(IAsyncContext* ctxt, S
 }
 
 
-template <class K, class V, class D>
+template<class K, class V, class D, class HHI, class CHI>
 template <class UC>
-inline Status FasterKvHC<K, V, D>::Upsert(UC& context, AsyncCallback callback,
-                                        uint64_t monotonic_serial_num) {
+inline Status FasterKvHC<K, V, D, HHI, CHI>::Upsert(UC& context, AsyncCallback callback,
+                                                    uint64_t monotonic_serial_num) {
   return hot_store.Upsert(context, callback, monotonic_serial_num);
 }
 
-template <class K, class V, class D>
+template<class K, class V, class D, class HHI, class CHI>
 template <class MC>
-inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
-                                        uint64_t monotonic_serial_num) {
+inline Status FasterKvHC<K, V, D, HHI, CHI>::Rmw(MC& context, AsyncCallback callback,
+                                                uint64_t monotonic_serial_num) {
   typedef MC rmw_context_t;
   typedef HotColdRmwContext<rmw_context_t> hc_rmw_context_t;
   typedef HotColdIndexContext<hc_rmw_context_t> hc_index_context_t;
@@ -414,9 +409,9 @@ inline Status FasterKvHC<K, V, D>::Rmw(MC& context, AsyncCallback callback,
   return InternalRmw(hc_rmw_context);
 }
 
-template <class K, class V, class D>
+template<class K, class V, class D, class HHI, class CHI>
 template <class C>
-inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
+inline Status FasterKvHC<K, V, D, HHI, CHI>::InternalRmw(C& hc_rmw_context) {
   uint64_t monotonic_serial_num = hc_rmw_context.serial_num;
 
   // Issue RMW request on hot log; do not create a new record if exists!
@@ -461,8 +456,8 @@ inline Status FasterKvHC<K, V, D>::InternalRmw(C& hc_rmw_context) {
   return read_status;
 }
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, Status result) {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmw(IAsyncContext* ctxt, Status result) {
   CallbackContext<async_hc_rmw_context_t> context{ ctxt };
   faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
 
@@ -527,8 +522,8 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmw(IAsyncContext* ctxt, St
   assert(false); // not reachable
 }
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmwRead(IAsyncContext* ctxt, Status result) {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmwRead(IAsyncContext* ctxt, Status result) {
   CallbackContext<hc_rmw_read_context_t> rmw_read_context{ ctxt };
   rmw_read_context.async = true;
   // Validation
@@ -537,8 +532,8 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmwRead(IAsyncContext* ctxt
   AsyncContinuePendingRmw(static_cast<IAsyncContext*>(rmw_context), result);
 }
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmwConditionalInsert(IAsyncContext* ctxt, Status result) {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmwConditionalInsert(IAsyncContext* ctxt, Status result) {
   CallbackContext<hc_rmw_ci_context_t> rmw_ci_context{ ctxt };
   rmw_ci_context.async = true;
   // Validation
@@ -548,16 +543,16 @@ inline void FasterKvHC<K, V, D>::AsyncContinuePendingRmwConditionalInsert(IAsync
 }
 
 
-template <class K, class V, class D>
+template<class K, class V, class D, class HHI, class CHI>
 template <class DC>
-inline Status FasterKvHC<K, V, D>::Delete(DC& context, AsyncCallback callback,
+inline Status FasterKvHC<K, V, D, HHI, CHI>::Delete(DC& context, AsyncCallback callback,
                                         uint64_t monotonic_serial_num) {
   // Force adding a tombstone entry in the tail of the log
   return hot_store.Delete(context, callback, monotonic_serial_num, true);
 }
 
-template <class K, class V, class D>
-inline void FasterKvHC<K, V, D>::HeavyEnter() {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::HeavyEnter() {
   if (checkpoint_.phase.load() == CheckpointPhase::COLD_STORE_CHECKPOINT) {
     StoreCheckpointStatus status = checkpoint_.cold_store_status.load();
     if (status != StoreCheckpointStatus::FINISHED && status != StoreCheckpointStatus::FAILED) {
@@ -591,9 +586,9 @@ inline void FasterKvHC<K, V, D>::HeavyEnter() {
   }
 }
 
-template<class K, class V, class D>
-inline bool FasterKvHC<K, V, D>::Checkpoint(HybridLogPersistenceCallback hybrid_log_persistence_callback,
-                                            Guid& token, bool lazy) {
+template<class K, class V, class D, class HHI, class CHI>
+inline bool FasterKvHC<K, V, D, HHI, CHI>::Checkpoint(HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                                                      Guid& token, bool lazy) {
   CheckpointPhase expected_phase = CheckpointPhase::REST;
   if (!checkpoint_.phase.compare_exchange_strong(expected_phase, CheckpointPhase::HOT_STORE_CHECKPOINT)) {
     throw std::runtime_error{ "Can start checkpoint only when no other concurrent op" };
@@ -608,8 +603,8 @@ inline bool FasterKvHC<K, V, D>::Checkpoint(HybridLogPersistenceCallback hybrid_
   return true;
 }
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::HotStoreCheckpointedCallback(void* ctxt, Status result, uint64_t persistent_serial_num) {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::HotStoreCheckpointedCallback(void* ctxt, Status result, uint64_t persistent_serial_num) {
   // This will be called multiple times (i.e., once for each active session)
   auto checkpoint = static_cast<HotColdCheckpointState*>(ctxt);
   assert(checkpoint->phase.load() == CheckpointPhase::HOT_STORE_CHECKPOINT);
@@ -667,8 +662,8 @@ inline void FasterKvHC<K, V, D>::HotStoreCheckpointedCallback(void* ctxt, Status
   }
 }
 
-template <class K, class V, class D>
-inline Status FasterKvHC<K, V, D>::Recover(const Guid& token, uint32_t& version, std::vector<Guid>& session_ids) {
+template<class K, class V, class D, class HHI, class CHI>
+inline Status FasterKvHC<K, V, D, HHI, CHI>::Recover(const Guid& token, uint32_t& version, std::vector<Guid>& session_ids) {
   CheckpointPhase phase = CheckpointPhase::REST;
   if (!checkpoint_.phase.compare_exchange_strong(phase, CheckpointPhase::RECOVER)) {
     log_error("Unexpected checkpoint phase during recovery [expected: REST, actual: %s]",
@@ -701,19 +696,19 @@ inline Status FasterKvHC<K, V, D>::Recover(const Guid& token, uint32_t& version,
   return Status::Ok;
 }
 
-template<class K, class V, class D>
-inline bool FasterKvHC<K, V, D>::CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
+template<class K, class V, class D, class HHI, class CHI>
+inline bool FasterKvHC<K, V, D, HHI, CHI>::CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
   return CompactLog(hot_store, StoreType::HOT, until_address, shift_begin_address, n_threads, false);
 }
 
-template<class K, class V, class D>
-inline bool FasterKvHC<K, V, D>::CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
+template<class K, class V, class D, class HHI, class CHI>
+inline bool FasterKvHC<K, V, D, HHI, CHI>::CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
   return CompactLog(cold_store, StoreType::COLD, until_address, shift_begin_address, n_threads, false);
 }
 
-template <class K, class V, class D>
+template<class K, class V, class D, class HHI, class CHI>
 template <class S>
-inline bool FasterKvHC<K, V, D>::CompactLog(S& store, StoreType store_type, uint64_t until_address,
+inline bool FasterKvHC<K, V, D, HHI, CHI>::CompactLog(S& store, StoreType store_type, uint64_t until_address,
                                             bool shift_begin_address, int n_threads, bool checkpoint) {
   const bool is_hot_store = (store_type == StoreType::HOT);
 
@@ -761,10 +756,10 @@ inline bool FasterKvHC<K, V, D>::CompactLog(S& store, StoreType store_type, uint
   return success;
 }
 
-template <class K, class V, class D>
+template<class K, class V, class D, class HHI, class CHI>
 template <class S>
-inline bool FasterKvHC<K, V, D>::ShouldCompactHlog(const S& store, StoreType store_type,
-                                                  const HlogCompactionConfig& compaction_config, uint64_t& until_address) {
+inline bool FasterKvHC<K, V, D, HHI, CHI>::ShouldCompactHlog(const S& store, StoreType store_type,
+                                                            const HlogCompactionConfig& compaction_config, uint64_t& until_address) {
   until_address = Address::kInvalidAddress;
   if (!compaction_config.enabled) {
     return false;
@@ -829,8 +824,8 @@ inline bool FasterKvHC<K, V, D>::ShouldCompactHlog(const S& store, StoreType sto
   return (until_address < safe_head_address);
 }
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::CheckSystemState() {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::CheckSystemState() {
   const HlogCompactionConfig& hot_log_compaction_config = hc_compaction_config_.hot_store;
   const HlogCompactionConfig& cold_log_compaction_config = hc_compaction_config_.cold_store;
 
@@ -936,8 +931,8 @@ inline void FasterKvHC<K, V, D>::CheckSystemState() {
   compaction_scheduled_.store(false);
 }
 
-template<class K, class V, class D>
-inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::CompleteRmwRetryRequests() {
   typedef HotColdIndexContext<async_hc_rmw_context_t> hc_index_context_t;
 
   async_hc_rmw_context_t* ctxt;
@@ -969,8 +964,8 @@ inline void FasterKvHC<K, V, D>::CompleteRmwRetryRequests() {
 }
 
 #ifdef TOML_CONFIG
-template<class K, class V, class D>
-inline FasterKvHC<K, V, D> FasterKvHC<K, V, D>::FromConfigString(const std::string& config) {
+template<class K, class V, class D, class HHI, class CHI>
+inline FasterKvHC<K, V, D, HHI, CHI> FasterKvHC<K, V, D, HHI, CHI>::FromConfigString(const std::string& config) {
   hot_faster_store_config_t hot_store_config = hot_faster_store_t::Config::FromConfigString(config, "f2", "hot");
   cold_faster_store_config_t cold_store_config = cold_faster_store_t::Config::FromConfigString(config, "f2", "cold");
 
@@ -978,8 +973,8 @@ inline FasterKvHC<K, V, D> FasterKvHC<K, V, D>::FromConfigString(const std::stri
   return { hot_store_config, cold_store_config };
 }
 
-template<class K, class V, class D>
-inline FasterKvHC<K, V, D> FasterKvHC<K, V, D>::FromConfigFile(const std::string& filepath) {
+template<class K, class V, class D, class HHI, class CHI>
+inline FasterKvHC<K, V, D, HHI, CHI> FasterKvHC<K, V, D, HHI, CHI>::FromConfigFile(const std::string& filepath) {
   std::ifstream t(filepath);
   std::string config(
     (std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
