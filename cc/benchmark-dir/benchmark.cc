@@ -33,6 +33,16 @@ enum class Workload {
   RMW_100 = 1,
 };
 
+enum class BenchmarkType {
+  TIME_BASED = 0,  // default
+  OPS_BASED,
+};
+
+
+static constexpr BenchmarkType benchmark_type = BenchmarkType::OPS_BASED;
+static_assert(benchmark_type == BenchmarkType::TIME_BASED ||
+              benchmark_type == BenchmarkType::OPS_BASED);
+
 static constexpr uint64_t kInitCount = 250000000;
 static constexpr uint64_t kTxnCount = 1000000000;
 static constexpr uint64_t kChunkSize = 3200;
@@ -45,8 +55,6 @@ static_assert(kCompletePendingInterval % kRefreshInterval == 0,
               "kCompletePendingInterval % kRefreshInterval != 0");
 
 static constexpr uint64_t kNanosPerSecond = 1000000000;
-
-static constexpr uint64_t kMaxKey = 268435456;
 static constexpr uint64_t kRunSeconds = 30;
 static constexpr uint64_t kCheckpointSeconds = 0;
 
@@ -57,6 +65,7 @@ std::atomic<bool> done_{ false };
 std::atomic<uint64_t> total_duration_{ 0 };
 std::atomic<uint64_t> total_reads_done_{ 0 };
 std::atomic<uint64_t> total_writes_done_{ 0 };
+std::atomic<uint64_t> threads_running{ 0 };  // only used for OPS_BASED benchmarking
 
 class ReadContext;
 class UpsertContext;
@@ -448,6 +457,7 @@ static std::atomic<int64_t> async_writes_done{ 0 };
 template <Op(*FN)(std::mt19937&)>
 void thread_run_benchmark(store_t* store, size_t thread_idx) {
   SetThreadAffinity(thread_idx);
+  ++threads_running;
 
   std::random_device rd{};
   std::mt19937 rng{ rd() };
@@ -463,11 +473,22 @@ void thread_run_benchmark(store_t* store, size_t thread_idx) {
   while(!done_) {
     uint64_t chunk_idx = idx_.fetch_add(kChunkSize);
     while(chunk_idx >= kTxnCount) {
-      if(chunk_idx == kTxnCount) {
-        idx_ = 0;
+      if(benchmark_type == BenchmarkType::TIME_BASED) {
+        if (chunk_idx == kTxnCount) {
+          // repeat requests from beginning
+          idx_ = 0;
+        }
+      } else if (benchmark_type == BenchmarkType::OPS_BASED) {
+        if(chunk_idx >= kTxnCount) {
+          // stop
+          done_ = true;
+          break;
+        }
       }
       chunk_idx = idx_.fetch_add(kChunkSize);
     }
+    if (done_) break;
+
     for(uint64_t idx = chunk_idx; idx < chunk_idx + kChunkSize; ++idx) {
       if(idx % kRefreshInterval == 0) {
         store->Refresh();
@@ -527,6 +548,8 @@ void thread_run_benchmark(store_t* store, size_t thread_idx) {
   total_writes_done_ += writes_done;
   printf("Finished thread %" PRIu64 " : %" PRIu64 " reads, %" PRIu64 " writes, in %.2f seconds.\n",
          thread_idx, reads_done, writes_done, (double)duration.count() / kNanosPerSecond);
+
+  --threads_running;
 }
 
 template <Op(*FN)(std::mt19937&)>
@@ -545,7 +568,13 @@ void run_benchmark(store_t* store, size_t num_threads) {
   num_checkpoints = 0;
 
   if(kCheckpointSeconds == 0) {
-    std::this_thread::sleep_for(std::chrono::seconds(kRunSeconds));
+    if (benchmark_type == BenchmarkType::TIME_BASED) {
+      std::this_thread::sleep_for(std::chrono::seconds(kRunSeconds));
+    } else if (benchmark_type == BenchmarkType::OPS_BASED) {
+      do {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      } while(threads_running.load() > 0);
+    }
   } else {
     auto callback = [](Status result, uint64_t persistent_serial_num) {
       if(result != Status::Ok) {
@@ -602,7 +631,13 @@ void run(Workload workload, size_t num_threads) {
 
   store.DumpDistribution();
 
+  if (benchmark_type == BenchmarkType::TIME_BASED) {
+    printf("\n=== Benchmark Type: %" PRIu64 " seconds\n\n", kRunSeconds);
+  } else if (benchmark_type == BenchmarkType::OPS_BASED) {
+    printf("\n=== Benchmark Type: %" PRIu64 " operations\n\n", kTxnCount);
+  }
   printf("Running benchmark on %" PRIu64 " threads...\n", num_threads);
+
   switch(workload) {
   case Workload::A_50_50:
     run_benchmark<ycsb_a_50_50>(&store, num_threads);
