@@ -229,6 +229,8 @@ class FasterKv {
 
   inline bool CompletePending(bool wait = false);
 
+  inline void CompletePendingCompactions();
+
   /// Checkpoint/recovery operations.
   bool Checkpoint(IndexPersistenceCallback index_persistence_callback,
                   HybridLogPersistenceCallback hybrid_log_persistence_callback,
@@ -960,6 +962,16 @@ inline bool FasterKv<K, V, D, H, OH>::CompletePending(bool wait) {
     }
   } while(wait);
   return false;
+}
+
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::CompletePendingCompactions() {
+  while (auto_compaction_scheduled_.load()) {
+    if (epoch_.IsProtected()) {
+      CompletePending();
+    }
+    std::this_thread::yield();
+  }
 }
 
 template <class K, class V, class D, class H, class OH>

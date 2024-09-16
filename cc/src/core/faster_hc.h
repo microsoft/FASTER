@@ -108,6 +108,8 @@ class FasterKvHC {
 
   bool CompletePending(bool wait = false);
 
+  void CompletePendingCompactions();
+
   /// Checkpoint/recovery operations.
   bool Checkpoint(HybridLogPersistenceCallback hybrid_log_persistence_callback,
                   Guid& token, bool lazy = true);
@@ -284,6 +286,16 @@ inline bool FasterKvHC<K, V, D, HHI, CHI>::CompletePending(bool wait) {
     }
   } while(wait);
   return false;
+}
+
+template<class K, class V, class D, class HHI, class CHI>
+inline void FasterKvHC<K, V, D, HHI, CHI>::CompletePendingCompactions() {
+  while (compaction_scheduled_.load()) {
+    if (hot_store.epoch_.IsProtected()) {
+      CompletePending();
+    }
+    std::this_thread::yield();
+  }
 }
 
 template <class K, class V, class D, class HHI, class CHI>
