@@ -31,6 +31,8 @@ enum class Op : uint8_t {
 enum class Workload {
   A_50_50 = 0,
   RMW_100 = 1,
+  B_95_5 = 2,
+  C_100_0 = 3,
 };
 
 enum class BenchmarkType {
@@ -277,6 +279,18 @@ inline Op ycsb_a_50_50(std::mt19937& rng) {
 
 inline Op ycsb_rmw_100(std::mt19937& rng) {
   return Op::ReadModifyWrite;
+}
+
+inline Op ycsb_b_95_5(std::mt19937& rng) {
+  if(rng() % 100 < 95) {
+    return Op::Read;
+  } else {
+    return Op::Upsert;
+  }
+}
+
+inline Op ycsb_c_100_0(std::mt19937& rng) {
+  return Op::Read;
 }
 
 /// Affinitize to hardware threads on the same core first, before
@@ -644,6 +658,12 @@ void run(Workload workload, size_t num_threads) {
     break;
   case Workload::RMW_100:
     run_benchmark<ycsb_rmw_100>(&store, num_threads);
+    break;
+  case Workload::B_95_5:
+    run_benchmark<ycsb_b_95_5>(&store, num_threads);
+    break;
+  case Workload::C_100_0:
+    run_benchmark<ycsb_c_100_0>(&store, num_threads);
     break;
   default:
     printf("Unknown workload!\n");
