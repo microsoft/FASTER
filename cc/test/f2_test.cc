@@ -8,7 +8,7 @@
 
 #include "gtest/gtest.h"
 
-#include "core/faster_hc.h"
+#include "core/f2.h"
 #include "core/log_scan.h"
 
 #include "device/null_disk.h"
@@ -240,7 +240,7 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
   using Value = LargeValue;
 
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   std::string hot_fp, cold_fp;
   CreateNewLogDir(root_path, hot_fp, cold_fp);
@@ -260,16 +260,16 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
     .enabled = rc_enabled,
   };
 
-  HCCompactionConfig hc_compaction_config;
-  hc_compaction_config.hot_store = HlogCompactionConfig{
+  F2CompactionConfig f2_compaction_config;
+  f2_compaction_config.hot_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
-  hc_compaction_config.cold_store = HlogCompactionConfig{
+  f2_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
-  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
-  faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      cold_index_config, 192_MiB, cold_fp,
-                      0.4, 0, rc_config, hc_compaction_config };
+  f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
+  f2_t store{ table_size, 192_MiB, hot_fp,
+              cold_index_config, 192_MiB, cold_fp,
+              0.4, 0, rc_config, f2_compaction_config };
 
   uint32_t num_records = 100000; // ~800 MB of data
   store.StartSession();
@@ -383,7 +383,7 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
   using Value = MediumValue;
 
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   std::string hot_fp, cold_fp;
   CreateNewLogDir(root_path, hot_fp, cold_fp);
@@ -403,16 +403,16 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
     .enabled = rc_enabled,
   };
 
-  HCCompactionConfig hc_compaction_config;
-  hc_compaction_config.hot_store = HlogCompactionConfig{
+  F2CompactionConfig f2_compaction_config;
+  f2_compaction_config.hot_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
-  hc_compaction_config.cold_store = HlogCompactionConfig{
+  f2_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 2_GiB, 4, auto_compaction };
 
-  faster_hc_t::ColdIndexConfig cold_index_config{ 8192, 256_MiB, 0.6 };
-  faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      cold_index_config, 192_MiB, cold_fp,
-                      0.4, 0, rc_config, hc_compaction_config };
+  f2_t::ColdIndexConfig cold_index_config{ 8192, 256_MiB, 0.6 };
+  f2_t store{ table_size, 192_MiB, hot_fp,
+              cold_index_config, 192_MiB, cold_fp,
+              0.4, 0, rc_config, f2_compaction_config };
 
   uint32_t num_records = 500'000; // ~500 MB of data
   store.StartSession();
@@ -482,7 +482,7 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
   using Value = LargeValue;
 
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   std::string hot_fp, cold_fp;
   CreateNewLogDir(root_path, hot_fp, cold_fp);
@@ -502,16 +502,16 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
     .enabled = rc_enabled,
   };
 
-  HCCompactionConfig hc_compaction_config;
-  hc_compaction_config.hot_store = HlogCompactionConfig{
+  F2CompactionConfig f2_compaction_config;
+  f2_compaction_config.hot_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
-  hc_compaction_config.cold_store = HlogCompactionConfig{
+  f2_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
-  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
-  faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      cold_index_config, 192_MiB, cold_fp,
-                      0.4, 0, rc_config, hc_compaction_config };
+  f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
+  f2_t store{ table_size, 192_MiB, hot_fp,
+              cold_index_config, 192_MiB, cold_fp,
+              0.4, 0, rc_config, f2_compaction_config };
 
   uint32_t num_records = 100000; // ~800 MB of data
   store.StartSession();
@@ -607,7 +607,7 @@ TEST_P(HotColdParameterizedTestParam, Rmw) {
   using Value = LargeValue;
 
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   std::string hot_fp, cold_fp;
   CreateNewLogDir(root_path, hot_fp, cold_fp);
@@ -627,16 +627,16 @@ TEST_P(HotColdParameterizedTestParam, Rmw) {
     .enabled = rc_enabled,
   };
 
-  HCCompactionConfig hc_compaction_config;
-  hc_compaction_config.hot_store = HlogCompactionConfig{
+  F2CompactionConfig f2_compaction_config;
+  f2_compaction_config.hot_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
-  hc_compaction_config.cold_store = HlogCompactionConfig{
+  f2_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
-  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
-  faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      cold_index_config, 192_MiB, cold_fp,
-                      0.4, 0, rc_config, hc_compaction_config };
+  f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
+  f2_t store{ table_size, 192_MiB, hot_fp,
+              cold_index_config, 192_MiB, cold_fp,
+              0.4, 0, rc_config, f2_compaction_config };
 
   uint32_t num_records = 20000; // ~160 MB of data
   store.StartSession();
@@ -792,7 +792,7 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
   using Value = LargeValue;
 
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   std::string hot_fp, cold_fp;
   CreateNewLogDir(root_path, hot_fp, cold_fp);
@@ -812,16 +812,16 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
     .enabled = rc_enabled,
   };
 
-  HCCompactionConfig hc_compaction_config;
-  hc_compaction_config.hot_store = HlogCompactionConfig{
+  F2CompactionConfig f2_compaction_config;
+  f2_compaction_config.hot_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
-  hc_compaction_config.cold_store = HlogCompactionConfig{
+  f2_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
-  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
-  faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      cold_index_config, 192_MiB, cold_fp,
-                      0.4, 0, rc_config, hc_compaction_config };
+  f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
+  f2_t store{ table_size, 192_MiB, hot_fp,
+              cold_index_config, 192_MiB, cold_fp,
+              0.4, 0, rc_config, f2_compaction_config };
 
   static constexpr int num_records = 100000;
 
@@ -1125,7 +1125,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
   };
 
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   std::string hot_fp, cold_fp;
   CreateNewLogDir(root_path, hot_fp, cold_fp);
@@ -1145,16 +1145,16 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
     .enabled = rc_enabled,
   };
 
-  HCCompactionConfig hc_compaction_config;
-  hc_compaction_config.hot_store = HlogCompactionConfig{
+  F2CompactionConfig f2_compaction_config;
+  f2_compaction_config.hot_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
-  hc_compaction_config.cold_store = HlogCompactionConfig{
+  f2_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
-  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
-  faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      cold_index_config, 192_MiB, cold_fp,
-                      0.4, 0, rc_config, hc_compaction_config };
+  f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
+  f2_t store{ table_size, 192_MiB, hot_fp,
+              cold_index_config, 192_MiB, cold_fp,
+              0.4, 0, rc_config, f2_compaction_config };
 
   int num_records = 17500;
 
@@ -1501,7 +1501,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
   using ReadContext = ReadContextVLV;
 
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   std::string hot_fp, cold_fp;
   CreateNewLogDir(root_path, hot_fp, cold_fp);
@@ -1521,16 +1521,16 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
     .enabled = rc_enabled,
   };
 
-  HCCompactionConfig hc_compaction_config;
-  hc_compaction_config.hot_store = HlogCompactionConfig{
+  F2CompactionConfig f2_compaction_config;
+  f2_compaction_config.hot_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
-  hc_compaction_config.cold_store = HlogCompactionConfig{
+  f2_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
-  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
-  faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      cold_index_config, 192_MiB, cold_fp,
-                      0.4, 0, rc_config, hc_compaction_config };
+  f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
+  f2_t store{ table_size, 192_MiB, hot_fp,
+              cold_index_config, 192_MiB, cold_fp,
+              0.4, 0, rc_config, f2_compaction_config };
 
   int num_records = 17500;
 

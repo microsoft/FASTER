@@ -68,12 +68,12 @@ constexpr HlogCompactionConfig DEFAULT_HLOG_COMPACTION_CONFIG {
 
 // Hot-Cold Compaction Config
 
-struct HCCompactionConfig {
+struct F2CompactionConfig {
   HlogCompactionConfig hot_store;
   HlogCompactionConfig cold_store;
 };
 
-constexpr static HCCompactionConfig DEFAULT_HC_COMPACTION_CONFIG{
+constexpr static F2CompactionConfig DEFAULT_F2_COMPACTION_CONFIG{
   // hot-log compaction policy
   // check every 250ms, trigger at 80% of 1GB, compact min(20% of total size, 256MB), 4 threads
   .hot_store{

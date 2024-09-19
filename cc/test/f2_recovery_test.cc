@@ -8,7 +8,7 @@
 
 #include "gtest/gtest.h"
 
-#include "core/faster_hc.h"
+#include "core/f2.h"
 #include "core/log_scan.h"
 
 #include "device/null_disk.h"
@@ -225,7 +225,7 @@ TEST_P(HotColdRecoveryTestParam, CheckpointAndRecoverySerial) {
   typedef ReadContext<Key, Value> read_context_t;
 
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   auto args = GetParam();
   uint64_t table_size = std::get<0>(args);
@@ -243,13 +243,13 @@ TEST_P(HotColdRecoveryTestParam, CheckpointAndRecoverySerial) {
     .enabled = rc_enabled,
   };
 
-  HCCompactionConfig hc_compaction_config;
-  hc_compaction_config.hot_store = HlogCompactionConfig{
+  F2CompactionConfig f2_compaction_config;
+  f2_compaction_config.hot_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
-  hc_compaction_config.cold_store = HlogCompactionConfig{
+  f2_compaction_config.cold_store = HlogCompactionConfig{
     250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
 
-  faster_hc_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
+  f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
 
   Guid session_id;
   Guid token;
@@ -262,9 +262,9 @@ TEST_P(HotColdRecoveryTestParam, CheckpointAndRecoverySerial) {
 
   // Test checkpointing
   {
-    faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      cold_index_config, 192_MiB, cold_fp,
-                      0.4, 0, rc_config, hc_compaction_config };
+    f2_t store{ table_size, 192_MiB, hot_fp,
+                cold_index_config, 192_MiB, cold_fp,
+                0.4, 0, rc_config, f2_compaction_config };
 
     // Populate the store
     session_id = store.StartSession();
@@ -354,9 +354,9 @@ TEST_P(HotColdRecoveryTestParam, CheckpointAndRecoverySerial) {
 
   // Test recovery
   {
-    faster_hc_t store{ table_size, 192_MiB, hot_fp,
-                      cold_index_config, 192_MiB, cold_fp,
-                      0.4, 0, rc_config, hc_compaction_config };
+    f2_t store{ table_size, 192_MiB, hot_fp,
+                cold_index_config, 192_MiB, cold_fp,
+                0.4, 0, rc_config, f2_compaction_config };
 
     uint32_t version;
     std::vector<Guid> session_ids;

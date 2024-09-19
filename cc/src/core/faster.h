@@ -56,7 +56,7 @@ namespace core {
 
 // Forward class declaration
 template<class K, class V, class D, class HHI, class CHI>
-class FasterKvHC;
+class F2Kv;
 
 class alignas(Constants::kCacheLineBytes) ThreadContext {
  public:
@@ -97,7 +97,7 @@ class FasterKv {
   typedef FasterKv<K, V, D, OH, H> other_faster_t;
 
   template <class Ki, class Vi, class Di, class HHIi, class CHIi>
-  friend class FasterKvHC;
+  friend class F2Kv;
 
   friend class FASTER::index::FasterIndex<D, typename H::hash_index_definition_t>;
 
@@ -463,7 +463,7 @@ class FasterKv {
   /// Number of active sessions
   std::atomic<size_t> num_active_sessions_;
 
-  // Pointer to other FasterKv instance (if hot-cold); else nullptr
+  // Pointer to other FasterKv instance (if F2); else nullptr
   // Required for the Epoch framework to work properly
   other_faster_t* other_store_;
 
@@ -1461,7 +1461,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
     // TODO: fix this in the cold log; UPDATE: it might just be the case that there is no need to fix anything here.
     // NOTE: TL;DR; cold log index cannot experience the lost-update anomaly.
     //       Cold log only receives upserts during hot-cold compaction
-    //       During a single hot-cold compaction, a record with a given key, can be updated AT MOST once!
+    //       During a single F2's hot-cold compaction, a record with a given key, can be updated AT MOST once!
     //       This is guaranteed by the lookup compaction algorithm, as only a single hot-cold compaction is active at any given time.
     //       In case of hash collisions, there should be no problem, as different threads are (up)inserting records with different keys.
     //       Even when there is a concurrent cold-cold compaction occurring, these records are only being inserted *conditionally*.
@@ -2031,7 +2031,7 @@ inline Status FasterKv<K, V, D, H, OH>::HandleOperationStatus(ExecutionContext& 
     async = true;
     return Status::Pending;
   case OperationStatus::ASYNC_TO_COLD_STORE:
-    // hot-cold only: live record (up)inserted/deleted at cold store
+    // F2 only: live record (up)inserted/deleted at cold store
     assert(pending_context.type == OperationType::ConditionalInsert);
     async = false;
     // callback will be called when op finishes on other store
@@ -4055,7 +4055,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
 
   // (Note that address will be Address::kInvalidAddress, if the entry was created.)
   if (min_search_offset == Address::kInvalidAddress) {
-    // == Only possible in HC-RMW Copy case ==
+    // == Only possible in F2-RMW Copy case ==
     // no other record exists for the same key in this log
     if (address == Address::kInvalidAddress) {
       if (pending_context.orig_hlog_tail_address() >= begin_address) {
@@ -4068,7 +4068,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
     return OperationStatus::NOT_FOUND;
   }
   else if (address == Address::kInvalidAddress) {
-    // == Only possible in HC-RMW Copy case ==
+    // == Only possible in F2-RMW Copy case ==
     // record pointed by min_search_offset compacted to cold log
     // it was certainly a hash-collision, because otherwise the initial
     // hot-log RMW would have worked.
@@ -4078,7 +4078,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
     }
   }
   else if (min_search_offset < begin_address) {
-    // == Only possible in HC-RMW Copy case ==
+    // == Only possible in F2-RMW Copy case ==
     // result of log truncation -- cannot happen during hot-cold/cold-cold compaction
     // request should be re-tried at a higher level!
     return OperationStatus::NOT_FOUND;
@@ -4136,7 +4136,7 @@ create_record:
 
   // Append entry to the log
   if (!to_other_store) {
-    // Case: Single log compaction, or Hot-Cold RMW conditional insert
+    // Case: Single log compaction, or F2 RMW conditional insert
     assert(!pending_context.is_tombstone());
     // Create record
     uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());

@@ -9,14 +9,14 @@
 
 #include "benchmark.h"
 
-#include "core/faster_hc.h"
+#include "core/f2.h"
 
 using namespace FASTER::core;
 
 using hot_index_t = HashIndex<disk_t>;
 // Using 32 hash bucket entries per hash chunk (i.e., 32 * 8 = 256 Bytes / hash chunk)
 using cold_index_t = FasterIndex<disk_t, ColdLogHashIndexDefinition<32>>;
-using store_t = FasterKvHC<Key, Value, disk_t, hot_index_t, cold_index_t>;
+using store_t = F2Kv<Key, Value, disk_t, hot_index_t, cold_index_t>;
 
 int main(int argc, char* argv[]) {
   constexpr size_t kNumArgs = 4;
@@ -42,8 +42,8 @@ int main(int argc, char* argv[]) {
   store_t::ColdIndexConfig cold_index_config{ cold_table_size, 256_MiB, 0.6 };
 
   store_t store{
-    hot_index_config, 4294967296, "storage-hc/hot_",
-    cold_index_config, 12884901888, "storage-hc/cold_",
+    hot_index_config, 4294967296, "storage-f2/hot_",
+    cold_index_config, 12884901888, "storage-f2/cold_",
     0.9, 0, rc_config
   };
 

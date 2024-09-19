@@ -579,7 +579,7 @@ checkpoint_store(S* store, func_ptr_t callback, Guid& token, bool& out_success) 
 template <class S>
 typename std::enable_if<!std::is_base_of<FasterKv<Key, Value, disk_t>, S>::value>::type
 checkpoint_store(S* store, func_ptr_t callback, Guid& token, bool& out_success) {
-  // When store is FasterKvHC instance
+  // When store is F2Kv instance
   out_success = store->Checkpoint(reinterpret_cast<HybridLogPersistenceCallback>(callback), token);
 }
 

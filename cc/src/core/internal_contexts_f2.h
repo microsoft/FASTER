@@ -42,8 +42,8 @@ struct write_deep_key_at_helper<false>
 };
 
 
-template<bool isHotColdContext>
-struct hc_context_helper
+template<bool isF2Context>
+struct f2_context_helper
 {
   /// Used by all FASTER pending contexts
   template<class RC>
@@ -84,7 +84,7 @@ struct hc_context_helper
 };
 
 template<>
-struct hc_context_helper<false>
+struct f2_context_helper<false>
 {
   /// Used by user-provided contexts
   template<class RC>
@@ -131,7 +131,7 @@ struct hc_context_helper<false>
   }
 };
 
-/// Internal contexts, used by FASTER HC
+/// Internal contexts, used by F2
 enum class ReadOperationStage {
   HOT_LOG_READ = 1,
   COLD_LOG_READ = 2,
@@ -145,29 +145,29 @@ enum class RmwOperationStage {
 };
 
 template <class K>
-class HotColdContext : public IAsyncContext {
+class F2Context : public IAsyncContext {
  public:
   typedef K key_t;
 
-  HotColdContext(void* faster_hc_, IAsyncContext& caller_context_,
-                  AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
-    : faster_hc{ faster_hc_ }
+  F2Context(void* f2_, IAsyncContext& caller_context_,
+            AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+    : f2{ f2_ }
     , caller_context{ &caller_context_ }
     , caller_callback{ caller_callback_ }
     , serial_num{ monotonic_serial_num_ }
   {}
   /// No copy constructor.
-  HotColdContext(const HotColdContext& other) = delete;
+  F2Context(const F2Context& other) = delete;
   /// The deep-copy constructor.
-  HotColdContext(HotColdContext& other, IAsyncContext* caller_context_)
-    : faster_hc{ other.faster_hc }
+  F2Context(F2Context& other, IAsyncContext* caller_context_)
+    : f2{ other.f2 }
     , caller_context{ caller_context_ }
     , caller_callback{ other.caller_callback }
     , serial_num{ other.serial_num }
   {}
 
-  /// Points to FasterHC
-  void* faster_hc;
+  /// Points to F2
+  void* f2;
   /// User context
   IAsyncContext* caller_context;
   /// User-provided callback
@@ -178,22 +178,22 @@ class HotColdContext : public IAsyncContext {
 
 /// Context that holds user context for Read request
 template <class K, class V>
-class AsyncHotColdReadContext : public HotColdContext<K> {
+class AsyncF2ReadContext : public F2Context<K> {
  public:
   typedef K key_t;
   typedef V value_t;
 
  protected:
-  AsyncHotColdReadContext(void* faster_hc_, ReadOperationStage stage_, IAsyncContext& caller_context_,
-                        AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
-    : HotColdContext<key_t>(faster_hc_, caller_context_, caller_callback_, monotonic_serial_num_)
+  AsyncF2ReadContext(void* f2_, ReadOperationStage stage_, IAsyncContext& caller_context_,
+                     AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+    : F2Context<key_t>(f2_, caller_context_, caller_callback_, monotonic_serial_num_)
     , stage{ stage_ }
     , entry{ HashBucketEntry::kInvalidEntry }
     , atomic_entry{ nullptr }
     , record{ nullptr }
   {}
  public:
-  virtual ~AsyncHotColdReadContext() {
+  virtual ~AsyncF2ReadContext() {
     if (record) {
       delete[] record;
     }
@@ -204,8 +204,8 @@ class AsyncHotColdReadContext : public HotColdContext<K> {
   }
  protected:
   /// The deep-copy constructor.
-  AsyncHotColdReadContext(AsyncHotColdReadContext& other_, IAsyncContext* caller_context_)
-    : HotColdContext<key_t>(other_, caller_context_)
+  AsyncF2ReadContext(AsyncF2ReadContext& other_, IAsyncContext* caller_context_)
+    : F2Context<key_t>(other_, caller_context_)
     , stage{ other_.stage }
     , entry{ other_.entry }
     , atomic_entry{ other_.atomic_entry }
@@ -228,35 +228,35 @@ class AsyncHotColdReadContext : public HotColdContext<K> {
 
 /// Context that holds user context for Read request
 template <class RC>
-class HotColdReadContext : public AsyncHotColdReadContext <typename RC::key_t, typename RC::value_t> {
+class F2ReadContext : public AsyncF2ReadContext<typename RC::key_t, typename RC::value_t> {
  public:
   typedef RC read_context_t;
   typedef typename read_context_t::key_t key_t;
   typedef typename read_context_t::value_t value_t;
   typedef Record<key_t, value_t> record_t;
 
-  HotColdReadContext(void* faster_hc_, ReadOperationStage stage_, read_context_t& caller_context_,
-                    AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
-    : AsyncHotColdReadContext<key_t, value_t>(faster_hc_, stage_, caller_context_,
-                                            caller_callback_, monotonic_serial_num_)
+  F2ReadContext(void* f2_, ReadOperationStage stage_, read_context_t& caller_context_,
+                AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+    : AsyncF2ReadContext<key_t, value_t>(f2_, stage_, caller_context_,
+                                         caller_callback_, monotonic_serial_num_)
     {}
 
   /// The deep-copy constructor.
-  HotColdReadContext(HotColdReadContext& other_, IAsyncContext* caller_context_)
-    : AsyncHotColdReadContext<key_t, value_t>(other_, caller_context_)
+  F2ReadContext(F2ReadContext& other_, IAsyncContext* caller_context_)
+    : AsyncF2ReadContext<key_t, value_t>(other_, caller_context_)
     {}
 
  protected:
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-    return IAsyncContext::DeepCopy_Internal(*this, HotColdContext<key_t>::caller_context,
+    return IAsyncContext::DeepCopy_Internal(*this, F2Context<key_t>::caller_context,
                                             context_copy);
   }
  private:
   inline const read_context_t& read_context() const {
-    return *static_cast<const read_context_t*>(HotColdContext<key_t>::caller_context);
+    return *static_cast<const read_context_t*>(F2Context<key_t>::caller_context);
   }
   inline read_context_t& read_context() {
-    return *static_cast<read_context_t*>(HotColdContext<key_t>::caller_context);
+    return *static_cast<read_context_t*>(F2Context<key_t>::caller_context);
   }
   inline void copy_if_cold_log_record(const void* rec) {
     if (this->stage == ReadOperationStage::COLD_LOG_READ) {
@@ -271,45 +271,46 @@ class HotColdReadContext : public AsyncHotColdReadContext <typename RC::key_t, t
  public:
   /// Propagates calls to caller context
   inline uint32_t key_size() const final {
-    return hc_context_helper<false>::key_size(read_context());
+    return f2_context_helper<false>::key_size(read_context());
   }
   inline KeyHash get_key_hash() const final {
-    return hc_context_helper<false>::get_key_hash(read_context());
+    return f2_context_helper<false>::get_key_hash(read_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return hc_context_helper<false>::is_key_equal(read_context(), other);
+    return f2_context_helper<false>::is_key_equal(read_context(), other);
   }
   inline void Get(const void* rec) {
     copy_if_cold_log_record(rec);
-    return hc_context_helper<false>::template Get<read_context_t, record_t>(read_context(), rec);
+    return f2_context_helper<false>::template Get<read_context_t, record_t>(read_context(), rec);
   }
   inline void GetAtomic(const void* rec) {
     copy_if_cold_log_record(rec);
-    return hc_context_helper<false>::template GetAtomic<read_context_t, record_t>(read_context(), rec);
+    return f2_context_helper<false>::template GetAtomic<read_context_t, record_t>(read_context(), rec);
   }
 
 };
 
 // Forward class declarations
 template <class K, class V>
-class HotColdRmwReadContext;
+class F2RmwReadContext;
+
 template <class K, class V>
-class HotColdRmwConditionalInsertContext;
+class F2RmwConditionalInsertContext;
 
 /// Context that holds user context for RMW request
 template <class K, class V>
-class AsyncHotColdRmwContext : public HotColdContext<K> {
+class AsyncF2RmwContext : public F2Context<K> {
  public:
   typedef K key_t;
   typedef V value_t;
-  typedef HotColdRmwReadContext<K, V> hc_rmw_read_context_t;
-  typedef HotColdRmwConditionalInsertContext<K, V> hc_rmw_ci_context_t;
+  typedef F2RmwReadContext<K, V> f2_rmw_read_context_t;
+  typedef F2RmwConditionalInsertContext<K, V> f2_rmw_ci_context_t;
 
  protected:
-  AsyncHotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, Address expected_hlog_address_,
-                        Address orig_hlog_tail_address_, IAsyncContext& caller_context_,
-                        AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
-    : HotColdContext<key_t>(faster_hc_, caller_context_, caller_callback_, monotonic_serial_num_)
+  AsyncF2RmwContext(void* f2_, RmwOperationStage stage_, Address expected_hlog_address_,
+                    Address orig_hlog_tail_address_, IAsyncContext& caller_context_,
+                    AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+    : F2Context<key_t>(f2_, caller_context_, caller_callback_, monotonic_serial_num_)
     , stage{ stage_ }
     , expected_hlog_address{ expected_hlog_address_ }
     , orig_hlog_tail_address{ orig_hlog_tail_address_ }
@@ -317,8 +318,8 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
     , ci_context{ nullptr }
   {}
   /// The deep copy constructor.
-  AsyncHotColdRmwContext(AsyncHotColdRmwContext& other, IAsyncContext* caller_context)
-    : HotColdContext<key_t>(other, caller_context)
+  AsyncF2RmwContext(AsyncF2RmwContext& other, IAsyncContext* caller_context)
+    : F2Context<key_t>(other, caller_context)
     , stage{ other.stage }
     , expected_hlog_address{ other.expected_hlog_address }
     , orig_hlog_tail_address{ other.orig_hlog_tail_address }
@@ -352,13 +353,13 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
   void free_aux_contexts() {
     if (read_context != nullptr && read_context->from_deep_copy()) {
       // free context
-      context_unique_ptr_t<hc_rmw_read_context_t> context =
-          make_context_unique_ptr(static_cast<hc_rmw_read_context_t*>(read_context));
+      context_unique_ptr_t<f2_rmw_read_context_t> context =
+          make_context_unique_ptr(static_cast<f2_rmw_read_context_t*>(read_context));
     }
     if (ci_context != nullptr && ci_context->from_deep_copy()) {
       // free context
-      context_unique_ptr_t<hc_rmw_ci_context_t> context =
-          make_context_unique_ptr(static_cast<hc_rmw_ci_context_t*>(ci_context));
+      context_unique_ptr_t<f2_rmw_ci_context_t> context =
+          make_context_unique_ptr(static_cast<f2_rmw_ci_context_t*>(ci_context));
     }
     read_context = ci_context = nullptr;
   }
@@ -367,54 +368,54 @@ class AsyncHotColdRmwContext : public HotColdContext<K> {
   Address expected_hlog_address;
   Address orig_hlog_tail_address;
 
-  IAsyncContext* read_context;  // HotColdRmwRead context
-  IAsyncContext* ci_context;    // HotColdRmwConditionalInsert context
+  IAsyncContext* read_context;  // F2RmwRead context
+  IAsyncContext* ci_context;    // F2RmwConditionalInsert context
 };
 
 template <class MC>
-class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, typename MC::value_t> {
+class F2RmwContext : public AsyncF2RmwContext<typename MC::key_t, typename MC::value_t> {
  public:
   typedef MC rmw_context_t;
   typedef typename rmw_context_t::key_t key_t;
   typedef typename rmw_context_t::value_t value_t;
   typedef Record<key_t, value_t> record_t;
 
-  HotColdRmwContext(void* faster_hc_, RmwOperationStage stage_, Address expected_hlog_address_,
-                    Address orig_hlog_tail_address_, rmw_context_t& caller_context_,
-                    AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
-    : AsyncHotColdRmwContext<key_t, value_t>(faster_hc_, stage_, expected_hlog_address_, orig_hlog_tail_address_,
-                                            caller_context_, caller_callback_, monotonic_serial_num_)
+  F2RmwContext(void* f2_, RmwOperationStage stage_, Address expected_hlog_address_,
+               Address orig_hlog_tail_address_, rmw_context_t& caller_context_,
+               AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+    : AsyncF2RmwContext<key_t, value_t>(f2_, stage_, expected_hlog_address_, orig_hlog_tail_address_,
+                                        caller_context_, caller_callback_, monotonic_serial_num_)
     {}
   /// The deep-copy constructor.
-  HotColdRmwContext(HotColdRmwContext& other_, IAsyncContext* caller_context_)
-    : AsyncHotColdRmwContext<key_t, value_t>(other_, caller_context_)
+  F2RmwContext(F2RmwContext& other_, IAsyncContext* caller_context_)
+    : AsyncF2RmwContext<key_t, value_t>(other_, caller_context_)
     {}
 
  protected:
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
     // Deep copy this, and the user RMW context
     return IAsyncContext::DeepCopy_Internal(
-        *this, HotColdContext<key_t>::caller_context, context_copy);
+        *this, F2Context<key_t>::caller_context, context_copy);
   }
  private:
   inline const rmw_context_t& rmw_context() const {
-    return *static_cast<const rmw_context_t*>(HotColdContext<key_t>::caller_context);
+    return *static_cast<const rmw_context_t*>(F2Context<key_t>::caller_context);
   }
   inline rmw_context_t& rmw_context() {
-    return *static_cast<rmw_context_t*>(HotColdContext<key_t>::caller_context);
+    return *static_cast<rmw_context_t*>(F2Context<key_t>::caller_context);
   }
  public:
   inline uint32_t key_size() const final {
-    return hc_context_helper<false>::key_size(rmw_context());
+    return f2_context_helper<false>::key_size(rmw_context());
   }
   inline KeyHash get_key_hash() const final {
-    return hc_context_helper<false>::get_key_hash(rmw_context());
+    return f2_context_helper<false>::get_key_hash(rmw_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return hc_context_helper<false>::is_key_equal(rmw_context(), other);
+    return f2_context_helper<false>::is_key_equal(rmw_context(), other);
   }
   inline void write_deep_key_at(key_t* dst) const {
-    hc_context_helper<false>::write_deep_key_at(rmw_context(), dst);
+    f2_context_helper<false>::write_deep_key_at(rmw_context(), dst);
   }
 
   /// Set initial value.
@@ -439,29 +440,29 @@ class HotColdRmwContext : public AsyncHotColdRmwContext<typename MC::key_t, type
   }
 };
 
-/// Internal context that holds the HC RMW context when doing Read
+/// Internal context that holds the F2 RMW context when doing Read
 template<class K, class V>
-class HotColdRmwReadContext : public IAsyncContext {
+class F2RmwReadContext : public IAsyncContext {
  public:
   typedef K key_t;
   typedef V value_t;
   typedef Record<key_t, value_t> record_t;
-  typedef AsyncHotColdRmwContext<K, V> hc_rmw_context_t;
+  typedef AsyncF2RmwContext<K, V> f2_rmw_context_t;
 
-  HotColdRmwReadContext(IAsyncContext* hc_rmw_context_)
-    : hc_rmw_context{ hc_rmw_context_ }
+  F2RmwReadContext(IAsyncContext* f2_rmw_context_)
+    : f2_rmw_context{ f2_rmw_context_ }
     , record{ nullptr }
     , deep_copied_{ false }
     {}
 
   /// The deep-copy constructor.
-  HotColdRmwReadContext(HotColdRmwReadContext& other)
-    : hc_rmw_context{ other.hc_rmw_context }
+  F2RmwReadContext(F2RmwReadContext& other)
+    : f2_rmw_context{ other.f2_rmw_context }
     , record{ other.record }
     , deep_copied_{ false }
     {}
 
-  ~HotColdRmwReadContext() {
+  ~F2RmwReadContext() {
     if (record != nullptr && (!deep_copied_ || this->from_deep_copy())) {
       delete[] record;
     }
@@ -469,15 +470,15 @@ class HotColdRmwReadContext : public IAsyncContext {
 
  protected:
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-    typedef AsyncHotColdRmwContext<key_t, value_t> async_hc_rmw_context_t;
+    typedef AsyncF2RmwContext<key_t, value_t> async_f2_rmw_context_t;
 
-    // Deep copy HC RMW context
+    // Deep copy F2 RMW context
     IAsyncContext* rmw_context_copy;
-    auto rmw_context = static_cast<async_hc_rmw_context_t*>(this->hc_rmw_context);
+    auto rmw_context = static_cast<async_f2_rmw_context_t*>(this->f2_rmw_context);
     RETURN_NOT_OK(
       rmw_context->DeepCopy(rmw_context_copy));
-    this->hc_rmw_context = rmw_context_copy;
-    rmw_context = static_cast<async_hc_rmw_context_t*>(this->hc_rmw_context);
+    this->f2_rmw_context = rmw_context_copy;
+    rmw_context = static_cast<async_f2_rmw_context_t*>(this->f2_rmw_context);
 
     // Deep copy this context
     RETURN_NOT_OK(
@@ -489,22 +490,22 @@ class HotColdRmwReadContext : public IAsyncContext {
   }
 
  private:
-  inline const hc_rmw_context_t& rmw_context() const {
-    return *static_cast<const hc_rmw_context_t*>(hc_rmw_context);
+  inline const f2_rmw_context_t& rmw_context() const {
+    return *static_cast<const f2_rmw_context_t*>(f2_rmw_context);
   }
-  inline hc_rmw_context_t& rmw_context() {
-    return *static_cast<hc_rmw_context_t*>(hc_rmw_context);
+  inline f2_rmw_context_t& rmw_context() {
+    return *static_cast<f2_rmw_context_t*>(f2_rmw_context);
   }
  public:
   /// Propagates calls to caller context
   inline uint32_t key_size() const {
-    return hc_context_helper<true>::key_size(rmw_context());
+    return f2_context_helper<true>::key_size(rmw_context());
   }
   inline KeyHash get_key_hash() const {
-    return hc_context_helper<true>::get_key_hash(rmw_context());
+    return f2_context_helper<true>::get_key_hash(rmw_context());
   }
   inline bool is_key_equal(const key_t& other) const {
-    return hc_context_helper<true>::is_key_equal(rmw_context(), other);
+    return f2_context_helper<true>::is_key_equal(rmw_context(), other);
   }
 
  public:
@@ -528,26 +529,26 @@ class HotColdRmwReadContext : public IAsyncContext {
     this->Get(rec);
   }
 
-  IAsyncContext* hc_rmw_context;
+  IAsyncContext* f2_rmw_context;
   uint8_t* record;
 
  private:
   bool deep_copied_;
 };
 
-/// Context used for hot-cold sync hash index operations
+/// Context used for F2 sync hash index operations
 /// Currently only used when retrying RMW operations
 template <class C>
-class HotColdIndexContext : public IAsyncContext {
+class F2IndexContext : public IAsyncContext {
  public:
-  /// Constructs and returns a context given a hot-cold context
-  HotColdIndexContext(C* context)
+  /// Constructs and returns a context given a F2 context
+  F2IndexContext(C* context)
     : context_{ context }
     , entry{ HashBucketEntry::kInvalidEntry }
     , atomic_entry{ nullptr } {
   }
   /// Copy constructor deleted -- op does not go async
-  HotColdIndexContext(const HotColdIndexContext& from)
+  F2IndexContext(const F2IndexContext& from)
     : context_{ from.context_ }
     , entry{ from.entry }
     , atomic_entry{ from.atomic_entry } {
@@ -579,31 +580,32 @@ class HotColdIndexContext : public IAsyncContext {
 
 
 template <class RC>
-constexpr bool is_hc_read_context = std::integral_constant<bool,
-                                  std::is_base_of<AsyncHotColdReadContext<typename RC::key_t, typename RC::value_t>, RC>::value ||
-                                  std::is_base_of<HotColdRmwReadContext<typename RC::key_t, typename RC::value_t>, RC>::value>::value;
+constexpr bool is_f2_read_context =
+  std::integral_constant<bool,
+      std::is_base_of<AsyncF2ReadContext<typename RC::key_t, typename RC::value_t>, RC>::value ||
+      std::is_base_of<F2RmwReadContext<typename RC::key_t, typename RC::value_t>, RC>::value>::value;
 
 template <class MC>
-constexpr bool is_hc_rmw_context = std::is_base_of<AsyncHotColdRmwContext<typename MC::key_t, typename MC::value_t>, MC>::value;
+constexpr bool is_f2_rmw_context = std::is_base_of<AsyncF2RmwContext<typename MC::key_t, typename MC::value_t>, MC>::value;
 
 
-/// Internal context that holds the HC RMW context when doing ConditionalInsert
+/// Internal context that holds the F2 RMW context when doing ConditionalInsert
 template <class K, class V>
-class HotColdRmwConditionalInsertContext: public IAsyncContext {
+class F2RmwConditionalInsertContext: public IAsyncContext {
  public:
   // Typedefs on the key and value required internally by FASTER.
   typedef K key_t;
   typedef V value_t;
-  typedef AsyncHotColdRmwContext<key_t, value_t> rmw_context_t;
-  typedef HotColdRmwReadContext<key_t, value_t> rmw_read_context_t;
+  typedef AsyncF2RmwContext<key_t, value_t> rmw_context_t;
+  typedef F2RmwReadContext<key_t, value_t> rmw_read_context_t;
   typedef Record<key_t, value_t> record_t;
 
-  HotColdRmwConditionalInsertContext(rmw_context_t* rmw_context_, bool rmw_rcu)
+  F2RmwConditionalInsertContext(rmw_context_t* rmw_context_, bool rmw_rcu)
     : rmw_context{ rmw_context_ }
     , rmw_rcu_{ rmw_rcu }
   {}
   /// Copy constructor deleted; copy to tail request doesn't go async
-  HotColdRmwConditionalInsertContext(const HotColdRmwConditionalInsertContext& from)
+  F2RmwConditionalInsertContext(const F2RmwConditionalInsertContext& from)
     : rmw_context{ from.rmw_context }
     , rmw_rcu_{ from.rmw_rcu_ }
   {}
@@ -612,11 +614,11 @@ class HotColdRmwConditionalInsertContext: public IAsyncContext {
   /// The explicit interface requires a DeepCopy_Internal() implementation.
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
     // Deep copy RmwRead context
-    // NOTE: this may also trigger a deep copy for HC RmwContext (if necessary)
+    // NOTE: this may also trigger a deep copy for F2 RmwContext (if necessary)
     IAsyncContext* read_context_copy;
     rmw_read_context_t* read_context = static_cast<rmw_read_context_t*>(rmw_context->read_context);
     RETURN_NOT_OK(read_context->DeepCopy(read_context_copy));
-    rmw_context = static_cast<rmw_context_t*>(read_context->hc_rmw_context);
+    rmw_context = static_cast<rmw_context_t*>(read_context->f2_rmw_context);
 
     // Deep copy this context
     RETURN_NOT_OK(IAsyncContext::DeepCopy_Internal(*this, context_copy));

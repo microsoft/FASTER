@@ -3,8 +3,8 @@
 
 #include "gtest/gtest.h"
 
+#include "core/f2.h"
 #include "core/faster.h"
-#include "core/faster_hc.h"
 #include "device/null_disk.h"
 
 #include "test_types.h"
@@ -94,7 +94,7 @@ const char* FASTER_TEST_CONFIG = R"(
 
 const char* F2_TEST_CONFIG = R"(
   [f2]
-  filepath = "hc_store"
+  filepath = "f2_store"
 
   [f2.hot]
   filepath = "hot"
@@ -147,15 +147,15 @@ TEST(TomlConfig, FasterFromConfigFile) {
 
 TEST(TomlConfig, F2FromConfig) {
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   std::string config_{ F2_TEST_CONFIG };
-  faster_hc_t store = faster_hc_t::FromConfigString(config_);
+  f2_t store = f2_t::FromConfigString(config_);
 }
 
 TEST(TomlConfig, F2FromConfigFile) {
   typedef FASTER::device::FileSystemDisk<handler_t, 1_GiB> disk_t; // 1GB file segments
-  typedef FasterKvHC<Key, Value, disk_t> faster_hc_t;
+  typedef F2Kv<Key, Value, disk_t> f2_t;
 
   const std::string filepath = "tmp-config.toml";
 
@@ -163,7 +163,7 @@ TEST(TomlConfig, F2FromConfigFile) {
   fprintf(f, "%s", F2_TEST_CONFIG);
   fclose(f);
 
-  faster_hc_t store = faster_hc_t::FromConfigFile(filepath);
+  f2_t store = f2_t::FromConfigFile(filepath);
 }
 
 

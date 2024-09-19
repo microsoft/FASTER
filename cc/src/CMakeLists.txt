@@ -7,16 +7,16 @@ set (FASTER_HEADERS
   core/auto_ptr.h
   core/checkpoint_locks.h
   core/checkpoint_state.h
+  core/checkpoint_state_f2.h
   core/config.h
   core/constants.h
-  core/faster_hc.h
+  core/f2.h
   core/faster.h
   core/gc_state.h
   core/grow_state.h
   core/guid.h
   core/internal_contexts.h
-  core/hc_checkpoint_state.h
-  core/hc_internal_contexts.h
+  core/internal_contexts_f2.h
   core/key_hash.h
   core/light_epoch.h
   core/lss_allocator.h

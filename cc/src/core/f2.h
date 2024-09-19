@@ -7,9 +7,9 @@
 #include "faster.h"
 #include "guid.h"
 
-#include "hc_checkpoint_state.h"
-#include "hc_internal_contexts.h"
+#include "checkpoint_state_f2.h"
 #include "internal_contexts.h"
+#include "internal_contexts_f2.h"
 
 #include "index/faster_index.h"
 
@@ -17,7 +17,7 @@ namespace FASTER {
 namespace core {
 
 template<class K, class V, class D, class HHI = HashIndex<D>, class CHI = FasterIndex<D>>
-class FasterKvHC {
+class F2Kv {
  public:
   typedef FasterKv<K, V, D, HHI, CHI> hot_faster_store_t;
   typedef FasterKv<K, V, D, CHI, HHI> cold_faster_store_t;
@@ -28,25 +28,25 @@ class FasterKvHC {
   typedef FasterStoreConfig<HHI> hot_faster_store_config_t;
   typedef FasterStoreConfig<CHI> cold_faster_store_config_t;
 
-  typedef FasterKvHC<K, V, D> faster_hc_t;
-  typedef AsyncHotColdReadContext<K, V> async_hc_read_context_t;
-  typedef AsyncHotColdRmwContext<K, V> async_hc_rmw_context_t;
-  typedef HotColdRmwReadContext<K, V> hc_rmw_read_context_t;
-  typedef HotColdRmwConditionalInsertContext<K, V> hc_rmw_ci_context_t;
+  typedef F2Kv<K, V, D> f2_t;
+  typedef AsyncF2ReadContext<K, V> async_f2_read_context_t;
+  typedef AsyncF2RmwContext<K, V> async_f2_rmw_context_t;
+  typedef F2RmwReadContext<K, V> f2_rmw_read_context_t;
+  typedef F2RmwConditionalInsertContext<K, V> f2_rmw_ci_context_t;
 
   typedef K key_t;
   typedef V value_t;
 
   constexpr static auto kLazyCompactionMaxWait = 2s;
 
-  FasterKvHC(const HotIndexConfig& hot_index_config, uint64_t hot_log_mem_size, const std::string& hot_log_filename,
-            const ColdIndexConfig& cold_index_config, uint64_t cold_log_mem_size, const std::string& cold_log_filename,
-            double hot_log_mutable_pct = 0.6, double cold_log_mutable_pct = 0,
-            ReadCacheConfig rc_config = DEFAULT_READ_CACHE_CONFIG,
-            HCCompactionConfig hc_compaction_config = DEFAULT_HC_COMPACTION_CONFIG)
+  F2Kv(const HotIndexConfig& hot_index_config, uint64_t hot_log_mem_size, const std::string& hot_log_filename,
+       const ColdIndexConfig& cold_index_config, uint64_t cold_log_mem_size, const std::string& cold_log_filename,
+       double hot_log_mutable_pct = 0.6, double cold_log_mutable_pct = 0,
+       ReadCacheConfig rc_config = DEFAULT_READ_CACHE_CONFIG,
+       F2CompactionConfig compaction_config = DEFAULT_F2_COMPACTION_CONFIG)
   : hot_store{ hot_index_config, hot_log_mem_size, hot_log_filename, hot_log_mutable_pct, rc_config }  // FasterKv auto-compaction is disabled
   , cold_store{ cold_index_config, cold_log_mem_size, cold_log_filename, cold_log_mutable_pct }        // FasterKv auto-compaction is disabled
-  , hc_compaction_config_{ hc_compaction_config }
+  , compaction_config_{ compaction_config }
   , background_worker_active_{ false }
   , compaction_scheduled_{ false }
   {
@@ -58,20 +58,20 @@ class FasterKvHC {
 
     // launch background thread
     background_worker_active_.store(true);
-    background_worker_thread_ = std::move(std::thread(&FasterKvHC::CheckSystemState, this));
+    background_worker_thread_ = std::move(std::thread(&F2Kv::CheckSystemState, this));
   }
 
-  FasterKvHC(const hot_faster_store_config_t& hot_config_, const cold_faster_store_config_t& cold_config_)
-  : FasterKvHC(hot_config_.index_config, hot_config_.hlog_config.in_mem_size, hot_config_.filepath,
-              cold_config_.index_config, cold_config_.hlog_config.in_mem_size, cold_config_.filepath,
-              hot_config_.hlog_config.mutable_fraction, cold_config_.hlog_config.mutable_fraction,
-              hot_config_.rc_config, { hot_config_.hlog_compaction_config, cold_config_.hlog_compaction_config }) {
+  F2Kv(const hot_faster_store_config_t& hot_config_, const cold_faster_store_config_t& cold_config_)
+  : F2Kv(hot_config_.index_config, hot_config_.hlog_config.in_mem_size, hot_config_.filepath,
+         cold_config_.index_config, cold_config_.hlog_config.in_mem_size, cold_config_.filepath,
+         hot_config_.hlog_config.mutable_fraction, cold_config_.hlog_config.mutable_fraction,
+         hot_config_.rc_config, { hot_config_.hlog_compaction_config, cold_config_.hlog_compaction_config }) {
   }
 
   // No copy constructor.
-  FasterKvHC(const FasterKvHC& other) = delete;
+  F2Kv(const F2Kv& other) = delete;
 
-  ~FasterKvHC() {
+  ~F2Kv() {
     while (hot_store.system_state_.phase() != Phase::REST ||
           cold_store.system_state_.phase() != Phase::REST ) {
       std::this_thread::yield();
@@ -124,8 +124,8 @@ class FasterKvHC {
                       int n_threads = cold_faster_store_t::kNumCompactionThreads);
 
   #ifdef TOML_CONFIG
-  static FasterKvHC<K, V, D, HHI, CHI> FromConfigString(const std::string& config);
-  static FasterKvHC<K, V, D, HHI, CHI> FromConfigFile(const std::string& filepath);
+  static F2Kv<K, V, D, HHI, CHI> FromConfigString(const std::string& config);
+  static F2Kv<K, V, D, HHI, CHI> FromConfigFile(const std::string& filepath);
   #endif
 
   /// Statistics
@@ -169,7 +169,7 @@ class FasterKvHC {
   cold_faster_store_t cold_store;
 
   // retry queue
-  concurrent_queue<async_hc_rmw_context_t*> retry_rmw_requests;
+  concurrent_queue<async_f2_rmw_context_t*> retry_rmw_requests;
 
  private:
   enum StoreType : uint8_t {
@@ -203,7 +203,7 @@ class FasterKvHC {
   std::atomic<bool> background_worker_active_;
 
   // compaction-related
-  HCCompactionConfig hc_compaction_config_;
+  F2CompactionConfig compaction_config_;
   std::atomic<bool> compaction_scheduled_;
 
   // checkpoint-related
@@ -211,21 +211,21 @@ class FasterKvHC {
 };
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::InitializeCompaction() {
-  if (hc_compaction_config_.hot_store.enabled || hc_compaction_config_.cold_store.enabled) {
-    if (hc_compaction_config_.hot_store.hlog_size_budget < 64_MiB) {
-      throw std::runtime_error{ "HCCompactionConfig: Hot log size too small (<64 MB)" };
+inline void F2Kv<K, V, D, HHI, CHI>::InitializeCompaction() {
+  if (compaction_config_.hot_store.enabled || compaction_config_.cold_store.enabled) {
+    if (compaction_config_.hot_store.hlog_size_budget < 64_MiB) {
+      throw std::runtime_error{ "F2CompactionConfig: Hot log size too small (<64 MB)" };
     }
-    if (hc_compaction_config_.cold_store.hlog_size_budget < 64_MiB) {
-      throw std::runtime_error{ "HCCompactionConfig: Cold log size too small (<64 MB)" };
+    if (compaction_config_.cold_store.hlog_size_budget < 64_MiB) {
+      throw std::runtime_error{ "F2CompactionConfig: Cold log size too small (<64 MB)" };
     }
   } else {
-    log_info("Automatic HC compaction is disabled");
+    log_info("Automatic F2 compaction is disabled");
   }
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline Guid FasterKvHC<K, V, D, HHI, CHI>::StartSession() {
+inline Guid F2Kv<K, V, D, HHI, CHI>::StartSession() {
   if (checkpoint_.phase.load() != CheckpointPhase::REST) {
     throw std::runtime_error{ "Can start new session only in REST phase!" };
   }
@@ -238,7 +238,7 @@ inline Guid FasterKvHC<K, V, D, HHI, CHI>::StartSession() {
 }
 
 template <class K, class V, class D, class HHI, class CHI>
-inline uint64_t FasterKvHC<K, V, D, HHI, CHI>::ContinueSession(const Guid& session_id) {
+inline uint64_t F2Kv<K, V, D, HHI, CHI>::ContinueSession(const Guid& session_id) {
   if (checkpoint_.phase.load() != CheckpointPhase::REST) {
     throw std::runtime_error{ "Can continue session only in REST phase!" };
   }
@@ -248,7 +248,7 @@ inline uint64_t FasterKvHC<K, V, D, HHI, CHI>::ContinueSession(const Guid& sessi
 }
 
 template <class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::StopSession() {
+inline void F2Kv<K, V, D, HHI, CHI>::StopSession() {
   // Finish pending ops and finish checkpointing before stopping session
   CheckpointPhase phase;
   while(!CompletePending(false) ||
@@ -260,7 +260,7 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::StopSession() {
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::Refresh() {
+inline void F2Kv<K, V, D, HHI, CHI>::Refresh() {
   if (checkpoint_.phase.load() != CheckpointPhase::REST) {
     HeavyEnter();
   }
@@ -269,7 +269,7 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::Refresh() {
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline bool FasterKvHC<K, V, D, HHI, CHI>::CompletePending(bool wait) {
+inline bool F2Kv<K, V, D, HHI, CHI>::CompletePending(bool wait) {
   bool hot_store_done, cold_store_done;
   do {
     // Complete pending requests on both stores
@@ -288,7 +288,7 @@ inline bool FasterKvHC<K, V, D, HHI, CHI>::CompletePending(bool wait) {
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::CompletePendingCompactions() {
+inline void F2Kv<K, V, D, HHI, CHI>::CompletePendingCompactions() {
   while (compaction_scheduled_.load()) {
     if (hot_store.epoch_.IsProtected()) {
       CompletePending();
@@ -299,26 +299,26 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::CompletePendingCompactions() {
 
 template <class K, class V, class D, class HHI, class CHI>
 template <class RC>
-inline Status FasterKvHC<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback callback,
-                                                  uint64_t monotonic_serial_num) {
+inline Status F2Kv<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback callback,
+                                            uint64_t monotonic_serial_num) {
   typedef RC read_context_t;
-  typedef HotColdReadContext<read_context_t> hc_read_context_t;
-  typedef HotColdIndexContext<hc_read_context_t> hc_index_context_t;
+  typedef F2ReadContext<read_context_t> f2_read_context_t;
+  typedef F2IndexContext<f2_read_context_t> f2_index_context_t;
 
-  hc_read_context_t hc_context{ this, ReadOperationStage::HOT_LOG_READ,
-                              context, callback, monotonic_serial_num };
+  f2_read_context_t f2_context{ this, ReadOperationStage::HOT_LOG_READ,
+                                context, callback, monotonic_serial_num };
 
   // Store latest hash index entry before initiating Read op
-  hc_index_context_t index_context{ &hc_context };
-  Status index_status = hot_store.hash_index_.template FindEntry<hc_index_context_t>(
+  f2_index_context_t index_context{ &f2_context };
+  Status index_status = hot_store.hash_index_.template FindEntry<f2_index_context_t>(
                               hot_store.thread_ctx(), index_context);
   assert(index_status == Status::Ok || index_status == Status::NotFound);
   // index_context.entry can be either HashBucketEntry::kInvalidEntry or a valid one (either hlog or read cache)
-  hc_context.entry = index_context.entry;
-  hc_context.atomic_entry = index_context.atomic_entry;
+  f2_context.entry = index_context.entry;
+  f2_context.atomic_entry = index_context.atomic_entry;
 
   // Issue request to hot log
-  Status status = hot_store.Read(hc_context, AsyncContinuePendingRead, monotonic_serial_num, true);
+  Status status = hot_store.Read(f2_context, AsyncContinuePendingRead, monotonic_serial_num, true);
   if (status != Status::NotFound) {
     if (status == Status::Aborted) {
       // found a tombstone -- no need to check cold log
@@ -327,14 +327,14 @@ inline Status FasterKvHC<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback cal
     return status;
   }
   // Issue request on cold log
-  hc_context.stage = ReadOperationStage::COLD_LOG_READ;
-  status = cold_store.Read(hc_context, AsyncContinuePendingRead, monotonic_serial_num);
+  f2_context.stage = ReadOperationStage::COLD_LOG_READ;
+  status = cold_store.Read(f2_context, AsyncContinuePendingRead, monotonic_serial_num);
   assert(status != Status::Aborted); // impossible when !abort_if_tombstone
 
   if (status == Status::Ok && hot_store.UseReadCache()) {
     // Try to insert cold log-resident record to read cache
-    auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(hc_context.record);
-    Status rc_status = hot_store.read_cache_->Insert(hot_store.thread_ctx(), hc_context, record, true);
+    auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(f2_context.record);
+    Status rc_status = hot_store.read_cache_->Insert(hot_store.thread_ctx(), f2_context, record, true);
     assert(rc_status == Status::Ok || rc_status == Status::Aborted);
   }
   // OK (no read-cache), not_found, pending or error status
@@ -342,9 +342,9 @@ inline Status FasterKvHC<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback cal
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRead(IAsyncContext* ctxt, Status result) {
-  CallbackContext<async_hc_read_context_t> context{ ctxt };
-  faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
+inline void F2Kv<K, V, D, HHI, CHI>::AsyncContinuePendingRead(IAsyncContext* ctxt, Status result) {
+  CallbackContext<async_f2_read_context_t> context{ ctxt };
+  f2_t* f2 = static_cast<f2_t*>(context->f2);
 
   if (context->stage == ReadOperationStage::HOT_LOG_READ) {
     if (result != Status::NotFound) {
@@ -358,9 +358,9 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRead(IAsyncContex
     }
     // issue request to cold log
     context->stage = ReadOperationStage::COLD_LOG_READ;
-    Status status = faster_hc->cold_store.Read(*context.get(),
-                                              AsyncContinuePendingRead,
-                                              context->serial_num);
+    Status status = f2->cold_store.Read(*context.get(),
+                                        AsyncContinuePendingRead,
+                                        context->serial_num);
     if (status == Status::Pending) {
       context.async = true;
       return;
@@ -369,10 +369,10 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRead(IAsyncContex
   }
 
   if (context->stage == ReadOperationStage::COLD_LOG_READ) {
-    if (faster_hc->hot_store.UseReadCache() && result == Status::Ok) {
+    if (f2->hot_store.UseReadCache() && result == Status::Ok) {
       // try to insert to read cache
       auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(context->record);
-      auto& hot_store = faster_hc->hot_store;
+      auto& hot_store = f2->hot_store;
       Status rc_status = hot_store.read_cache_->Insert(hot_store.thread_ctx(), *context.get(), record, true);
       assert(rc_status == Status::Ok || rc_status == Status::Aborted);
     }
@@ -387,75 +387,74 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRead(IAsyncContex
 
 template<class K, class V, class D, class HHI, class CHI>
 template <class UC>
-inline Status FasterKvHC<K, V, D, HHI, CHI>::Upsert(UC& context, AsyncCallback callback,
-                                                    uint64_t monotonic_serial_num) {
+inline Status F2Kv<K, V, D, HHI, CHI>::Upsert(UC& context, AsyncCallback callback,
+                                              uint64_t monotonic_serial_num) {
   return hot_store.Upsert(context, callback, monotonic_serial_num);
 }
 
 template<class K, class V, class D, class HHI, class CHI>
 template <class MC>
-inline Status FasterKvHC<K, V, D, HHI, CHI>::Rmw(MC& context, AsyncCallback callback,
-                                                uint64_t monotonic_serial_num) {
+inline Status F2Kv<K, V, D, HHI, CHI>::Rmw(MC& context, AsyncCallback callback,
+                                           uint64_t monotonic_serial_num) {
   typedef MC rmw_context_t;
-  typedef HotColdRmwContext<rmw_context_t> hc_rmw_context_t;
-  typedef HotColdIndexContext<hc_rmw_context_t> hc_index_context_t;
+  typedef F2RmwContext<rmw_context_t> f2_rmw_context_t;
+  typedef F2IndexContext<f2_rmw_context_t> f2_index_context_t;
 
   // Keep hash bucket entry
-  hc_rmw_context_t hc_rmw_context{ this, RmwOperationStage::HOT_LOG_RMW,
+  f2_rmw_context_t f2_rmw_context{ this, RmwOperationStage::HOT_LOG_RMW,
                                   HashBucketEntry::kInvalidEntry,
                                   hot_store.hlog.GetTailAddress(),
                                   context, callback, monotonic_serial_num };
 
-  hc_index_context_t index_context{ &hc_rmw_context };
-  Status status = hot_store.hash_index_.template FindOrCreateEntry<hc_index_context_t>(
+  f2_index_context_t index_context{ &f2_rmw_context };
+  Status status = hot_store.hash_index_.template FindOrCreateEntry<f2_index_context_t>(
                         hot_store.thread_ctx(), index_context);
   assert(status == Status::Ok);
   assert(index_context.entry.address() >= Address::kInvalidAddress);
 
   // Store index latest hash index hlog address at the time
-  hc_rmw_context.expected_hlog_address = (hot_store.UseReadCache())
+  f2_rmw_context.expected_hlog_address = (hot_store.UseReadCache())
       ? hot_store.read_cache_->Skip(index_context)
       : index_context.entry.address();
 
-  return InternalRmw(hc_rmw_context);
+  return InternalRmw(f2_rmw_context);
 }
 
 template<class K, class V, class D, class HHI, class CHI>
 template <class C>
-inline Status FasterKvHC<K, V, D, HHI, CHI>::InternalRmw(C& hc_rmw_context) {
-  uint64_t monotonic_serial_num = hc_rmw_context.serial_num;
+inline Status F2Kv<K, V, D, HHI, CHI>::InternalRmw(C& f2_rmw_context) {
+  uint64_t monotonic_serial_num = f2_rmw_context.serial_num;
 
   // Issue RMW request on hot log; do not create a new record if exists!
-  Status status = hot_store.Rmw(hc_rmw_context, AsyncContinuePendingRmw, monotonic_serial_num, false);
+  Status status = hot_store.Rmw(f2_rmw_context, AsyncContinuePendingRmw, monotonic_serial_num, false);
   if (status != Status::NotFound) {
     return status;
   }
   // Entry not found in hot log
 
   // Issue read request to cold log
-  hc_rmw_context.stage = RmwOperationStage::COLD_LOG_READ;
-  hc_rmw_read_context_t rmw_read_context{ &hc_rmw_context };
+  f2_rmw_context.stage = RmwOperationStage::COLD_LOG_READ;
+  f2_rmw_read_context_t rmw_read_context{ &f2_rmw_context };
   Status read_status = cold_store.Read(rmw_read_context, AsyncContinuePendingRmwRead,
                                         monotonic_serial_num);
 
   if (read_status == Status::Ok || read_status == Status::NotFound) {
     // Conditional insert to hot log
-    hc_rmw_context.read_context = &rmw_read_context;
-    hc_rmw_context.stage = RmwOperationStage::HOT_LOG_CONDITIONAL_INSERT;
+    f2_rmw_context.read_context = &rmw_read_context;
+    f2_rmw_context.stage = RmwOperationStage::HOT_LOG_CONDITIONAL_INSERT;
 
     bool rmw_rcu = (read_status == Status::Ok);
-    hc_rmw_ci_context_t ci_context{ &hc_rmw_context, rmw_rcu };
-    hc_rmw_context.ci_context = &ci_context;
+    f2_rmw_ci_context_t ci_context{ &f2_rmw_context, rmw_rcu };
+    f2_rmw_context.ci_context = &ci_context;
     Status ci_status = hot_store.ConditionalInsert(ci_context, AsyncContinuePendingRmwConditionalInsert,
-                                                  hc_rmw_context.expected_hlog_address, false);
+                                                   f2_rmw_context.expected_hlog_address, false);
     if (ci_status == Status::Aborted || ci_status == Status::NotFound) {
       // add to retry rmw queue
-      hc_rmw_context.prepare_for_retry();
+      f2_rmw_context.prepare_for_retry();
       // deep copy context
-      IAsyncContext* hc_rmw_context_copy;
-      RETURN_NOT_OK(hc_rmw_context.DeepCopy(hc_rmw_context_copy));
-      retry_rmw_requests.push(
-        static_cast<async_hc_rmw_context_t*>(hc_rmw_context_copy));
+      IAsyncContext* f2_rmw_context_copy;
+      RETURN_NOT_OK(f2_rmw_context.DeepCopy(f2_rmw_context_copy));
+      retry_rmw_requests.push( static_cast<async_f2_rmw_context_t*>(f2_rmw_context_copy) );
       return Status::Pending;
     }
     // return to user
@@ -468,11 +467,11 @@ inline Status FasterKvHC<K, V, D, HHI, CHI>::InternalRmw(C& hc_rmw_context) {
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmw(IAsyncContext* ctxt, Status result) {
-  CallbackContext<async_hc_rmw_context_t> context{ ctxt };
-  faster_hc_t* faster_hc = static_cast<faster_hc_t*>(context->faster_hc);
+inline void F2Kv<K, V, D, HHI, CHI>::AsyncContinuePendingRmw(IAsyncContext* ctxt, Status result) {
+  CallbackContext<async_f2_rmw_context_t> context{ ctxt };
+  f2_t* f2 = static_cast<f2_t*>(context->f2);
 
-  hc_rmw_read_context_t rmw_read_context { context.get() };
+  f2_rmw_read_context_t rmw_read_context { context.get() };
   if (context->stage == RmwOperationStage::HOT_LOG_RMW) {
     if (result != Status::NotFound) {
       // call user-provided callback -- most common case
@@ -481,8 +480,8 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmw(IAsyncContext
     }
     // issue read request to cold log
     context->stage = RmwOperationStage::COLD_LOG_READ;
-    Status read_status = faster_hc->cold_store.Read(rmw_read_context, AsyncContinuePendingRmwRead,
-                                                    context->serial_num);
+    Status read_status = f2->cold_store.Read(rmw_read_context, AsyncContinuePendingRmwRead,
+                                             context->serial_num);
     if (read_status == Status::Pending) {
       context.async = true;
       return;
@@ -499,9 +498,10 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmw(IAsyncContext
       // issue conditional insert request to hot log
       context->stage = RmwOperationStage::HOT_LOG_CONDITIONAL_INSERT;
       bool rmw_rcu = (result == Status::Ok);
-      hc_rmw_ci_context_t ci_context{ context.get(), rmw_rcu };
-      Status ci_status = faster_hc->hot_store.ConditionalInsert(ci_context, AsyncContinuePendingRmwConditionalInsert,
-                                                                context->expected_hlog_address, false);
+      f2_rmw_ci_context_t ci_context{ context.get(), rmw_rcu };
+      Status ci_status = f2->hot_store.ConditionalInsert(ci_context,
+                                                         AsyncContinuePendingRmwConditionalInsert,
+                                                         context->expected_hlog_address, false);
       if (ci_status == Status::Pending) {
         context.async = true;
         return;
@@ -526,7 +526,7 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmw(IAsyncContext
     // add to retry queue
     context.async = true; // do not free this context
     context->prepare_for_retry();
-    faster_hc->retry_rmw_requests.push(context.get());
+    f2->retry_rmw_requests.push(context.get());
     return;
   }
 
@@ -534,21 +534,21 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmw(IAsyncContext
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmwRead(IAsyncContext* ctxt, Status result) {
-  CallbackContext<hc_rmw_read_context_t> rmw_read_context{ ctxt };
+inline void F2Kv<K, V, D, HHI, CHI>::AsyncContinuePendingRmwRead(IAsyncContext* ctxt, Status result) {
+  CallbackContext<f2_rmw_read_context_t> rmw_read_context{ ctxt };
   rmw_read_context.async = true;
   // Validation
-  async_hc_rmw_context_t* rmw_context = static_cast<async_hc_rmw_context_t*>(rmw_read_context->hc_rmw_context);
+  async_f2_rmw_context_t* rmw_context = static_cast<async_f2_rmw_context_t*>(rmw_read_context->f2_rmw_context);
   assert(rmw_context->stage == RmwOperationStage::COLD_LOG_READ);
   AsyncContinuePendingRmw(static_cast<IAsyncContext*>(rmw_context), result);
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmwConditionalInsert(IAsyncContext* ctxt, Status result) {
-  CallbackContext<hc_rmw_ci_context_t> rmw_ci_context{ ctxt };
+inline void F2Kv<K, V, D, HHI, CHI>::AsyncContinuePendingRmwConditionalInsert(IAsyncContext* ctxt, Status result) {
+  CallbackContext<f2_rmw_ci_context_t> rmw_ci_context{ ctxt };
   rmw_ci_context.async = true;
   // Validation
-  async_hc_rmw_context_t* rmw_context = static_cast<async_hc_rmw_context_t*>(rmw_ci_context->rmw_context);
+  async_f2_rmw_context_t* rmw_context = static_cast<async_f2_rmw_context_t*>(rmw_ci_context->rmw_context);
   assert(rmw_context->stage == RmwOperationStage::HOT_LOG_CONDITIONAL_INSERT);
   AsyncContinuePendingRmw(static_cast<IAsyncContext*>(rmw_context), result);
 }
@@ -556,14 +556,14 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::AsyncContinuePendingRmwConditionalIns
 
 template<class K, class V, class D, class HHI, class CHI>
 template <class DC>
-inline Status FasterKvHC<K, V, D, HHI, CHI>::Delete(DC& context, AsyncCallback callback,
-                                        uint64_t monotonic_serial_num) {
+inline Status F2Kv<K, V, D, HHI, CHI>::Delete(DC& context, AsyncCallback callback,
+                                              uint64_t monotonic_serial_num) {
   // Force adding a tombstone entry in the tail of the log
   return hot_store.Delete(context, callback, monotonic_serial_num, true);
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::HeavyEnter() {
+inline void F2Kv<K, V, D, HHI, CHI>::HeavyEnter() {
   if (checkpoint_.phase.load() == CheckpointPhase::COLD_STORE_CHECKPOINT) {
     StoreCheckpointStatus status = checkpoint_.cold_store_status.load();
     if (status != StoreCheckpointStatus::FINISHED && status != StoreCheckpointStatus::FAILED) {
@@ -598,8 +598,8 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::HeavyEnter() {
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline bool FasterKvHC<K, V, D, HHI, CHI>::Checkpoint(HybridLogPersistenceCallback hybrid_log_persistence_callback,
-                                                      Guid& token, bool lazy) {
+inline bool F2Kv<K, V, D, HHI, CHI>::Checkpoint(HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                                                Guid& token, bool lazy) {
   CheckpointPhase expected_phase = CheckpointPhase::REST;
   if (!checkpoint_.phase.compare_exchange_strong(expected_phase, CheckpointPhase::HOT_STORE_CHECKPOINT)) {
     throw std::runtime_error{ "Can start checkpoint only when no other concurrent op" };
@@ -615,7 +615,7 @@ inline bool FasterKvHC<K, V, D, HHI, CHI>::Checkpoint(HybridLogPersistenceCallba
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::HotStoreCheckpointedCallback(void* ctxt, Status result, uint64_t persistent_serial_num) {
+inline void F2Kv<K, V, D, HHI, CHI>::HotStoreCheckpointedCallback(void* ctxt, Status result, uint64_t persistent_serial_num) {
   // This will be called multiple times (i.e., once for each active session)
   auto checkpoint = static_cast<HotColdCheckpointState*>(ctxt);
   assert(checkpoint->phase.load() == CheckpointPhase::HOT_STORE_CHECKPOINT);
@@ -674,7 +674,7 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::HotStoreCheckpointedCallback(void* ct
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline Status FasterKvHC<K, V, D, HHI, CHI>::Recover(const Guid& token, uint32_t& version, std::vector<Guid>& session_ids) {
+inline Status F2Kv<K, V, D, HHI, CHI>::Recover(const Guid& token, uint32_t& version, std::vector<Guid>& session_ids) {
   CheckpointPhase phase = CheckpointPhase::REST;
   if (!checkpoint_.phase.compare_exchange_strong(phase, CheckpointPhase::RECOVER)) {
     log_error("Unexpected checkpoint phase during recovery [expected: REST, actual: %s]",
@@ -708,19 +708,19 @@ inline Status FasterKvHC<K, V, D, HHI, CHI>::Recover(const Guid& token, uint32_t
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline bool FasterKvHC<K, V, D, HHI, CHI>::CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
+inline bool F2Kv<K, V, D, HHI, CHI>::CompactHotLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
   return CompactLog(hot_store, StoreType::HOT, until_address, shift_begin_address, n_threads, false);
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline bool FasterKvHC<K, V, D, HHI, CHI>::CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
+inline bool F2Kv<K, V, D, HHI, CHI>::CompactColdLog(uint64_t until_address, bool shift_begin_address, int n_threads) {
   return CompactLog(cold_store, StoreType::COLD, until_address, shift_begin_address, n_threads, false);
 }
 
 template<class K, class V, class D, class HHI, class CHI>
 template <class S>
-inline bool FasterKvHC<K, V, D, HHI, CHI>::CompactLog(S& store, StoreType store_type, uint64_t until_address,
-                                            bool shift_begin_address, int n_threads, bool checkpoint) {
+inline bool F2Kv<K, V, D, HHI, CHI>::CompactLog(S& store, StoreType store_type, uint64_t until_address,
+                                                bool shift_begin_address, int n_threads, bool checkpoint) {
   const bool is_hot_store = (store_type == StoreType::HOT);
 
   uint64_t tail_address = store.hlog.GetTailAddress().control();
@@ -769,8 +769,8 @@ inline bool FasterKvHC<K, V, D, HHI, CHI>::CompactLog(S& store, StoreType store_
 
 template<class K, class V, class D, class HHI, class CHI>
 template <class S>
-inline bool FasterKvHC<K, V, D, HHI, CHI>::ShouldCompactHlog(const S& store, StoreType store_type,
-                                                            const HlogCompactionConfig& compaction_config, uint64_t& until_address) {
+inline bool F2Kv<K, V, D, HHI, CHI>::ShouldCompactHlog(const S& store, StoreType store_type,
+                                                       const HlogCompactionConfig& compaction_config, uint64_t& until_address) {
   until_address = Address::kInvalidAddress;
   if (!compaction_config.enabled) {
     return false;
@@ -836,9 +836,9 @@ inline bool FasterKvHC<K, V, D, HHI, CHI>::ShouldCompactHlog(const S& store, Sto
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::CheckSystemState() {
-  const HlogCompactionConfig& hot_log_compaction_config = hc_compaction_config_.hot_store;
-  const HlogCompactionConfig& cold_log_compaction_config = hc_compaction_config_.cold_store;
+inline void F2Kv<K, V, D, HHI, CHI>::CheckSystemState() {
+  const HlogCompactionConfig& hot_log_compaction_config = compaction_config_.hot_store;
+  const HlogCompactionConfig& cold_log_compaction_config = compaction_config_.cold_store;
 
   // Used for throttling incoming user writes when respective max hlog size has been reached
   hot_store.max_hlog_size_ = hot_log_compaction_config.hlog_size_budget;
@@ -861,8 +861,8 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::CheckSystemState() {
     if (checkpoint_.hot_store_status == StoreCheckpointStatus::REQUESTED) {
       checkpoint_.SetNumActiveThreads(hot_store.NumActiveSessions()); // cannot be set previously due to other background ops
       log_debug("Issuing hot store checkpoint... (active sessions: %u)", hot_store.NumActiveSessions());
-      bool success = hot_store.InternalCheckpoint(nullptr, FasterKvHC<K, V, D>::HotStoreCheckpointedCallback,
-                                  checkpoint_.token, static_cast<void*>(&checkpoint_));
+      bool success = hot_store.InternalCheckpoint(nullptr, F2Kv<K, V, D>::HotStoreCheckpointedCallback,
+                                                  checkpoint_.token, static_cast<void*>(&checkpoint_));
       if (!success) {
         log_error("Hot store checkpoint failed!");
       }
@@ -943,15 +943,15 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::CheckSystemState() {
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline void FasterKvHC<K, V, D, HHI, CHI>::CompleteRmwRetryRequests() {
-  typedef HotColdIndexContext<async_hc_rmw_context_t> hc_index_context_t;
+inline void F2Kv<K, V, D, HHI, CHI>::CompleteRmwRetryRequests() {
+  typedef F2IndexContext<async_f2_rmw_context_t> f2_index_context_t;
 
-  async_hc_rmw_context_t* ctxt;
+  async_f2_rmw_context_t* ctxt;
   while (retry_rmw_requests.try_pop(ctxt)) {
-    CallbackContext<async_hc_rmw_context_t> context{ ctxt };
+    CallbackContext<async_f2_rmw_context_t> context{ ctxt };
     // Get hash bucket entry
-    hc_index_context_t index_context{ context.get() };
-    Status index_status = hot_store.hash_index_.template FindOrCreateEntry<hc_index_context_t>(
+    f2_index_context_t index_context{ context.get() };
+    Status index_status = hot_store.hash_index_.template FindOrCreateEntry<f2_index_context_t>(
                                   hot_store.thread_ctx(), index_context);
     assert(index_status == Status::Ok); // Non-pending status
     assert(index_context.entry.address() >= Address::kInvalidAddress);
@@ -976,7 +976,7 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::CompleteRmwRetryRequests() {
 
 #ifdef TOML_CONFIG
 template<class K, class V, class D, class HHI, class CHI>
-inline FasterKvHC<K, V, D, HHI, CHI> FasterKvHC<K, V, D, HHI, CHI>::FromConfigString(const std::string& config) {
+inline F2Kv<K, V, D, HHI, CHI> F2Kv<K, V, D, HHI, CHI>::FromConfigString(const std::string& config) {
   hot_faster_store_config_t hot_store_config = hot_faster_store_t::Config::FromConfigString(config, "f2", "hot");
   cold_faster_store_config_t cold_store_config = cold_faster_store_t::Config::FromConfigString(config, "f2", "cold");
 
@@ -985,11 +985,11 @@ inline FasterKvHC<K, V, D, HHI, CHI> FasterKvHC<K, V, D, HHI, CHI>::FromConfigSt
 }
 
 template<class K, class V, class D, class HHI, class CHI>
-inline FasterKvHC<K, V, D, HHI, CHI> FasterKvHC<K, V, D, HHI, CHI>::FromConfigFile(const std::string& filepath) {
+inline F2Kv<K, V, D, HHI, CHI> F2Kv<K, V, D, HHI, CHI>::FromConfigFile(const std::string& filepath) {
   std::ifstream t(filepath);
   std::string config(
     (std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-  return FasterKvHC<K, V, D>::FromConfigString(config);
+  return F2Kv<K, V, D>::FromConfigString(config);
 }
 #endif
 

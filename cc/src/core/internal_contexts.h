@@ -19,7 +19,7 @@
 #include "state_transitions.h"
 #include "thread.h"
 
-#include "hc_internal_contexts.h"
+#include "internal_contexts_f2.h"
 
 #include "../index/hash_bucket.h"
 
@@ -219,7 +219,7 @@ class AsyncPendingReadContext : public PendingContext<K> {
 };
 
 /// A synchronous Read() context preserves its type information.
-template <class RC, bool IsHCContext = is_hc_read_context<RC>>
+template <class RC, bool IsF2Context = is_f2_read_context<RC>>
 class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
  public:
   typedef RC read_context_t;
@@ -251,23 +251,23 @@ class PendingReadContext : public AsyncPendingReadContext<typename RC::key_t> {
  public:
   /// Accessors.
   inline uint32_t key_size() const final {
-    return hc_context_helper<IsHCContext>::key_size(read_context());
+    return f2_context_helper<IsF2Context>::key_size(read_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
     // this should never be called
     assert(false);
   }
   inline KeyHash get_key_hash() const final {
-    return hc_context_helper<IsHCContext>::get_key_hash(read_context());
+    return f2_context_helper<IsF2Context>::get_key_hash(read_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return hc_context_helper<IsHCContext>::is_key_equal(read_context(), other);
+    return f2_context_helper<IsF2Context>::is_key_equal(read_context(), other);
   }
   inline void Get(const void* rec) final {
-    hc_context_helper<IsHCContext>::template Get<read_context_t, record_t>(read_context(), rec);
+    f2_context_helper<IsF2Context>::template Get<read_context_t, record_t>(read_context(), rec);
   }
   inline void GetAtomic(const void* rec) final {
-    hc_context_helper<IsHCContext>::template GetAtomic<read_context_t, record_t>(read_context(), rec);
+    f2_context_helper<IsF2Context>::template GetAtomic<read_context_t, record_t>(read_context(), rec);
   }
 };
 
@@ -293,7 +293,7 @@ class AsyncPendingUpsertContext : public PendingContext<K> {
 };
 
 /// A synchronous Upsert() context preserves its type information.
-template <class UC, bool IsHCContext = false>
+template <class UC, bool IsF2Context = false>
 class PendingUpsertContext : public AsyncPendingUpsertContext<typename UC::key_t> {
  public:
   typedef UC upsert_context_t;
@@ -324,22 +324,22 @@ class PendingUpsertContext : public AsyncPendingUpsertContext<typename UC::key_t
  public:
   /// Accessors.
   inline uint32_t key_size() const final {
-    return hc_context_helper<IsHCContext>::key_size(upsert_context());
+    return f2_context_helper<IsF2Context>::key_size(upsert_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    hc_context_helper<IsHCContext>::write_deep_key_at(upsert_context(), dst);
+    f2_context_helper<IsF2Context>::write_deep_key_at(upsert_context(), dst);
   }
   inline KeyHash get_key_hash() const final {
-    return hc_context_helper<IsHCContext>::get_key_hash(upsert_context());
+    return f2_context_helper<IsF2Context>::get_key_hash(upsert_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return hc_context_helper<IsHCContext>::is_key_equal(upsert_context(), other);
+    return f2_context_helper<IsF2Context>::is_key_equal(upsert_context(), other);
   }
   inline void Put(void* rec) final {
-    hc_context_helper<IsHCContext>::template Put<upsert_context_t, record_t>(upsert_context(), rec);
+    f2_context_helper<IsF2Context>::template Put<upsert_context_t, record_t>(upsert_context(), rec);
   }
   inline bool PutAtomic(void* rec) final {
-    return hc_context_helper<IsHCContext>::template PutAtomic<upsert_context_t, record_t>(upsert_context(), rec);
+    return f2_context_helper<IsF2Context>::template PutAtomic<upsert_context_t, record_t>(upsert_context(), rec);
   }
   inline constexpr uint32_t value_size() const final {
     return upsert_context().value_size();
@@ -377,14 +377,14 @@ class AsyncPendingRmwContext : public PendingContext<K> {
   virtual uint32_t value_size(const void* old_rec) const = 0;
 
   /// If false, it will return NOT_FOUND instead of creating a new record
-  /// NOTE: false when doing HC-RMW Copy from cold log operation; true otherwise
+  /// NOTE: false when doing F2-RMW Copy from cold log operation; true otherwise
   bool create_if_not_exists;
   /// Keeps latest hlog address, as found by hash index entry (after skipping read cache)
   Address expected_hlog_address;
 };
 
 /// A synchronous Rmw() context preserves its type information.
-template <class MC, bool IsHCContext = is_hc_rmw_context<MC>>
+template <class MC, bool IsF2Context = is_f2_rmw_context<MC>>
 class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
  public:
   typedef MC rmw_context_t;
@@ -414,16 +414,16 @@ class PendingRmwContext : public AsyncPendingRmwContext<typename MC::key_t> {
  public:
   /// Accessors.
   inline uint32_t key_size() const final {
-    return hc_context_helper<IsHCContext>::key_size(rmw_context());
+    return f2_context_helper<IsF2Context>::key_size(rmw_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    hc_context_helper<IsHCContext>::write_deep_key_at(rmw_context(), dst);
+    f2_context_helper<IsF2Context>::write_deep_key_at(rmw_context(), dst);
   }
   inline KeyHash get_key_hash() const final {
-    return hc_context_helper<IsHCContext>::get_key_hash(rmw_context());
+    return f2_context_helper<IsF2Context>::get_key_hash(rmw_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return hc_context_helper<IsHCContext>::is_key_equal(rmw_context(), other);
+    return f2_context_helper<IsF2Context>::is_key_equal(rmw_context(), other);
   }
   /// Set initial value.
   inline void RmwInitial(void* rec) final {
@@ -473,7 +473,7 @@ class AsyncPendingDeleteContext : public PendingContext<K> {
 };
 
 /// A synchronous Delete() context preserves its type information.
-template <class MC, bool IsHCContext = false>
+template <class MC, bool IsF2Context = false>
 class PendingDeleteContext : public AsyncPendingDeleteContext<typename MC::key_t> {
  public:
   typedef MC delete_context_t;
@@ -503,16 +503,16 @@ class PendingDeleteContext : public AsyncPendingDeleteContext<typename MC::key_t
  public:
   /// Accessors.
   inline uint32_t key_size() const final {
-    return hc_context_helper<IsHCContext>::key_size(delete_context());
+    return f2_context_helper<IsF2Context>::key_size(delete_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    hc_context_helper<IsHCContext>::write_deep_key_at(delete_context(), dst);
+    f2_context_helper<IsF2Context>::write_deep_key_at(delete_context(), dst);
   }
   inline KeyHash get_key_hash() const final {
-    return hc_context_helper<IsHCContext>::get_key_hash(delete_context());
+    return f2_context_helper<IsF2Context>::get_key_hash(delete_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return hc_context_helper<IsHCContext>::is_key_equal(delete_context(), other);
+    return f2_context_helper<IsF2Context>::is_key_equal(delete_context(), other);
   }
   /// Get value size for initial value
   inline uint32_t value_size() const final {
@@ -612,16 +612,16 @@ class PendingConditionalInsertContext : public AsyncPendingConditionalInsertCont
  public:
   /// Accessors.
   inline uint32_t key_size() const final {
-    return hc_context_helper<true>::key_size(conditional_insert_context());
+    return f2_context_helper<true>::key_size(conditional_insert_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    return hc_context_helper<true>::write_deep_key_at(conditional_insert_context(), dst);
+    return f2_context_helper<true>::write_deep_key_at(conditional_insert_context(), dst);
   }
   inline KeyHash get_key_hash() const final {
-    return hc_context_helper<true>::get_key_hash(conditional_insert_context());
+    return f2_context_helper<true>::get_key_hash(conditional_insert_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return hc_context_helper<true>::is_key_equal(conditional_insert_context(), other);
+    return f2_context_helper<true>::is_key_equal(conditional_insert_context(), other);
   }
   inline uint32_t value_size() const final {
     return conditional_insert_context().value_size();
@@ -705,16 +705,16 @@ class PendingRecoveryContext : public AsyncPendingRecoveryContext<typename RC::k
  public:
   /// Accessors.
   inline uint32_t key_size() const final {
-    return hc_context_helper<false>::key_size(recovery_context());
+    return f2_context_helper<false>::key_size(recovery_context());
   }
   inline void write_deep_key_at(key_t* dst) const final {
-    return hc_context_helper<false>::write_deep_key_at(recovery_context(), dst);
+    return f2_context_helper<false>::write_deep_key_at(recovery_context(), dst);
   }
   inline KeyHash get_key_hash() const final {
-    return hc_context_helper<false>::get_key_hash(recovery_context());
+    return f2_context_helper<false>::get_key_hash(recovery_context());
   }
   inline bool is_key_equal(const key_t& other) const final {
-    return hc_context_helper<false>::is_key_equal(recovery_context(), other);
+    return f2_context_helper<false>::is_key_equal(recovery_context(), other);
   }
 };
 
