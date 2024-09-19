@@ -60,6 +60,8 @@ class AsyncIOContext : public IAsyncContext {
 
   SectorAlignedMemory record;
 };
+static_assert(sizeof(AsyncIOContext) == 88, "sizeof(AsyncIOContext) != 88");
+
 
 class AsyncIndexIOContext : public IAsyncContext {
  public:
@@ -103,6 +105,7 @@ class AsyncIndexIOContext : public IAsyncContext {
   /// Address of the newly created record (to be CASed in the index)
   Address record_address;
 };
+static_assert(sizeof(AsyncIndexIOContext) == 64, "sizeof(AsyncIndexIOContext) != 64");
 
 }
 } // namespace FASTER::core

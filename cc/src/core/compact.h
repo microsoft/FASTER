@@ -83,7 +83,6 @@ class CompactionConditionalInsertContext : public IAsyncContext {
     : address_{ record_address }
     , pending_records_{ pending_records } {
     // Allocate memory to store this record
-    //record_ = reinterpret_cast<record_t*>(new uint8_t[record->size()]);
     record_ = std::make_unique<uint8_t[]>(record->size());
     memcpy(record_.get(), record, record->size());
   }
@@ -98,7 +97,6 @@ class CompactionConditionalInsertContext : public IAsyncContext {
 
   /// Invoked from within FASTER.
   inline const key_t& key() const {
-    //return record_->key();
     return record()->key();
   }
   inline uint32_t key_size() const {
@@ -111,7 +109,6 @@ class CompactionConditionalInsertContext : public IAsyncContext {
     return key() == other;
   }
   inline uint32_t value_size() const {
-    //return record_->value().size();
     return record()->value().size();
   }
   inline void write_deep_key_at(key_t* dst) const {
@@ -119,7 +116,6 @@ class CompactionConditionalInsertContext : public IAsyncContext {
     memcpy(dst, &key(), key().size());
   }
   inline bool is_tombstone() const {
-    //return record_->header.tombstone;
     return record()->header.tombstone;
   }
   inline Address orig_hlog_tail_address() const {
@@ -129,18 +125,15 @@ class CompactionConditionalInsertContext : public IAsyncContext {
       "CompactionConditionalInsertContext.orig_hlog_tail_address() called" };
   }
   inline bool Insert(void* dest, uint32_t alloc_size) const {
-    //if (alloc_size != record_->size()) {
     if (alloc_size != record()->size()) {
       return false;
     }
-    //memcpy(dest, record_, alloc_size);
     memcpy(dest, record(), alloc_size);
     return true;
   }
   inline void Put(void* rec) {
     // Manually copy value contents to new destination
     record_t* dest = reinterpret_cast<record_t*>(rec);
-    //memcpy(&dest->value(), &record_->value(), value_size());
     memcpy(&dest->value(), &record()->value(), value_size());
   }
   inline bool PutAtomic(void *rec) {
@@ -170,7 +163,6 @@ class CompactionConditionalInsertContext : public IAsyncContext {
 
  private:
   /// Pointer to the record
-  //record_t* record_;
   std::unique_ptr<uint8_t[]> record_;
   /// The address of the record that was read
   Address address_;

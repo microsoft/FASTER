@@ -127,7 +127,6 @@ class Address {
     struct {
       uint64_t offset_    : kOffsetBits;              // 25 bits
       uint64_t page_      : kPageBits;                // 23 bits
-      //uint64_t readcache_ : 1;                      //  1 bit
       uint64_t reserved_  : 64 - kAddressBits;        // 15 bits
     };
     struct {

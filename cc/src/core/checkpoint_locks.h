@@ -132,8 +132,9 @@ class CheckpointLocks {
     return size_;
   }
 
-  inline AtomicCheckpointLock& get_lock(key_hash_t hash) {
-    size_t index = hash.hash_table_index(size_);
+  inline AtomicCheckpointLock& get_lock(KeyHash hash) {
+    key_hash_t hash_{ hash };
+    size_t index = hash_.hash_table_index(size_);
     return locks_[index];
   }
 
@@ -151,9 +152,8 @@ class CheckpointLockGuard {
     : lock_{ nullptr }
     , locked_old_{ false }
     , locked_new_{ false } {
-    key_hash_t hash_{ hash };
     if(locks.size() > 0) {
-      lock_ = &locks.get_lock(hash_);
+      lock_ = &locks.get_lock(hash);
     }
   }
   ~CheckpointLockGuard() {

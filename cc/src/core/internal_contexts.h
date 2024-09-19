@@ -858,9 +858,11 @@ struct ExecutionContext : public PersistentExecContext {
 
   /// Retry request contexts are stored inside the deque.
   std::deque<IAsyncContext*> retry_requests;
+
   /// Assign a unique ID to every I/O request.
   /// NOTE: this includes index-related requests from e.g., cold index
   uint64_t io_id;
+
   /// For each pending I/O, maps io_id to the hash of the key being retrieved.
   std::unordered_map<uint64_t, KeyHash> pending_ios;
 

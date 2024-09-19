@@ -419,7 +419,6 @@ class ConcurrentLogPage {
                               : Address::kMaxOffset;
 
     while(offset <= until_offset) {
-      //log_info("offset=%lu", offset);
       record_t* record = reinterpret_cast<record_t*>(&page_[offset]);
       if (RecordInfo{ record->header }.IsNull()) {
         break;
@@ -434,7 +433,7 @@ class ConcurrentLogPage {
     page_address_ = start_address;
     current_offset_.store(0);
 
-    log_info("\t # record offsets: %u [first=%d]", record_offsets_.size(), record_offsets_.front());
+    log_debug("\t # record offsets: %u [first=%d]", record_offsets_.size(), record_offsets_.front());
   }
 
   inline uint8_t* buffer() const {
@@ -614,8 +613,6 @@ class ConcurrentLogPageIterator {
     if (!success) {
       throw std::runtime_error{ "not possible" };
     }
-
-    // TODO: maybe initiate IssuePageReadRequests from here?
   }
 
   static void OnPageRead(IAsyncContext* ctxt, Status result, size_t bytes) {
@@ -700,7 +697,7 @@ class ConcurrentLogPageIterator {
     assert(bytes_to_read % hlog_->sector_size == 0);
     assert(buffer_offset % hlog_->sector_size == 0);
 
-    log_info("[%u] %lu %lu SA=%llu", page.id(), buffer_offset, bytes_to_read, start_address.control());
+    log_debug("[%u] %lu %lu SA=%llu", page.id(), buffer_offset, bytes_to_read, start_address.control());
 
     if (start_address >= hlog_->head_address.load()) {
       // Copy page contents from memory

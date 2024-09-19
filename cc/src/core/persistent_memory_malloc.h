@@ -417,12 +417,6 @@ class PersistentMemoryMalloc {
       std::this_thread::yield();
     }
 
-    fprintf(stderr, "SHA = %lu\n", safe_head_address.load().control());
-    fprintf(stderr, "HA  = %lu\n", head_address.load().control());
-    fprintf(stderr, "SRO = %lu\n", safe_read_only_address.load().control());
-    fprintf(stderr, "RO  = %lu\n", read_only_address.load().control());
-    fprintf(stderr, "TA  = %lu\n", GetTailAddress().control());
-
     // Resize buffer
     FreeBuffer();
     InitializeBuffer(log_size, log_mutable_perc);
@@ -874,7 +868,7 @@ Status PersistentMemoryMalloc<D>::AsyncFlushPages(uint32_t start_page, Address u
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<Context> context{ ctxt };
     if(result != Status::Ok) {
-      fprintf(stderr, "AsyncFlushPages(), error: %u\n", static_cast<uint8_t>(result));
+      log_error("AsyncFlushPages(), error: %u\n", static_cast<uint8_t>(result));
     }
     context->allocator->PageStatus(context->page).LastFlushedUntilAddress.store(
       context->until_address);
@@ -944,7 +938,7 @@ Status PersistentMemoryMalloc<D>::AsyncFlushPagesToFile(uint32_t start_page, Add
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<Context> context{ ctxt };
     if(result != Status::Ok) {
-      fprintf(stderr, "AsyncFlushPagesToFile(), error: %u\n", static_cast<uint8_t>(result));
+      log_error("AsyncFlushPagesToFile(), error: %u\n", static_cast<uint8_t>(result));
     }
     assert(context->flush_pending > 0);
     --context->flush_pending;
@@ -1004,7 +998,7 @@ Status PersistentMemoryMalloc<D>::AsyncReadPages(F& read_file, uint32_t file_sta
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<Context> context{ ctxt };
     if(result != Status::Ok) {
-      fprintf(stderr, "Error: %u\n", static_cast<uint8_t>(result));
+      log_error("Error: %u\n", static_cast<uint8_t>(result));
     }
     assert(context->page_status->load() == PageRecoveryStatus::IssuedRead);
     context->page_status->store(PageRecoveryStatus::ReadDone);
@@ -1062,7 +1056,7 @@ Status PersistentMemoryMalloc<D>::AsyncFlushPage(uint32_t page, RecoveryStatus& 
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<Context> context{ ctxt };
     if(result != Status::Ok) {
-      fprintf(stderr, "Error: %u\n", static_cast<uint8_t>(result));
+      log_error("Error: %u\n", static_cast<uint8_t>(result));
     }
     assert(context->page_status->load() == PageRecoveryStatus::IssuedFlush);
     context->page_status->store(PageRecoveryStatus::FlushDone);

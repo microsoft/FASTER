@@ -10,9 +10,11 @@
 namespace FASTER {
 namespace index {
 
-template <class KeyHash>
+template <class KH>
 class HashIndexChunkKey {
  public:
+  typedef KH key_hash_t;
+
   HashIndexChunkKey(uint64_t key_, uint16_t tag_)
     : key{ key_ }
     , tag{ tag_ } {
@@ -23,7 +25,7 @@ class HashIndexChunkKey {
     return static_cast<uint32_t>(sizeof(HashIndexChunkKey));
   }
   inline core::KeyHash GetHash() const {
-    KeyHash hash{ key, tag };
+    const key_hash_t hash{ key, tag };
     return core::KeyHash{ hash.control() };
   }
 
@@ -62,6 +64,7 @@ struct alignas(Constants::kCacheLineBytes) HashIndexChunkEntry {
   /// The entries.
   ColdLogIndexHashBucket entries[kNumBuckets];
 };
+// Make sure typical sizes for hash chunk are correct
 static_assert(sizeof(HashIndexChunkEntry<64>) == 4096, "sizeof(HashIndexChunkEntry) != 4kB");
 static_assert(sizeof(HashIndexChunkEntry<32>) == 2048, "sizeof(HashIndexChunkEntry) != 2kB");
 static_assert(sizeof(HashIndexChunkEntry<16>) == 1024, "sizeof(HashIndexChunkEntry) != 1kB");
@@ -199,7 +202,7 @@ class FasterIndexReadContext : public FasterIndexContext<HID> {
 };
 
 /// Used by FindOrCreateEntry, TryUpdateEntry & UpdateEntry hash index methods
-/// NOTE: force argument distinguishes between the update-related methods
+/// NOTE: force argument distinguishes between TryUpdateEntry and UpdateEntry.
 template <class HID>
 class FasterIndexRmwContext : public FasterIndexContext<HID> {
  public:

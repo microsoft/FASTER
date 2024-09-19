@@ -70,11 +70,8 @@ struct HashBucketEntry {
   union {
     struct {
       uint64_t address_   : 48;   // corresponds to logical address
-      //uint64_t readcache_ :  1;   // 1 if points to record in readcache
       uint64_t reserved_  : 16;   // reserved for internal index use
-      //uint64_t reserved_  : 15;   // reserved for internal index use
     };
-    // field struct when using readcache
     struct {
       uint64_t address_   : 47;   // corresponds to logical address
       uint64_t readcache_ :  1;   // 1 if points to record in readcache
@@ -180,7 +177,6 @@ union HotLogIndexBucketEntryDef {
 
   struct {
     uint64_t address    : 48;             // corresponds to logical address
-    //uint64_t readcache  : 1;            // 1 if it points to record in readcache
     uint64_t tag        : kTagBits;       // used to distinguish among different entries in same hash table position
     uint64_t reserved   : kReservedBits;  // not used
     uint64_t tentative  : 1;              // used (internally) to handle concurrent updates to the hash table
@@ -218,7 +214,6 @@ union ColdLogIndexBucketEntryDef {
 
   struct {
     uint64_t address    : 48;             // corresponds to logical address
-    //uint64_t readcache  : 1;              // not used for cold index
     uint64_t tag        : kTagBits;       // used to distinguish among different entries in same hash table position
     uint64_t reserved   : kReservedBits;  // not used by HT -- used by cold index key hash for in-chunk indexing
     uint64_t tentative  : 1;              // used (internally) to handle concurrent updates to the hash table

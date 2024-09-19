@@ -39,7 +39,6 @@ class RecordInfo {
   union {
       struct {
         uint64_t previous_address_  : 48;
-        //uint64_t readcache          :  1;
         uint64_t checkpoint_version : 13;
         uint64_t invalid            :  1;
         uint64_t tombstone          :  1;

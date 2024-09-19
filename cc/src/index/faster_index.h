@@ -37,7 +37,6 @@ namespace index {
 // 32 entries -- 4 buckets in chunk w/ 8 entries per chunk bucket [256 bytes]
 constexpr static uint8_t DEFAULT_NUM_ENTRIES = 32;
 
-//template<class D, class HID = ColdLogHashIndexVariableSizeDefinition>
 template<class D, class HID = ColdLogHashIndexDefinition<DEFAULT_NUM_ENTRIES>>
 class FasterIndex : public IHashIndex<D> {
  public:
@@ -353,7 +352,6 @@ inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context
   hash_index_chunk_key_t key{ hash.chunk_id(table_size_), hash.tag() };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
 
-  // TODO: avoid incrementing io_id for every request if possible
   uint64_t io_id = exec_context.io_id++;
   read_context_t context{ OperationType::Read, pending_context, io_id,
                           &exec_context.index_io_responses, key, pos };
@@ -470,7 +468,6 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
 
   // TODO: check usefulness of tentative flag here
   hash_bucket_chunk_entry_t desired_entry{ new_address, pos.tag, false };
-  //printf("[%u] DESIRED = {%llu, %u}\n", Thread::id(), desired_entry.address().control(), desired_entry.tag());
   rmw_context_t context{ OperationType::RMW, pending_context, io_id,
                         &exec_context.index_io_responses,
                         key, pos, force_update, expected_entry, desired_entry };
@@ -567,8 +564,7 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
 
   uint64_t chunk = gc_state_->next_chunk++;
   if(chunk >= gc_state_->num_chunks) {
-    // No chunk left to clean.
-    return false;
+    return false;  // No chunk left to clean.
   }
   ++gc_state_->thread_count;
 
@@ -641,31 +637,28 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
   return true;
 }
 
-
 #ifdef STATISTICS
 template <class D, class HID>
 void FasterIndex<D, HID>::PrintStats() const {
   // FindEntry
-  printf("FindEntry Calls\t: %lu\n", find_entry_calls_.load());
+  fprintf(stderr, "FindEntry Calls\t: %lu\n", find_entry_calls_.load());
   if (find_entry_calls_.load() > 0) {
-    printf("Status::Ok (%%)\t: %.2lf\n",
+    fprintf(stderr, "Status::Ok (%%)\t: %.2lf\n",
       (static_cast<double>(find_entry_success_count_.load()) / find_entry_calls_.load()) * 100.0);
   }
   // FindOrCreateEntry
-  printf("FindOrCreateEntry Calls\t: %lu\n", find_or_create_entry_calls_.load());
+  fprintf(stderr, "FindOrCreateEntry Calls\t: %lu\n", find_or_create_entry_calls_.load());
   // TryUpdateEntry
-  printf("TryUpdateEntry Calls\t: %lu\n", try_update_entry_calls_.load());
+  fprintf(stderr, "TryUpdateEntry Calls\t: %lu\n", try_update_entry_calls_.load());
   if (try_update_entry_calls_.load() > 0) {
-    printf("Status::Ok (%%)\t: %.2lf\n",
+    fprintf(stderr, "Status::Ok (%%)\t: %.2lf\n",
       (static_cast<double>(try_update_entry_success_count_.load()) / try_update_entry_calls_.load()) * 100.0);
   }
   // UpdateEntry
-  printf("UpdateEntry Calls\t: %lu\n\n", update_entry_calls_.load());
+  fprintf(stderr, "UpdateEntry Calls\t: %lu\n\n", update_entry_calls_.load());
 
-  printf("==== COLD-INDEX ====\n");
+  fprintf(stderr, "==== COLD-INDEX ====\n");
   store_->PrintStats();
-
-  //store_->DumpHybridLog("/dev/shm/debug/a");
 }
 #endif
 

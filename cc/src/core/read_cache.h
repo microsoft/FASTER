@@ -192,7 +192,6 @@ inline Address ReadCache<K, V, D, H>::Skip(C& pending_context) {
   return address;
 }
 
-
 template <class K, class V, class D, class H>
 template <class C>
 inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(C& pending_context) {
@@ -275,8 +274,8 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
   static std::atomic<uint32_t> record_addrs_idx{ 0 };
 
   // Evict one page at a time -- first page is smaller than the remaining ones
-  log_info("[tid=%u] ReadCache EVICT: [%lu] -> [%lu]",
-          Thread::id(), to_head_address.control(), from_head_address.control());
+  log_debug("[tid=%u] ReadCache EVICT: [%lu] -> [%lu]",
+            Thread::id(), to_head_address.control(), from_head_address.control());
 
   if (++threads_evicting == 1) {
     // First thread to arrive for this eviction range -- do the initialization
@@ -383,7 +382,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
     }
   }
 
-  log_info("[tid=%u] ReadCache EVICT: DONE!", Thread::id());
+  log_debug("[tid=%u] ReadCache EVICT: DONE!", Thread::id());
 }
 
 template <class K, class V, class D, class H>

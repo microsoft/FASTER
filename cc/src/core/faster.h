@@ -1059,8 +1059,6 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
     pending_context->set_index_entry(index_io_context->entry, nullptr);
     pending_context->index_op_result = index_io_context->result;
 
-    //fprintf(stderr, "%d %d %d\n", pending_context->type, pending_context->index_op_type,
-    //                              pending_context->index_op_result);
     assert(pending_context->index_op_type != IndexOperationType::None);
 
     Status result;
@@ -1121,7 +1119,6 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
                                           pending_context.async);
           }
         } else if (pending_context->index_op_type == IndexOperationType::Update) {
-          //fprintf(stderr, "UPDATE: %d\n", pending_context->index_op_result);
           if (pending_context->index_op_result == Status::Ok) {
             // Request was successfully completed!
             pending_context.async = false;
@@ -1643,7 +1640,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
   }
 
   if(address >= read_only_address) {
-    // TODO: check
     // Mutable region. Try to update in place.
     if(atomic_entry->load() != expected_entry) {
       // Some other thread may have RCUed the record before we locked it; try again.
@@ -2928,11 +2924,6 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
       if(hash_index_.Checkpoint(checkpoint_, read_cache_.get()) != Status::Ok) {
         checkpoint_.failed = true;
       }
-      /*if (UseReadCache()) {
-        if (read_cache_->Checkpoint(checkpoint_) != Status::Ok) {
-          checkpoint_.failed = true;
-        }
-      }*/
       break;
     case Phase::PREPARE:
       // Index checkpoint will never reach this state; and CheckpointHybridLog() will handle this
@@ -2943,12 +2934,6 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
       if(hash_index_.WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
         checkpoint_.failed = true;
       }
-      /*if (UseReadCache()) {
-        if (read_cache_->WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
-          checkpoint_.failed = true;
-        }
-      }*/
-
       // Notify the host that the index checkpoint has completed.
       checkpoint_.IssueIndexPersistenceCallback();
       break;
@@ -3016,10 +3001,6 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
         checkpoint_.CheckpointDone();
         // Checkpoint is done--no more work for threads to do.
         system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
-        //if(index_persistence_callback) {
-          // Notify the host that the index checkpoint has completed.
-          //index_persistence_callback(Status::Ok);
-        //}
       }
       break;
     default:
@@ -3605,8 +3586,6 @@ inline bool FasterKv<K, V, D, H, OH>::CompactWithLookup(uint64_t until_address, 
 template <class K, class V, class D, class H, class OH>
 bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address, bool shift_begin_address, int n_threads,
                                                         bool to_other_store, bool checkpoint, Guid& checkpoint_token) {
-  // TODO: maybe switch to an initial phase for GC to avoid concurrent actions (e.g. checkpoint, grow index, etc.)
-
   if (hlog.begin_address.load() > until_address) {
     throw std::invalid_argument {"Invalid until address; should be larger than hlog.begin_address"};
   }
@@ -3640,7 +3619,6 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
   // NOTE: since we have an active session, we *must* periodically refresh
   //       in order to allow progress for remaining active threads
   //       Therefore, we cannot utilize the *blocking* `thread.join`
-  //while (compaction_context_.n_threads.load() > 0) {
   int remaining = n_threads - 1;
   while (remaining > 0 || compaction_context_.active_threads.load() > 0) {
     for (size_t idx = 0; idx < n_threads-1; ++idx) {
@@ -4081,7 +4059,6 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pe
     // no other record exists for the same key in this log
     if (address == Address::kInvalidAddress) {
       if (pending_context.orig_hlog_tail_address() >= begin_address) {
-        //log_info("%llu %llu", pending_context.orig_hlog_tail_address().control(), begin_address.control());
         // last condition ensure that we did *not* lose any records
         goto create_record;
       }
@@ -4201,8 +4178,7 @@ create_record:
 
       return InternalConditionalInsert(pending_context);
     }
-  }
-  else {
+  } else {
     // Case: hot-cold compaction
     // Upsert/Deletes on cold log should not go pending since upserts only go pending when during checkpointing
     // ---> And no two hot-cold compactions can take place simultaneously

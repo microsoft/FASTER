@@ -403,22 +403,6 @@ inline Status HashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pe
   }
 #endif
 
-  /*
-  if (success) {
-  log_debug("{%p} [%llu %lu %d] -> [%llu %lu %d] SUCCESS",
-    pending_context.atomic_entry,
-    before.address().control(), before.tag(), before.tentative(),
-    new_entry.address().control(), new_entry.tag(), new_entry.tentative());
-    assert(before == after);
-  } else {
-  log_debug("{%p} [%llu %lu %d] -> [%llu %lu %d] FAILED! {%llu %lu %d}",
-    pending_context.atomic_entry,
-    before.address().control(), before.tag(), before.tentative(),
-    new_entry.address().control(), new_entry.tag(), new_entry.tentative(),
-    after.address().control(), after.tag(), after.tentative());
-    assert(before != after);
-  }
-  */
   return success ? Status::Ok : Status::Aborted;
 }
 
@@ -455,8 +439,7 @@ struct HashBucketOverflowEntryHelper {
                           hash_bucket_t*& current) {
     HashBucketOverflowEntry overflow_entry = current->overflow_entry.load();
     if(overflow_entry.unused()) {
-      // No more buckets in the chain.
-      return false;
+      return false;  // No more buckets in the chain.
     }
     current = &overflow_buckets_allocator_.Get(overflow_entry.address());
     assert(reinterpret_cast<size_t>(current) % Constants::kCacheLineBytes == 0);
@@ -467,8 +450,7 @@ struct HashBucketOverflowEntryHelper {
                             const hash_bucket_t*& current) {
     HashBucketOverflowEntry overflow_entry = current->overflow_entry.load();
     if(overflow_entry.unused()) {
-      // No more buckets in the chain.
-      return false;
+      return false;  // No more buckets in the chain.
     }
     current = &overflow_buckets_allocator_.Get(overflow_entry.address());
     assert(reinterpret_cast<size_t>(current) % Constants::kCacheLineBytes == 0);
