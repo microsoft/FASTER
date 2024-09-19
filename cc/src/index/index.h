@@ -3,41 +3,51 @@
 
 #pragma once
 
-#include "hash_bucket.h"
-#include "hash_table.h"
-
 #include "../core/checkpoint_state.h"
 #include "../core/internal_contexts.h"
+#include "../core/key_hash.h"
 #include "../core/light_epoch.h"
 #include "../core/persistent_memory_malloc.h"
+
+#include "hash_bucket.h"
+#include "hash_table.h"
 
 using namespace FASTER::core;
 
 namespace FASTER {
 namespace index {
 
-typedef void(*RefreshCallback)(void* faster);
-
-// Checkpointing and recovery context
-class IndexCheckpointMetadataIoContext : public IAsyncContext {
-  public:
-  IndexCheckpointMetadataIoContext(Status* result_, std::atomic<bool>* completed_)
-    : result{ result_ }
-    , completed{ completed_ } {
-  }
-  /// The deep-copy constructor
-  IndexCheckpointMetadataIoContext(IndexCheckpointMetadataIoContext& other)
-    : result{ other.result }
-    , completed{ other.completed } {
-  }
-  protected:
-  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
-    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
-  }
-  public:
-  Status* result;
-  std::atomic<bool>* completed;
+/// In-memory hash index definition class
+/// This is used for (1) FasterKv, and (2) F2's hot-tier FasterKv
+class HotLogHashIndexDefinition {
+ public:
+  typedef IndexKeyHash<HotLogIndexBucketEntryDef, 0, 0> key_hash_t;
+  typedef HotLogIndexHashBucket hash_bucket_t;
+  typedef HotLogIndexHashBucketEntry hash_bucket_entry_t;
 };
+
+/// On-disk, two-level hash index definition class
+/// This is used for F2's cold-tier FasterKv
+template <uint8_t N>
+class ColdLogHashIndexDefinition {
+ public:
+  constexpr static uint16_t kNumEntries = N;                          // Total number of hash bucket entries
+  constexpr static uint16_t kNumBuckets = (N >> 3);                   // Each bucket holds 8 hash bucket entries
+  constexpr static uint8_t kInChunkIndexBits = core::log2((N >> 3));  // How many bits to index all different buckets?
+
+  static_assert(kNumEntries >= 8 && kNumEntries <= 512,
+    "ColdLogHashIndexDefinition: Total number of entries should be between 8 and 512");
+  static_assert(core::is_power_of_2(kNumEntries),
+    "ColdLogHashIndexDefinition: Total number of entries should be a power of 2");
+
+  typedef IndexKeyHash<ColdLogIndexBucketEntryDef, kInChunkIndexBits, 3> key_hash_t;
+  typedef ColdLogIndexHashBucket hash_bucket_t;
+  typedef ColdLogIndexHashBucketEntry hash_bucket_entry_t;
+  typedef ColdLogIndexHashBucketEntry hash_bucket_chunk_entry_t;
+};
+
+// Refresh callback definition
+typedef void(*RefreshCallback)(void* faster);
 
 template<class D>
 class IHashIndex {
@@ -118,6 +128,28 @@ class IHashIndex {
   disk_t& disk_;
   LightEpoch& epoch_;
 };
+
+// Checkpointing and recovery context
+class IndexCheckpointMetadataIoContext : public IAsyncContext {
+  public:
+  IndexCheckpointMetadataIoContext(Status* result_, std::atomic<bool>* completed_)
+    : result{ result_ }
+    , completed{ completed_ } {
+  }
+  /// The deep-copy constructor
+  IndexCheckpointMetadataIoContext(IndexCheckpointMetadataIoContext& other)
+    : result{ other.result }
+    , completed{ other.completed } {
+  }
+  protected:
+  Status DeepCopy_Internal(IAsyncContext*& context_copy) final {
+    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+  }
+  public:
+  Status* result;
+  std::atomic<bool>* completed;
+};
+
 
 template<class D>
 Status IHashIndex<D>::ReadCheckpointMetadata(const Guid& token, CheckpointState<file_t>& checkpoint) {

@@ -29,12 +29,13 @@ namespace core {
   template<class K, class V, class D, class H, class OH>
   class FasterKv;
 }
-}
+} // namespace FASTER::core
+
 
 namespace FASTER {
 namespace index {
 
-// 32 entries -- 4 buckets in chunk w/ 8 entries per chunk bucket [256 bytes]
+// 32 entries -- 4 buckets in chunk w/ 8 entries per chunk bucket [256 bytes / chunk]
 constexpr static uint8_t DEFAULT_NUM_ENTRIES = 32;
 
 template<class D, class HID = ColdLogHashIndexDefinition<DEFAULT_NUM_ENTRIES>>

@@ -135,7 +135,7 @@ class FasterKvHC {
   inline void DumpDistribution() {
     fprintf(stderr, "\n\nHOT  LOG\n==========");
     hot_store.DumpDistribution();
-    fprint(stderr, "\n\nCOLD LOG\n==========");
+    fprintf(stderr, "\n\nCOLD LOG\n==========");
     cold_store.DumpDistribution();
   }
   inline uint32_t NumActiveSessions() const {
