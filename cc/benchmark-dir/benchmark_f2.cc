@@ -13,9 +13,9 @@
 
 using namespace FASTER::core;
 
-using hot_index_t = HashIndex<disk_t>;
+using hot_index_t = MemHashIndex<disk_t>;
 // Using 32 hash bucket entries per hash chunk (i.e., 32 * 8 = 256 Bytes / hash chunk)
-using cold_index_t = FasterIndex<disk_t, ColdLogHashIndexDefinition<32>>;
+using cold_index_t = ColdIndex<disk_t, ColdLogHashIndexDefinition<32>>;
 using store_t = F2Kv<Key, Value, disk_t, hot_index_t, cold_index_t>;
 
 int main(int argc, char* argv[]) {

@@ -11,12 +11,12 @@
 #include "internal_contexts.h"
 #include "internal_contexts_f2.h"
 
-#include "index/faster_index.h"
+#include "index/cold_index.h"
 
 namespace FASTER {
 namespace core {
 
-template<class K, class V, class D, class HHI = HashIndex<D>, class CHI = FasterIndex<D>>
+template<class K, class V, class D, class HHI = MemHashIndex<D>, class CHI = ColdIndex<D>>
 class F2Kv {
  public:
   typedef FasterKv<K, V, D, HHI, CHI> hot_faster_store_t;

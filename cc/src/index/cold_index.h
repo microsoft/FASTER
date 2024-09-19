@@ -15,7 +15,7 @@
 #include "../core/state_transitions.h"
 #include "../core/status.h"
 
-#include "faster_index_contexts.h"
+#include "cold_index_contexts.h"
 #include "mem_index.h"
 #include "hash_bucket.h"
 #include "hash_table.h"
@@ -38,10 +38,12 @@ namespace index {
 // 32 entries -- 4 buckets in chunk w/ 8 entries per chunk bucket [256 bytes / chunk]
 constexpr static uint8_t DEFAULT_NUM_ENTRIES = 32;
 
+/// On-disk, two-level hash index for F2
+/// It employs a FasterKv instance for on-disk storage management
 template<class D, class HID = ColdLogHashIndexDefinition<DEFAULT_NUM_ENTRIES>>
-class FasterIndex : public IHashIndex<D> {
+class ColdIndex : public IHashIndex<D> {
  public:
-  typedef FasterIndex<D, HID> faster_index_t;
+  typedef ColdIndex<D, HID> cold_index_t;
 
   typedef D disk_t;
   typedef typename D::file_t file_t;
@@ -53,28 +55,28 @@ class FasterIndex : public IHashIndex<D> {
   typedef typename HID::hash_bucket_entry_t hash_bucket_entry_t;
   typedef typename HID::hash_bucket_chunk_entry_t hash_bucket_chunk_entry_t;
 
-  typedef FasterIndexReadContext<HID> read_context_t;
-  typedef FasterIndexRmwContext<HID> rmw_context_t;
+  typedef ColdIndexReadContext<HID> read_context_t;
+  typedef ColdIndexRmwContext<HID> rmw_context_t;
 
   typedef HashIndexChunkKey<key_hash_t> hash_index_chunk_key_t;
   typedef HashIndexChunkEntry<HID::kNumBuckets> hash_index_chunk_entry_t;
 
-  typedef HashIndex<D, HID> hash_index_t;
+  typedef MemHashIndex<D, HID> hash_index_t;
   typedef FasterKv<hash_index_chunk_key_t, hash_index_chunk_entry_t, disk_t, hash_index_t, hash_index_t> store_t;
 
-  typedef GcStateFasterIndex gc_state_t;
+  typedef GcStateColdIndex gc_state_t;
   typedef GrowState<hlog_t> grow_state_t;
 
-  FasterIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
-              gc_state_t& gc_state, grow_state_t& grow_state)
+  ColdIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
+            gc_state_t& gc_state, grow_state_t& grow_state)
     : IHashIndex<D>(root_path, disk, epoch)
     , gc_state_{ &gc_state }
     , grow_state_{ &grow_state }
     , table_size_{ 0 }
     , serial_num_{ 0 } {
-      // create faster index root path
-      this->root_path_ = FASTER::environment::NormalizePath(this->root_path_ + "faster-index");
-      log_debug("FasterIndex will be stored @ %s", this->root_path_.c_str());
+      // create cold index root path
+      this->root_path_ = FASTER::environment::NormalizePath(this->root_path_ + "cold-index");
+      log_debug("ColdIndex will be stored @ %s", this->root_path_.c_str());
       std::experimental::filesystem::create_directories(this->root_path_);
 
       // checkpoint-related vars
@@ -122,9 +124,9 @@ class FasterIndex : public IHashIndex<D> {
     assert(table_size_ == 0);
     table_size_ = config.table_size;
 
-    log_debug("FasterIndex: %lu HT entries -> %lu MiB in-memory [~%lu MiB mutable]",
-             table_size_, config.in_mem_size / (1 << 20UL),
-             static_cast<uint64_t>(config.in_mem_size * config.mutable_fraction) / (1 << 20UL));
+    log_debug("ColdIndex: %lu HT entries -> %lu MiB in-memory [~%lu MiB mutable]",
+              table_size_, config.in_mem_size / (1 << 20UL),
+              static_cast<uint64_t>(config.in_mem_size * config.mutable_fraction) / (1 << 20UL));
 
     typename store_t::IndexConfig store_config{ table_size_ };
     store_ = std::make_unique<store_t>(store_config, config.in_mem_size,
@@ -199,21 +201,21 @@ class FasterIndex : public IHashIndex<D> {
 
     // Callback called when hash chunk FasterKv checkpointing finishes
     auto callback = [](void* ctxt, Status result, uint64_t persistent_serial_num) {
-      auto* faster_index = static_cast<faster_index_t*>(ctxt);
+      auto* cold_index = static_cast<cold_index_t*>(ctxt);
 
       if (result != Status::Ok) {
         log_warn("cold-index: checkpointing of hash chunk FasterKv store failed! [status: %s]",
                   STATUS_STR[static_cast<int>(result)]);
       }
-      faster_index->checkpoint_failed_.store(result != Status::Ok);
-      faster_index->checkpoint_pending_.store(false);
+      cold_index->checkpoint_failed_.store(result != Status::Ok);
+      cold_index->checkpoint_pending_.store(false);
     };
     checkpoint_pending_.store(true);
     checkpoint_failed_.store(false);
 
     // Begin hash chunk FasterKv checkpointing...
     if (!store_->InternalCheckpoint(nullptr, callback, checkpoint.index_token,
-                                    static_cast<faster_index_t*>(this))) {
+                                    static_cast<cold_index_t*>(this))) {
       return Status::Aborted;
     }
     checkpoint.index_checkpoint_started = true;
@@ -321,8 +323,8 @@ class FasterIndex : public IHashIndex<D> {
 
 template <class D, class HID>
 template <class C>
-inline Status FasterIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
-                                            C& pending_context) const {
+inline Status ColdIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
+                                           C& pending_context) const {
   pending_context.index_op_type = IndexOperationType::Retrieve;
   Status status = ReadIndexEntry(exec_context, pending_context);
 
@@ -347,7 +349,7 @@ inline Status FasterIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
 
 template <class D, class HID>
 template <class C>
-inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context, C& pending_context) const {
+inline Status ColdIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context, C& pending_context) const {
   key_hash_t hash{ pending_context.get_key_hash() };
   // Use the hash from the original key to form the hash for the cold-index
   hash_index_chunk_key_t key{ hash.chunk_id(table_size_), hash.tag() };
@@ -382,7 +384,7 @@ inline Status FasterIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context
 
 template <class D, class HID>
 template <class C>
-inline Status FasterIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context) {
+inline Status ColdIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context, C& pending_context) {
   pending_context.index_op_type = IndexOperationType::Retrieve;
   // replace with desired entry (i.e., Address::kInvalidAddress) *only* if entry is expected to be empty
   Status status = RmwIndexEntry(exec_context, pending_context, Address::kInvalidAddress,
@@ -406,7 +408,7 @@ inline Status FasterIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_cont
 
 template <class D, class HID>
 template <class C>
-inline Status FasterIndex<D, HID>::TryUpdateEntry(ExecutionContext& exec_context, C& pending_context,
+inline Status ColdIndex<D, HID>::TryUpdateEntry(ExecutionContext& exec_context, C& pending_context,
                                                 Address new_address, bool readcache) {
   pending_context.index_op_type = IndexOperationType::Update;
   Status status = RmwIndexEntry(exec_context, pending_context, new_address, pending_context.entry, false);
@@ -432,8 +434,8 @@ inline Status FasterIndex<D, HID>::TryUpdateEntry(ExecutionContext& exec_context
 
 template <class D, class HID>
 template <class C>
-inline Status FasterIndex<D, HID>::UpdateEntry(ExecutionContext& exec_context, C& pending_context,
-                                              Address new_address) {
+inline Status ColdIndex<D, HID>::UpdateEntry(ExecutionContext& exec_context, C& pending_context,
+                                             Address new_address) {
   pending_context.index_op_type = IndexOperationType::Update;
   Status status = RmwIndexEntry(exec_context, pending_context, new_address, pending_context.entry, true);
 
@@ -456,9 +458,9 @@ inline Status FasterIndex<D, HID>::UpdateEntry(ExecutionContext& exec_context, C
 
 template <class D, class HID>
 template <class C>
-inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context, C& pending_context,
-                                                Address new_address, HashBucketEntry expected_entry,
-                                                bool force_update) {
+inline Status ColdIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context, C& pending_context,
+                                               Address new_address, HashBucketEntry expected_entry,
+                                               bool force_update) {
   key_hash_t hash{ pending_context.get_key_hash() };
   // Use the hash from the original key to form the hash for the cold-index
   hash_index_chunk_key_t key{ hash.chunk_id(table_size_), hash.tag() };
@@ -495,8 +497,8 @@ inline Status FasterIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context,
 }
 
 template <class D, class HID>
-void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, Status result) {
-  CallbackContext<FasterIndexContext<HID>> context{ ctxt };
+void ColdIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, Status result) {
+  CallbackContext<ColdIndexContext<HID>> context{ ctxt };
   // Result here is wrt to FASTER operation (i.e., Read / Rmw) result
   assert(result == Status::Ok || result == Status::NotFound);
   if (result == Status::Ok) {
@@ -510,8 +512,8 @@ void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, S
   }
 
 #ifdef STATISTICS
-  typedef FasterIndex<D, HID> faster_hash_index_t;
-  faster_hash_index_t* hash_index = static_cast<faster_hash_index_t*>(context->hash_index);
+  typedef ColdIndex<D, HID> cold_hash_index_t;
+  cold_hash_index_t* hash_index = static_cast<cold_hash_index_t*>(context->hash_index);
 
   if (hash_index->collect_stats_ && context->result == Status::Ok) {
     switch(context->hash_index_op) {
@@ -529,7 +531,7 @@ void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, S
   }
 #endif
 
-  // FIXME: store this inside FasterIndexReadContext
+  // FIXME: store this inside ColdIndexReadContext
   AsyncIndexIOContext index_io_context{ context->caller_context, context->thread_io_responses,
                                         context->io_id};
   index_io_context.entry = context->entry;
@@ -550,7 +552,7 @@ void FasterIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, S
 
 template <class D, class HID>
 template <class TC, class CC>
-void FasterIndex<D, HID>::GarbageCollectSetup(Address new_begin_address, TC truncate_callback,
+void ColdIndex<D, HID>::GarbageCollectSetup(Address new_begin_address, TC truncate_callback,
                                             CC complete_callback, IAsyncContext* callback_context) {
   uint64_t num_chunks = std::max(store_->hash_index_.size() / gc_state_t::kHashTableChunkSize, ((uint64_t)1));
   gc_state_->Initialize(new_begin_address, truncate_callback, complete_callback, callback_context, num_chunks);
@@ -558,9 +560,9 @@ void FasterIndex<D, HID>::GarbageCollectSetup(Address new_begin_address, TC trun
 
 template <class D, class HID>
 template <class RC>
-bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
+bool ColdIndex<D, HID>::GarbageCollect(RC* read_cache) {
   if (read_cache != nullptr) {
-    throw std::runtime_error{ "FasterIndex should *not* store read-cached entries" };
+    throw std::runtime_error{ "ColdIndex should *not* store read-cached entries" };
   }
 
   uint64_t chunk = gc_state_->next_chunk++;
@@ -569,9 +571,9 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
   }
   ++gc_state_->thread_count;
 
-  log_debug("FasterIndex-GC: %lu/%lu [START...]", chunk + 1, gc_state_->num_chunks);
-  log_debug("FasterIndex-GC: begin-address: %lu", gc_state_->new_begin_address.control());
-  log_debug("FasterIndex-GC: global-min-address: %lu", gc_state_->min_address.load());
+  log_debug("ColdIndex-GC: %lu/%lu [START...]", chunk + 1, gc_state_->num_chunks);
+  log_debug("ColdIndex-GC: begin-address: %lu", gc_state_->new_begin_address.control());
+  log_debug("ColdIndex-GC: global-min-address: %lu", gc_state_->min_address.load());
 
   uint8_t version = store_->hash_index_.resize_info.version;
   auto& current_table = store_->hash_index_.table_[version];
@@ -601,7 +603,7 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
       min_address = expected_entry.address().control();
     }
   }
-  log_debug("FasterIndex-GC: %lu/%lu [local_min_addr=%lu] [DONE!]",
+  log_debug("ColdIndex-GC: %lu/%lu [local_min_addr=%lu] [DONE!]",
             chunk + 1, gc_state_->num_chunks, min_address);
 
   // Update global min address if local min address is smaller
@@ -618,20 +620,20 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
     Address read_only_address = store_->hlog.read_only_address.load();
 
     Address new_begin_address = gc_state_->min_address.load();
-    log_debug("FasterIndex-GC: Min address [%lu]", new_begin_address.control());
+    log_debug("ColdIndex-GC: Min address [%lu]", new_begin_address.control());
     assert(new_begin_address >= store_->hlog.begin_address.load());
 
-    log_debug("FasterIndex-GC: [BA=%lu] [HA=%lu] [ROA=%lu]",
-      begin_address.control(), store_->hlog.read_only_address.load().control(), read_only_address.control());
+    log_debug("ColdIndex-GC: [BA=%lu] [HA=%lu] [ROA=%lu]", begin_address.control(),
+              store_->hlog.read_only_address.load().control(), read_only_address.control());
 
     // Truncate log, if possible
     if (new_begin_address > begin_address && new_begin_address < read_only_address) {
-      log_debug("FasterIndex-GC: Truncating to [%lu]", new_begin_address.control());
+      log_debug("ColdIndex-GC: Truncating to [%lu]", new_begin_address.control());
       store_->ShiftBeginAddress(new_begin_address, nullptr, nullptr);
     } else if (new_begin_address >= read_only_address) {
-      log_debug("FasterIndex-GC: Skipped truncation due to min-address being inside IPU region");
+      log_debug("ColdIndex-GC: Skipped truncation due to min-address being inside IPU region");
     } else {
-      log_debug("FasterIndex-GC: Skipped truncation due to min-address being less-or-equal to begin_address");
+      log_debug("ColdIndex-GC: Skipped truncation due to min-address being less-or-equal to begin_address");
     }
   }
 
@@ -640,7 +642,7 @@ bool FasterIndex<D, HID>::GarbageCollect(RC* read_cache) {
 
 #ifdef STATISTICS
 template <class D, class HID>
-void FasterIndex<D, HID>::PrintStats() const {
+void ColdIndex<D, HID>::PrintStats() const {
   // FindEntry
   fprintf(stderr, "FindEntry Calls\t: %lu\n", find_entry_calls_.load());
   if (find_entry_calls_.load() > 0) {

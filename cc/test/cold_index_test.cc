@@ -14,8 +14,8 @@
 #include "device/file_system_disk.h"
 
 #include "index/index.h"
+#include "index/cold_index.h"
 #include "index/mem_index.h"
-#include "index/faster_index.h"
 #include "utils.h"
 
 using namespace FASTER::core;
@@ -275,7 +275,7 @@ class DeleteContext : public IAsyncContext {
 
 /// Disk's log uses 64 MB segments.
 typedef FASTER::device::FileSystemDisk<handler_t, 64_MiB> disk_t;
-typedef FasterKv<Key, Value, disk_t, FasterIndex<disk_t>> faster_t;
+typedef FasterKv<Key, Value, disk_t, ColdIndex<disk_t>> faster_t;
 
 static std::string ROOT_PATH{ "test_store/" };
 constexpr size_t kCompletePendingInterval = 64;

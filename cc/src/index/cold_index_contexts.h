@@ -83,16 +83,16 @@ enum class HashIndexOp : uint8_t {
 };
 
 template <class HID>
-class FasterIndexContext : public IAsyncContext {
+class ColdIndexContext : public IAsyncContext {
  public:
   typedef typename HID::key_hash_t key_hash_t;
 
   typedef HashIndexChunkKey<key_hash_t> key_t;
   typedef HashIndexChunkEntry<HID::kNumBuckets> value_t;
 
-  FasterIndexContext(OperationType op_type_, IAsyncContext& caller_context_, uint64_t io_id_,
-                    concurrent_queue<AsyncIndexIOContext*>* thread_io_responses_,
-                    HashBucketEntry entry_, key_t key, HashIndexChunkPos pos)
+  ColdIndexContext(OperationType op_type_, IAsyncContext& caller_context_, uint64_t io_id_,
+                   concurrent_queue<AsyncIndexIOContext*>* thread_io_responses_,
+                   HashBucketEntry entry_, key_t key, HashIndexChunkPos pos)
     : op_type{ op_type_ }
     , caller_context{ &caller_context_ }
     , io_id{ io_id_ }
@@ -107,7 +107,7 @@ class FasterIndexContext : public IAsyncContext {
   #endif
   }
   /// Copy (and deep-copy) constructor.
-  FasterIndexContext(const FasterIndexContext& other, IAsyncContext* caller_context_)
+  ColdIndexContext(const ColdIndexContext& other, IAsyncContext* caller_context_)
     : caller_context{ caller_context_ }
     , op_type{ other.op_type }
     , io_id{ other.io_id }
@@ -163,23 +163,23 @@ class FasterIndexContext : public IAsyncContext {
 
 /// Used by FindEntry hash index method
 template <class HID>
-class FasterIndexReadContext : public FasterIndexContext<HID> {
+class ColdIndexReadContext : public ColdIndexContext<HID> {
  public:
-  typedef typename FasterIndexContext<HID>::key_t key_t;
-  typedef typename FasterIndexContext<HID>::value_t value_t;
+  typedef typename ColdIndexContext<HID>::key_t key_t;
+  typedef typename ColdIndexContext<HID>::value_t value_t;
 
-  FasterIndexReadContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
-                        concurrent_queue<AsyncIndexIOContext*>* thread_io_responses,
-                        key_t key, HashIndexChunkPos pos)
-    : FasterIndexContext<HID>(op_type, caller_context, io_id, thread_io_responses,
-                          HashBucketEntry::kInvalidEntry, key, pos) {
+  ColdIndexReadContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
+                       concurrent_queue<AsyncIndexIOContext*>* thread_io_responses,
+                       key_t key, HashIndexChunkPos pos)
+    : ColdIndexContext<HID>(op_type, caller_context, io_id, thread_io_responses,
+                            HashBucketEntry::kInvalidEntry, key, pos) {
 #ifdef STATISTICS
     this->hash_index_op = HashIndexOp::FIND_ENTRY;
 #endif
   }
   /// Copy (and deep-copy) constructor.
-  FasterIndexReadContext(const FasterIndexReadContext& other, IAsyncContext* caller_context_)
-    : FasterIndexContext<HID>(other, caller_context_) {
+  ColdIndexReadContext(const ColdIndexReadContext& other, IAsyncContext* caller_context_)
+    : ColdIndexContext<HID>(other, caller_context_) {
   }
 
   inline void Get(const value_t& value) {
@@ -204,17 +204,17 @@ class FasterIndexReadContext : public FasterIndexContext<HID> {
 /// Used by FindOrCreateEntry, TryUpdateEntry & UpdateEntry hash index methods
 /// NOTE: force argument distinguishes between TryUpdateEntry and UpdateEntry.
 template <class HID>
-class FasterIndexRmwContext : public FasterIndexContext<HID> {
+class ColdIndexRmwContext : public ColdIndexContext<HID> {
  public:
-  typedef typename FasterIndexContext<HID>::key_t key_t;
-  typedef typename FasterIndexContext<HID>::value_t value_t;
+  typedef typename ColdIndexContext<HID>::key_t key_t;
+  typedef typename ColdIndexContext<HID>::value_t value_t;
 
-  FasterIndexRmwContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
-                        concurrent_queue<AsyncIndexIOContext*>* thread_io_responses,
-                        key_t key, HashIndexChunkPos pos, bool force,
-                        HashBucketEntry expected_entry, HashBucketEntry desired_entry)
-    : FasterIndexContext<HID>(op_type, caller_context, io_id,
-                        thread_io_responses, expected_entry, key, pos)
+  ColdIndexRmwContext(OperationType op_type, IAsyncContext& caller_context, uint64_t io_id,
+                      concurrent_queue<AsyncIndexIOContext*>* thread_io_responses,
+                      key_t key, HashIndexChunkPos pos, bool force,
+                      HashBucketEntry expected_entry, HashBucketEntry desired_entry)
+    : ColdIndexContext<HID>(op_type, caller_context, io_id,
+                            thread_io_responses, expected_entry, key, pos)
     , desired_entry_{ desired_entry }
     , force_{ force } {
 #ifdef STATISTICS
@@ -226,8 +226,8 @@ class FasterIndexRmwContext : public FasterIndexContext<HID> {
 #endif
   }
   /// Copy (and deep-copy) constructor.
-  FasterIndexRmwContext(const FasterIndexRmwContext& other, IAsyncContext* caller_context_)
-    : FasterIndexContext<HID>(other, caller_context_)
+  ColdIndexRmwContext(const ColdIndexRmwContext& other, IAsyncContext* caller_context_)
+    : ColdIndexContext<HID>(other, caller_context_)
     , desired_entry_{ other.desired_entry_ }
     , force_{ other.force_ } {
   }

@@ -21,8 +21,8 @@
 
 #include "common/log.h"
 #include "device/file_system_disk.h"
+#include "index/cold_index.h"
 #include "index/mem_index.h"
-#include "index/faster_index.h"
 
 #include "address.h"
 #include "alloc.h"
@@ -90,7 +90,7 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
 static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
 
 /// The FASTER key-value store.
-template <class K, class V, class D, class H = HashIndex<D>, class OH = H>
+template <class K, class V, class D, class H = MemHashIndex<D>, class OH = H>
 class FasterKv {
  public:
   typedef FasterKv<K, V, D, H, OH> faster_t;
@@ -99,7 +99,7 @@ class FasterKv {
   template <class Ki, class Vi, class Di, class HHIi, class CHIi>
   friend class F2Kv;
 
-  friend class FASTER::index::FasterIndex<D, typename H::hash_index_definition_t>;
+  friend class FASTER::index::ColdIndex<D, typename H::hash_index_definition_t>;
 
 
   // Make friend all templated instances of this class

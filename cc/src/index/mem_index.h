@@ -32,11 +32,11 @@ template <class D, class HID, bool HasOverflowBucket>
 struct HashBucketOverflowEntryHelper;
 
 template <class D, class HID>
-class FasterIndex;
+class ColdIndex;
 
 /// In-memory FasterKv hash index
 template<class D, class HID = HotLogHashIndexDefinition>
-class HashIndex : public IHashIndex<D> {
+class MemHashIndex : public IHashIndex<D> {
  public:
   typedef D disk_t;
   typedef typename D::file_t file_t;
@@ -55,10 +55,10 @@ class HashIndex : public IHashIndex<D> {
 
   // Make friend all templated instances of this class
   template <class Di, class HIDi>
-  friend class FasterIndex;
+  friend class ColdIndex;
 
-  HashIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
-            gc_state_t& gc_state, grow_state_t& grow_state)
+  MemHashIndex(const std::string& root_path, disk_t& disk, LightEpoch& epoch,
+               gc_state_t& gc_state, grow_state_t& grow_state)
     : IHashIndex<D>(root_path, disk, epoch)
     , gc_state_{ &gc_state }
     , grow_state_{ &grow_state } {
@@ -243,8 +243,8 @@ class HashIndex : public IHashIndex<D> {
 
 template <class D, class HID>
 template <class C>
-inline Status HashIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
-                                          C& pending_context) const {
+inline Status MemHashIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
+                                              C& pending_context) const {
   //static_assert(std::is_base_of<PendingContext<typename C::key_t>, C>::value,
   //              "PendingClass is not the base class of pending_context argument");
 
@@ -299,8 +299,8 @@ inline Status HashIndex<D, HID>::FindEntry(ExecutionContext& exec_context,
 
 template <class D, class HID>
 template<class C>
-inline Status HashIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context,
-                                                  C& pending_context) {
+inline Status MemHashIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_context,
+                                                      C& pending_context) {
   //static_assert(std::is_base_of<PendingContext<typename C::key_t>, C>::value,
   //              "PendingClass is not the base class of pending_context argument");
 
@@ -355,8 +355,8 @@ inline Status HashIndex<D, HID>::FindOrCreateEntry(ExecutionContext& exec_contex
 
 template <class D, class HID>
 template <class C>
-inline Status HashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pending_context,
-                                                Address new_address, bool readcache) {
+inline Status MemHashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pending_context,
+                                                   Address new_address, bool readcache) {
   assert(pending_context.atomic_entry != nullptr);
   // Try to atomically update the hash index entry based on expected entry
   key_hash_t hash{ pending_context.get_key_hash() };
@@ -384,8 +384,8 @@ inline Status HashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C& pe
 
 template <class D, class HID>
 template <class C>
-inline Status HashIndex<D, HID>::UpdateEntry(ExecutionContext& context, C& pending_context,
-                                            Address new_address) {
+inline Status MemHashIndex<D, HID>::UpdateEntry(ExecutionContext& context, C& pending_context,
+                                                Address new_address) {
   assert(pending_context.atomic_entry != nullptr);
   // Atomically update hash bucket entry
   key_hash_t hash{ pending_context.get_key_hash() };
@@ -406,7 +406,7 @@ struct HashBucketOverflowEntryHelper {
   typedef D disk_t;
 
   typedef HID hash_index_definition_t;
-  typedef HashIndex<disk_t, hash_index_definition_t> hash_index_t;
+  typedef MemHashIndex<disk_t, hash_index_definition_t> mem_hash_index_t;
   typedef typename HID::hash_bucket_t hash_bucket_t;
 
   typedef MallocFixedPageSize<hash_bucket_t, disk_t> overflow_buckets_allocator_t;
@@ -477,7 +477,7 @@ struct HashBucketOverflowEntryHelper<D, HID, false> {
   typedef D disk_t;
 
   typedef HID hash_index_definition_t;
-  typedef HashIndex<disk_t, hash_index_definition_t> hash_index_t;
+  typedef MemHashIndex<disk_t, hash_index_definition_t> mem_hash_index_t;
   typedef typename HID::hash_bucket_t hash_bucket_t;
 
   typedef MallocFixedPageSize<hash_bucket_t, disk_t> overflow_buckets_allocator_t;
@@ -504,8 +504,8 @@ struct HashBucketOverflowEntryHelper<D, HID, false> {
 };
 
 template <class D, class HID>
-inline AtomicHashBucketEntry* HashIndex<D, HID>::FindTentativeEntry(key_hash_t hash, hash_bucket_t* bucket,
-                                                        uint8_t version, HashBucketEntry& expected_entry) {
+inline AtomicHashBucketEntry* MemHashIndex<D, HID>::FindTentativeEntry(key_hash_t hash, hash_bucket_t* bucket,
+                                                                       uint8_t version, HashBucketEntry& expected_entry) {
 
   expected_entry = HashBucketEntry::kInvalidEntry;
   AtomicHashBucketEntry* atomic_entry = nullptr;
@@ -557,9 +557,9 @@ inline AtomicHashBucketEntry* HashIndex<D, HID>::FindTentativeEntry(key_hash_t h
 }
 
 template <class D, class HID>
-inline bool HashIndex<D, HID>::HasConflictingEntry(key_hash_t hash, const hash_bucket_t* bucket,
-                                                  uint8_t version,
-                                                  const AtomicHashBucketEntry* atomic_entry) const {
+inline bool MemHashIndex<D, HID>::HasConflictingEntry(key_hash_t hash, const hash_bucket_t* bucket,
+                                                      uint8_t version,
+                                                      const AtomicHashBucketEntry* atomic_entry) const {
   HashBucketEntry entry_ = atomic_entry->load();
   uint16_t tag = hash_bucket_entry_t(entry_).tag();
   while(true) {
@@ -582,15 +582,15 @@ inline bool HashIndex<D, HID>::HasConflictingEntry(key_hash_t hash, const hash_b
 
 template <class D, class HID>
 template <class TC, class CC>
-inline void HashIndex<D, HID>::GarbageCollectSetup(Address new_begin_address, TC truncate_callback,
-                                                CC complete_callback, IAsyncContext* callback_context) {
+inline void MemHashIndex<D, HID>::GarbageCollectSetup(Address new_begin_address, TC truncate_callback,
+                                                      CC complete_callback, IAsyncContext* callback_context) {
   uint64_t num_chunks = std::max(size() / gc_state_t::kHashTableChunkSize, ((uint64_t)1));
   gc_state_->Initialize(new_begin_address, truncate_callback, complete_callback, callback_context, num_chunks);
 }
 
 template <class D, class HID>
 template <class RC>
-inline bool HashIndex<D, HID>::GarbageCollect(RC* read_cache) {
+inline bool MemHashIndex<D, HID>::GarbageCollect(RC* read_cache) {
   uint64_t chunk = gc_state_->next_chunk++;
   if(chunk >= gc_state_->num_chunks) {
     // No chunk left to clean.
@@ -645,7 +645,7 @@ inline bool HashIndex<D, HID>::GarbageCollect(RC* read_cache) {
 }
 
 template <class D, class HID>
-inline void HashIndex<D, HID>::GrowSetup(GrowCompleteCallback callback) {
+inline void MemHashIndex<D, HID>::GrowSetup(GrowCompleteCallback callback) {
   // Initialize index grow state
   uint8_t current_version = this->resize_info.version;
   assert(current_version == 0 || current_version == 1);
@@ -660,7 +660,7 @@ inline void HashIndex<D, HID>::GrowSetup(GrowCompleteCallback callback) {
 
 template <class D, class HID>
 template <class R>
-inline void HashIndex<D, HID>::Grow() {
+inline void MemHashIndex<D, HID>::Grow() {
   typedef R record_t;
   // FIXME: Not yet supported for ColdIndex -- AddHashEntry is the main reason..
   assert(HasOverflowBucket);
@@ -757,8 +757,8 @@ inline void HashIndex<D, HID>::Grow() {
 }
 
 template <class D, class HID>
-inline void HashIndex<D, HID>::AddHashEntry(hash_bucket_t*& bucket, uint32_t& next_idx,
-                                          uint8_t version, hash_bucket_entry_t entry) {
+inline void MemHashIndex<D, HID>::AddHashEntry(hash_bucket_t*& bucket, uint32_t& next_idx,
+                                               uint8_t version, hash_bucket_entry_t entry) {
   if(next_idx == hash_bucket_t::kNumEntries) {
     assert(HasOverflowBucket);
     // Need to allocate a new bucket, first.
@@ -772,9 +772,9 @@ inline void HashIndex<D, HID>::AddHashEntry(hash_bucket_t*& bucket, uint32_t& ne
 
 template <class D, class HID>
 template <class R>
-inline Address HashIndex<D, HID>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
-                                                            Address from_address, Address min_address,
-                                                            uint8_t side) {
+inline Address MemHashIndex<D, HID>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
+                                                                 Address from_address, Address min_address,
+                                                                 uint8_t side) {
   typedef R record_t;
 
   assert(side == 0 || side == 1);
@@ -793,7 +793,7 @@ inline Address HashIndex<D, HID>::TraceBackForOtherChainStart(uint64_t old_size,
 
 template <class D, class HID>
 template <class RC>
-inline Status HashIndex<D, HID>::Checkpoint(CheckpointState<file_t>& checkpoint, const RC* read_cache) {
+inline Status MemHashIndex<D, HID>::Checkpoint(CheckpointState<file_t>& checkpoint, const RC* read_cache) {
   // Checkpoint the hash table
   auto path = this->disk_.relative_index_checkpoint_path(checkpoint.index_token);
   file_t ht_file = this->disk_.NewFile(path + "ht.dat");
@@ -811,7 +811,7 @@ inline Status HashIndex<D, HID>::Checkpoint(CheckpointState<file_t>& checkpoint,
 }
 
 template <class D, class HID>
-inline Status HashIndex<D, HID>::CheckpointComplete() {
+inline Status MemHashIndex<D, HID>::CheckpointComplete() {
   Status result = table_[this->resize_info.version].CheckpointComplete(false);
   if(result == Status::Pending) {
     return Status::Pending;
@@ -823,7 +823,7 @@ inline Status HashIndex<D, HID>::CheckpointComplete() {
 }
 
 template <class D, class HID>
-inline Status HashIndex<D, HID>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint) {
+inline Status MemHashIndex<D, HID>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoint) {
   // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the ofb.
   // (Ensures that recovery won't accidentally reallocate from the ofb.)
   checkpoint.index_metadata.ofb_count =
@@ -834,7 +834,7 @@ inline Status HashIndex<D, HID>::WriteCheckpointMetadata(CheckpointState<file_t>
 }
 
 template <class D, class HID>
-inline Status HashIndex<D, HID>::Recover(CheckpointState<file_t>& checkpoint) {
+inline Status MemHashIndex<D, HID>::Recover(CheckpointState<file_t>& checkpoint) {
   uint8_t version = this->resize_info.version;
   assert(table_[version].size() == checkpoint.index_metadata.table_size);
   auto path = this->disk_.relative_index_checkpoint_path(checkpoint.index_token);
@@ -854,7 +854,7 @@ inline Status HashIndex<D, HID>::Recover(CheckpointState<file_t>& checkpoint) {
 }
 
 template <class D, class HID>
-inline Status HashIndex<D, HID>::RecoverComplete() {
+inline Status MemHashIndex<D, HID>::RecoverComplete() {
   Status result = table_[this->resize_info.version].RecoverComplete(true);
   if(result != Status::Ok) {
     return result;
@@ -869,7 +869,7 @@ inline Status HashIndex<D, HID>::RecoverComplete() {
 }
 
 template <class D, class HID>
-inline void HashIndex<D, HID>::ClearTentativeEntries() {
+inline void MemHashIndex<D, HID>::ClearTentativeEntries() {
   // Clear all tentative entries.
   uint8_t version = this->resize_info.version;
   for(uint64_t bucket_idx = 0; bucket_idx < table_[version].size(); ++bucket_idx) {
@@ -891,7 +891,7 @@ inline void HashIndex<D, HID>::ClearTentativeEntries() {
 }
 
 template <class D, class HID>
-inline void HashIndex<D, HID>::DumpDistribution() const {
+inline void MemHashIndex<D, HID>::DumpDistribution() const {
   const uint16_t kNumBucketsHistBuckets = 8;
   const uint16_t kNumEntriesHistBuckets = 16;
 
@@ -971,7 +971,7 @@ inline void HashIndex<D, HID>::DumpDistribution() const {
 
 #ifdef STATISTICS
 template <class D, class HID>
-inline void HashIndex<D, HID>::PrintStats() const {
+inline void MemHashIndex<D, HID>::PrintStats() const {
   // FindEntry
   fprintf(stderr, "FindEntry Calls\t: %lu\n", find_entry_calls_.load());
   if (find_entry_calls_.load() > 0) {

@@ -109,11 +109,11 @@ class GcStateInMemIndex: public GcState {
   std::atomic<uint64_t> next_chunk;
 };
 
-class GcStateFasterIndex: public GcStateInMemIndex {
+class GcStateColdIndex: public GcStateInMemIndex {
  public:
   static constexpr uint64_t kHashTableChunkSize = GcStateInMemIndex::kHashTableChunkSize;
 
-  GcStateFasterIndex()
+  GcStateColdIndex()
     : GcStateInMemIndex()
     , min_address{ std::numeric_limits<uint64_t>::max() }
     , thread_count{ 0 } {

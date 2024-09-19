@@ -36,8 +36,8 @@ set (FASTER_HEADERS
   device/null_disk.h
   environment/file.h
   environment/file_common.h
-  index/faster_index.h
-  index/faster_index_contexts.h
+  index/cold_index.h
+  index/cold_index_contexts.h
   index/hash_bucket.h
   index/hash_table.h
   index/index.h
