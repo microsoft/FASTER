@@ -4459,13 +4459,13 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
     assert(until_address % hlog.kPageSize == 0);
 
     // perform log compaction
-    log_error("Auto-compaction: [%lu %lu] -> [%lu %lu] {%lu}",
+    log_info("Auto-compaction: [%lu %lu] -> [%lu %lu] {%lu}",
               begin_address, tail_address, until_address, tail_address, Size());
     StartSession();
     bool success = CompactWithLookup(until_address, true, hlog_compaction_config_.num_threads);
     StopSession();
 
-    log_error("Auto-compaction: Size: %.3f GB", static_cast<double>(Size()) / (1 << 30));
+    log_info("Auto-compaction: Size: %.3f GB", static_cast<double>(Size()) / (1 << 30));
     if (!success) {
       log_error("Hlog compaction was not successful :( -- retry!");
     }

@@ -73,7 +73,7 @@ class FasterIndex : public IHashIndex<D> {
     , serial_num_{ 0 } {
       // create faster index root path
       this->root_path_ = FASTER::environment::NormalizePath(this->root_path_ + "faster-index");
-      log_info("FasterIndex will be stored @ %s", this->root_path_.c_str());
+      log_debug("FasterIndex will be stored @ %s", this->root_path_.c_str());
       std::experimental::filesystem::create_directories(this->root_path_);
 
       // checkpoint-related vars
@@ -121,9 +121,9 @@ class FasterIndex : public IHashIndex<D> {
     assert(table_size_ == 0);
     table_size_ = config.table_size;
 
-    log_info("FasterIndex: %lu HT entries -> %lu MiB in-memory [~%lu MiB mutable]",
-              table_size_, config.in_mem_size / (1 << 20UL),
-              static_cast<uint64_t>(config.in_mem_size * config.mutable_fraction) / (1 << 20UL));
+    log_debug("FasterIndex: %lu HT entries -> %lu MiB in-memory [~%lu MiB mutable]",
+             table_size_, config.in_mem_size / (1 << 20UL),
+             static_cast<uint64_t>(config.in_mem_size * config.mutable_fraction) / (1 << 20UL));
 
     typename store_t::IndexConfig store_config{ table_size_ };
     store_ = std::make_unique<store_t>(store_config, config.in_mem_size,
@@ -192,8 +192,8 @@ class FasterIndex : public IHashIndex<D> {
     }
     auto num_active_sessions = store_->NumActiveSessions();
     if (num_active_sessions != 1) {
-      log_warn("Initiating cold-index checkpoint w/ %lu active sessions "
-              "(expected 1)", num_active_sessions);
+      log_debug("Initiating cold-index checkpoint w/ %lu active sessions "
+                "(expected 1)", num_active_sessions);
     }
 
     // Callback called when hash chunk FasterKv checkpointing finishes

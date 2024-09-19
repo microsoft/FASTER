@@ -250,7 +250,7 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
   bool auto_compaction = std::get<1>(args);
   bool rc_enabled = std::get<2>(args);
 
-  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+  log_info("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
   ReadCacheConfig rc_config {
@@ -393,7 +393,7 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
   bool auto_compaction = std::get<1>(args);
   bool rc_enabled = std::get<2>(args);
 
-  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+  log_info("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
   ReadCacheConfig rc_config {
@@ -492,7 +492,7 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
   bool auto_compaction = std::get<1>(args);
   bool rc_enabled = std::get<2>(args);
 
-  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+  log_info("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
   ReadCacheConfig rc_config {
@@ -617,7 +617,7 @@ TEST_P(HotColdParameterizedTestParam, Rmw) {
   bool auto_compaction = std::get<1>(args);
   bool rc_enabled = std::get<2>(args);
 
-  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+  log_info("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
   ReadCacheConfig rc_config {
@@ -802,7 +802,7 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
   bool auto_compaction = std::get<1>(args);
   bool rc_enabled = std::get<2>(args);
 
-  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+  log_info("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
   ReadCacheConfig rc_config {
@@ -1135,7 +1135,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
   bool auto_compaction = std::get<1>(args);
   bool rc_enabled = std::get<2>(args);
 
-  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+  log_info("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
   ReadCacheConfig rc_config {
@@ -1511,7 +1511,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
   bool auto_compaction = std::get<1>(args);
   bool rc_enabled = std::get<2>(args);
 
-  log_error("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
+  log_info("\nTEST: Index size: %lu\tAuto compaction: %d\tUse Read Cache: %d",
             table_size, auto_compaction, rc_enabled);
 
   ReadCacheConfig rc_config {

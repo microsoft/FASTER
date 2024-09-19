@@ -20,8 +20,13 @@ enum class Lvl {
   ERROR = 3
 };
 
-/// By default, only print WARN (and above) log messages.
+#ifdef NDEBUG
+// Release build: Print WARN (and above) log messages.
 #define LEVEL Lvl::WARN
+#else
+// Debug build: Print all log messages
+#define LEVEL Lvl::DEBUG
+#endif
 
 /// Macro to add in the file and function name, and line number.
 #ifdef _WIN32

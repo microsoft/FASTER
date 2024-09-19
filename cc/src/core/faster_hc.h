@@ -133,11 +133,10 @@ class FasterKvHC {
     return hot_store.Size() + cold_store.Size();
   }
   inline void DumpDistribution() {
-    log_info("\n\nHOT  LOG\n==========");
+    fprintf(stderr, "\n\nHOT  LOG\n==========");
     hot_store.DumpDistribution();
-    log_info("\n\nCOLD LOG\n==========");
-    log_info("--- not implemented ---");
-    //cold_store.DumpDistribution();
+    fprint(stderr, "\n\nCOLD LOG\n==========");
+    cold_store.DumpDistribution();
   }
   inline uint32_t NumActiveSessions() const {
     return std::max(hot_store.NumActiveSessions(), cold_store.NumActiveSessions());
@@ -221,7 +220,7 @@ inline void FasterKvHC<K, V, D, HHI, CHI>::InitializeCompaction() {
       throw std::runtime_error{ "HCCompactionConfig: Cold log size too small (<64 MB)" };
     }
   } else {
-    log_warn("Automatic HC compaction is disabled");
+    log_info("Automatic HC compaction is disabled");
   }
 }
 
@@ -725,7 +724,7 @@ inline bool FasterKvHC<K, V, D, HHI, CHI>::CompactLog(S& store, StoreType store_
   const bool is_hot_store = (store_type == StoreType::HOT);
 
   uint64_t tail_address = store.hlog.GetTailAddress().control();
-  log_error("Compact %s: {%.2lf GB} {Goal %.2lf GB} [%lu %lu] -> [%lu %lu]",
+  log_debug("Compact %s: {%.2lf GB} {Goal %.2lf GB} [%lu %lu] -> [%lu %lu]",
             is_hot_store ? "HOT" : "COLD",
             static_cast<double>(store.Size()) / (1 << 30),
             static_cast<double>(tail_address - until_address) / (1 << 30),
@@ -749,7 +748,7 @@ inline bool FasterKvHC<K, V, D, HHI, CHI>::CompactLog(S& store, StoreType store_
   Guid token = checkpoint ? checkpoint_.token : Guid::Create();
   bool success = store.InternalCompactWithLookup(until_address, shift_begin_address,
                                                 n_threads, is_hot_store, checkpoint, token);
-  log_error("Compact %s [success=%d]: {Goal %.2lf} {Actual %.2lf GB} Done!",
+  log_debug("Compact %s [success=%d]: {Goal %.2lf} {Actual %.2lf GB} Done!",
             is_hot_store ? "HOT": "COLD", success,
             static_cast<double>(tail_address - until_address) / (1 << 30),
             static_cast<double>(store.Size()) / (1 << 30));
