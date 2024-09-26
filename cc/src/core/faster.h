@@ -379,6 +379,7 @@ class FasterKv {
   void GrowIndexBlocking();
 
   /// Compaction/Garbage collect methods
+  void CompactRecords();
   Address LogScanForValidity(Address from, faster_t* temp);
   bool ContainsKeyInMemory(IndexContext<key_t, value_t> key, Address offset);
 
@@ -1348,6 +1349,9 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   if(thread_context.phase != Phase::REST) {
     HeavyEnter();
   }
+  if (next_hlog_begin_address_.load() != Address::kInvalidAddress) {
+    CompactRecords();
+  }
 
   // Stamp request (if not stamped already)
   pending_context.try_stamp_request(thread_context.phase, thread_context.version);
@@ -1534,6 +1538,9 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
 
   if(phase != Phase::REST) {
     HeavyEnter();
+  }
+  if (next_hlog_begin_address_.load() != Address::kInvalidAddress) {
+    CompactRecords();
   }
 
   // Stamp request (if not stamped already)
@@ -4253,6 +4260,27 @@ create_record:
     }
   }
 }
+
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::CompactRecords() {
+  bool throttle = (Size() >= max_hlog_size_);
+  if (throttle) {
+    log_info("Max hlog size reached -> throttling active...");
+  }
+  while(Size() >= max_hlog_size_) {
+    Refresh();
+    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+    if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
+
+    if (compaction_context_.pages_available.load()) {
+      InternalCompact<faster_t>(-1, std::numeric_limits<uint32_t>::max());
+    }
+  }
+  if (throttle) {
+    log_info("Stopped throttling!");
+  }
+}
+
 
 /// When invoked, compacts the hybrid-log between the begin address and a
 /// passed in offset (`untilAddress`).
