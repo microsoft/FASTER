@@ -57,11 +57,11 @@ struct HlogCompactionConfig {
 };
 
 constexpr HlogCompactionConfig DEFAULT_HLOG_COMPACTION_CONFIG {
-  //.check_interval = 250ms,
-  //.trigger_pct = 0.8,
-  //.compact_pct = 0.2,
-  //.max_compacted_size = 512_MiB,
-  //.num_threads = 4,
+  .check_interval = 250ms,
+  .trigger_pct = 0.8,
+  .compact_pct = 0.2,
+  .max_compacted_size = 512_MiB,
+  .num_threads = 4,
 
   .enabled = false
 };
