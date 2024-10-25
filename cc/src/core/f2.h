@@ -28,7 +28,7 @@ class F2Kv {
   typedef FasterStoreConfig<HHI> hot_faster_store_config_t;
   typedef FasterStoreConfig<CHI> cold_faster_store_config_t;
 
-  typedef F2Kv<K, V, D> f2_t;
+  typedef F2Kv<K, V, D, HHI, CHI> f2_t;
   typedef AsyncF2ReadContext<K, V> async_f2_read_context_t;
   typedef AsyncF2RmwContext<K, V> async_f2_rmw_context_t;
   typedef F2RmwReadContext<K, V> f2_rmw_read_context_t;
