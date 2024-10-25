@@ -28,7 +28,7 @@ class HotLogHashIndexDefinition {
 
 /// On-disk, two-level hash index definition class
 /// This is used for F2's cold-tier FasterKv
-template <uint8_t N>
+template <uint16_t N>
 class ColdLogHashIndexDefinition {
  public:
   constexpr static uint16_t kNumEntries = N;                          // Total number of hash bucket entries

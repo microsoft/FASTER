@@ -36,7 +36,7 @@ namespace FASTER {
 namespace index {
 
 // 32 entries -- 4 buckets in chunk w/ 8 entries per chunk bucket [256 bytes / chunk]
-constexpr static uint8_t DEFAULT_NUM_ENTRIES = 32;
+constexpr static uint16_t DEFAULT_NUM_ENTRIES = 32;
 
 /// On-disk, two-level hash index for F2
 /// It employs a FasterKv instance for on-disk storage management
