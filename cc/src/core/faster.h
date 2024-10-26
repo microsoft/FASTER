@@ -134,7 +134,7 @@ class FasterKv {
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
   typedef AsyncPendingConditionalInsertContext<key_t> async_pending_ci_context_t;
 
-  static constexpr uint64_t kMaxPendingIOs = 128;
+  static constexpr unsigned kMaxPendingIOs = FASTER::environment::kMaxIoEvents;
 
   FasterKv(IndexConfig index_config, uint64_t hlog_mem_size, const std::string& filepath,
            double hlog_mutable_fraction = DEFAULT_HLOG_MUTABLE_FRACTION,

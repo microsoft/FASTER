@@ -154,16 +154,13 @@ class QueueIoHandler {
  public:
   typedef QueueFile async_file_t;
 
- private:
-  constexpr static int kMaxEvents = 128;
-
  public:
   QueueIoHandler()
     : io_object_{ 0 } {
   }
   QueueIoHandler(size_t max_threads)
     : io_object_{ 0 } {
-    int result = ::io_setup(kMaxEvents, &io_object_);
+    int result = ::io_setup(kMaxIoEvents, &io_object_);
     assert(result >= 0);
   }
 
