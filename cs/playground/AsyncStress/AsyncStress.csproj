@@ -9,7 +9,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="MessagePack" Version="2.4.35" />
+        <PackageReference Include="MessagePack" Version="2.5.187" />
         <PackageReference Include="xunit.assert" Version="2.4.2" />
     </ItemGroup>
 
