@@ -37,15 +37,15 @@ namespace FASTER.core
         [FieldOffset(4)]
         private IntPtr payload;
 
-        internal IntPtr Pointer => payload;
+        internal readonly IntPtr Pointer => payload;
 
         /// <summary>
         /// Pointer to the beginning of payload, not including metadata if any
         /// </summary>
-        public byte* ToPointer()
+        public readonly byte* ToPointer()
         {
             if (Serialized)
-                return MetadataSize + (byte*)Unsafe.AsPointer(ref payload);
+                return MetadataSize + (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in payload));
             else
                 return MetadataSize + (byte*)payload;
         }
@@ -53,10 +53,10 @@ namespace FASTER.core
         /// <summary>
         /// Pointer to the beginning of payload, including metadata if any
         /// </summary>
-        public byte* ToPointerWithMetadata()
+        public readonly byte* ToPointerWithMetadata()
         {
             if (Serialized)
-                return (byte*)Unsafe.AsPointer(ref payload);
+                return (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in payload));
             else
                 return (byte*)payload;
         }
@@ -66,29 +66,29 @@ namespace FASTER.core
         /// </summary>
         public int Length
         {
-            get { return length & ~kHeaderMask; }
+            readonly get { return length & ~kHeaderMask; }
             set { length = (length & kHeaderMask) | value; }
         }
 
         /// <summary>
         /// Length of payload, not including metadata if any
         /// </summary>
-        public int LengthWithoutMetadata => (length & ~kHeaderMask) - MetadataSize;
+        public readonly int LengthWithoutMetadata => (length & ~kHeaderMask) - MetadataSize;
 
         /// <summary>
         /// Format of structure
         /// </summary>
-        public bool Serialized => (length & kUnserializedBitMask) == 0;
+        public readonly bool Serialized => (length & kUnserializedBitMask) == 0;
 
         /// <summary>
         /// Total serialized size in bytes, including header and metadata if any
         /// </summary>
-        public int TotalSize => sizeof(int) + Length;
+        public readonly int TotalSize => sizeof(int) + Length;
 
         /// <summary>
         /// Size of metadata header, if any (returns 0 or 8)
         /// </summary>
-        public int MetadataSize => (length & kExtraMetadataBitMask) >> (30 - 3);
+        public readonly int MetadataSize => (length & kExtraMetadataBitMask) >> (30 - 3);
 
         /// <summary>
         /// Constructor
@@ -107,10 +107,10 @@ namespace FASTER.core
         /// </summary>
         public long ExtraMetadata
         {
-            get
+            readonly get
             {
                 if (Serialized)
-                    return MetadataSize > 0 ? *(long*)Unsafe.AsPointer(ref payload) : 0;
+                    return MetadataSize > 0 ? *(long*)Unsafe.AsPointer(ref Unsafe.AsRef(in payload)) : 0;
                 else
                     return MetadataSize > 0 ? *(long*)payload : 0;
             }
@@ -121,7 +121,7 @@ namespace FASTER.core
                     length |= kExtraMetadataBitMask;
                     Debug.Assert(Length >= MetadataSize);
                     if (Serialized)
-                        *(long*)Unsafe.AsPointer(ref payload) = value;
+                        *(long*)Unsafe.AsPointer(ref Unsafe.AsRef(in payload)) = value;
                     else
                         *(long*)payload = value;
                 }
@@ -150,7 +150,7 @@ namespace FASTER.core
         /// </summary>
         public bool Invalid
         {
-            get { return ((length & kUnserializedBitMask) != 0) && payload == IntPtr.Zero; }
+            readonly get { return ((length & kUnserializedBitMask) != 0) && payload == IntPtr.Zero; }
             set { 
                 if (value) 
                 { 
@@ -168,10 +168,10 @@ namespace FASTER.core
         /// Get Span&lt;byte&gt; for this SpanByte's payload (excluding metadata if any)
         /// </summary>
         /// <returns></returns>
-        public Span<byte> AsSpan()
+        public readonly Span<byte> AsSpan()
         {
             if (Serialized)
-                return new Span<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
+                return new Span<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in payload)), Length - MetadataSize);
             else
                 return new Span<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
         }
@@ -180,10 +180,10 @@ namespace FASTER.core
         /// Get ReadOnlySpan&lt;byte&gt; for this SpanByte's payload (excluding metadata if any)
         /// </summary>
         /// <returns></returns>
-        public ReadOnlySpan<byte> AsReadOnlySpan()
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan()
         {
             if (Serialized)
-                return new ReadOnlySpan<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
+                return new ReadOnlySpan<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in payload)), Length - MetadataSize);
             else
                 return new ReadOnlySpan<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
         }
@@ -192,10 +192,10 @@ namespace FASTER.core
         /// Get Span&lt;byte&gt; for this SpanByte's payload (including metadata if any)
         /// </summary>
         /// <returns></returns>
-        public Span<byte> AsSpanWithMetadata()
+        public readonly Span<byte> AsSpanWithMetadata()
         {
             if (Serialized)
-                return new Span<byte>((byte*)Unsafe.AsPointer(ref payload), Length);
+                return new Span<byte>((byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in payload)), Length);
             else
                 return new Span<byte>((byte*)payload, Length);
         }
@@ -204,10 +204,10 @@ namespace FASTER.core
         /// Get ReadOnlySpan&lt;byte&gt; for this SpanByte's payload (including metadata if any)
         /// </summary>
         /// <returns></returns>
-        public ReadOnlySpan<byte> AsReadOnlySpanWithMetadata()
+        public readonly ReadOnlySpan<byte> AsReadOnlySpanWithMetadata()
         {
             if (Serialized)
-                return new ReadOnlySpan<byte>((byte*)Unsafe.AsPointer(ref payload), Length);
+                return new ReadOnlySpan<byte>((byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in payload)), Length);
             else
                 return new ReadOnlySpan<byte>((byte*)payload, Length);
         }
@@ -217,10 +217,10 @@ namespace FASTER.core
         /// The resulting SpanByte is safe to heap-copy, as long as the underlying payload remains fixed.
         /// </summary>
         /// <returns></returns>
-        public SpanByte Deserialize()
+        public readonly SpanByte Deserialize()
         {
             if (!Serialized) return this;
-            return new SpanByte(Length - MetadataSize, (IntPtr)(MetadataSize + (byte*)Unsafe.AsPointer(ref payload)));
+            return new SpanByte(Length - MetadataSize, (IntPtr)(MetadataSize + (byte*)Unsafe.AsPointer(ref Unsafe.AsRef(in payload))));
         }
 
         /// <summary>
@@ -319,7 +319,7 @@ namespace FASTER.core
         /// <summary>
         /// Convert payload to new byte array
         /// </summary>
-        public byte[] ToByteArray()
+        public readonly byte[] ToByteArray()
         {
             return AsReadOnlySpan().ToArray();
         }
@@ -327,7 +327,7 @@ namespace FASTER.core
         /// <summary>
         /// Convert payload to specified (disposable) memory owner
         /// </summary>
-        public (IMemoryOwner<byte> memory, int length) ToMemoryOwner(MemoryPool<byte> pool)
+        public readonly (IMemoryOwner<byte> memory, int length) ToMemoryOwner(MemoryPool<byte> pool)
         {
             var dst = pool.Rent(Length);
             AsReadOnlySpan().CopyTo(dst.Memory.Span);
@@ -338,7 +338,7 @@ namespace FASTER.core
         /// Convert to SpanByteAndMemory wrapper
         /// </summary>
         /// <returns></returns>
-        public SpanByteAndMemory ToSpanByteAndMemory()
+        public readonly SpanByteAndMemory ToSpanByteAndMemory()
         {
             return new SpanByteAndMemory(this);
         }
@@ -347,7 +347,7 @@ namespace FASTER.core
         /// Try to copy to given pre-allocated SpanByte, checking if space permits at destination SpanByte
         /// </summary>
         /// <param name="dst"></param>
-        public bool TryCopyTo(ref SpanByte dst)
+        public readonly bool TryCopyTo(ref SpanByte dst)
         {
             if (dst.Length < Length) return false;
             CopyTo(ref dst);
@@ -359,11 +359,11 @@ namespace FASTER.core
         /// Does not change length of destination.
         /// </summary>
         /// <param name="dst"></param>
-        public void CopyTo(ref SpanByte dst)
+        public readonly void CopyTo(ref SpanByte dst)
         {
             dst.UnmarkExtraMetadata();
             dst.ExtraMetadata = ExtraMetadata;
-            AsReadOnlySpan().CopyTo(dst.AsSpan());            
+            AsReadOnlySpan().CopyTo(dst.AsSpan());
         }
 
         /// <summary>
@@ -391,7 +391,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="dst"></param>
         /// <param name="memoryPool"></param>
-        public void CopyTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        public readonly void CopyTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
             if (dst.IsSpanByte)
             {
@@ -414,7 +414,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="dst"></param>
         /// <param name="memoryPool"></param>
-        public void CopyWithHeaderTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        public readonly void CopyWithHeaderTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
             if (dst.IsSpanByte)
             {
@@ -444,12 +444,12 @@ namespace FASTER.core
         /// Copy serialized version to specified memory location
         /// </summary>
         /// <param name="destination"></param>
-        public void CopyTo(byte* destination)
+        public readonly void CopyTo(byte* destination)
         {
             if (Serialized)
             {
                 *(int*)destination = length;
-                Buffer.MemoryCopy(Unsafe.AsPointer(ref payload), destination + sizeof(int), Length, Length);
+                Buffer.MemoryCopy(Unsafe.AsPointer(ref Unsafe.AsRef(in payload)), destination + sizeof(int), Length, Length);
             }
             else
             {
@@ -459,7 +459,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override string ToString()
+        public override readonly string ToString()
         {
             var bytes = AsSpan();
             var len = Math.Min(this.Length, 8);

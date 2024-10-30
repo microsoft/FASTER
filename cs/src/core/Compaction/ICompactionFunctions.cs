@@ -27,6 +27,6 @@
 
     internal struct DefaultCompactionFunctions<Key, Value> : ICompactionFunctions<Key, Value>
     {
-        public bool IsDeleted(ref Key key, ref Value value) => false;
+        public readonly bool IsDeleted(ref Key key, ref Value value) => false;
     }
 }

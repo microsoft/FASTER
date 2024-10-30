@@ -62,7 +62,7 @@ namespace FASTER.core
 
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
                         {
-                            faster.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
+                            FasterKV<Key, Value>.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
                             FasterKV<Key, Value>.InitContext(ctx, ctx.prevCtx.sessionID, ctx.prevCtx.sessionName, ctx.prevCtx.serialNum);
 
                             // Has to be prevCtx, not ctx

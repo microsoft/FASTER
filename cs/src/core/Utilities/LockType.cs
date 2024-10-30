@@ -126,7 +126,7 @@ namespace FASTER.core
         public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortKeyHashes(keys);
 
         /// <inheritdoc/>
-        public override string ToString()
+        public override readonly string ToString()
         {
             var hashStr = Utility.GetHashString(this.KeyHash);
             return $"key {Key}, hash {hashStr}, {LockType}";
@@ -141,11 +141,11 @@ namespace FASTER.core
         internal bool IsLockedExclusive;
         internal bool IsFound;
         internal ushort NumLockedShared;
-        internal bool IsLockedShared => NumLockedShared > 0;
+        internal readonly bool IsLockedShared => NumLockedShared > 0;
 
-        internal bool IsLocked => IsLockedExclusive || NumLockedShared > 0;
+        internal readonly bool IsLocked => IsLockedExclusive || NumLockedShared > 0;
 
-        public override string ToString()
+        public override readonly string ToString()
         {
             var locks = $"{(this.IsLockedExclusive ? "x" : string.Empty)}{this.NumLockedShared}";
             return $"found {IsFound}, locks {locks}";
@@ -164,7 +164,7 @@ namespace FASTER.core
         internal LockType LockType;
         internal LockOperationType LockOperationType;
 
-        internal bool IsSet => LockOperationType != LockOperationType.None;
+        internal readonly bool IsSet => LockOperationType != LockOperationType.None;
 
         internal LockOperation(LockOperationType opType, LockType lockType)
         {
@@ -172,6 +172,6 @@ namespace FASTER.core
             this.LockOperationType = opType;
         }
 
-        public override string ToString() => $"{LockType}: opType {LockOperationType}";
+        public override readonly string ToString() => $"{LockType}: opType {LockOperationType}";
     }
 }

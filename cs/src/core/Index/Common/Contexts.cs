@@ -203,16 +203,14 @@ namespace FASTER.core
             }
 
             internal bool NoKey
-            {
-                get => (operationFlags & kNoKey) != 0;
+            { readonly get => (operationFlags & kNoKey) != 0;
                 set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
             }
 
-            internal bool HasMinAddress => this.minAddress != Constants.kInvalidAddress;
+            internal readonly bool HasMinAddress => this.minAddress != Constants.kInvalidAddress;
 
             internal bool IsAsync
-            {
-                get => (operationFlags & kIsAsync) != 0;
+            { readonly get => (operationFlags & kIsAsync) != 0;
                 set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
             }
 
@@ -223,14 +221,12 @@ namespace FASTER.core
             }
 
             internal long InitialEntryAddress
-            {
-                get => recordInfo.PreviousAddress;
+            { readonly get => recordInfo.PreviousAddress;
                 set => recordInfo.PreviousAddress = value;
             }
 
             internal long InitialLatestLogicalAddress
-            {
-                get => entry.Address;
+            { readonly get => entry.Address;
                 set => entry.Address = value;
             }
 
@@ -594,7 +590,7 @@ namespace FASTER.core
         /// <summary>
         /// Write info to byte array
         /// </summary>
-        public byte[] ToByteArray()
+        public readonly byte[] ToByteArray()
         {
             using (MemoryStream ms = new())
             {
@@ -753,7 +749,7 @@ namespace FASTER.core
             info.Recover(token, checkpointManager, out commitCookie);
         }
 
-        public bool IsDefault()
+        public readonly bool IsDefault()
         {
             return info.guid == default;
         }
@@ -904,7 +900,7 @@ namespace FASTER.core
             main_ht_device = null;
         }
 
-        public bool IsDefault()
+        public readonly bool IsDefault()
         {
             return info.token == default;
         }

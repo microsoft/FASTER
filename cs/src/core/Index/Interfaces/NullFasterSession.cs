@@ -4,15 +4,15 @@
     {
         public static readonly NullFasterSession Instance = new();
 
-        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
+        public readonly void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
         {
         }
 
-        public void UnsafeResumeThread()
+        public readonly void UnsafeResumeThread()
         {
         }
 
-        public void UnsafeSuspendThread()
+        public readonly void UnsafeSuspendThread()
         {
         }
     }

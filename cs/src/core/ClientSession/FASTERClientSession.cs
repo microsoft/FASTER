@@ -36,7 +36,7 @@ namespace FASTER.core
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
             /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
-            public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(Functions functions, string sessionName = null,
+            public readonly ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(Functions functions, string sessionName = null,
                     SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
@@ -52,7 +52,7 @@ namespace FASTER.core
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
             /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
-            public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(Functions functions, string sessionName, out CommitPoint commitPoint,
+            public readonly ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(Functions functions, string sessionName, out CommitPoint commitPoint,
                     SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
@@ -66,7 +66,7 @@ namespace FASTER.core
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
             /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
-            public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(string sessionName = null, 
+            public readonly ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Functions>(string sessionName = null, 
                     SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
@@ -85,7 +85,7 @@ namespace FASTER.core
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
             /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
-            public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(string sessionName, out CommitPoint commitPoint,
+            public readonly ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(string sessionName, out CommitPoint commitPoint,
                     SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {
@@ -104,7 +104,7 @@ namespace FASTER.core
             /// <param name="sessionVariableLengthStructSettings">Session-specific variable-length struct settings</param>
             /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at FasterKV level, and may be overridden on individual Read operations</param>
             /// <returns>Session instance</returns>
-            public ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(int sessionID, out CommitPoint commitPoint,
+            public readonly ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Functions>(int sessionID, out CommitPoint commitPoint,
                     SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null, ReadCopyOptions readCopyOptions = default)
                 where Functions : IFunctions<Key, Value, Input, Output, Context>
             {

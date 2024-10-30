@@ -42,7 +42,7 @@ namespace FASTER.core
         /// </summary>
         public byte Phase
         {
-            get { return (byte)((Word >> kPhaseShiftInWord) & kPhaseMaskInInteger); }
+            readonly get { return (byte)((Word >> kPhaseShiftInWord) & kPhaseMaskInInteger); }
             set
             {
                 Word &= ~kPhaseMaskInWord;
@@ -52,14 +52,14 @@ namespace FASTER.core
 
         /// <summary></summary>
         /// <returns>whether EPVS is in intermediate state now (transitioning between two states)</returns>
-        public bool IsIntermediate() => (Phase & kIntermediateMask) != 0;
+        public readonly bool IsIntermediate() => (Phase & kIntermediateMask) != 0;
 
         /// <summary>
         /// Version number of the current state
         /// </summary>
         public long Version
         {
-            get { return Word & kVersionMaskInWord; }
+            readonly get { return Word & kVersionMaskInWord; }
             set
             {
                 Word &= ~kVersionMaskInWord;
@@ -106,7 +106,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc/>
-        public override string ToString()
+        public override readonly string ToString()
         {
             return $"[{Phase},{Version}]";
         }
@@ -114,13 +114,13 @@ namespace FASTER.core
         /// <summary>
         /// Compare the current <see cref="SystemState"/> to <paramref name="obj"/> for equality if obj is also a <see cref="SystemState"/>
         /// </summary>
-        public override bool Equals(object obj)
+        public override readonly bool Equals(object obj)
         {
             return obj is VersionSchemeState other && Equals(other);
         }
 
         /// <inheritdoc/>
-        public override int GetHashCode()
+        public override readonly int GetHashCode()
         {
             return Word.GetHashCode();
         }
@@ -128,7 +128,7 @@ namespace FASTER.core
         /// <summary>
         /// Compare the current <see cref="SystemState"/> to <paramref name="other"/> for equality
         /// </summary>
-        private bool Equals(VersionSchemeState other)
+        private readonly bool Equals(VersionSchemeState other)
         {
             return Word == other.Word;
         }
@@ -155,7 +155,7 @@ namespace FASTER.core
     /// </summary>
     public abstract class VersionSchemeStateMachine
     {
-        private long toVersion;
+        private readonly long toVersion;
         /// <summary>
         /// The actual version this state machine is advancing to, or -1 if not yet determined
         /// </summary>
@@ -202,7 +202,7 @@ namespace FASTER.core
 
     internal class SimpleVersionSchemeStateMachine : VersionSchemeStateMachine
     {
-        private Action<long, long> criticalSection;
+        private readonly Action<long, long> criticalSection;
 
         public SimpleVersionSchemeStateMachine(Action<long, long> criticalSection, long toVersion = -1) : base(toVersion)
         {
@@ -249,7 +249,7 @@ namespace FASTER.core
     /// </summary>
     public class EpochProtectedVersionScheme
     {
-        private LightEpoch epoch;
+        private readonly LightEpoch epoch;
         private VersionSchemeState state;
         private VersionSchemeStateMachine currentMachine;
 

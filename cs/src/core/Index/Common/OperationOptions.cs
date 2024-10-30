@@ -55,7 +55,7 @@ namespace FASTER.core
         /// <summary>The destination for copies records.</summary>
         public ReadCopyTo CopyTo;
 
-        internal bool IsActive => CopyFrom != ReadCopyFrom.None && CopyTo != ReadCopyTo.None;
+        internal readonly bool IsActive => CopyFrom != ReadCopyFrom.None && CopyTo != ReadCopyTo.None;
 
         /// <summary>Constructor.</summary>
         public ReadCopyOptions(ReadCopyFrom from, ReadCopyTo to)
@@ -75,7 +75,7 @@ namespace FASTER.core
         public static ReadCopyOptions None => new() { CopyFrom = ReadCopyFrom.None, CopyTo = ReadCopyTo.None };
 
         /// <inheritdoc/>
-        public override string ToString() => $"from: {CopyFrom}, to {CopyTo}";
+        public override readonly string ToString() => $"from: {CopyFrom}, to {CopyTo}";
     }
 
     /// <summary>

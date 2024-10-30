@@ -11,14 +11,14 @@ namespace FASTER.core
         where T : unmanaged
     {
         ///<inheritdoc/>
-        public unsafe long GetHashCode64(ref Memory<T> k)
+        public readonly unsafe long GetHashCode64(ref Memory<T> k)
         {
             fixed (T* ptr = k.Span)
                 return Utility.HashBytes((byte*)ptr, k.Length*sizeof(T));
         }
 
         ///<inheritdoc/>
-        public unsafe bool Equals(ref Memory<T> k1, ref Memory<T> k2)
+        public readonly unsafe bool Equals(ref Memory<T> k1, ref Memory<T> k2)
         {
             return MemoryMarshal.Cast<T, byte>(k1.Span)
                 .SequenceEqual(MemoryMarshal.Cast<T, byte>(k2.Span));
@@ -32,14 +32,14 @@ namespace FASTER.core
         where T : unmanaged
     {
         ///<inheritdoc/>
-        public unsafe long GetHashCode64(ref ReadOnlyMemory<T> k)
+        public readonly unsafe long GetHashCode64(ref ReadOnlyMemory<T> k)
         {
             fixed (T* ptr = k.Span)
                 return Utility.HashBytes((byte*)ptr, k.Length * sizeof(T));
         }
 
         ///<inheritdoc/>
-        public unsafe bool Equals(ref ReadOnlyMemory<T> k1, ref ReadOnlyMemory<T> k2)
+        public readonly unsafe bool Equals(ref ReadOnlyMemory<T> k1, ref ReadOnlyMemory<T> k2)
         {
             return MemoryMarshal.Cast<T, byte>(k1.Span)
                 .SequenceEqual(MemoryMarshal.Cast<T, byte>(k2.Span));
