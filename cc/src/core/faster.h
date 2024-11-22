@@ -101,7 +101,6 @@ class FasterKv {
 
   friend class FASTER::index::ColdIndex<D, typename H::hash_index_definition_t>;
 
-
   // Make friend all templated instances of this class
   template <class Ki, class Vi, class Di, class Hi, class OHi>
   friend class FasterKv;
@@ -158,7 +157,8 @@ class FasterKv {
     , refresh_callback_{ nullptr }
     , hlog_compaction_config_{ hlog_compaction_config }
     , auto_compaction_active_{ false }
-    , auto_compaction_scheduled_{ false } {
+    , auto_compaction_scheduled_{ false }
+    , max_hlog_size_{ 0 } {
 
     log_debug("Hash Index Size: %lu", index_config.table_size);
     hash_index_.Initialize(index_config);
@@ -273,6 +273,9 @@ class FasterKv {
   inline bool AutoCompactionScheduled() const {
     return auto_compaction_scheduled_.load();
   }
+  inline bool HlogMaxSizeReached() const {
+    return (max_hlog_size_ > 0 && Size() >= max_hlog_size_);
+  }
 
 
  private:
@@ -375,7 +378,7 @@ class FasterKv {
   void MarkAllPendingRequests();
 
   /// Grow Index methods
-  inline void HeavyEnter();
+  void HeavyEnter();
   void GrowIndexBlocking();
 
   /// Compaction/Garbage collect methods
@@ -1349,7 +1352,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
   if(thread_context.phase != Phase::REST) {
     HeavyEnter();
   }
-  if (next_hlog_begin_address_.load() != Address::kInvalidAddress) {
+  if (HlogMaxSizeReached()) {
     CompactRecords();
   }
 
@@ -1539,7 +1542,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context,
   if(phase != Phase::REST) {
     HeavyEnter();
   }
-  if (next_hlog_begin_address_.load() != Address::kInvalidAddress) {
+  if (HlogMaxSizeReached()) {
     CompactRecords();
   }
 
@@ -2873,7 +2876,7 @@ Status FasterKv<K, V, D, H, OH>::RestoreHybridLog() {
 }
 
 template <class K, class V, class D, class H, class OH>
-void FasterKv<K, V, D, H, OH>::HeavyEnter() {
+inline void FasterKv<K, V, D, H, OH>::HeavyEnter() {
   if(thread_ctx().phase == Phase::GC_IO_PENDING || thread_ctx().phase == Phase::GC_IN_PROGRESS) {
     hash_index_.GarbageCollect(read_cache_.get());
     return;
@@ -4263,21 +4266,25 @@ create_record:
 
 template <class K, class V, class D, class H, class OH>
 inline void FasterKv<K, V, D, H, OH>::CompactRecords() {
-  bool throttle = (Size() >= max_hlog_size_);
-  if (throttle) {
-    log_info("Max hlog size reached -> throttling active...");
-  }
-  while(Size() >= max_hlog_size_) {
-    Refresh();
-    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
-    if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
+  bool active_compaction = (next_hlog_begin_address_.load() != Address::kInvalidAddress);
 
+  if (active_compaction) {
+    // Help make the compaction faster by participating in this compaction
+    log_debug("Max hlog size reached -> participating in compaction...");
     if (compaction_context_.pages_available.load()) {
       InternalCompact<faster_t>(-1, std::numeric_limits<uint32_t>::max());
     }
-  }
-  if (throttle) {
-    log_info("Stopped throttling!");
+    log_debug("Stopped participating in compaction!");
+  } else {
+    if (!other_store_ || other_store_->next_hlog_begin_address_.load() == Address::kInvalidAddress) {
+      //log_warn("Max hlog size reached \\w no active compactions! Are compactions scheduled properly?");
+      return;
+    }
+    // Compaction of other log (typically hot) caused this log to reach its limit
+    // Participate in compaction of other log; typically only hot log enters this part
+    log_debug("Max hlog size of other store reached -> participating in compaction...");
+    other_store_->CompactRecords();
+    log_debug("Stopped participating in other store compaction!");
   }
 }
 
