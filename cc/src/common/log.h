@@ -13,12 +13,15 @@
 #include "../core/thread.h"
 
 /// Defines the type of log messages supported by the system.
-enum class Lvl {
+enum class Lvl : uint8_t {
   DEBUG = 0,
   INFO  = 1,
   WARN  = 2,
-  ERROR = 3
+  ERROR = 3,
+  REPORT = 4
 };
+const char* LvlStr[] = {
+  "DEBUG", "INFO", "WARN", "ERROR", "" };
 
 #ifdef NDEBUG
 // Release build: Print WARN (and above) log messages.
@@ -47,6 +50,7 @@ enum class Lvl {
 
 #define log_warn(f, a...) logMessage(Lvl::WARN, f, ##a)
 #define log_error(f, a...) logMessage(Lvl::ERROR, f, ##a)
+#define log_rep(f, a...) logMessage(Lvl::REPORT, f, ##a)
 
 typedef std::chrono::high_resolution_clock log_clock_t;
 
@@ -66,29 +70,11 @@ inline void log_msg(Lvl level, int line, const char* func,
   char buffer[1024];
   vsnprintf(buffer, 1024, fmt, argptr);
 
-  std::string l;
-  switch (level) {
-  case Lvl::DEBUG:
-    l = std::string("DEBUG");
-    break;
-  case Lvl::INFO:
-    l = std::string("INFO");
-    break;
-  case Lvl::WARN:
-    l = std::string("WARN");
-    break;
-  case Lvl::ERROR:
-    l = std::string("ERROR");
-    break;
-  default:
-    fprintf(stderr, "Invalid logging level: %d\n", static_cast<int>(level));
-    throw std::runtime_error{ "Invalid logging level "};
-  }
-
-  fprintf(stderr, "[%04lu.%09lu]{%u}::%s::%s:%s:%d: %s\n",
+  std::string l = LvlStr[static_cast<uint8_t>(level)];
+  fprintf(stderr, "[%04lu.%05lu]{%2u}::%s::%s:%d: %s\n",
           (unsigned long) std::chrono::duration_cast<std::chrono::seconds>(now - start).count(),
           (unsigned long) std::chrono::duration_cast<std::chrono::nanoseconds>(now - start).count(),
-          FASTER::core::Thread::id(), l.c_str(), file, func, line, buffer);
+          FASTER::core::Thread::id(), l.c_str(), file, line, buffer);
 
   va_end(argptr);
 }
