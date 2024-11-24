@@ -9,6 +9,8 @@
 #include <libgen.h>
 #include <stdio.h>
 #include <time.h>
+
+#include "common/log.h"
 #include "file_linux.h"
 
 namespace FASTER {
@@ -51,7 +53,7 @@ Status File::Open(int flags, FileCreateDisposition create_disposition, bool* exi
     }
   }
   if(fd_ == -1) {
-    int error = errno;
+    log_warn("I/O Error: %s", strerror(errno));
     return Status::IOError;
   }
 
@@ -68,7 +70,7 @@ Status File::Close() {
     int result = ::close(fd_);
     fd_ = -1;
     if(result == -1) {
-      int error = errno;
+      log_warn("I/O Error: %s", strerror(errno));
       return Status::IOError;
     }
   }
@@ -79,7 +81,7 @@ Status File::Close() {
 Status File::Delete() {
   int result = ::remove(filename_.c_str());
   if(result == -1) {
-    int error = errno;
+    log_warn("I/O Error: %s", strerror(errno));
     return Status::IOError;
   }
   return Status::Ok;

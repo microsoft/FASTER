@@ -426,7 +426,7 @@ void thread_setup_store(S* store, size_t thread_idx) {
 
   SetThreadAffinity(thread_idx);
 
-  Guid guid = store->StartSession();
+  [[maybe_unused]] Guid guid = store->StartSession();
 
   uint64_t value = 42;
   for(uint64_t chunk_idx = idx_.fetch_add(kChunkSize); chunk_idx < kInitCount;
@@ -484,7 +484,7 @@ void thread_run_benchmark(S* store, size_t thread_idx) {
   int64_t reads_done = 0;
   int64_t writes_done = 0;
 
-  Guid guid = store->StartSession();
+  [[maybe_unused]] Guid guid = store->StartSession();
 
   while(!done_) {
     uint64_t chunk_idx = idx_.fetch_add(kChunkSize);
@@ -521,6 +521,9 @@ void thread_run_benchmark(S* store, size_t thread_idx) {
 
         UpsertContext context{ txn_keys_.get()[idx], upsert_value };
         Status result = store->Upsert(context, callback, 1);
+        if (result == Status::Ok) {
+          log_warn("Upsert returned unexpected status: %s", StatusStr(result));
+        }
         ++writes_done;
         break;
       }
@@ -536,6 +539,9 @@ void thread_run_benchmark(S* store, size_t thread_idx) {
         ReadContext context{ txn_keys_.get()[idx] };
 
         Status result = store->Read(context, callback, 1);
+        if (result != Status::Ok && result != Status::Pending) {
+          log_warn("Read returned unexpected status: %s", StatusStr(result));
+        }
         ++reads_done;
         break;
       }
@@ -546,9 +552,10 @@ void thread_run_benchmark(S* store, size_t thread_idx) {
 
         RmwContext context{ txn_keys_.get()[idx], 5 };
         Status result = store->Rmw(context, callback, 1);
-        if(result == Status::Ok) {
-          ++writes_done;
+        if (result != Status::Ok && result != Status::Pending) {
+          log_warn("RMW returned unexpected status: %s", StatusStr(result));
         }
+        ++writes_done;
         break;
       }
     }

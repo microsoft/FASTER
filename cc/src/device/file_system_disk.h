@@ -474,6 +474,9 @@ class FileSystemDisk {
     , default_file_options_{ unbuffered, delete_on_close }
     , log_{ root_path + "log.log", default_file_options_, &epoch} {
     core::Status result = log_.Open(&handler_);
+    if (result != core::Status::Ok) {
+      log_warn("Log open() returned status: %s", core::StatusStr(result));
+    }
     assert(result == core::Status::Ok);
   }
 

@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "../common/log.h"
 #include "../core/async.h"
 #include "../core/status.h"
 #include "file_common.h"
@@ -70,6 +71,9 @@ class File {
   ~File() {
     if(owner_) {
       core::Status s = Close();
+      if (s != core::Status::Ok) {
+        log_warn("Closing file returned status: %s", StatusStr(s));
+      }
     }
   }
 
@@ -161,6 +165,9 @@ class QueueIoHandler {
   QueueIoHandler(size_t max_threads)
     : io_object_{ 0 } {
     int result = ::io_setup(kMaxIoEvents, &io_object_);
+    if (result < 0) {
+      log_warn("libaio: io_setup returned %d: %s", result, strerror(errno));
+    }
     assert(result >= 0);
   }
 

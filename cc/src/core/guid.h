@@ -17,6 +17,8 @@
 #include <uuid/uuid.h>
 #endif
 
+#include "../common/log.h"
+
 namespace FASTER {
 namespace core {
 
@@ -62,6 +64,9 @@ class Guid {
 #else
     uuid_t uuid;
     int result = uuid_parse(const_cast<char*>(str.c_str()), uuid);
+    if (result) {
+      log_error("uuid_parse returned %d", result);
+    }
     assert(result == 0);
     return uuid;
 #endif
