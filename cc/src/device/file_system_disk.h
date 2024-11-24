@@ -130,9 +130,9 @@ class FileSystemSegmentBundle {
                           uint64_t begin_segment_, uint64_t end_segment_)
     : filename_{ filename }
     , file_options_{ file_options }
+    , owner_{ true }
     , begin_segment{ begin_segment_ }
-    , end_segment{ end_segment_ }
-    , owner_{ true } {
+    , end_segment{ end_segment_ } {
     for(uint64_t idx = begin_segment; idx < end_segment; ++idx) {
       new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
           file_options_ };
@@ -148,9 +148,9 @@ class FileSystemSegmentBundle {
                           bundle_t& other)
     : filename_{ std::move(other.filename_) }
     , file_options_{ other.file_options_ }
+    , owner_{ true }
     , begin_segment{ begin_segment_ }
-    , end_segment{ end_segment_ }
-    , owner_{ true } {
+    , end_segment{ end_segment_ } {
     assert(end_segment >= other.end_segment);
 
     uint64_t begin_new = begin_segment;
@@ -227,13 +227,14 @@ class FileSystemSegmentBundle {
     return sizeof(bundle_t) + num_segments * sizeof(file_t);
   }
 
- public:
-  const uint64_t begin_segment;
-  const uint64_t end_segment;
  private:
   std::string filename_;
   environment::FileOptions file_options_;
   bool owner_;
+
+ public:
+  const uint64_t begin_segment;
+  const uint64_t end_segment;
 };
 
 template <class H, uint64_t S>

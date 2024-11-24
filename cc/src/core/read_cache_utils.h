@@ -19,11 +19,11 @@ class ReadCacheRecordInfo {
  public:
   ReadCacheRecordInfo(uint16_t checkpoint_version_, bool in_cold_hlog_, bool tombstone_,
                       bool invalid_, Address previous_address)
-    : checkpoint_version{ checkpoint_version_ }
-    , in_cold_hlog{ in_cold_hlog_ }
+    : previous_address_{ previous_address.control() }
+    , checkpoint_version{ checkpoint_version_ }
     , invalid{ invalid_ }
     , tombstone{ tombstone_ }
-    , previous_address_{ previous_address.control() } {
+    , in_cold_hlog{ in_cold_hlog_ } {
   }
   ReadCacheRecordInfo(const ReadCacheRecordInfo& other)
     : control_{ other.control_ } {
@@ -110,6 +110,10 @@ class ReadCacheEvictContext : public IAsyncContext {
     throw std::runtime_error{ "ReadCache Evict Context should *not* go async!" };
   }
 
+ private:
+  /// Pointer to the record
+  record_t* record_;
+
  public:
   /// Hash table entry that (indirectly) leads to the record being read or modified.
   HashBucketEntry entry;
@@ -119,9 +123,6 @@ class ReadCacheEvictContext : public IAsyncContext {
   IndexOperationType index_op_type;
   Status index_op_result;
 
- private:
-  /// Pointer to the record
-  record_t* record_;
 };
 
 typedef void(*ReadCacheEvictCallback)(void* readcache, Address from_head_address, Address to_head_address);

@@ -16,11 +16,11 @@ class RecordInfo {
  public:
   RecordInfo(uint16_t checkpoint_version_, bool final_bit_, bool tombstone_, bool invalid_,
              Address previous_address)
-    : checkpoint_version{ checkpoint_version_ }
-    , final{ final_bit_ }
+    : previous_address_{ previous_address.control() }
+    , checkpoint_version{ checkpoint_version_ }
     , invalid{ invalid_ }
     , tombstone{ tombstone_ }
-    , previous_address_{ previous_address.control() } {
+    , final{ final_bit_ } {
   }
   RecordInfo(const RecordInfo& other)
     : control_{ other.control_ } {

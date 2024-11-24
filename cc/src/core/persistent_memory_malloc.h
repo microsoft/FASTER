@@ -249,6 +249,7 @@ class PersistentMemoryMalloc {
     : sector_size{ static_cast<uint32_t>(file_.alignment()) }
     , epoch_{ &epoch }
     , disk{ &disk_ }
+    , buffer_size_{ 0 }
     , file{ &file_ }
     , read_buffer_pool{ 1, sector_size }
     , io_buffer_pool{ 1, sector_size }
@@ -259,11 +260,10 @@ class PersistentMemoryMalloc {
     , flushed_until_address{ start_address }
     , begin_address{ start_address }
     , tail_page_offset_{ start_address }
-    , buffer_size_{ 0 }
-    , pages_{ nullptr }
-    , page_status_{ nullptr }
     , pre_allocate_log_{ pre_allocate_log }
-    , has_no_backing_storage_{ has_no_backing_storage } {
+    , has_no_backing_storage_{ has_no_backing_storage }
+    , pages_{ nullptr }
+    , page_status_{ nullptr } {
     assert(start_address.page() <= Address::kMaxPage);
 
     log_debug("Log size: %.3lf MiB", static_cast<double>(log_size) / (1 << 20));
@@ -652,6 +652,8 @@ class PersistentMemoryMalloc {
   LightEpoch* epoch_;
   disk_t* disk;
 
+  uint32_t buffer_size_;
+
  public:
   log_file_t* file;
   // Read buffer pool
@@ -674,10 +676,10 @@ class PersistentMemoryMalloc {
   /// by garbage collection.
   AtomicAddress begin_address;
 
- protected:
-  uint32_t buffer_size_;
-
  private:
+  // Global address of the current tail (next element to be allocated from the circular buffer)
+  AtomicPageOffset tail_page_offset_;
+
   bool pre_allocate_log_;
 
   bool has_no_backing_storage_;
@@ -690,10 +692,6 @@ class PersistentMemoryMalloc {
 
   // Array that indicates the status of each buffer page
   FullPageStatus* page_status_;
-
-  // Global address of the current tail (next element to be allocated from the circular buffer)
-  AtomicPageOffset tail_page_offset_;
-
 };
 
 /// Implementations.

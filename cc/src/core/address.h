@@ -45,9 +45,9 @@ class Address {
     : control_{ 0 } {
   }
   Address(uint32_t page, uint32_t offset)
-    : reserved_{ 0 }
+    : offset_{ offset }
     , page_{ page }
-    , offset_{ offset } {
+    , reserved_{ 0 } {
   }
   /// Copy constructor.
   Address(const Address& other)

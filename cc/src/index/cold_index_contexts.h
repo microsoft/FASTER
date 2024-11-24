@@ -108,8 +108,8 @@ class ColdIndexContext : public IAsyncContext {
   }
   /// Copy (and deep-copy) constructor.
   ColdIndexContext(const ColdIndexContext& other, IAsyncContext* caller_context_)
-    : caller_context{ caller_context_ }
-    , op_type{ other.op_type }
+    : op_type{ other.op_type }
+    , caller_context{ caller_context_ }
     , io_id{ other.io_id }
     , thread_io_responses{ other.thread_io_responses }
     , result{ other.result }

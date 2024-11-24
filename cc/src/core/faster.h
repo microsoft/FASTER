@@ -140,14 +140,14 @@ class FasterKv {
            ReadCacheConfig rc_config = DEFAULT_READ_CACHE_CONFIG,
            HlogCompactionConfig hlog_compaction_config = DEFAULT_HLOG_COMPACTION_CONFIG,
            bool pre_allocate_log = false, const std::string& config = "")
-    : min_index_table_size_{ index_config.table_size }
+    : system_state_{ Action::None, Phase::REST, 1 }
     , disk{ filepath, epoch_, config }
     , hlog{ filepath.empty() /*hasNoBackingStorage*/, hlog_mem_size, epoch_, disk, disk.log(), hlog_mutable_fraction, pre_allocate_log }
-    , system_state_{ Action::None, Phase::REST, 1 }
     , grow_state_{ &hlog }
     , hash_index_{ filepath, disk, epoch_, gc_state_, grow_state_ }
     , read_cache_{ nullptr }
     , read_cache_enabled_{ rc_config.enabled }
+    , min_index_table_size_{ index_config.table_size }
     , num_pending_ios_{ 0 }
     , num_compaction_truncations_{ 0 }
     , next_hlog_begin_address_{ Address::kInvalidAddress }
@@ -421,20 +421,30 @@ class FasterKv {
   }
 
  private:
+  // Epoch protection framework
   LightEpoch epoch_;
+  // FASTER System state
+  AtomicSystemState system_state_;
 
  public:
   disk_t disk;
   hlog_t hlog;
 
+ private:
+  /// Garbage collection state.
+  typename hash_index_t::gc_state_t gc_state_;
+  /// Grow (hash table) state.
+  typename hash_index_t::grow_state_t grow_state_;
+
+ public:
   hash_index_t hash_index_;
   std::unique_ptr<read_cache_t> read_cache_;
 
  private:
   static constexpr bool kCopyReadsToTail = false;
   static constexpr int kNumCompactionThreads = 8;
+  static constexpr bool fold_over_snapshot = true;
 
-  const bool fold_over_snapshot = true;
   const bool read_cache_enabled_;
 
   /// Initial size of the index table
@@ -442,14 +452,8 @@ class FasterKv {
 
   CheckpointLocks<key_hash_t> checkpoint_locks_;
 
-  AtomicSystemState system_state_;
-
   /// Checkpoint/recovery state.
   CheckpointState<file_t> checkpoint_;
-  /// Garbage collection state.
-  typename hash_index_t::gc_state_t gc_state_;
-  /// Grow (hash table) state.
-  typename hash_index_t::grow_state_t grow_state_;
 
   /// Global count of pending I/Os, used for throttling.
   std::atomic<uint64_t> num_pending_ios_;
@@ -458,7 +462,6 @@ class FasterKv {
   std::atomic<uint64_t> num_compaction_truncations_;
 
   // Context of threads participating in the hybrid log compaction
-  //CompactionThreadsContext<faster_t> compaction_context_;
   ConcurrentCompactionThreadsContext<faster_t> compaction_context_;
 
   /// Hlog begin address after the compaction & log trimming is finished
@@ -486,7 +489,6 @@ class FasterKv {
 
   // Hard limit of log size
   uint64_t max_hlog_size_;
-
 
 #ifdef STATISTICS
  public:

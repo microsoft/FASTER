@@ -28,8 +28,8 @@ class InternalHashTable {
   typedef typename HID::hash_bucket_t hash_bucket_t;
 
   InternalHashTable()
-    : size_{ 0 }
-    , buckets_{ nullptr }
+    : buckets_{ nullptr }
+    , size_{ 0 }
     , disk_{ nullptr }
     , pending_checkpoint_writes_{ 0 }
     , pending_recover_reads_{ 0 }

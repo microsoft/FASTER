@@ -257,9 +257,9 @@ class MallocFixedPageSize {
 
   MallocFixedPageSize()
     : alignment_{ UINT64_MAX }
+    , page_array_{ nullptr }
     , count_{ 0 }
     , epoch_{ nullptr }
-    , page_array_{ nullptr }
     , disk_{ nullptr }
     , pending_checkpoint_writes_{ 0 }
     , pending_recover_reads_{ 0 }

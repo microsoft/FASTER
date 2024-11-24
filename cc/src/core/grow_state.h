@@ -42,9 +42,11 @@ class GrowState : public GrowStateBase<T> {
 
   GrowState(hlog_t* hlog_)
     : GrowStateBase<T>(hlog_)
-    , num_pending_chunks{ 0 }
     , old_version{ UINT8_MAX }
-    , new_version{ UINT8_MAX } {
+    , new_version{ UINT8_MAX }
+    , num_chunks{ 0 }
+    , num_pending_chunks{ 0 }
+    , next_chunk{ 0 } {
   }
 
   void Initialize(GrowCompleteCallback callback_, uint8_t current_version,

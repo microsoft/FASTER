@@ -34,7 +34,8 @@ class AsyncIOContext : public IAsyncContext {
     , address{ address_ }
     , caller_context{ caller_context_ }
     , thread_io_responses{ thread_io_responses_ }
-    , io_id{ io_id_ } {
+    , io_id{ io_id_ }
+    , record{} {
   }
   /// No copy constructor.
   AsyncIOContext(const AsyncIOContext& other) = delete;
@@ -44,8 +45,8 @@ class AsyncIOContext : public IAsyncContext {
     , address{ other.address }
     , caller_context{ caller_context_ }
     , thread_io_responses{ other.thread_io_responses }
-    , record{ std::move(other.record) }
-    , io_id{ other.io_id } {
+    , io_id{ other.io_id }
+    , record{ std::move(other.record) } {
   }
  protected:
   Status DeepCopy_Internal(IAsyncContext*& context_copy) final {

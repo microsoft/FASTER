@@ -42,12 +42,12 @@ class ReadCache {
   ReadCache(LightEpoch& epoch, hash_index_t& hash_index, faster_hlog_t& faster_hlog,
             ReadCacheBlockAllocateCallback block_allocate_callback,
             ReadCacheConfig& config)
-    : epoch_{ &epoch }
+    : epoch_{ epoch }
     , hash_index_{ &hash_index }
-    , disk_{ "", epoch, "" }
-    , faster_hlog_{ &faster_hlog }
     , faster_{ nullptr }
     , block_allocate_callback_{ block_allocate_callback }
+    , disk_{ "", epoch, "" }
+    , faster_hlog_{ &faster_hlog }
     , read_cache_{ true, config.mem_size, epoch, disk_, disk_.log(), config.mutable_fraction,
                   config.pre_allocate_log, EvictCallback} {
     // hash index should be entirely in memory
@@ -94,7 +94,7 @@ class ReadCache {
   void SkipBucket(hash_bucket_t* const bucket) const;
 
  private:
-  LightEpoch* epoch_;
+  LightEpoch& epoch_;
   hash_index_t* hash_index_;
 
   void* faster_;

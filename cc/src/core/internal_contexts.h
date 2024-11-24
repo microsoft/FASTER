@@ -74,18 +74,18 @@ class PendingContext : public IAsyncContext {
  protected:
   PendingContext(OperationType type_, IAsyncContext& caller_context_,
                  AsyncCallback caller_callback_)
-    : type{ type_ }
+    : phase{ Phase::INVALID }
+    , type{ type_ }
+    , result{ Status::Pending }
+    , version{ UINT32_MAX }
     , caller_context{ &caller_context_ }
     , caller_callback{ caller_callback_ }
-    , version{ UINT32_MAX }
-    , phase{ Phase::INVALID }
-    , result{ Status::Pending }
     , address{ Address::kInvalidAddress }
-    , index_op_type{ IndexOperationType::None }
-    , index_op_result{ Status::Corruption }
     , entry{ HashBucketEntry::kInvalidEntry }
     , atomic_entry{ nullptr }
-    , skip_read_cache{ false } {
+    , skip_read_cache{ false }
+    , index_op_type{ IndexOperationType::None }
+    , index_op_result{ Status::Corruption } {
   #ifdef STATISTICS
       num_iops = 0;
       num_record_invalidations = 0;
@@ -95,18 +95,18 @@ class PendingContext : public IAsyncContext {
  public:
   /// The deep-copy constructor.
   PendingContext(const PendingContext& other, IAsyncContext* caller_context_)
-    : type{ other.type }
+    : phase{ other.phase }
+    , type{ other.type }
+    , result{ other.result }
+    , version{ other.version }
     , caller_context{ caller_context_ }
     , caller_callback{ other.caller_callback }
-    , version{ other.version }
-    , phase{ other.phase }
-    , result{ other.result }
     , address{ other.address }
-    , index_op_type{ other.index_op_type }
-    , index_op_result{ other.index_op_result }
     , entry{ other.entry }
     , atomic_entry{ other.atomic_entry }
-    , skip_read_cache{ other.skip_read_cache } {
+    , skip_read_cache{ other.skip_read_cache }
+    , index_op_type{ other.index_op_type }
+    , index_op_result{ other.index_op_result } {
   #ifdef STATISTICS
       num_iops = other.num_iops;
       num_record_invalidations = other.num_record_invalidations;
@@ -169,7 +169,7 @@ class PendingContext : public IAsyncContext {
   bool skip_read_cache;
   /// Type of index operation that went pending
   IndexOperationType index_op_type;
-  // Result of index operation
+  /// Result of index operation
   Status index_op_result;
 
 #ifdef STATISTICS
