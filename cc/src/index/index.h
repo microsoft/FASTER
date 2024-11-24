@@ -187,7 +187,7 @@ Status IHashIndex<D>::ReadCheckpointMetadata(const Guid& token, CheckpointState<
     std::this_thread::yield();
   }
   // Copy from buffer to struct
-  memcpy(&checkpoint.index_metadata, buffer, sizeof(checkpoint.index_metadata));
+  std::memcpy(reinterpret_cast<void*>(&checkpoint.index_metadata), buffer, sizeof(checkpoint.index_metadata));
   core::aligned_free(reinterpret_cast<uint8_t*>(buffer));
 
   return read_result;
@@ -219,8 +219,8 @@ Status IHashIndex<D>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoin
   write_size += file.alignment() - write_size;  // pad to file alignment
   assert(write_size % file.alignment() == 0);
   uint8_t* buffer = reinterpret_cast<uint8_t*>(core::aligned_alloc(file.alignment(), write_size));
-  memset(buffer, 0, write_size);
-  memcpy(buffer, &checkpoint.index_metadata, sizeof(checkpoint.index_metadata));
+  std::memset(reinterpret_cast<void*>(buffer), 0, write_size);
+  std::memcpy(reinterpret_cast<void*>(buffer), &checkpoint.index_metadata, sizeof(checkpoint.index_metadata));
   // Write to file
   RETURN_NOT_OK(file.WriteAsync(buffer, 0, write_size, callback, context));
 

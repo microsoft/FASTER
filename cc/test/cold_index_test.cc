@@ -213,7 +213,7 @@ class ReadContext : public IAsyncContext {
 
   inline void Get(const Value& value) {
     // This is a paging test, so we expect to read stuff from disk.
-    std::memcpy(&value_, &value, sizeof(Value));
+    std::memcpy(reinterpret_cast<void*>(&value_), &value, sizeof(Value));
   }
   inline void GetAtomic(const Value& value) {
     uint64_t post_gen = value.gen_.load();
@@ -221,7 +221,7 @@ class ReadContext : public IAsyncContext {
     do {
       // Pre- gen # for this read is last read's post- gen #.
       pre_gen = post_gen;
-      std::memcpy(&value_, &value, sizeof(Value));
+      std::memcpy(reinterpret_cast<void*>(&value_), &value, sizeof(Value));
       post_gen = value.gen_.load();
     } while(pre_gen != post_gen);
   }

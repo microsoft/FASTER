@@ -26,7 +26,7 @@ void SegmentAllocator::Free(void* bytes) {
   assert(header->offset < kSegmentSize);
   assert(header->offset + header->size <= kSegmentSize);
   //  - 0xDA - freed.
-  ::memset(header + 1, 0xDA, header->size);
+  ::memset(reinterpret_cast<void*>(header + 1), 0xDA, header->size);
 #endif
   Free();
 }

@@ -59,7 +59,7 @@ class InternalHashTable {
       buckets_ = reinterpret_cast<hash_bucket_t*>(core::aligned_alloc(alignment,
                  size_ * sizeof(hash_bucket_t)));
     }
-    std::memset(buckets_, 0, size_ * sizeof(hash_bucket_t));
+    std::memset(reinterpret_cast<void*>(buckets_), 0, size_ * sizeof(hash_bucket_t));
 
     // No checkpointing is in progress
     assert(pending_checkpoint_writes_ == 0);
@@ -246,7 +246,7 @@ Status InternalHashTable<D, HID>::Checkpoint(disk_t& disk, file_t&& file, uint64
     } else {
       hash_bucket_t* buckets_chunk = reinterpret_cast<hash_bucket_t*>(core::aligned_alloc(
                                         file_.alignment(), chunk_size * sizeof(hash_bucket_t)));
-      memcpy(buckets_chunk, &bucket(idx * chunk_size), write_size);
+      memcpy(reinterpret_cast<void*>(buckets_chunk), &bucket(idx * chunk_size), write_size);
       for (uint32_t chunk = 0; chunk < chunk_size; chunk++) {
         read_cache->SkipBucket(&buckets_chunk[chunk]);
       }

@@ -479,7 +479,7 @@ Status MallocFixedPageSize<T, F>::Checkpoint(disk_t& disk, file_t&& file,
   pending_checkpoint_writes_ = num_levels;
   for(uint64_t idx = 0; idx < num_levels; ++idx) {
     page_t* page_copy = static_cast<page_t*>(aligned_alloc(alignment_, sizeof(page_t)));
-    memcpy(page_copy, page_array->Get(idx), kWriteSize);
+    memcpy(reinterpret_cast<void*>(page_copy), page_array->Get(idx), kWriteSize);
     for (uint64_t idx = 0; idx < page_t::kPageSize; idx++) {
       read_cache->SkipBucket(&(page_copy->element(idx)));
     }

@@ -112,7 +112,7 @@ class CheckpointLocks {
     size_ = size;
     locks_ = reinterpret_cast<AtomicCheckpointLock*>(aligned_alloc(Constants::kCacheLineBytes,
              size_ * sizeof(AtomicCheckpointLock)));
-    std::memset(locks_, 0, size_ * sizeof(AtomicCheckpointLock));
+    std::memset(reinterpret_cast<void*>(locks_), 0, size_ * sizeof(AtomicCheckpointLock));
   }
 
   void Free() {

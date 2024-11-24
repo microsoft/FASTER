@@ -113,7 +113,7 @@ class CompactionConditionalInsertContext : public IAsyncContext {
   }
   inline void write_deep_key_at(key_t* dst) const {
     // Copy the already "deep-written" key to the new destination
-    memcpy(dst, &key(), key().size());
+    memcpy(reinterpret_cast<void*>(dst), &key(), key().size());
   }
   inline bool is_tombstone() const {
     return record()->header.tombstone;
@@ -134,7 +134,8 @@ class CompactionConditionalInsertContext : public IAsyncContext {
   inline void Put(void* rec) {
     // Manually copy value contents to new destination
     record_t* dest = reinterpret_cast<record_t*>(rec);
-    memcpy(&dest->value(), &record()->value(), value_size());
+    memcpy(reinterpret_cast<void*>(&dest->value()),
+           reinterpret_cast<void*>(&record()->value()), value_size());
   }
   inline bool PutAtomic(void *rec) {
     // Cannot guarantee atomic upsert

@@ -241,13 +241,14 @@ class ColdIndexRmwContext : public ColdIndexContext<HID> {
 
   inline void RmwInitial(value_t& value) {
     // Initialize chunk to free hash bucket entries
-    std::memset(&value, 0, sizeof(value_t));
+    std::memset(reinterpret_cast<void*>(&value), 0, sizeof(value_t));
     // Perform update
     UpdateEntry(value);
   }
   inline void RmwCopy(const value_t& old_value, value_t& value) {
     // Duplicate old chunk
-    std::memcpy(&value, &old_value, sizeof(value_t));
+    std::memcpy(reinterpret_cast<void*>(&value),
+                reinterpret_cast<const void*>(&old_value), sizeof(value_t));
     // Perform update
     UpdateEntry(value);
   }

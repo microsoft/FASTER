@@ -79,7 +79,7 @@ class LogMetadata {
     , num_threads{ 0 }
     , flushed_address{ Address::kInvalidAddress }
     , final_address{ Address::kMaxAddress } {
-    std::memset(guids, 0, sizeof(guids));
+    std::memset(reinterpret_cast<void*>(guids), 0, sizeof(guids));
     std::memset(monotonic_serial_nums, 0, sizeof(monotonic_serial_nums));
   }
 
@@ -89,7 +89,7 @@ class LogMetadata {
     num_threads = 0;
     flushed_address = flushed_address_;
     final_address = Address::kMaxAddress;
-    std::memset(guids, 0, sizeof(guids));
+    std::memset(reinterpret_cast<void*>(guids), 0, sizeof(guids));
     std::memset(monotonic_serial_nums, 0, sizeof(monotonic_serial_nums));
   }
   inline void Reset() {

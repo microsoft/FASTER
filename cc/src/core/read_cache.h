@@ -246,7 +246,7 @@ inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& p
   // Create new record
   Address new_address = (*block_allocate_callback_)(faster_, record->size());
   record_t* new_record = reinterpret_cast<record_t*>(read_cache_.Get(new_address));
-  memcpy(new_record, record, record->size());
+  memcpy(reinterpret_cast<void*>(new_record), reinterpret_cast<void*>(record), record->size());
   // Replace header
   ReadCacheRecordInfo record_info {
     static_cast<uint16_t>(exec_context.version),
