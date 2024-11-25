@@ -27,7 +27,6 @@ class AdId {
     return static_cast<uint32_t>(sizeof(AdId));
   }
   inline KeyHash GetHash() const {
-    FasterHashHelper<uint64_t> hash_fn;
     return KeyHash{ HashFn::compute(key_) };
   }
 

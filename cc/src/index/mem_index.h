@@ -627,7 +627,7 @@ inline bool MemHashIndex<D, HID>::GarbageCollect(RC* read_cache) {
           ) {
           // The record that this entry points to was truncated; try to delete the entry.
           HashBucketEntry entry{ expected_entry };
-          bool success = atomic_entry.compare_exchange_strong(entry, HashBucketEntry::kInvalidEntry);
+          atomic_entry.compare_exchange_strong(entry, HashBucketEntry::kInvalidEntry);
           // If deletion failed, then some other thread must have added a new record to the entry.
         }
       }

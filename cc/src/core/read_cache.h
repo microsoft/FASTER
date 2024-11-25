@@ -328,7 +328,6 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
 
     record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(address));
     ReadCacheRecordInfo rc_record_info{ record->header };
-    uint32_t record_size = record->size();
 
     assert(!rc_record_info.IsNull());
     // Assume (for now) that only a single entry per hash bucket lies in read cache

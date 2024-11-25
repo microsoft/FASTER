@@ -2369,7 +2369,6 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingConditionalInse
   // assert(pending_context->min_search_offset <= pending_context->start_search_entry.address());
 
   Address begin_address = hlog.begin_address.load();
-  Address head_address = hlog.head_address.load();
 
   if (pending_context->min_search_offset < begin_address) {
     // we cannot scan the entire region because log was truncated
@@ -2822,7 +2821,6 @@ Status FasterKv<K, V, D, H, OH>::RecoverFromPage(Address from_address, Address t
     }
 
     HashBucketEntry expected_entry{ pending_context.entry };
-    KeyHash hash = record->key().GetHash();
 
     if(record->header.checkpoint_version <= checkpoint_.log_metadata.version) {
       hash_index_.UpdateEntry(thread_ctx(), pending_context, address);
@@ -4481,7 +4479,6 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
     auto_compaction_scheduled_.store(true);
 
     uint64_t begin_address = hlog.begin_address.control();
-    uint64_t tail_address = hlog.GetTailAddress().control();
 
     /// calculate until address
     // start with compaction percentage
@@ -4497,7 +4494,7 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
 
     // perform log compaction
     log_info("Auto-compaction: [%lu %lu] -> [%lu %lu] {%lu}",
-              begin_address, tail_address, until_address, tail_address, Size());
+             begin_address, tail_address, until_address, tail_address, Size());
     StartSession();
     bool success = CompactWithLookup(until_address, true, hlog_compaction_config_.num_threads);
     StopSession();

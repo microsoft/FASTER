@@ -1083,7 +1083,6 @@ void PersistentMemoryMalloc<D>::RecoveryReset(Address begin_address_, Address he
   read_only_address.store(tail_address);
   safe_read_only_address.store(tail_address);
 
-  uint32_t start_page = head_address_.page();
   uint32_t end_page = tail_address.offset() == 0 ? tail_address.page() : tail_address.page() + 1;
   if(!Page(end_page)) {
     AllocatePage(end_page);
@@ -1100,7 +1099,6 @@ void PersistentMemoryMalloc<D>::RecoveryReset(Address begin_address_, Address he
 template <class D>
 void PersistentMemoryMalloc<D>::PageAlignedShiftHeadAddress(uint32_t tail_page) {
   //obtain local values of variables that can change
-  Address current_head_address = head_address.load();
   Address current_flushed_until_address = flushed_until_address.load();
 
   if(tail_page <= (buffer_size_ - kNumHeadPages)) {
@@ -1126,7 +1124,6 @@ void PersistentMemoryMalloc<D>::PageAlignedShiftHeadAddress(uint32_t tail_page) 
 
 template <class D>
 inline void PersistentMemoryMalloc<D>::PageAlignedShiftReadOnlyAddress(uint32_t tail_page) {
-  Address current_read_only_address = read_only_address.load();
   if(tail_page <= num_mutable_pages_) {
     // Desired read-only address is <= 0.
     return;
