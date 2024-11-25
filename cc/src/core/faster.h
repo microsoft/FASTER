@@ -2059,10 +2059,12 @@ inline Status FasterKv<K, V, D, H, OH>::HandleOperationStatus(ExecutionContext& 
     return Status::Aborted;
   case OperationStatus::CPR_SHIFT_DETECTED:
     return PivotAndRetry(ctx, pending_context, async);
+
+  // not reachable
+  default:
+    assert(false);
+    return Status::Corruption;
   }
-  // not reached
-  assert(false);
-  return Status::Corruption;
 }
 
 template <class K, class V, class D, class H, class OH>
@@ -3292,7 +3294,15 @@ void FasterKv<K, V, D, H, OH>::HandleSpecialPhases() {
       case Phase::GROW_IN_PROGRESS:
         GrowIndexBlocking();
         break;
+      default:
+        // do nothing
+        break;
       }
+      break;
+
+    case Action::None:
+    default:
+      // do nothing
       break;
     }
     thread_ctx().phase = current_state.phase;
@@ -4491,7 +4501,8 @@ void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
 
     // perform log compaction
     log_info("Auto-compaction: [%lu %lu] -> [%lu %lu] {%lu}",
-             begin_address, tail_address, until_address, tail_address, Size());
+             begin_address, hlog.GetTailAddress(),
+             until_address, hlog.GetTailAddress(), Size());
     StartSession();
     bool success = CompactWithLookup(until_address, true, hlog_compaction_config_.num_threads);
     StopSession();

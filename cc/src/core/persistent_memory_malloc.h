@@ -350,7 +350,7 @@ class PersistentMemoryMalloc {
 
   /// Used by application to resize hlog's buffer size
   /// WARNING: This is an *unsafe* operation: no other concurrent ops should be performed concurrently
-  inline void UnsafeBufferResize(uint64_t log_size, double log_mutable_perc) {
+  inline void UnsafeBufferResize(uint64_t log_size, double log_mutable_pct) {
     if (!epoch_->IsProtected()) {
       throw std::runtime_error{ "UnsafeBufferResize(): Thread has no active session" };
     }
@@ -403,7 +403,7 @@ class PersistentMemoryMalloc {
     Address old_head_address;
     bool success = MonotonicUpdate(head_address, desired_head_address, old_head_address);
     if (!success) {
-      throw std::runtime_error{ "MonotonicUpdate for head_address not successfull" };
+      throw std::runtime_error{ "MonotonicUpdate for head_address not successful" };
     }
     OnPagesClosed_Context context{ this, desired_head_address, false };
     IAsyncContext* context_copy;
@@ -419,7 +419,7 @@ class PersistentMemoryMalloc {
 
     // Resize buffer
     FreeBuffer();
-    InitializeBuffer(log_size, log_mutable_perc);
+    InitializeBuffer(log_size, log_mutable_pct);
   }
 
   void Truncate(const GcState& gc_state);
