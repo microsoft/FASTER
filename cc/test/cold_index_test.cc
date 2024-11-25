@@ -107,9 +107,9 @@ class Key {
 class Value {
  public:
   Value()
-    : gen_{ 0 }
-    , value_{ 0 }
-    , length_{ 0 } {
+    : value_{ 0 }
+    , length_{ 0 }
+    , gen_{ 0 } {
   }
 
   inline static constexpr uint32_t size() {
@@ -275,7 +275,8 @@ class DeleteContext : public IAsyncContext {
 
 /// Disk's log uses 64 MB segments.
 typedef FASTER::device::FileSystemDisk<handler_t, 64_MiB> disk_t;
-typedef FasterKv<Key, Value, disk_t, ColdIndex<disk_t>> faster_t;
+using HI = ColdIndex<disk_t, ColdLogHashIndexDefinition<8>>;
+typedef FasterKv<Key, Value, disk_t, HI> faster_t;
 
 static std::string ROOT_PATH{ "test_store/" };
 constexpr size_t kCompletePendingInterval = 64;
@@ -303,7 +304,7 @@ TEST_P(ColdIndexTestParams, UpsertRead_Serial) {
   static std::atomic<uint64_t> records_read{ 0 };
   static std::atomic<uint64_t> records_updated{ 0 };
 
-  Guid session_id = store.StartSession();
+  store.StartSession();
 
   // Insert.
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
@@ -417,7 +418,7 @@ TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
   uint64_t table_size = std::get<0>(args);
   uint64_t log_mem_size = std::get<1>(args);
   double log_mutable_frac = std::get<2>(args);
-  bool do_compaction = std::get<3>(args);
+  //bool do_compaction = std::get<3>(args);
 
   faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
   faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac };
@@ -429,7 +430,7 @@ TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
   static std::atomic<uint64_t> records_updated{ 0 };
 
   auto upsert_worker = [](faster_t* store_, size_t thread_idx) {
-    Guid session_id = store_->StartSession();
+    store_->StartSession();
 
     for(size_t idx = 0; idx < kNumRecords / kNumThreads; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -472,7 +473,7 @@ TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
   ASSERT_EQ(kNumRecords, records_updated.load());
 
   // Read.
-  Guid session_id = store.StartSession();
+  store.StartSession();
 
   records_read = 0;
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
@@ -567,7 +568,7 @@ TEST_P(ColdIndexTestParams, UpsertDeleteHalfRead) {
   faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
   faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac };
 
-  int numRecords = 100'000;
+  size_t numRecords = 100'000;
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -667,7 +668,7 @@ TEST_P(ColdIndexTestParams, UpsertUpdateAll) {
   faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
   faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac };
 
-  int numRecords = 100'000;
+  size_t numRecords = 100'000;
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -748,7 +749,7 @@ TEST_P(ColdIndexRecoveryTestParams, Serial) {
 
   faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
 
-  int numRecords = 100'000;
+  size_t numRecords = 100'000;
 
   Guid session_id;
   Guid token;

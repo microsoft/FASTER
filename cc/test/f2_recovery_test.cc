@@ -325,7 +325,7 @@ TEST_P(HotColdRecoveryTestParam, CheckpointAndRecoverySerial) {
       bool expected = false;
       ASSERT_EQ(Status::Ok, result);
       log_debug("Hot-cold store checkpoint callback called! [result: %s, psn: %lu]",
-                STATUS_STR[static_cast<int>(result)], persistent_serial_num);
+                StatusStr(result), persistent_serial_num);
       ASSERT_TRUE(threads_persistent[Thread::id()].compare_exchange_strong(expected, true));
       ++num_threads_persistent;
     };
@@ -337,7 +337,6 @@ TEST_P(HotColdRecoveryTestParam, CheckpointAndRecoverySerial) {
 
     if (!auto_compaction) {
       // perform cold-cold compaction
-      uint64_t cold_size = store.cold_store.Size();
       store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true);
     }
 

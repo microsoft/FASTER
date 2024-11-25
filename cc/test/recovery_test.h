@@ -247,7 +247,7 @@ TEST(CLASS, Serial) {
     typedef Key key_t;
     typedef Value1 value_t;
 
-    UpsertContext1(const Key& key, uint32_t val)
+    UpsertContext1(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -259,18 +259,18 @@ TEST(CLASS, Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value1& value) {
+    inline void Put(value_t& value) {
       value.size_ = sizeof(value);
       value.val1_ = val_;
     }
-    inline bool PutAtomic(Value1& value) {
+    inline bool PutAtomic(value_t& value) {
       EXPECT_EQ(value.size_, sizeof(value));
       value.atomic_val1_.store(val_);
       return true;
@@ -283,7 +283,7 @@ TEST(CLASS, Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -292,7 +292,7 @@ TEST(CLASS, Serial) {
     typedef Key key_t;
     typedef Value2 value_t;
 
-    UpsertContext2(const Key& key, uint16_t val)
+    UpsertContext2(const key_t& key, uint16_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -304,18 +304,18 @@ TEST(CLASS, Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value2& value) {
+    inline void Put(value_t& value) {
       value.size_ = sizeof(value);
       value.val2_ = val_;
     }
-    inline bool PutAtomic(Value2& value) {
+    inline bool PutAtomic(value_t& value) {
       EXPECT_EQ(value.size_, sizeof(value));
       value.atomic_val2_.store(val_);
       return true;
@@ -328,7 +328,7 @@ TEST(CLASS, Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint16_t val_;
   };
 
@@ -337,7 +337,7 @@ TEST(CLASS, Serial) {
     typedef Key key_t;
     typedef Value1 value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -351,14 +351,14 @@ TEST(CLASS, Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value1& value) {
+    inline void Get(const value_t& value) {
       val_ = value.val1_;
     }
-    inline void GetAtomic(const Value1& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_val1_.load();
     }
 
@@ -373,7 +373,7 @@ TEST(CLASS, Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -384,7 +384,7 @@ TEST(CLASS, Serial) {
     typedef Key key_t;
     typedef Value2 value_t;
 
-    ReadContext2(Key key, uint16_t expected_)
+    ReadContext2(key_t key, uint16_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -398,14 +398,14 @@ TEST(CLASS, Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value2& value) {
+    inline void Get(const value_t& value) {
       val_ = value.val2_;
     }
-    inline void GetAtomic(const Value2& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_val2_.load();
     }
 
@@ -420,7 +420,7 @@ TEST(CLASS, Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint16_t val_;
    public:
     const uint16_t expected;
@@ -761,18 +761,18 @@ TEST(CLASS, Serial_VariableLengthKey) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return *key_.get();
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value1& value) {
+    inline void Put(value_t& value) {
       value.size_ = sizeof(value);
       value.val1_ = val_;
     }
-    inline bool PutAtomic(Value1& value) {
+    inline bool PutAtomic(value_t& value) {
       EXPECT_EQ(value.size_, sizeof(value));
       value.atomic_val1_.store(val_);
       return true;
@@ -808,18 +808,18 @@ TEST(CLASS, Serial_VariableLengthKey) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return *key_.get();
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value2& value) {
+    inline void Put(value_t& value) {
       value.size_ = sizeof(value);
       value.val2_ = val_;
     }
-    inline bool PutAtomic(Value2& value) {
+    inline bool PutAtomic(value_t& value) {
       EXPECT_EQ(value.size_, sizeof(value));
       value.atomic_val2_.store(val_);
       return true;
@@ -857,14 +857,14 @@ TEST(CLASS, Serial_VariableLengthKey) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return *key_.get();
     }
 
-    inline void Get(const Value1& value) {
+    inline void Get(const value_t& value) {
       val_ = value.val1_;
     }
-    inline void GetAtomic(const Value1& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_val1_.load();
     }
 
@@ -906,14 +906,14 @@ TEST(CLASS, Serial_VariableLengthKey) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return *key_.get();
     }
 
-    inline void Get(const Value2& value) {
+    inline void Get(const value_t& value) {
       val_ = value.val2_;
     }
-    inline void GetAtomic(const Value2& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_val2_.load();
     }
 
@@ -1170,7 +1170,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint32_t val)
+    UpsertContext(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -1182,17 +1182,17 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(val_);
       return true;
     }
@@ -1204,7 +1204,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -1220,7 +1220,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -1247,7 +1247,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -1261,14 +1261,14 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -1283,7 +1283,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -1402,7 +1402,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -1420,14 +1420,14 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -1442,7 +1442,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -1455,7 +1455,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     ASSERT_EQ(1, serial_num);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1536,7 +1536,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint32_t val)
+    UpsertContext(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -1548,17 +1548,17 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(val_);
       return true;
     }
@@ -1570,7 +1570,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -1586,7 +1586,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -1613,7 +1613,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -1627,14 +1627,14 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -1649,7 +1649,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -1766,7 +1766,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -1784,14 +1784,14 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -1806,7 +1806,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -1819,7 +1819,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     ASSERT_EQ(1, serial_num);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1900,7 +1900,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint32_t val)
+    UpsertContext(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -1912,17 +1912,17 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(val_);
       return true;
     }
@@ -1934,7 +1934,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -1950,7 +1950,7 @@ TEST(CLASS, Concurrent_Update_Small) {
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -1977,7 +1977,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -1991,14 +1991,14 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2013,7 +2013,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2142,7 +2142,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -2160,14 +2160,14 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2182,7 +2182,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2195,7 +2195,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     ASSERT_GE(serial_num, 1);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -2206,7 +2206,6 @@ TEST(CLASS, Concurrent_Update_Small) {
         ASSERT_TRUE(context->found[context->idx].compare_exchange_strong(expected, true));
       } else {
         ASSERT_EQ(999, context->val());
-        bool expected = false;
         ASSERT_FALSE(context->found[context->idx].load());
       }
     };
@@ -2222,7 +2221,6 @@ TEST(CLASS, Concurrent_Update_Small) {
           ASSERT_TRUE(found.get()[context.idx].compare_exchange_strong(expected, true));
         } else {
           ASSERT_EQ(999, context.val());
-          bool expected = false;
           ASSERT_FALSE(found.get()[context.idx].load());
         }
       } else {
@@ -2277,7 +2275,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint32_t val)
+    UpsertContext(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -2289,17 +2287,17 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(val_);
       return true;
     }
@@ -2311,7 +2309,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -2327,7 +2325,7 @@ TEST(CLASS, Concurrent_Update_Large) {
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid index_token;
   static Guid hybrid_log_token;
 
@@ -2362,7 +2360,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -2376,14 +2374,14 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2398,7 +2396,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2542,7 +2540,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -2560,14 +2558,14 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2582,7 +2580,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2595,7 +2593,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     ASSERT_GE(serial_num, 1);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -2606,7 +2604,6 @@ TEST(CLASS, Concurrent_Update_Large) {
         ASSERT_TRUE(context->found[context->idx].compare_exchange_strong(expected, true));
       } else {
         ASSERT_EQ(999, context->val());
-        bool expected = false;
         ASSERT_FALSE(context->found[context->idx].load());
       }
     };
@@ -2622,7 +2619,6 @@ TEST(CLASS, Concurrent_Update_Large) {
           ASSERT_TRUE(found.get()[context.idx].compare_exchange_strong(expected, true));
         } else {
           ASSERT_EQ(999, context.val());
-          bool expected = false;
           ASSERT_FALSE(found.get()[context.idx].load());
         }
       } else {
@@ -2677,7 +2673,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(const Key& key, uint32_t delta)
+    RmwContext(const key_t& key, uint32_t delta)
       : key_{ key }
       , delta_{ delta } {
     }
@@ -2689,7 +2685,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
@@ -2699,7 +2695,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.value = key_.key;
     }
     inline void RmwCopy(const value_t& old_value, value_t& value) {
@@ -2716,7 +2712,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t delta_;
   };
 
@@ -2727,7 +2723,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -2754,7 +2750,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -2768,14 +2764,14 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2790,7 +2786,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2930,7 +2926,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -2948,14 +2944,14 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2970,7 +2966,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2983,7 +2979,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     ASSERT_GE(serial_num, 1);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -2994,7 +2990,6 @@ TEST(CLASS, Concurrent_Rmw_Small) {
         ASSERT_TRUE(context->found[context->idx].compare_exchange_strong(expected, true));
       } else {
         ASSERT_EQ(context->expected - 230, context->val());
-        bool expected = false;
         ASSERT_FALSE(context->found[context->idx].load());
       }
     };
@@ -3010,7 +3005,6 @@ TEST(CLASS, Concurrent_Rmw_Small) {
           ASSERT_TRUE(found.get()[context.idx].compare_exchange_strong(expected, true));
         } else {
           ASSERT_EQ(idx, context.val());
-          bool expected = false;
           ASSERT_FALSE(found.get()[context.idx].load());
         }
       } else {
@@ -3065,7 +3059,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(const Key& key, uint32_t delta)
+    RmwContext(const key_t& key, uint32_t delta)
       : key_{ key }
       , delta_{ delta } {
     }
@@ -3077,7 +3071,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
@@ -3087,7 +3081,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.value = key_.key;
     }
     inline void RmwCopy(const value_t& old_value, value_t& value) {
@@ -3104,7 +3098,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t delta_;
   };
 
@@ -3116,7 +3110,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -3143,7 +3137,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -3157,14 +3151,14 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -3179,7 +3173,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -3346,7 +3340,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -3364,14 +3358,14 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -3386,7 +3380,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -3399,7 +3393,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     ASSERT_GE(serial_num, 1);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -3410,7 +3404,6 @@ TEST(CLASS, Concurrent_Rmw_Large) {
         ASSERT_TRUE(context->found[context->idx].compare_exchange_strong(expected, true));
       } else {
         ASSERT_EQ(context->expected - 230, context->val());
-        bool expected = false;
         ASSERT_FALSE(context->found[context->idx].load());
       }
     };
@@ -3426,7 +3419,6 @@ TEST(CLASS, Concurrent_Rmw_Large) {
           ASSERT_TRUE(found.get()[context.idx].compare_exchange_strong(expected, true));
         } else {
           ASSERT_EQ(idx, context.val());
-          bool expected = false;
           ASSERT_FALSE(found.get()[context.idx].load());
         }
       } else {

@@ -370,7 +370,6 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
 
   if (!auto_compaction) {
     // perform cold-cold compaction
-    uint64_t cold_size = store.cold_store.Size();
     store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true, 4);
   }
 
@@ -469,7 +468,6 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
 
   if (!auto_compaction) {
     // perform cold-cold compaction
-    uint64_t cold_size = store.cold_store.Size();
     store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true, 4);
   }
 
@@ -594,7 +592,6 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
 
   if (!auto_compaction) {
     // perform cold-cold compaction
-    uint64_t cold_size = store.cold_store.Size();
     store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true, 1);
   }
 
@@ -938,7 +935,7 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
 
     if (result == Status::Ok) {
       assert(key >= 1 && key <= num_records);
-      if (key % 4 == 0) { // upserted
+      if (key % 4 == 0) { // upsert-ed
         ASSERT_EQ(key, context.output.value / 2);
       } else if (key % 4 == 1) { // RMWed
         ASSERT_EQ(key + 1, context.output.value);
@@ -967,10 +964,12 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
 
   class UpsertContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(uint32_t* key, uint32_t key_length, Value value)
+    UpsertContext(uint32_t* key, uint32_t key_length, value_t value)
       : key_{ key, key_length }
       , value_{ value } {
     }
@@ -1010,7 +1009,9 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
 
   class ReadContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     ReadContext(uint32_t* key, uint32_t key_length)
@@ -1027,10 +1028,10 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       output.value = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       output.value = value.atomic_value.load();
     }
 
@@ -1043,12 +1044,14 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
    private:
     ShallowKey key_;
    public:
-    Value output;
+    value_t output;
   };
 
   class RmwContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     RmwContext(uint32_t* key, uint32_t key_length, value_t incr)
@@ -1091,12 +1094,14 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
 
    private:
     ShallowKey key_;
-    Value incr_;
+    value_t incr_;
   };
 
   class DeleteContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     explicit DeleteContext(uint32_t* key, uint32_t key_length)
@@ -1156,7 +1161,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
               cold_index_config, 192_MiB, cold_fp,
               0.4, 0, rc_config, f2_compaction_config };
 
-  int num_records = 17500;
+  uint32_t num_records = 17500;
 
   store.StartSession();
 
@@ -1390,20 +1395,20 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline uint32_t value_size() const {
-      return sizeof(Value) + value_length_ * sizeof(uint32_t);
+      return sizeof(value_t) + value_length_ * sizeof(uint32_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.gen_lock_.store(0);
       value.size_ = value_size();
       value.length_ = value_length_;
       std::memcpy(value.buffer(), value_, value_length_ * sizeof(uint32_t));
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       bool replaced;
       while(!value.gen_lock_.try_lock(replaced) && !replaced) {
         std::this_thread::yield();
@@ -1431,7 +1436,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t* value_;
     uint32_t value_length_;
   };
@@ -1461,17 +1466,17 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       output_length = value.length_;
       if (output == nullptr) {
         output = (uint32_t*) malloc(output_length * sizeof(uint32_t));
       }
       std::memcpy(output, value.buffer(), output_length * sizeof(uint32_t));
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       GenLock before, after;
       do {
         before = value.gen_lock_.load();
@@ -1491,7 +1496,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint32_t *output;
     uint32_t output_length;
@@ -1532,7 +1537,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
               cold_index_config, 192_MiB, cold_fp,
               0.4, 0, rc_config, f2_compaction_config };
 
-  int num_records = 17500;
+  uint32_t num_records = 17500;
 
   store.StartSession();
 

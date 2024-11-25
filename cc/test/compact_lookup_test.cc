@@ -241,7 +241,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemAllLive) {
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
   faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
-  int numRecords = 200000;
+  size_t numRecords = 200000;
 
   bool shift_begin_address = GetParam().first;
   int n_threads = GetParam().second;
@@ -259,11 +259,12 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemAllLive) {
   store.CompletePending(true);
 
   // perform compaction (with or without shift begin address)
-    uint64_t until_address = store.hlog.safe_read_only_address.control();
+  uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address, n_threads));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   for (size_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -287,7 +288,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemHalfLive) {
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
   faster_t store { 2048, 1_GiB, "", 0.0625 };
-  int numRecords = 200000;
+  size_t numRecords = 200000;
 
   bool shift_begin_address = GetParam().first;
   int n_threads = GetParam().second;
@@ -304,8 +305,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemHalfLive) {
   }
 
   // Delete every alternate key here.
-  for (size_t idx = 1; idx <= numRecords; ++idx) {
-    if (idx % 2 == 0) continue;
+  for (size_t idx = 1; idx <= numRecords; idx += 2) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
@@ -319,8 +319,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemHalfLive) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address, n_threads));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   // After compaction, deleted keys stay deleted.
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -332,7 +333,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemHalfLive) {
     Status result = store.Read(context, callback, 1);
     Status expect = idx % 2 == 0 ? Status::Ok : Status::NotFound;
     ASSERT_EQ(expect, result);
-    if (idx % 2 == 0) ASSERT_EQ(idx, context.output.value);
+    if (idx % 2 == 0) {
+      ASSERT_EQ(idx, context.output.value);
+    }
   }
   store.CompletePending(true);
   store.StopSession();
@@ -342,7 +345,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemRmw) {
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
   faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
-  int numRecords = 100000;
+  size_t numRecords = 100000;
 
   bool shift_begin_address = GetParam().first;
   int n_threads = GetParam().second;
@@ -391,8 +394,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemRmw) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address, n_threads));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
   store.CompletePending(true);
 
   // Read.
@@ -431,8 +435,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemRmw) {
   until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address, n_threads));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
   store.CompletePending(true);
 
   // Read.
@@ -457,7 +462,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemAllLiveNewEntries) {
   typedef FasterKv<Key, MediumValue, FASTER::device::NullDisk> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
   faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
-  int numRecords = 200000;
+  size_t numRecords = 200000;
 
   bool shift_begin_address = GetParam().first;
   int n_threads = GetParam().second;
@@ -488,8 +493,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemAllLiveNewEntries) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address, n_threads));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   // After compaction, reads should return newer values
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -519,7 +525,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemConcurrentOps) {
   typedef FasterKv<Key, MediumValue, disk_t> faster_t;
   // 1 GB log size -- 64 MB mutable region (min possible)
   faster_t store { 2048, (1 << 20) * 1024, "", 0.0625 };
-  static constexpr int numRecords = 200000;
+  static constexpr size_t numRecords = 200000;
 
   bool shift_begin_address = GetParam().first;
   int n_threads = GetParam().second;
@@ -581,8 +587,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemConcurrentOps) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address, n_threads));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
   store.StopSession();
 
   upset_worker.join();
@@ -603,8 +610,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemConcurrentOps) {
       ASSERT_EQ(idx, context.output.value / 2);
     } else if (idx % 3 == 1) {
       ASSERT_EQ(result, Status::NotFound);
-    }
-    else {
+    } else { // idx % 3 == 2
       ASSERT_EQ(result, Status::Ok);
       ASSERT_EQ(idx, context.output.value);
     }
@@ -620,10 +626,12 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
 
   class UpsertContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(uint32_t* key, uint32_t key_length, Value value)
+    UpsertContext(uint32_t* key, uint32_t key_length, value_t value)
       : key_{ key, key_length }
       , value_{ value } {
     }
@@ -642,10 +650,10 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = value_.value;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(value_.value);
       return true;
     }
@@ -658,12 +666,14 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
 
    private:
     ShallowKey key_;
-    Value value_;
+    value_t value_;
   };
 
   class ReadContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     ReadContext(uint32_t* key, uint32_t key_length)
@@ -680,10 +690,10 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       output.value = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       output.value = value.atomic_value.load();
     }
 
@@ -696,12 +706,14 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
    private:
     ShallowKey key_;
    public:
-    Value output;
+    value_t output;
   };
 
   class RmwContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     RmwContext(uint32_t* key, uint32_t key_length, value_t incr)
@@ -749,7 +761,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
 
   class DeleteContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     explicit DeleteContext(uint32_t* key, uint32_t key_length)
@@ -884,8 +898,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address, n_threads));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   // Read again.
   for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
@@ -909,7 +924,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
     } else if (idx % 4 == 2) {
       ASSERT_EQ(Status::Ok, result);
       ASSERT_EQ(2*idx, context.output.value);
-    } else {
+    } else { // idx % 4 == 3
       ASSERT_EQ(Status::Ok, result);
       ASSERT_EQ(idx, context.output.value);
     }
@@ -970,20 +985,20 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthValue) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline uint32_t value_size() const {
-      return sizeof(Value) + value_length_ * sizeof(uint32_t);
+      return sizeof(value_t) + value_length_ * sizeof(uint32_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.gen_lock_.store(0);
       value.size_ = value_size();
       value.length_ = value_length_;
       std::memcpy(value.buffer(), value_, value_length_ * sizeof(uint32_t));
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       bool replaced;
       while(!value.gen_lock_.try_lock(replaced) && !replaced) {
         std::this_thread::yield();
@@ -1011,7 +1026,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthValue) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t* value_;
     uint32_t value_length_;
   };
@@ -1041,17 +1056,17 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthValue) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       output_length = value.length_;
       if (output == nullptr) {
         output = (uint32_t*) malloc(output_length * sizeof(uint32_t));
       }
       std::memcpy(output, value.buffer(), output_length * sizeof(uint32_t));
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       GenLock before, after;
       do {
         before = value.gen_lock_.load();
@@ -1071,7 +1086,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthValue) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint32_t *output;
     uint32_t output_length;
@@ -1142,8 +1157,9 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthValue) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address, n_threads));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   // Read again.
   for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
@@ -1177,7 +1193,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLive) {
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
-  int numRecords = 50000;
+  size_t numRecords = 50000;
 
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
@@ -1203,9 +1219,10 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLive) {
   uint64_t until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(
-        until_address, shift_begin_address, n_threads, false, checkpoint));
-  if (shift_begin_address)
+      until_address, shift_begin_address, n_threads, false, checkpoint));
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   // Check that all entries are present
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1244,7 +1261,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
-  int numRecords = 50000;
+  size_t numRecords = 50000;
 
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
@@ -1265,8 +1282,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
   }
 
   // Delete every alternate key here.
-  for (size_t idx = 1; idx <= numRecords; ++idx) {
-    if (idx % 2 == 0) continue;
+  for (size_t idx = 1; idx <= numRecords; idx += 2) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
@@ -1281,8 +1297,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
   ASSERT_TRUE(
     store.CompactWithLookup(
       until_address, shift_begin_address, n_threads, false, checkpoint));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   // After compaction, deleted keys stay deleted.
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1300,8 +1317,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
     Status result = store.Read(context, callback, 1);
     if (idx % 2 == 0) {
       EXPECT_TRUE(result == Status::Ok || result == Status::Pending);
-    }
-    else {
+    } else {
       EXPECT_TRUE(result == Status::NotFound || result == Status::Pending);
     }
     if (result == Status::Ok) {
@@ -1390,8 +1406,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
   ASSERT_TRUE(
     store.CompactWithLookup(
       until_address, shift_begin_address, n_threads, false, checkpoint));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
   store.CompletePending(true);
 
   // Read.
@@ -1443,8 +1460,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
   until_address = store.hlog.safe_read_only_address.control();
   ASSERT_TRUE(
     store.CompactWithLookup(until_address, shift_begin_address, n_threads));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
   store.CompletePending(true);
 
   // Read.
@@ -1480,7 +1498,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
-  int numRecords = 50000;
+  size_t numRecords = 50000;
 
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
@@ -1501,8 +1519,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
   }
 
   // Delete every alternate key here.
-  for (size_t idx = 1; idx <= numRecords; ++idx) {
-    if (idx % 2 == 0) continue;
+  for (size_t idx = 1; idx <= numRecords; idx+=2) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
@@ -1512,8 +1529,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
   }
 
   // Insert fresh entries for the alternate keys
-  for (size_t idx = 1; idx <= numRecords; ++idx) {
-    if (idx % 2 == 0) continue;
+  for (size_t idx = 1; idx <= numRecords; idx+=2) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
@@ -1528,8 +1544,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
   ASSERT_TRUE(
     store.CompactWithLookup(
       until_address, shift_begin_address, n_threads, false, checkpoint));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   // After compaction, all entries should exist
   for (size_t idx = 1; idx <= numRecords; ++idx) {
@@ -1548,8 +1565,8 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
     EXPECT_TRUE(result == Status::Ok || result == Status::Pending);
     if (result == Status::Ok) {
       Key expected_key {(idx % 2 == 0)
-                            ? context.output.value
-                            : context.output.value / 2};
+                          ? context.output.value
+                          : context.output.value / 2};
       ASSERT_EQ(idx, expected_key.key);
     }
 
@@ -1574,7 +1591,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
-  static constexpr int numRecords = 50'000;
+  static constexpr size_t numRecords = 50'000;
 
   bool shift_begin_address = std::get<0>(GetParam());
   bool checkpoint = std::get<1>(GetParam());
@@ -1640,8 +1657,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
   ASSERT_TRUE(
     store.CompactWithLookup(
       until_address, shift_begin_address, n_threads, false, checkpoint));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
   store.StopSession();
 
   upset_worker.join();
@@ -1696,7 +1714,7 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
   std::experimental::filesystem::create_directories("tmp_store");
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
-  static constexpr int numRecords = 50000;
+  static constexpr size_t numRecords = 50000;
   static constexpr int num_read_threads = 32;
 
   store.StartSession();
@@ -1784,7 +1802,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
 
   class UpsertContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     UpsertContext(uint32_t* key, uint32_t key_length, Value value)
@@ -1827,7 +1847,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
 
   class ReadContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     ReadContext(uint32_t* key, uint32_t key_length)
@@ -1844,10 +1866,10 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       output.value = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       output.value = value.atomic_value.load();
     }
 
@@ -1860,12 +1882,14 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
    private:
     ShallowKey key_;
    public:
-    Value output;
+    value_t output;
   };
 
   class RmwContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     RmwContext(uint32_t* key, uint32_t key_length, value_t incr)
@@ -1913,7 +1937,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
 
   class DeleteContext : public IAsyncContext {
    public:
-    typedef Key key_t;
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
     typedef Value value_t;
 
     explicit DeleteContext(uint32_t* key, uint32_t key_length)
@@ -2071,8 +2097,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
   ASSERT_TRUE(
     store.CompactWithLookup(
       until_address, shift_begin_address, n_threads, false, checkpoint));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   // Read again.
   for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
@@ -2188,16 +2215,16 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
       return key_;
     }
     inline uint32_t value_size() const {
-      return sizeof(Value) + value_length_ * sizeof(uint32_t);
+      return sizeof(value_t) + value_length_ * sizeof(uint32_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.gen_lock_.store(0);
       value.size_ = value_size();
       value.length_ = value_length_;
       std::memcpy(value.buffer(), value_, value_length_ * sizeof(uint32_t));
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       bool replaced;
       while(!value.gen_lock_.try_lock(replaced) && !replaced) {
         std::this_thread::yield();
@@ -2225,7 +2252,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t* value_;
     uint32_t value_length_;
   };
@@ -2258,14 +2285,14 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
     inline const Key& key() const {
       return key_;
     }
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       output_length = value.length_;
       if (output == nullptr) {
         output = (uint32_t*) malloc(output_length * sizeof(uint32_t));
       }
       std::memcpy(output, value.buffer(), output_length * sizeof(uint32_t));
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       GenLock before, after;
       do {
         before = value.gen_lock_.load();
@@ -2285,7 +2312,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint32_t *output;
     uint32_t output_length;
@@ -2373,8 +2400,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
   ASSERT_TRUE(
     store.CompactWithLookup(
       until_address, shift_begin_address, n_threads, false, checkpoint));
-  if (shift_begin_address)
+  if (shift_begin_address) {
     ASSERT_EQ(until_address, store.hlog.begin_address.control());
+  }
 
   // Read again.
   for(uint32_t idx = 1; idx <= numRecords ; ++idx) {

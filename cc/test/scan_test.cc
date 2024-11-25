@@ -67,7 +67,7 @@ TEST(ScanIter, InMem) {
 
   store.StartSession();
 
-  int numRecords = 256;
+  size_t numRecords = 256;
   for (size_t idx = 0; idx < numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);

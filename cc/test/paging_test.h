@@ -90,7 +90,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint8_t val)
+    UpsertContext(const key_t& key, uint8_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -102,22 +102,22 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
-    inline static constexpr uint32_t value_size(const Value& old_value) {
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.gen_ = 0;
       std::memset(value.value_, val_, val_);
       value.length_ = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       // Get the lock on the value.
       uint64_t expected_gen;
       bool success;
@@ -144,7 +144,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint8_t val_;
   };
 
@@ -153,7 +153,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext(Key key, uint8_t expected)
+    ReadContext(key_t key, uint8_t expected)
       : key_{ key }
       , expected_{ expected } {
     }
@@ -165,16 +165,16 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // This is a paging test, so we expect to read stuff from disk.
       ASSERT_EQ(expected_, value.length_);
       ASSERT_EQ(expected_, value.value_[expected_ - 5]);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       uint64_t post_gen = value.gen_.load();
       uint64_t pre_gen;
       uint16_t len;
@@ -197,7 +197,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint8_t expected_;
   };
 
@@ -222,7 +222,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
   store_t store{ table_size, 256_MiB , "logs", 0.5,
                 rc_config, compaction_config };
 
-  Guid session_id = store.StartSession();
+  store.StartSession();
 
   constexpr size_t kNumRecords = 250'000;
   static std::atomic<uint64_t> records_read{ 0 };
@@ -390,7 +390,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint8_t val)
+    UpsertContext(const key_t& key, uint8_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -402,22 +402,22 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
-    inline static constexpr uint32_t value_size(const Value& old_value) {
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.gen_ = 0;
       std::memset(value.value_, val_, val_);
       value.length_ = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       // Get the lock on the value.
       uint64_t expected_gen;
       bool success;
@@ -444,7 +444,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint8_t val_;
   };
 
@@ -453,7 +453,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext(Key key, uint8_t expected)
+    ReadContext(key_t key, uint8_t expected)
       : key_{ key }
       , expected_{ expected } {
     }
@@ -465,16 +465,16 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // This is a paging test, so we expect to read stuff from disk.
       ASSERT_EQ(expected_, value.length_);
       ASSERT_EQ(expected_, value.value_[expected_ - 5]);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       uint64_t post_gen = value.gen_.load();
       uint64_t pre_gen;
       uint16_t len;
@@ -496,7 +496,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint8_t expected_;
   };
 
@@ -529,7 +529,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
 
   auto upsert_worker = [](FasterKv<Key, Value, disk_t>* store_,
   size_t thread_idx, uint8_t val) {
-    Guid session_id = store_->StartSession();
+    store_->StartSession();
 
     for(size_t idx = 0; idx < kNumRecords / kNumThreads; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -564,7 +564,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
   ASSERT_EQ(kNumRecords, num_writes.load());
 
   // Read.
-  Guid session_id = store.StartSession();
+  store.StartSession();
 
   records_read = 0;
   for(size_t idx = 0; idx < kNumRecords; ++idx) {
@@ -714,7 +714,7 @@ TEST_P(PagingTestParam, Rmw) {
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(Key key, uint64_t incr)
+    RmwContext(key_t key, uint64_t incr)
       : key_{ key }
       , incr_{ incr }
       , val_{ 0 } {
@@ -727,24 +727,24 @@ TEST_P(PagingTestParam, Rmw) {
       , val_{ other.val_ } {
     }
 
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
-    inline static constexpr uint32_t value_size(const Value& old_value) {
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.counter_ = incr_;
       val_ = value.counter_;
     }
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.counter_ = old_value.counter_ + incr_;
       val_ = value.counter_;
     }
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       val_ = value.counter_.fetch_add(incr_) + incr_;
       return true;
     }
@@ -760,7 +760,7 @@ TEST_P(PagingTestParam, Rmw) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint64_t incr_;
 
     uint64_t val_;
@@ -791,7 +791,7 @@ TEST_P(PagingTestParam, Rmw) {
 
   static std::atomic<uint64_t> records_touched{ 0 };
 
-  Guid session_id = store.StartSession();
+  store.StartSession();
 
   // Initial RMW.
   records_touched = 0;
@@ -907,7 +907,7 @@ TEST_P(PagingTestParam, Rmw_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(Key key, uint64_t incr)
+    RmwContext(key_t key, uint64_t incr)
       : key_{ key }
       , incr_{ incr }
       , val_{ 0 } {
@@ -920,24 +920,24 @@ TEST_P(PagingTestParam, Rmw_Large) {
       , val_{ other.val_ } {
     }
 
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
-    inline static constexpr uint32_t value_size(const Value& old_value) {
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.counter_ = incr_;
       val_ = value.counter_;
     }
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.counter_ = old_value.counter_ + incr_;
       val_ = value.counter_;
     }
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       val_ = value.counter_.fetch_add(incr_) + incr_;
       return true;
     }
@@ -953,7 +953,7 @@ TEST_P(PagingTestParam, Rmw_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint64_t incr_;
 
     uint64_t val_;
@@ -983,7 +983,7 @@ TEST_P(PagingTestParam, Rmw_Large) {
   constexpr size_t kNumRecords = 50000;
   static std::atomic<uint64_t> records_touched{ 0 };
 
-  Guid session_id = store.StartSession();
+  store.StartSession();
 
   // Initial RMW.
   records_touched = 0;
@@ -1101,33 +1101,32 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(Key key, uint64_t incr)
+    RmwContext(key_t key, uint64_t incr)
       : key_{ key }
       , incr_{ incr } {
     }
-
     /// Copy (and deep-copy) constructor.
     RmwContext(const RmwContext& other)
       : key_{ other.key_ }
       , incr_{ other.incr_ } {
     }
 
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
-    inline static constexpr uint32_t value_size(const Value& old_value) {
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.counter_ = incr_;
     }
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.counter_ = old_value.counter_ + incr_;
     }
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       value.counter_.fetch_add(incr_);
       return true;
     }
@@ -1139,7 +1138,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint64_t incr_;
   };
 
@@ -1148,7 +1147,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext(Key key)
+    ReadContext(key_t key)
       : key_{ key } {
     }
 
@@ -1158,14 +1157,14 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       counter = value.counter_.load(std::memory_order_acquire);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       counter = value.counter_.load();
     }
 
@@ -1176,7 +1175,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint64_t counter;
   };
@@ -1185,7 +1184,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
   static constexpr size_t kNumThreads = 8;
 
   auto rmw_worker = [](FasterKv<Key, Value, disk_t>* store_, uint64_t incr) {
-    Guid session_id = store_->StartSession();
+    store_->StartSession();
     for(size_t idx = 0; idx < kNumRecords; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         CallbackContext<RmwContext> context{ ctxt };
@@ -1208,7 +1207,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
   };
 
   auto read_worker1 = [](FasterKv<Key, Value, disk_t>* store_, size_t thread_idx) {
-    Guid session_id = store_->StartSession();
+    store_->StartSession();
     for(size_t idx = 0; idx < kNumRecords / kNumThreads; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         CallbackContext<ReadContext> context{ ctxt };
@@ -1234,7 +1233,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
   };
 
   auto read_worker2 = [](FasterKv<Key, Value, disk_t>* store_, size_t thread_idx) {
-    Guid session_id = store_->StartSession();
+    store_->StartSession();
     for(size_t idx = 0; idx < kNumRecords / kNumThreads; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         CallbackContext<ReadContext> context{ ctxt };
@@ -1282,7 +1281,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
 
   // Initial RMW.
   std::deque<std::thread> threads{};
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+  for(size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back(rmw_worker, &store, 7);
   }
   for(auto& thread : threads) {
@@ -1291,7 +1290,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
 
   // Read.
   threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+  for(size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back(read_worker1, &store, idx);
   }
   for(auto& thread : threads) {
@@ -1300,7 +1299,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
 
   // Second RMW.
   threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+  for(size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back(rmw_worker, &store, 6);
   }
   for(auto& thread : threads) {
@@ -1309,7 +1308,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
 
   // Read again.
   threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+  for(size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back(read_worker2, &store, idx);
   }
   for(auto& thread : threads) {
@@ -1330,8 +1329,6 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     inline KeyHash GetHash() const {
       std::hash<uint64_t> hash_fn;
       return KeyHash{ hash_fn(key_) };
-
-      //return KeyHash{ Utility::GetHashCode(key_) };
     }
 
     /// Comparison operators.
@@ -1376,7 +1373,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(Key key, uint64_t incr)
+    RmwContext(key_t key, uint64_t incr)
       : key_{ key }
       , incr_{ incr } {
     }
@@ -1387,22 +1384,22 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
       , incr_{ other.incr_ } {
     }
 
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
-    inline static constexpr uint32_t value_size(const Value& old_value) {
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.counter_ = incr_;
     }
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.counter_ = old_value.counter_ + incr_;
     }
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       value.counter_.fetch_add(incr_);
       return true;
     }
@@ -1414,7 +1411,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint64_t incr_;
   };
 
@@ -1435,14 +1432,14 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       counter = value.counter_.load(std::memory_order_acquire);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       counter = value.counter_.load();
     }
 
@@ -1453,7 +1450,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint64_t counter;
     void* store_;
@@ -1463,7 +1460,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
   static constexpr size_t kNumThreads = 8;
 
   auto rmw_worker = [](FasterKv<Key, Value, disk_t>* store_, uint64_t incr) {
-    Guid session_id = store_->StartSession();
+    store_->StartSession();
     for(size_t idx = 0; idx < kNumRecords; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         CallbackContext<RmwContext> context{ ctxt };
@@ -1486,7 +1483,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
   };
 
   auto read_worker1 = [](FasterKv<Key, Value, disk_t>* store_, size_t thread_idx) {
-    Guid session_id = store_->StartSession();
+    store_->StartSession();
     for(size_t idx = 0; idx < kNumRecords / kNumThreads; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         CallbackContext<ReadContext> context{ ctxt };
@@ -1512,7 +1509,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
   };
 
   auto read_worker2 = [](FasterKv<Key, Value, disk_t>* store_, size_t thread_idx) {
-    Guid session_id = store_->StartSession();
+    store_->StartSession();
     for(size_t idx = 0; idx < kNumRecords / kNumThreads; ++idx) {
       auto callback = [](IAsyncContext* ctxt, Status result) {
         CallbackContext<ReadContext> context{ ctxt };
@@ -1560,7 +1557,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
 
   // Initial RMW.
   std::deque<std::thread> threads{};
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+  for(size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back(rmw_worker, &store, 7);
   }
   for(auto& thread : threads) {
@@ -1569,7 +1566,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
 
   // Read.
   threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+  for(size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back(read_worker1, &store, idx);
   }
   for(auto& thread : threads) {
@@ -1578,7 +1575,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
 
   // Second RMW.
   threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+  for(size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back(rmw_worker, &store, 6);
   }
   for(auto& thread : threads) {
@@ -1587,7 +1584,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
 
   // Read again.
   threads.clear();
-  for(int64_t idx = 0; idx < kNumThreads; ++idx) {
+  for(size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back(read_worker2, &store, idx);
   }
   for(auto& thread : threads) {
@@ -1604,7 +1601,7 @@ TEST(PagingTests, UnsafeBufferResize) {
    public:
     typedef K key_t;
     typedef V value_t;
-    UpsertContext(K key, V value)
+    UpsertContext(key_t key, value_t value)
       : key_(key)
       , value_(value)
     {}
@@ -1616,17 +1613,17 @@ TEST(PagingTests, UnsafeBufferResize) {
     {}
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const K& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
-      return V::size();
+      return value_t::size();
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(V& value) {
+    inline void Put(value_t& value) {
       value.value = value_.value;
     }
-    inline bool PutAtomic(V& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(value_.value);
       return true;
     }
@@ -1638,8 +1635,8 @@ TEST(PagingTests, UnsafeBufferResize) {
     }
 
    private:
-    K key_;
-    V value_;
+    key_t key_;
+    value_t value_;
   };
 
   /// Context to read a key when unit testing.
@@ -1648,7 +1645,7 @@ TEST(PagingTests, UnsafeBufferResize) {
     typedef K key_t;
     typedef V value_t;
 
-    ReadContext(K key)
+    ReadContext(key_t key)
       : key_(key)
     {}
 
@@ -1658,14 +1655,14 @@ TEST(PagingTests, UnsafeBufferResize) {
     {}
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const K& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const V& value) {
+    inline void Get(const value_t& value) {
       output = value.value;
     }
-    inline void GetAtomic(const V& value) {
+    inline void GetAtomic(const value_t& value) {
       output = value.atomic_value.load();
     }
 
@@ -1676,9 +1673,9 @@ TEST(PagingTests, UnsafeBufferResize) {
     }
 
    private:
-    K key_;
+    key_t key_;
    public:
-    V output;
+    value_t output;
   };
 
 
@@ -1686,9 +1683,9 @@ TEST(PagingTests, UnsafeBufferResize) {
   typedef FasterKv<K, V, disk_t> faster_t;
 
   std::experimental::filesystem::create_directories("logs/");
-  // NOTE: deliberatly keeping the hash index small to test hash-chain chasing correctness
+  // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
   faster_t store { 2048, 512_MiB, "logs/", 0.8 };
-  int numRecords = 50'000;
+  size_t numRecords = 50'000;
 
   store.StartSession();
   for (size_t idx = 1; idx <= numRecords; ++idx) {
