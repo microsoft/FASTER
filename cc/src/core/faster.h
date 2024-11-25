@@ -1067,7 +1067,7 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
 
     assert(pending_context->index_op_type != IndexOperationType::None);
 
-    Status result;
+    Status result{ Status::Corruption };
     switch(pending_context->type) {
       case OperationType::Read:
         // Only Retrieve index op is possible
@@ -1080,79 +1080,87 @@ inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionCont
         break;
       case OperationType::Upsert:
       case OperationType::Delete:
-        if (pending_context->index_op_type == IndexOperationType::Retrieve) {
-          // Resume request with the retrieved index hash bucket
-          result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
-                                          pending_context.async);
-        } else if (pending_context->index_op_type == IndexOperationType::Update) {
-          if (pending_context->index_op_result == Status::Ok) {
-            // Request was successfully completed!
-            pending_context.async = false;
-            result = Status::Ok;
-          } else {
-            assert(pending_context->index_op_result == Status::Aborted);
-            // Request was aborted: try to mark record as invalid
-            assert(index_io_context->record_address != Address::kInvalidAddress);
-            Address record_address = index_io_context->record_address;
-            if (record_address >= hlog.head_address.load()) {
-              record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));
-              record->header.invalid = true;
-            }
-            // if not marked here, it will be ignored by conditional insert during compaction
-
-            #ifdef STATISTICS
-            if (collect_stats_) {
-              ++pending_context->num_record_invalidations;
-            }
-            #endif
-
-            // Retry request
-            pending_context->clear_index_op();
+        switch(pending_context->index_op_type) {
+          case IndexOperationType::Retrieve:
+            // Resume request with the retrieved index hash bucket
             result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
-                                          pending_context.async);
-          }
-        } else {
-          assert(false); // not reachable
+                                           pending_context.async);
+            break;
+
+          case IndexOperationType::Update:
+            if (pending_context->index_op_result == Status::Ok) {
+              // Request was successfully completed!
+              pending_context.async = false;
+              result = Status::Ok;
+            } else { // Status::Aborted
+              assert(pending_context->index_op_result == Status::Aborted);
+              // Request was aborted: try to mark record as invalid
+              assert(index_io_context->record_address != Address::kInvalidAddress);
+              Address record_address = index_io_context->record_address;
+              if (record_address >= hlog.head_address.load()) {
+                record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));
+                record->header.invalid = true;
+              }
+              // if not marked here, it will be ignored by conditional insert during compaction
+              #ifdef STATISTICS
+              if (collect_stats_) {
+                ++pending_context->num_record_invalidations;
+              }
+              #endif
+
+              // Retry request
+              pending_context->clear_index_op();
+              result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                            pending_context.async);
+            }
+            break;
+
+          default:
+            assert(false); // not reachable
+            throw std::runtime_error{ "Not reachable!" };
+            break;
         }
         break;
       case OperationType::ConditionalInsert:
-        if (pending_context->index_op_type == IndexOperationType::Retrieve) {
-          // Resume request with retrieved index hash bucket
-          {
+        switch(pending_context->index_op_type) {
+          case IndexOperationType::Retrieve:
+            // Resume request with retrieved index hash bucket
             assert(pending_context->index_op_result == Status::Ok);
-
             result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
                                           pending_context.async);
-          }
-        } else if (pending_context->index_op_type == IndexOperationType::Update) {
-          if (pending_context->index_op_result == Status::Ok) {
-            // Request was successfully completed!
-            pending_context.async = false;
-            result = Status::Ok;
-          } else {
-            assert(pending_context->index_op_result == Status::Aborted);
-            // Request was aborted: try to mark record as invalid
-            // NOTE: this record is stray: i.e., *not* part of the hash chain.
-            Address record_address = index_io_context->record_address;
-            if (record_address >= hlog.head_address.load()) {
-              record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));
-              record->header.invalid = true;
-            }
-            // if not marked here, it will be ignored by conditional insert during compaction
+            break;
 
-            #ifdef STATISTICS
-            if (collect_stats_) {
-              ++pending_context->num_record_invalidations;
-            }
-            #endif
+          case IndexOperationType::Update:
+            if (pending_context->index_op_result == Status::Ok) {
+              // Request was successfully completed!
+              pending_context.async = false;
+              result = Status::Ok;
+            } else {
+              assert(pending_context->index_op_result == Status::Aborted);
+              // Request was aborted: try to mark record as invalid
+              // NOTE: this record is stray: i.e., *not* part of the hash chain.
+              Address record_address = index_io_context->record_address;
+              if (record_address >= hlog.head_address.load()) {
+                record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));
+                record->header.invalid = true;
+              }
+              // if not marked here, it will be ignored by conditional insert during compaction
+              #ifdef STATISTICS
+              if (collect_stats_) {
+                ++pending_context->num_record_invalidations;
+              }
+              #endif
 
-            // Retry request
-            pending_context->clear_index_op();
-            result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
-                                          pending_context.async);
-          }
-        } else {
-          assert(false); // not reachable
+              // Retry request
+              pending_context->clear_index_op();
+              result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                            pending_context.async);
+            }
+            break;
+
+          default:
+            assert(false); // not reachable
+            throw std::runtime_error{ "Not reachable!" };
         }
         break;
       case OperationType::RMW:
@@ -2004,6 +2012,7 @@ inline Status FasterKv<K, V, D, H, OH>::HandleOperationStatus(ExecutionContext& 
       async_pending_ci_context_t& conditional_insert_context =
         *static_cast<async_pending_ci_context_t*>(&pending_context);
       internal_status = InternalConditionalInsert(conditional_insert_context);
+      break;
     }
     }
 
