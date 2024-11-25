@@ -1238,8 +1238,7 @@ inline void FasterKv<K, V, D, H, OH>::CompleteRetryRequests(ExecutionContext& co
 template <class K, class V, class D, class H, class OH>
 template <class C>
 inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context) const {
-  typedef C pending_read_context_t;
-
+  [[maybe_unused]] typedef C pending_read_context_t;
   assert(pending_context.index_op_type != IndexOperationType::Update);
 
   const ExecutionContext& thread_context = thread_ctx();
@@ -1348,7 +1347,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context
 template <class K, class V, class D, class H, class OH>
 template <class C>
 inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_context) {
-  typedef C pending_upsert_context_t;
+  [[maybe_unused]] typedef C pending_upsert_context_t;
 
   ExecutionContext& thread_context = thread_ctx();
   if(thread_context.phase != Phase::REST) {
@@ -1534,7 +1533,7 @@ create_record:
 template <class K, class V, class D, class H, class OH>
 template <class C>
 inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context, bool retrying) {
-  typedef C pending_rmw_context_t;
+  [[maybe_unused]] typedef C pending_rmw_context_t;
   assert(hash_index_.IsSync()); // cold log does not need to support RMWs requests
 
   ExecutionContext& thread_context = thread_ctx();
@@ -1770,8 +1769,7 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRetryPendingRmw(
 template <class K, class V, class D, class H, class OH>
 template<class C>
 inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_context, bool force_tombstone) {
-  typedef C pending_delete_context_t;
-
+  [[maybe_unused]] typedef C pending_delete_context_t;
   assert(pending_context.index_op_type != IndexOperationType::Update);
 
   ExecutionContext& thread_context = thread_ctx();
@@ -3973,7 +3971,7 @@ template <class K, class V, class D, class H, class OH>
 template <class CIC>
 inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCallback callback,
                                                   Address min_search_offset, bool to_other_store) {
-  typedef CIC conditional_insert_context_t;
+  [[maybe_unused]] typedef CIC conditional_insert_context_t;
   typedef PendingConditionalInsertContext<CIC> pending_ci_context_t;
   static_assert(std::is_base_of<value_t, typename pending_ci_context_t::value_t>::value,
                 "value_t is not a base class of read_context_t::value_t");
