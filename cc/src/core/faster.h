@@ -1201,8 +1201,7 @@ template <class K, class V, class D, class H, class OH>
 inline void FasterKv<K, V, D, H, OH>::CompleteRetryRequests(ExecutionContext& context) {
   // If we can't complete a request, it will be pushed back onto the deque. Retry each request
   // only once.
-  size_t size = context.retry_requests.size();
-  for(size_t idx = 0; idx < size; ++idx) {
+  while (!context.retry_requests.empty()) {
     CallbackContext<pending_context_t> pending_context{ context.retry_requests.front() };
     context.retry_requests.pop_front();
     // Issue retry command
@@ -3847,7 +3846,7 @@ inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id, uint32_t ma
 
   // used locally when iterating log
   Address record_address;
-  record_t* record;
+  record_t* record = nullptr;
 
   // Start session for each thread that has not started one already
   bool was_epoch_protected = epoch_.IsProtected();
