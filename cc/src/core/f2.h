@@ -46,8 +46,8 @@ class F2Kv {
        F2CompactionConfig compaction_config = DEFAULT_F2_COMPACTION_CONFIG)
   : hot_store{ hot_index_config, hot_log_mem_size, hot_log_filename, hot_log_mutable_pct, rc_config }  // FasterKv auto-compaction is disabled
   , cold_store{ cold_index_config, cold_log_mem_size, cold_log_filename, cold_log_mutable_pct }        // FasterKv auto-compaction is disabled
-  , compaction_config_{ compaction_config }
   , background_worker_active_{ false }
+  , compaction_config_{ compaction_config }
   , compaction_scheduled_{ false }
   {
     hot_store.SetOtherStore(&cold_store);
@@ -630,7 +630,7 @@ inline void F2Kv<K, V, D, HHI, CHI>::HotStoreCheckpointedCallback(void* ctxt, St
   }
   checkpoint->persistent_serial_nums[Thread::id()].store(persistent_serial_num);
   log_debug("Checkpoint callback for hot store [tid=%u] called! [psn: %lu, result: %s]",
-            Thread::id(), psn, STATUS_STR[static_cast<int>(result)]);
+            Thread::id(), psn, StatusStr(result));
 
   // Update global result if (1) first thread to arrive, or (2) non-ok result
   while (1) {
@@ -649,7 +649,7 @@ inline void F2Kv<K, V, D, HHI, CHI>::HotStoreCheckpointedCallback(void* ctxt, St
 
     // Mark hot store checkpoint status to finished (or failed)
     Status global_result = checkpoint->hot_store_checkpoint_result.load();
-    log_debug("Hot store checkpoint result: %s", STATUS_STR[static_cast<int>(global_result)]);
+    log_debug("Hot store checkpoint result: %s", StatusStr(global_result));
 
     status = (global_result == Status::Ok) ? StoreCheckpointStatus::FINISHED : StoreCheckpointStatus::FAILED;
     checkpoint->hot_store_status.store(status);
@@ -891,7 +891,7 @@ inline void F2Kv<K, V, D, HHI, CHI>::CheckSystemState() {
         // Set checkpoint status for cold-log
         status = (result == Status::Ok) ? StoreCheckpointStatus::FINISHED : StoreCheckpointStatus::FAILED;
         checkpoint->cold_store_status.store(status);
-        log_debug("Cold store checkpoint result: %s", STATUS_STR[static_cast<int>(result)]);
+        log_debug("Cold store checkpoint result: %s", StatusStr(result));
       };
 
       log_debug("Issuing cold store checkpoint... (active sessions: %u)", cold_store.NumActiveSessions());

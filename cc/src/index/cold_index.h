@@ -204,8 +204,7 @@ class ColdIndex : public IHashIndex<D> {
       auto* cold_index = static_cast<cold_index_t*>(ctxt);
 
       if (result != Status::Ok) {
-        log_warn("cold-index: checkpointing of hash chunk FasterKv store failed! [status: %s]",
-                  STATUS_STR[static_cast<int>(result)]);
+        log_warn("cold-index: checkpointing of hash chunk FasterKv failed! [status: %s]", StatusStr(result));
       }
       cold_index->checkpoint_failed_.store(result != Status::Ok);
       cold_index->checkpoint_pending_.store(false);

@@ -3658,7 +3658,7 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
       Status expected = Status::Corruption;
       if (!context->index_persisted_status.compare_exchange_strong(expected, status)) {
         log_warn("Unexpected index persist status: expected = %s, actual = %s",
-                STATUS_STR[static_cast<int>(Status::Corruption)], STATUS_STR[static_cast<int>(expected)]);
+                 StatusStr(Status::Corruption), StatusStr(expected));
         assert(false);
         context->index_persisted_status.store(status);
       }
@@ -3666,7 +3666,7 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
       assert(status == Status::Ok);
       if (status != Status::Ok) {
         log_warn("Checkpoint: Index persist process finished with non-ok status -> %s",
-                STATUS_STR[static_cast<int>(status)]);
+                 StatusStr(status));
       }
     };
 
@@ -3730,8 +3730,7 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
     assert(index_persisted_status != Status::Corruption && hlog_persisted_status != Status::Corruption);
     if (index_persisted_status != Status::Ok || hlog_persisted_status != Status::Ok) {
       log_warn("Checkpoint failed [index_persisted_status: %s, hlog_persisted_status=%s]",
-                STATUS_STR[static_cast<int>(index_persisted_status)],
-                STATUS_STR[static_cast<int>(hlog_persisted_status)]);
+                StatusStr(index_persisted_status), StatusStr(hlog_persisted_status));
       return false;
     }
 

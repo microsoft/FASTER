@@ -20,8 +20,9 @@ enum class Lvl : uint8_t {
   ERROR = 3,
   REPORT = 4
 };
-const char* LvlStr[] = {
-  "DEBUG", "INFO", "WARN", "ERROR", "" };
+static const char* LvlStr[] = {
+  "DEBUG", "INFO", "WARN", "ERROR", ""
+};
 
 #ifdef NDEBUG
 // Release build: Print WARN (and above) log messages.
