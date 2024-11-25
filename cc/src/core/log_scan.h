@@ -814,7 +814,7 @@ class LogRecordIterator {
     }
 
     frames = new uint8_t* [numFrames];
-    for (auto i = 0; i < numFrames; i++) {
+    for (uint32_t i = 0; i < numFrames; i++) {
       frames[i] = reinterpret_cast<uint8_t*>(aligned_alloc(hLog->sector_size,
                                                            hlog_t::kPageSize));
     }
@@ -822,7 +822,7 @@ class LogRecordIterator {
 
   /// Destroys the iterator freeing up memory allocated for the buffer.
   ~LogRecordIterator() {
-    for (auto i = 0; i < numFrames; i++) {
+    for (uint32_t i = 0; i < numFrames; i++) {
       aligned_free(reinterpret_cast<void*>(frames[i]));
     }
 
@@ -898,7 +898,7 @@ class LogRecordIterator {
 
     // Issue reads to fill up the buffer and wait for them to complete.
     Address load_addr = Address(current.page(), 0); // read page from start
-    for (auto i = 0; i < numFrames; i++) {
+    for (uint32_t i = 0; i < numFrames; i++) {
       auto ctxt = Context(&completedIOs);
       auto addr = load_addr.control() + (i * hlog_t::kPageSize);
       hLog->file->ReadAsync(addr,
@@ -943,7 +943,7 @@ class LogRecordIterator {
   hlog_t* hLog;
 
   /// The number of page frames within the buffer.
-  int numFrames;
+  uint32_t numFrames;
 
   /// Buffer for pages that need to be scanned but are currently on disk.
   uint8_t** frames;

@@ -158,7 +158,7 @@ class FileSystemSegmentBundle {
     uint64_t end_copy = std::min(end_segment, other.end_segment);
     uint64_t end_new = end_segment;
 
-    for(uint64_t idx = begin_segment; idx < begin_copy; ++idx) {
+    for(uint64_t idx = begin_new; idx < begin_copy; ++idx) {
       new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);

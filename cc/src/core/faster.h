@@ -577,7 +577,7 @@ class FasterKv {
 
  private:
   void InitializeStats() {
-    for (int i = 0; i < kPerReqResolution; i++) {
+    for (unsigned i = 0; i < kPerReqResolution; i++) {
       // iops
       reads_per_req_iops_[i].store(0);
       upserts_per_req_iops_[i].store(0);
@@ -629,12 +629,12 @@ class FasterKv {
     static const unsigned allDots = 60;
 
     uint64_t sum = 0;
-    for (int i = 0; i < kPerReqResolution; i++) {
+    for (unsigned i = 0; i < kPerReqResolution; i++) {
       sum += iops_arr[i].load();
     }
     if (sum == 0) return;
 
-    for (int i = 0; i < kPerReqResolution; i++) {
+    for (unsigned i = 0; i < kPerReqResolution; i++) {
       auto num_iops = iops_arr[i].load();
       fprintf(stderr, "%d%c  %s [%'10lu] {%6.2lf%%}: ", i,
         (i != kPerReqResolution - 1) ? ' ' : '+', prefix.c_str(),
@@ -3619,7 +3619,7 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
   compaction_context_.Initialize(&iter, n_threads-1, to_other_store);
 
   // Spawn the threads first
-  for (size_t idx = 0; idx < n_threads-1; ++idx) {
+  for (int idx = 0; idx < n_threads-1; ++idx) {
     threads.emplace_back(
       &FasterKv<K, V, D, H, OH>::InternalCompact<faster_t>, this, idx, std::numeric_limits<uint32_t>::max());
   }
@@ -3631,7 +3631,7 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
   //       Therefore, we cannot utilize the *blocking* `thread.join`
   int remaining = n_threads - 1;
   while (remaining > 0 || compaction_context_.active_threads.load() > 0) {
-    for (size_t idx = 0; idx < n_threads-1; ++idx) {
+    for (int idx = 0; idx < n_threads-1; ++idx) {
       if (compaction_context_.thread_finished[idx].load() && threads[idx].joinable()) {
         threads[idx].join();
         --remaining;
