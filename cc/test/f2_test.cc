@@ -256,7 +256,7 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled,
   };
 
@@ -398,7 +398,7 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled,
   };
 
@@ -496,7 +496,7 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled,
   };
 
@@ -620,7 +620,7 @@ TEST_P(HotColdParameterizedTestParam, Rmw) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled,
   };
 
@@ -805,7 +805,7 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled,
   };
 
@@ -1146,7 +1146,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled,
   };
 
@@ -1522,7 +1522,7 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled,
   };
 

@@ -1549,7 +1549,7 @@ TEST_P(InMemTestParam, Rmw_GrowString_Concurrent) {
   bool readcache = std::get<1>(args);
 
   ReadCacheConfig rc{ .mem_size = 256_MiB, .mutable_fraction = 0.5,
-                      .pre_allocate_log = false, .enabled = readcache };
+                      .pre_allocate = false, .enabled = readcache };
   store_t store { table_size, 1_GiB, "", 0.4, rc };
 
   auto rmw_worker = [&store](size_t _, char start_letter){
@@ -1734,7 +1734,7 @@ TEST_P(InMemTestParam, ConcurrentDelete) {
   bool readcache = std::get<1>(args);
 
   ReadCacheConfig rc{ .mem_size = 256_MiB, .mutable_fraction = 0.5,
-                      .pre_allocate_log = false, .enabled = readcache };
+                      .pre_allocate = false, .enabled = readcache };
   store_t store { table_size, 1_GiB, "", 0.4, rc };
 
   // Rmw.
@@ -1899,7 +1899,7 @@ TEST_P(InMemTestParam, GrowHashTable) {
   bool readcache = std::get<1>(args);
 
   ReadCacheConfig rc{ .mem_size = 256_MiB, .mutable_fraction = 0.5,
-                      .pre_allocate_log = false, .enabled = readcache };
+                      .pre_allocate = false, .enabled = readcache };
   store_t store{ table_size, 1_GiB, "", 0.4, rc };
 
   auto rmw_worker = [&store](size_t thread_idx, int64_t multiplier) {

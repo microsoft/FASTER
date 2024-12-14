@@ -121,9 +121,9 @@ class FasterKv {
   typedef typename H::Config IndexConfig;
   typedef FASTER::index::HashBucketEntry HashBucketEntry;
 
-  typedef FasterStoreConfig<hash_index_t> Config;
-
   typedef ReadCache<K, V, D, H> read_cache_t;
+
+  typedef FasterKvConfig<hash_index_t> Config;
 
   /// Contexts that have been deep-copied, for async continuations, and must be accessed via
   /// virtual function calls.

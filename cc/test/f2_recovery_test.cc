@@ -239,7 +239,7 @@ TEST_P(HotColdRecoveryTestParam, CheckpointAndRecoverySerial) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled,
   };
 

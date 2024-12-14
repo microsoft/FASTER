@@ -25,8 +25,8 @@ class F2Kv {
   typedef typename hot_faster_store_t::IndexConfig HotIndexConfig;
   typedef typename cold_faster_store_t::IndexConfig ColdIndexConfig;
 
-  typedef FasterStoreConfig<HHI> hot_faster_store_config_t;
-  typedef FasterStoreConfig<CHI> cold_faster_store_config_t;
+  typedef FasterKvConfig<HHI> hot_faster_store_config_t;
+  typedef FasterKvConfig<CHI> cold_faster_store_config_t;
 
   typedef F2Kv<K, V, D, HHI, CHI> f2_t;
   typedef AsyncF2ReadContext<K, V> async_f2_read_context_t;
@@ -214,10 +214,10 @@ template<class K, class V, class D, class HHI, class CHI>
 inline void F2Kv<K, V, D, HHI, CHI>::InitializeCompaction() {
   if (compaction_config_.hot_store.enabled || compaction_config_.cold_store.enabled) {
     if (compaction_config_.hot_store.hlog_size_budget < 64_MiB) {
-      throw std::runtime_error{ "F2CompactionConfig: Hot log size too small (<64 MB)" };
+      throw std::runtime_error{ "F2CompactionConfig: Hot log size budget too small (<64 MB)" };
     }
     if (compaction_config_.cold_store.hlog_size_budget < 64_MiB) {
-      throw std::runtime_error{ "F2CompactionConfig: Cold log size too small (<64 MB)" };
+      throw std::runtime_error{ "F2CompactionConfig: Cold log size budget too small (<64 MB)" };
     }
   } else {
     log_info("Automatic F2 compaction is disabled");

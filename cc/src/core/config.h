@@ -31,14 +31,14 @@ struct HlogConfig {
 struct ReadCacheConfig {
   uint64_t mem_size;
   double mutable_fraction;
-  bool pre_allocate_log;
+  bool pre_allocate;
   bool enabled;
 };
 
 constexpr ReadCacheConfig DEFAULT_READ_CACHE_CONFIG {
   //.mem_size = 256_MiB,
   //.mutable_fraction = 0.5,
-  //.pre_allocate_log = false,
+  //.pre_allocate = false,
 
   .enabled = false
 };
@@ -66,7 +66,7 @@ constexpr HlogCompactionConfig DEFAULT_HLOG_COMPACTION_CONFIG {
   .enabled = false
 };
 
-// Hot-Cold Compaction Config
+// F2 Compaction Config
 
 struct F2CompactionConfig {
   HlogCompactionConfig hot_store;
@@ -176,7 +176,7 @@ ReadCacheConfig PopulateReadCacheConfig<false>(const toml::value& top_table) {
     double mutable_fraction = toml::find_or<int>(rc_table, "mutable_fraction", -1); // -1 "means" not found with int type
     rc_config.mutable_fraction = (mutable_fraction < 0) ? toml::find_or<double>(rc_table, "mutable_fraction", rc_config.mutable_fraction) : mutable_fraction;
 
-    rc_config.pre_allocate_log = toml::find_or(rc_table, "pre_allocate", rc_config.pre_allocate_log);
+    rc_config.pre_allocate = toml::find_or(rc_table, "pre_allocate", rc_config.pre_allocate);
 
     const std::vector<std::string> valid_read_cache_fields = { "enabled", "in_mem_size_mb", "mutable_fraction", "pre_allocate" };
     for (auto& it : toml::get<toml::table>(rc_table)) {
@@ -190,9 +190,9 @@ ReadCacheConfig PopulateReadCacheConfig<false>(const toml::value& top_table) {
 
 #endif
 
-// FASTER Store config
+// FasterKv Store config
 template<class H>
-struct FasterStoreConfig{
+struct FasterKvConfig{
   typedef H hash_index_t;
   typedef typename H::Config IndexConfig;
 
@@ -206,7 +206,7 @@ struct FasterStoreConfig{
 
   #ifdef TOML_CONFIG
   template<typename... Ts>
-  static FasterStoreConfig FromConfigString(const std::string& config, Ts... table_key_path) {
+  static FasterKvConfig FromConfigString(const std::string& config, Ts... table_key_path) {
     std::istringstream is(config, std::ios_base::binary | std::ios_base::in);
     const auto data = toml::parse(is, "std::string");
 

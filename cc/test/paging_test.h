@@ -212,7 +212,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled
   };
 
@@ -511,7 +511,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled
   };
 
@@ -777,7 +777,7 @@ TEST_P(PagingTestParam, Rmw) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled
   };
 
@@ -970,7 +970,7 @@ TEST_P(PagingTestParam, Rmw_Large) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled
   };
 
@@ -1269,7 +1269,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled
   };
 
@@ -1545,7 +1545,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
   ReadCacheConfig rc_config {
     .mem_size = 256_MiB,
     .mutable_fraction = 0.5,
-    .pre_allocate_log = false,
+    .pre_allocate = false,
     .enabled = rc_enabled
   };
 

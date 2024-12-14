@@ -49,7 +49,7 @@ class ReadCache {
     , disk_{ "", epoch, "" }
     , faster_hlog_{ &faster_hlog }
     , read_cache_{ true, config.mem_size, epoch, disk_, disk_.log(), config.mutable_fraction,
-                  config.pre_allocate_log, EvictCallback} {
+                  config.pre_allocate, EvictCallback} {
     // hash index should be entirely in memory
     assert(hash_index_->IsSync());
     // required when evict callback is called
