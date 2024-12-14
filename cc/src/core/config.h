@@ -126,7 +126,7 @@ HlogCompactionConfig PopulateHlogCompactionConfig(const toml::value& hlog_table)
   // hlog.compaction
   HlogCompactionConfig hlog_compaction_config{ .enabled = false };
   if (hlog_table.contains("compaction")) {
-    const auto& compaction_table = toml::find(hlog_table, "compaction");
+    const auto compaction_table = toml::find(hlog_table, "compaction");
     hlog_compaction_config.enabled = toml::find_or<bool>(compaction_table, "enabled", hlog_compaction_config.enabled);
     hlog_compaction_config.hlog_size_budget = toml::find<uint64_t>(compaction_table, "hlog_size_budget_mb") * (1 << 20);
     hlog_compaction_config.max_compacted_size = compaction_table.contains("max_compacted_size_mb")
@@ -167,7 +167,7 @@ template<>
 ReadCacheConfig PopulateReadCacheConfig<false>(const toml::value& top_table) {
   ReadCacheConfig rc_config{ .enabled = false };
   if (top_table.contains("read_cache")) {
-    const auto& rc_table = toml::find(top_table, "read_cache");
+    const auto rc_table = toml::find(top_table, "read_cache");
     rc_config.enabled = toml::find_or<bool>(rc_table, "enabled", rc_config.enabled);
     rc_config.mem_size = rc_table.contains("in_mem_size_mb") ?
                             toml::find<uint64_t>(rc_table, "in_mem_size_mb") * (1 << 20) : rc_config.mem_size;
@@ -211,7 +211,7 @@ struct FasterKvConfig{
     const auto data = toml::parse(is, "std::string");
 
     // parse TOML config & validate top-level fields
-    const auto& top_table = toml::find(data, table_key_path...);
+    const auto top_table = toml::find(data, table_key_path...);
 
     const std::vector<std::string> VALID_TOP_LEVEL_FIELDS = { "filepath", "hlog", "index", "read_cache" };
     for (auto& it : toml::get<toml::table>(top_table)) {
@@ -224,13 +224,13 @@ struct FasterKvConfig{
     std::string filepath = toml::find<std::string>(top_table, "filepath");
 
     // hlog
-    const auto& hlog_table = toml::find(top_table, "hlog");
+    const auto hlog_table = toml::find(top_table, "hlog");
     HlogConfig hlog_config = PopulateHlogConfig(hlog_table);
     // hlog.compaction
     HlogCompactionConfig hlog_compaction_config = PopulateHlogCompactionConfig(hlog_table);
 
     // index
-    const auto& index_table = toml::find(top_table, "index");
+    const auto index_table = toml::find(top_table, "index");
     IndexConfig index_config{ index_table };
 
     // Read cache

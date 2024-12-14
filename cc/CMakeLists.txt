@@ -47,10 +47,10 @@ FetchContent_MakeAvailable(googletest)
 FetchContent_Declare(
   toml11
   GIT_REPOSITORY https://github.com/ToruNiina/toml11
-  GIT_TAG v3.8.1
+  GIT_TAG v4.2.0
 )
 FetchContent_MakeAvailable(toml11)
-include_directories(${toml11_SOURCE_DIR})
+include_directories(${toml11_SOURCE_DIR}/include)
 #### END TOML11 INSTALLATION #####
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
