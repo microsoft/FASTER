@@ -59,6 +59,9 @@ class File {
   ~File() {
     if(owner_) {
       core::Status s = Close();
+      if (s != core::Status::Ok) {
+        log_warn("Closing file returned status: %s", StatusStr(s));
+      }
     }
   }
 
@@ -79,15 +82,6 @@ class File {
 #endif
   {
     other.owner_ = false;
-  }
-
-  ~File() {
-    if(owner_) {
-      core::Status s = Close();
-      if (s != core::Status::Ok) {
-        log_warn("Closing file returned status: %s", StatusStr(s));
-      }
-    }
   }
 
   /// Move assignment operator.
