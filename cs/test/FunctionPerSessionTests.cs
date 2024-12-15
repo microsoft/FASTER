@@ -20,15 +20,16 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output)
+        public override bool InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref InitialCount);
 
             value.Value = input;
             value.ReferenceCount = 1;
+            return true;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output)
+        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -37,12 +38,13 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output)
+        public override bool CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref CopyCount);
 
             newValue.Value = input;
             newValue.ReferenceCount = oldValue.ReferenceCount + 1;
+            return true;
         }
     }
 
@@ -52,15 +54,16 @@ namespace FASTER.test
         public int InPlaceCount;
         public int CopyCount;
 
-        public override void InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output)
+        public override bool InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref InitialCount);
 
             value.Value = 0;
             value.ReferenceCount = 0;
+            return true;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output)
+        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref InPlaceCount);
 
@@ -70,7 +73,7 @@ namespace FASTER.test
             return true;
         }
 
-        public override void CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output)
+        public override bool CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RMWInfo rmwInfo)
         {
             Interlocked.Increment(ref CopyCount);
 
@@ -78,19 +81,22 @@ namespace FASTER.test
             if (newValue.ReferenceCount > 0)
                 newValue.ReferenceCount--;
             newValue.Value = oldValue.Value;
+            return true;
         }
     }
 
     public class RefCountedReader : FunctionsBase<int, RefCountedValue, Empty, RefCountedValue, Empty>
     {
-        public override void SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst)
+        public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref ReadInfo readInfo)
         {
             dst = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst)
+        public override bool ConcurrentReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref ReadInfo readInfo)
         {
             dst = value;
+            return true;
         }
     }
 
@@ -133,43 +139,41 @@ namespace FASTER.test
         [Category("FasterKV")]
         public async Task Should_create_multiple_sessions_with_different_callbacks()
         {
-            using (var adderSession = _faster.NewSession(_adder))
-            using (var removerSession = _faster.NewSession(_remover))
-            using (var readerSession = _faster.NewSession(_reader))
-            {
-                var key = 101;
-                var input = 1000L;
+            using var adderSession = _faster.NewSession(_adder);
+            using var removerSession = _faster.NewSession(_remover);
+            using var readerSession = _faster.NewSession(_reader);
+            var key = 101;
+            var input = 1000L;
 
-                (await adderSession.RMWAsync(ref key, ref input)).Complete();
-                (await adderSession.RMWAsync(ref key, ref input)).Complete();
-                (await adderSession.RMWAsync(ref key, ref input)).Complete();
+            (await adderSession.RMWAsync(ref key, ref input)).Complete();
+            (await adderSession.RMWAsync(ref key, ref input)).Complete();
+            (await adderSession.RMWAsync(ref key, ref input)).Complete();
 
-                Assert.AreEqual(1, _adder.InitialCount);
-                Assert.AreEqual(2, _adder.InPlaceCount);
+            Assert.AreEqual(1, _adder.InitialCount);
+            Assert.AreEqual(2, _adder.InPlaceCount);
 
-                var empty = default(Empty);
-                (await removerSession.RMWAsync(ref key, ref empty)).Complete();
+            var empty = default(Empty);
+            (await removerSession.RMWAsync(ref key, ref empty)).Complete();
 
-                Assert.AreEqual(1, _remover.InPlaceCount);
+            Assert.AreEqual(1, _remover.InPlaceCount);
 
-                var read = await readerSession.ReadAsync(ref key, ref empty);
-                var result = read.Complete();
+            var read = await readerSession.ReadAsync(ref key, ref empty);
+            var result = read.Complete();
 
-                var actual = result.Item2;
-                Assert.AreEqual(2, actual.ReferenceCount);
-                Assert.AreEqual(1000L, actual.Value);
+            var actual = result.output;
+            Assert.AreEqual(2, actual.ReferenceCount);
+            Assert.AreEqual(1000L, actual.Value);
 
-                _faster.Log.FlushAndEvict(true);
+            _faster.Log.FlushAndEvict(true);
 
-                (await removerSession.RMWAsync(ref key, ref empty)).Complete();
-                read = await readerSession.ReadAsync(ref key, ref empty);
-                result = read.Complete();
+            (await removerSession.RMWAsync(ref key, ref empty)).Complete();
+            read = await readerSession.ReadAsync(ref key, ref empty);
+            result = read.Complete();
 
-                actual = result.Item2;
-                Assert.AreEqual(1, actual.ReferenceCount);
-                Assert.AreEqual(1000L, actual.Value);
-                Assert.AreEqual(1, _remover.CopyCount);
-            }
+            actual = result.output;
+            Assert.AreEqual(1, actual.ReferenceCount);
+            Assert.AreEqual(1000L, actual.Value);
+            Assert.AreEqual(1, _remover.CopyCount);
         }
     }
 }

@@ -3,17 +3,34 @@
 
 using NUnit.Framework;
 using System;
-using System.Diagnostics;
 using System.IO;
 using FASTER.core;
 using FASTER.devices;
 using System.Threading;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.test
 {
     internal static class TestUtils
     {
+        // Various categories used to group tests
+        internal const string SmokeTestCategory = "Smoke";
+        internal const string StressTestCategory = "Stress";
+        internal const string FasterKVTestCategory = "FasterKV";
+        internal const string ReadTestCategory = "Read";
+        internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
+        internal const string ReadCacheTestCategory = "ReadCache";
+        internal const string LockTestCategory = "Locking";
+        internal const string LockTableTestCategory = "LockTable";
+        internal const string CheckpointRestoreCategory = "CheckpointRestore";
+        internal const string MallocFixedPageSizeCategory = "MallocFixedPageSize";
+        internal const string RMWTestCategory = "RMW";
+        internal const string ModifiedBitTestCategory = "ModifiedBitTest";
+
+        public static ILoggerFactory TestLoggerFactory = CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Trace);
+
         /// <summary>
         /// Delete a directory recursively
         /// </summary>
@@ -21,17 +38,24 @@ namespace FASTER.test
         /// <param name="wait">If true, loop on exceptions that are retryable, and verify the directory no longer exists. Generally true on SetUp, false on TearDown</param>
         internal static void DeleteDirectory(string path, bool wait = false)
         {
-            if (!Directory.Exists(path))
-                return;
+            while (true)
+            {
+                try
+                {
+                    if (!Directory.Exists(path))
+                        return;
+                    foreach (string directory in Directory.GetDirectories(path))
+                        DeleteDirectory(directory, wait);
+                    break;
+                }
+                catch
+                {
+                }
+            }
 
-            foreach (string directory in Directory.GetDirectories(path))
-                DeleteDirectory(directory, wait);
-
-            bool retry = true;
-            while (retry)
+            for (; ; Thread.Yield())
             {
                 // Exceptions may happen due to a handle briefly remaining held after Dispose().
-                retry = false;
                 try
                 {
                     Directory.Delete(path, true);
@@ -39,21 +63,10 @@ namespace FASTER.test
                 catch (Exception ex) when (ex is IOException ||
                                            ex is UnauthorizedAccessException)
                 {
-                    if (!wait)
-                    {
-                        try { Directory.Delete(path, true); }
-                        catch { }
-                        return;
-                    }
-                    retry = true;
                 }
+                if (!wait || !Directory.Exists(path))
+                    break;
             }
-            
-            if (!wait)
-                return;
-
-            while (Directory.Exists(path))
-                Thread.Yield();
         }
 
         /// <summary>
@@ -69,7 +82,24 @@ namespace FASTER.test
             Directory.CreateDirectory(path);
         }
 
-        internal static bool IsRunningAzureTests => "yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests"));
+        /// <summary>
+        /// Create logger factory for given TextWriter and loglevel
+        /// E.g. Use with TestContext.Progress to print logs while test is running.
+        /// </summary>
+        /// <param name="textWriter"></param>
+        /// <param name="logLevel"></param>
+        /// <param name="scope"></param>
+        /// <returns></returns>
+        public static ILoggerFactory CreateLoggerFactoryInstance(TextWriter textWriter, LogLevel logLevel, string scope = "")
+        {
+            return LoggerFactory.Create(builder =>
+            {
+                builder.AddProvider(new NUnitLoggerProvider(textWriter, scope));
+                builder.SetMinimumLevel(logLevel);
+            });
+        }
+        
+        internal static bool IsRunningAzureTests => "yes".Equals(Environment.GetEnvironmentVariable("RunAzureTests")) || "yes".Equals(Environment.GetEnvironmentVariable("RUNAZURETESTS"));
 
         internal static void IgnoreIfNotRunningAzureTests()
         {
@@ -84,46 +114,48 @@ namespace FASTER.test
         {
 #if WINDOWS
             LSD,
-            EmulatedAzure,
 #endif
+            EmulatedAzure,
             MLSD,
             LocalMemory
         }
 
-        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = 20)  // latencyMs works only for DeviceType = LocalMemory
+        internal const int DefaultLocalMemoryDeviceLatencyMs = 20;   // latencyMs only applies to DeviceType = LocalMemory
+
+        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = DefaultLocalMemoryDeviceLatencyMs, bool deleteOnClose = false, bool omitSegmentIdFromFilename = false)
         {
             IDevice device = null;
             bool preallocateFile = false;
-            long capacity = -1; // Capacity unspecified
+            long capacity = Devices.CAPACITY_UNSPECIFIED;
             bool recoverDevice = false;
-            bool useIoCompletionPort = false;
-            bool disableFileBuffering = true;
-
-            bool deleteOnClose = false;
 
             switch (testDeviceType)
             {
 #if WINDOWS
                 case DeviceType.LSD:
+                    bool useIoCompletionPort = false;
+                    bool disableFileBuffering = true;
 #if NETSTANDARD || NET
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))    // avoids CA1416 // Validate platform compatibility
 #endif
                         device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
                     break;
+#endif
                 case DeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
-                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: false);
+                    device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose, logger: TestLoggerFactory.CreateLogger("asd"));
                     break;
-#endif
                 case DeviceType.MLSD:
-                    device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, capacity, recoverDevice);
+                    device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, true, capacity, recoverDevice);
                     break;
                 // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
-                case DeviceType.LocalMemory:  
-                    device = new LocalMemoryDevice(1L << 26, 1L << 22, 2, sector_size: 512, latencyMs: latencyMs, fileName: filename);  // 64 MB (1L << 26) is enough for our test cases
+                case DeviceType.LocalMemory:
+                    device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, sector_size: 512, latencyMs: latencyMs);  // 64 MB (1L << 26) is enough for our test cases
                     break;
             }
 
+            if (omitSegmentIdFromFilename)
+                device.Initialize(segmentSize: -1L, omitSegmentIdFromFilename: omitSegmentIdFromFilename);
             return device;
         }
 
@@ -143,7 +175,7 @@ namespace FASTER.test
             get
             {
                 var container = ConvertedClassName(forAzure: true).Replace('.', '-').ToLower();
-                Microsoft.Azure.Storage.NameValidator.ValidateContainerName(container);
+                NameValidator.ValidateContainerName(container);
                 return container;
             }
         }
@@ -159,13 +191,92 @@ namespace FASTER.test
             Generic
         }
 
+        internal enum SyncMode { Sync, Async };
+
+        public enum ReadCopyDestination { Tail, ReadCache }
+
+        public enum FlushMode { NoFlush, ReadOnly, OnDisk }
+
+        public enum KeyEquality { Equal, NotEqual }
+
+        public enum ReadCacheMode { UseReadCache, NoReadCache }
+
+        public enum KeyContentionMode { Contention, NoContention };
+
+        public enum BatchMode { Batch, NoBatch };
+
+        public enum UpdateOp { Upsert, RMW, Delete }
+
+        public enum HashModulo { NoMod = 0, Hundred = 100, Thousand = 1000 }
+
+        public enum ScanIteratorType { Pull, Push };
+
+        public enum ScanMode { Scan, Iterate };
+
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
+            => GetSinglePendingResult(completedOutputs, out _);
+
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, out RecordMetadata recordMetadata)
         {
             Assert.IsTrue(completedOutputs.Next());
             var result = (completedOutputs.Current.Status, completedOutputs.Current.Output);
+            recordMetadata = completedOutputs.Current.RecordMetadata;
             Assert.IsFalse(completedOutputs.Next());
             completedOutputs.Dispose();
             return result;
+        }
+
+        internal async static ValueTask<(Status status, Output output)> CompleteAsync<Key, Value, Input, Output, Context>(ValueTask<FasterKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> resultTask)
+        {
+            var readCompleter = await resultTask;
+            return readCompleter.Complete();
+        }
+
+        internal async static ValueTask<Status> CompleteAsync<Key, Value, Context>(ValueTask<FasterKV<Key, Value>.UpsertAsyncResult<Key, Value, Context>> resultTask)
+        {
+            var result = await resultTask;
+            while (result.Status.IsPending)
+                result = await result.CompleteAsync().ConfigureAwait(false);
+            return result.Status;
+        }
+
+        internal async static ValueTask<Status> CompleteAsync<Key, Value, Context>(ValueTask<FasterKV<Key, Value>.RmwAsyncResult<Value, Value, Context>> resultTask)
+        {
+            var result = await resultTask;
+            while (result.Status.IsPending)
+                result = await result.CompleteAsync().ConfigureAwait(false);
+            return result.Status;
+        }
+
+        internal async static ValueTask<Status> CompleteAsync<Key, Value, Input, Output, Context>(ValueTask<FasterKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> resultTask)
+        {
+            var deleteCompleter = await resultTask;
+            return deleteCompleter.Complete();
+        }
+
+        internal async static ValueTask DoTwoThreadRandomKeyTest(int count, Action<int> first, Action<int> second, Action<int> verification)
+        {
+            Task[] tasks = new Task[2];
+
+            var rng = new Random(101);
+            for (var iter = 0; iter < count; ++iter)
+            {
+                var arg = rng.Next(count);
+                tasks[0] = Task.Factory.StartNew(() => first(arg));
+                tasks[1] = Task.Factory.StartNew(() => second(arg));
+
+                await Task.WhenAll(tasks);
+
+                verification(arg);
+            }
+        }
+
+        internal static unsafe bool FindHashBucketEntryForKey<Key, Value>(this FasterKV<Key, Value> fht, ref Key key, out HashBucketEntry entry)
+        {
+            HashEntryInfo hei = new(fht.Comparer.GetHashCode64(ref key));
+            var success = fht.FindTag(ref hei);
+            entry = hei.entry;
+            return success;
         }
     }
 }

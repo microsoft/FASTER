@@ -10,7 +10,7 @@ using NUnit.Framework;
 namespace FASTER.test
 {
     [TestFixture]
-    public class IteratorTests
+    public class VariableLengthIteratorTests
     {
         [Test]
         [Category("FasterKV")]
@@ -23,8 +23,8 @@ namespace FASTER.test
             var fht = new FasterKV<Key, VLValue>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
-                null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = vlLength }
-                );
+                null, null, null, new VariableLengthStructSettings<Key, VLValue> { valueLength = vlLength },
+                concurrencyControlMode: ConcurrencyControlMode.None);
 
             var session = fht.NewSession(new VLFunctions());
 

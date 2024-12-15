@@ -1,4 +1,5 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System.Threading;
@@ -7,7 +8,7 @@ using System.IO;
 using NUnit.Framework;
 using System.Threading.Tasks;
 
-namespace FASTER.test.recovery.sumstore.recover_continue
+namespace FASTER.test.recovery.sumstore.cntinue
 {
     [TestFixture]
     internal class RecoverContinueTests
@@ -23,29 +24,29 @@ namespace FASTER.test.recovery.sumstore.recover_continue
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/RecoverContinueTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/test.log", deleteOnClose: true);
             checkpointDir = TestUtils.MethodTestDir + "/checkpoints3";
             Directory.CreateDirectory(checkpointDir);
 
             fht1 = new FasterKV
                 <AdId, NumClicks>
-                (128,
+                (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             fht2 = new FasterKV
                 <AdId, NumClicks>
-                (128,
+                (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             fht3 = new FasterKV
                 <AdId, NumClicks>
-                (128,
+                (16,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckPointType = CheckpointType.Snapshot }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             numOps = 5000;
@@ -63,21 +64,21 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             log?.Dispose();
             log = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(checkpointDir);
         }
 
         [Test]
         [Category("FasterKV")]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-
         public async ValueTask RecoverContinueTest([Values]bool isAsync)
         {
             long sno = 0;
 
             var firstsession = fht1.For(new AdSimpleFunctions()).NewSession<AdSimpleFunctions>("first");
             IncrementAllValues(ref firstsession, ref sno);
-            fht1.TakeFullCheckpoint(out _);
-            fht1.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht1.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
+            fht1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             firstsession.Dispose();
 
             // Check if values after checkpoint are correct
@@ -97,10 +98,10 @@ namespace FASTER.test.recovery.sumstore.recover_continue
             // Continue and increment values
             var continuesession = fht2.For(new AdSimpleFunctions()).ResumeSession<AdSimpleFunctions>("first", out CommitPoint cp);
             long newSno = cp.UntilSerialNo;
-            Assert.IsTrue(newSno == sno - 1);
+            Assert.AreEqual(sno - 1, newSno);
             IncrementAllValues(ref continuesession, ref sno);
-            fht2.TakeFullCheckpoint(out _);
-            fht2.CompleteCheckpointAsync().GetAwaiter().GetResult();
+            fht2.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
+            fht2.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             continuesession.Dispose();
 
             // Check if values after continue checkpoint are correct
@@ -116,7 +117,7 @@ namespace FASTER.test.recovery.sumstore.recover_continue
 
             var nextsession = fht3.For(new AdSimpleFunctions()).ResumeSession<AdSimpleFunctions>("first", out cp);
             long newSno2 = cp.UntilSerialNo;
-            Assert.IsTrue(newSno2 == sno - 1);
+            Assert.AreEqual(sno - 1, newSno2);
             CheckAllValues(ref nextsession, 2);
             nextsession.Dispose();
         }
@@ -132,11 +133,11 @@ namespace FASTER.test.recovery.sumstore.recover_continue
                 inputArg.adId.adId = key;
                 var status = fht.Read(ref inputArg.adId, ref inputArg, ref outputArg, Empty.Default, fht.SerialNo);
 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     fht.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(outputArg.value.numClicks == value);
+                    Assert.AreEqual(value, outputArg.value.numClicks);
                 }
             }
 
@@ -162,34 +163,44 @@ namespace FASTER.test.recovery.sumstore.recover_continue
 
     public class AdSimpleFunctions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
-        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status)
+        public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.numClicks == key.adId);
+            Assert.IsTrue(status.Found);
+            Assert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions
-        public override void SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
-
-        public override void ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst) => dst.value = value;
-
-        // RMW functions
-        public override void InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
+        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
         {
-            value = input.numClicks;
+            dst.value = value;
+            return true;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output)
+        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
+        {
+            dst.value = value;
+            return true;
+        }
+
+        // RMW functions
+        public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo)
+        {
+            value = input.numClicks;
+            return true;
+         }
+
+        public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo)
         {
             Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output) => true;
+        public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
 
-        public override void CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output)
+        public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RMWInfo rmwInfo)
         {
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
+            return true;
         }
     }
 }

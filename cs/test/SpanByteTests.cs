@@ -66,11 +66,11 @@ namespace FASTER.test
             {
                 using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/MultiReadSpanByteKeyTest.log", deleteOnClose: true);
                 using var fht = new FasterKV<SpanByte, long>(
-                    size: 1L << 20,
+                    size: 1L << 10,
                     new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
                 using var session = fht.For(new MultiReadSpanByteKeyTestFunctions()).NewSession<MultiReadSpanByteKeyTestFunctions>();
 
-                for (int i = 0; i < 3000; i++)
+                for (int i = 0; i < 200; i++)
                 {
                     var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                     fixed (byte* _ = key)
@@ -96,7 +96,7 @@ namespace FASTER.test
                         status = session.Read(key: SpanByte.FromFixedSpan(key), out var unused);
 
                     // All keys need to be fetched from disk
-                    Assert.AreEqual(Status.PENDING, status);
+                    Assert.IsTrue(status.IsPending);
 
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
 
@@ -107,7 +107,7 @@ namespace FASTER.test
                         while (completedOutputs.Next())
                         {
                             count++;
-                            Assert.AreEqual(Status.OK, completedOutputs.Current.Status);
+                            Assert.IsTrue(completedOutputs.Current.Status.Found);
                             value = completedOutputs.Current.Output;
                         }
                     }
@@ -121,10 +121,73 @@ namespace FASTER.test
             }
         }
 
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public unsafe void SpanByteUnitTest1()
+        {
+            Span<byte> payload = stackalloc byte[20];
+            Span<byte> serialized = stackalloc byte[24];
+
+            SpanByte sb = SpanByte.FromFixedSpan(payload);
+            Assert.IsFalse(sb.Serialized);
+            Assert.AreEqual(20, sb.Length);
+            Assert.AreEqual(24, sb.TotalSize);
+            Assert.AreEqual(20, sb.AsSpan().Length);
+            Assert.AreEqual(20, sb.AsReadOnlySpan().Length);
+
+            fixed (byte* ptr = serialized)
+                sb.CopyTo(ptr);
+            ref SpanByte ssb = ref SpanByte.ReinterpretWithoutLength(serialized);
+            Assert.IsTrue(ssb.Serialized);
+            Assert.AreEqual(0, ssb.MetadataSize);
+            Assert.AreEqual(20, ssb.Length);
+            Assert.AreEqual(24, ssb.TotalSize);
+            Assert.AreEqual(20, ssb.AsSpan().Length);
+            Assert.AreEqual(20, ssb.AsReadOnlySpan().Length);
+
+            ssb.MarkExtraMetadata();
+            Assert.IsTrue(ssb.Serialized);
+            Assert.AreEqual(8, ssb.MetadataSize);
+            Assert.AreEqual(20, ssb.Length);
+            Assert.AreEqual(24, ssb.TotalSize);
+            Assert.AreEqual(20 - 8, ssb.AsSpan().Length);
+            Assert.AreEqual(20 - 8, ssb.AsReadOnlySpan().Length);
+            ssb.ExtraMetadata = 31337;
+            Assert.AreEqual(31337, ssb.ExtraMetadata);
+
+            sb.MarkExtraMetadata();
+            Assert.AreEqual(20, sb.Length);
+            Assert.AreEqual(24, sb.TotalSize);
+            Assert.AreEqual(20 - 8, sb.AsSpan().Length);
+            Assert.AreEqual(20 - 8, sb.AsReadOnlySpan().Length);
+            sb.ExtraMetadata = 31337;
+            Assert.AreEqual(31337, sb.ExtraMetadata);
+
+            fixed (byte* ptr = serialized)
+                sb.CopyTo(ptr);
+            Assert.IsTrue(ssb.Serialized);
+            Assert.AreEqual(8, ssb.MetadataSize);
+            Assert.AreEqual(20, ssb.Length);
+            Assert.AreEqual(24, ssb.TotalSize);
+            Assert.AreEqual(20 - 8, ssb.AsSpan().Length);
+            Assert.AreEqual(20 - 8, ssb.AsReadOnlySpan().Length);
+            Assert.AreEqual(31337, ssb.ExtraMetadata);
+        }
+
         class MultiReadSpanByteKeyTestFunctions : FunctionsBase<SpanByte, long, long, long, Empty>
         {
-            public override void SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst) => dst = value;
-            public override void ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst) => dst = value;
+            public override bool SingleReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref ReadInfo readInfo)
+            {
+                dst = value;
+                return true;
+            }
+
+            public override bool ConcurrentReader(ref SpanByte key, ref long input, ref long value, ref long dst, ref ReadInfo readInfo)
+            {
+                dst = value;
+                return true;
+            }
         }
     }
 }

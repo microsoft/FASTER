@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -64,7 +65,7 @@ namespace FASTER.test
                 session.Upsert(ref _key, ref _value, Empty.Default, 0);
             }
             session.CompletePending(true);
-            Assert.IsTrue(fht.EntryCount == totalRecords);
+            Assert.AreEqual(totalRecords, fht.EntryCount);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -73,22 +74,23 @@ namespace FASTER.test
                 var key = $"{i}";
                 var value = $"{i}";
 
-                if (session.Read(ref key, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                var status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+                if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    session.CompletePendingWithOutputs(out var outputs, wait:true);
+                    (status, output) = GetSinglePendingResult(outputs);
                 }
-                else
-                {
-                    Assert.IsTrue(output == value,$"Output failure. Output:{output} and value: {value}");
-                }
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value, output);
             }
         }
 
         class MyFuncs : SimpleFunctions<string, string>
         {
-            public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(output == key, $"Output failure in call back. Output:{output} and key: {key}");
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(key, output);
             }
         }
     }

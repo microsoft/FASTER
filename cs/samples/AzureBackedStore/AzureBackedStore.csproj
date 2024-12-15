@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net5.0</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
     <Platforms>x64</Platforms>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
@@ -12,7 +12,6 @@
     <RootNamespace>AzureBackedStore</RootNamespace>
     <ErrorReport>prompt</ErrorReport>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
-    <Prefer32Bit>true</Prefer32Bit>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">

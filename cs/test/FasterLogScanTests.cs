@@ -1,5 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
+
+using System;
+using System.Threading;
 using FASTER.core;
 using NUnit.Framework;
 
@@ -93,9 +96,6 @@ namespace FASTER.test
                 // Add to FasterLog
                 logUncommitted.Enqueue(entry);
             }
-
-            // refresh uncommitted so can see it when scan - do NOT commit though 
-            logUncommitted.RefreshUncommitted(true);
         }
 
         [Test]
@@ -121,7 +121,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result["+ currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -129,7 +129,96 @@ namespace FASTER.test
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
             Assert.AreEqual(entryLength, currentEntry);
+        }
 
+        [Test]
+        [Category("FasterLog")]
+        [Category("Smoke")]
+        public void ScanBehindBeginAddressTest([Values] TestUtils.DeviceType deviceType)
+        {
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = path + "LogScanDefault" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            PopulateLog(log);
+
+            // Basic default scan from start to end 
+            // Indirectly used in other tests, but good to have the basic test here for completeness
+
+            // Read the log - Look for the flag so know each entry is unique
+            using (var iter = log.Scan(0, 100_000_000))
+            {
+                var next = iter.GetNext(out byte[] result, out _, out _);
+                Assert.IsTrue(next);
+
+                // Verify result
+                Assert.AreEqual((byte)entryFlag, result[0]);
+
+                // truncate log to tail
+                log.TruncateUntil(log.TailAddress);
+                log.Commit(true);
+                Assert.AreEqual(log.TailAddress, log.BeginAddress);
+
+                // Wait for allocator to realize the new BeginAddress
+                // Needed as this is done post-commit
+                while (log.AllocatorBeginAddress < log.TailAddress)
+                    Thread.Yield();
+
+                // Iterator will skip ahead to tail
+                next = iter.GetNext(out result, out _, out _);
+                Assert.IsFalse(next);
+
+                // WaitAsync should not complete, as we are at end of iteration
+                var tcs = new CancellationTokenSource();
+                var task = iter.WaitAsync(tcs.Token);
+                Assert.IsFalse(task.IsCompleted);
+                tcs.Cancel();
+                try
+                {
+                    task.GetAwaiter().GetResult();
+                }
+                catch { }
+            }
+        }
+
+
+        internal class TestConsumer : ILogEntryConsumer
+        {
+            internal int currentEntry = 0;
+            
+            public void Consume(ReadOnlySpan<byte> entry, long currentAddress, long nextAddress)
+            {
+                if (currentEntry < entryLength)
+                {
+                    // Span Batch only added first entry several times so have separate verification
+                    Assert.AreEqual((byte)entryFlag, entry[currentEntry]);
+                    currentEntry++;
+                }
+            }
+        }
+        [Test]
+        [Category("FasterLog")]
+        [Category("Smoke")]
+        public void ScanConsumerTest([Values] TestUtils.DeviceType deviceType)
+        {
+            // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
+            string filename = path + "LogScanDefault" + deviceType.ToString() + ".log";
+            device = TestUtils.CreateTestDevice(deviceType, filename);
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            PopulateLog(log);
+
+            // Basic default scan from start to end 
+            // Indirectly used in other tests, but good to have the basic test here for completeness
+
+            // Read the log - Look for the flag so know each entry is unique
+            var consumer = new TestConsumer();
+            using (var iter = log.Scan(0, 100_000_000))  
+            {
+                while (iter.TryConsumeNext(consumer)) {}
+            }
+
+            // Make sure expected length is same as current - also makes sure that data verification was not skipped
+            Assert.AreEqual(entryLength, consumer.currentEntry);
         }
 
         [Test]
@@ -153,7 +242,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -185,7 +274,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -217,7 +306,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -249,7 +338,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -279,7 +368,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -297,7 +386,7 @@ namespace FASTER.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = path + "LogScan" + deviceType.ToString() + ".log";
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new FasterLog(new FasterLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path, AutoRefreshSafeTailAddress = true });
             PopulateUncommittedLog(log);
 
             // Setting scanUnCommitted to true is actual test here.
@@ -310,7 +399,7 @@ namespace FASTER.test
                     if (currentEntry < entryLength)
                     {
                         // Span Batch only added first entry several times so have separate verification
-                        Assert.IsTrue(result[currentEntry] == (byte)entryFlag, "Fail - Result[" + currentEntry.ToString() + "]:" + result[0].ToString() + "  entryFlag:" + entryFlag);
+                        Assert.AreEqual((byte)entryFlag, result[currentEntry]);
                         currentEntry++;
                     }
                 }

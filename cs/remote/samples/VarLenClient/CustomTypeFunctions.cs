@@ -15,18 +15,26 @@ namespace VarLenClient
         {
             if (ctx == 0)
             {
-                if (status != Status.OK || key.payload + 10000 != output.payload)
+                if (!status.Found || key.payload + 10000 != output.payload)
                     throw new Exception("Incorrect read result");
             }
             else if (ctx == 1)
             {
-                if (status != Status.OK || key.payload + 10000 + 25 + 25 != output.payload)
+                if (!status.Found || key.payload + 10000 + 25 + 25 != output.payload)
                     throw new Exception("Incorrect read result");
             }
             else
             {
                 throw new Exception("Unexpected user context");
             }
+        }
+
+        public override void SubscribeKVCallback(ref CustomType key, ref CustomType input, ref CustomType output, byte ctx, Status status) 
+        {
+        }
+
+        public override void SubscribeCallback(ref CustomType key, ref CustomType value, byte ctx)
+        {
         }
     }
 }

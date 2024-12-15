@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -15,58 +16,66 @@ namespace FASTER.core
     /// </summary>
     public class DeviceLogCommitCheckpointManager : ILogCommitManager, ICheckpointManager
     {
-        const int indexTokenCount = 2;
-        const int logTokenCount = 1;
-
-        private readonly INamedDeviceFactory deviceFactory;
-        private readonly ICheckpointNamingScheme checkpointNamingScheme;
-        private readonly SemaphoreSlim semaphore;
-
-        private readonly bool overwriteLogCommits;
-        private readonly bool removeOutdated;
-        private SectorAlignedBufferPool bufferPool;
-
-        private IDevice singleLogCommitDevice;
-        private bool _disposed;
+        const byte indexTokenCount = 2;
+        const byte logTokenCount = 1;
+        const byte flogCommitCount = 1;
 
         /// <summary>
-        /// Next commit number
+        /// deviceFactory
         /// </summary>
-        private long commitNum;
+        protected readonly INamedDeviceFactory deviceFactory;
+
+        /// <summary>
+        /// checkpointNamingScheme
+        /// </summary>
+        protected readonly ICheckpointNamingScheme checkpointNamingScheme;
+        private readonly SemaphoreSlim semaphore;
+
+        private readonly bool removeOutdated;
+        private SectorAlignedBufferPool bufferPool;
 
         /// <summary>
         /// Track historical commits for automatic purging
         /// </summary>
         private readonly Guid[] indexTokenHistory, logTokenHistory;
-        private int indexTokenHistoryOffset, logTokenHistoryOffset;
+        private readonly long[] flogCommitHistory;
+        private byte indexTokenHistoryOffset, logTokenHistoryOffset, flogCommitHistoryOffset;
+
+        readonly ILogger logger;
+        readonly WorkQueueFIFO<long> deleteQueue;
+        readonly int fastCommitThrottleFreq;
+        int commitCount;
 
         /// <summary>
         /// Create new instance of log commit manager
         /// </summary>
         /// <param name="deviceFactory">Factory for getting devices</param>
         /// <param name="checkpointNamingScheme">Checkpoint naming helper</param>
-        /// <param name="overwriteLogCommits">Overwrite same FASTER log commits each time</param>
         /// <param name="removeOutdated">Remote older FASTER log commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool overwriteLogCommits = true, bool removeOutdated = false)
+        /// <param name="fastCommitThrottleFreq">FastCommit throttle frequency - use only in FastCommit mode</param>
+        /// <param name="logger">Remote older FASTER log commits</param>
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
         {
+            this.logger = logger;
             this.deviceFactory = deviceFactory;
             this.checkpointNamingScheme = checkpointNamingScheme;
+            this.fastCommitThrottleFreq = fastCommitThrottleFreq;
 
-            this.commitNum = 0;
             this.semaphore = new SemaphoreSlim(0);
 
-            this.overwriteLogCommits = overwriteLogCommits;
             this.removeOutdated = removeOutdated;
             if (removeOutdated)
             {
+                deleteQueue = new WorkQueueFIFO<long>(prior => deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(prior)));
+
                 // We keep two index checkpoints as the latest index might not have a
                 // later log checkpoint to work with
-                indexTokenHistory = new Guid[2];
+                indexTokenHistory = new Guid[indexTokenCount];
                 // We only keep the latest log checkpoint
-                logTokenHistory = new Guid[2];
+                logTokenHistory = new Guid[logTokenCount];
+                // // We only keep the latest FasterLog commit
+                flogCommitHistory = new long[flogCommitCount];
             }
-            this._disposed = false;
-
             deviceFactory.Initialize(checkpointNamingScheme.BaseName());
         }
 
@@ -76,25 +85,35 @@ namespace FASTER.core
             deviceFactory.Delete(new FileDescriptor { directoryName = "" });
         }
 
+        /// <inheritdoc />
+        public void Purge(Guid token)
+        {
+            // Try both because we do not know which type the guid denotes
+            deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(token));
+            deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(token));
+        }
+
         /// <summary>
         /// Create new instance of log commit manager
         /// </summary>
         /// <param name="deviceFactory">Factory for getting devices</param>
         /// <param name="baseName">Overall location specifier (e.g., local path or cloud container name)</param>
-        /// <param name="overwriteLogCommits">Overwrite same FASTER log commits each time</param>
         /// <param name="removeOutdated">Remote older FASTER log commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, string baseName, bool overwriteLogCommits = true, bool removeOutdated = false)
-            : this(deviceFactory, new DefaultCheckpointNamingScheme(baseName), overwriteLogCommits, removeOutdated)
-                  { }
+        /// <param name="logger">Remote older FASTER log commits</param>
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, string baseName, bool removeOutdated = false, ILogger logger = null)
+            : this(deviceFactory, new DefaultCheckpointNamingScheme(baseName), removeOutdated)
+        {
+            this.logger = logger;
+        }
 
         #region ILogCommitManager
 
         /// <inheritdoc />
-        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata)
+        public unsafe void Commit(long beginAddress, long untilAddress, byte[] commitMetadata, long commitNum, bool forceWriteMetadata)
         {
-            var device = NextCommitDevice();
+            if (!forceWriteMetadata && fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0)) return;
 
-            if (device == null) return;
+            using var device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
 
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
@@ -104,20 +123,23 @@ namespace FASTER.core
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
 
-            if (!overwriteLogCommits)
+            if (removeOutdated)
             {
-                device.Dispose();
-                if (removeOutdated && commitNum > 1)
-                    deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(commitNum - 2));
+                var prior = flogCommitHistory[flogCommitHistoryOffset];
+                flogCommitHistory[flogCommitHistoryOffset] = commitNum;
+                flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
+                if (prior != default)
+                {
+                    // System.Threading.Tasks.Task.Run(() => deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(prior)));
+                    deleteQueue.EnqueueAndTryWork(prior, true);
+                }
             }
         }
 
         /// <inheritdoc />
         public void Dispose()
         {
-            _disposed = true;
-            singleLogCommitDevice?.Dispose();
-            singleLogCommitDevice = null;
+            GC.SuppressFinalize(this);
         }
 
         /// <inheritdoc />
@@ -127,30 +149,22 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
+        public void RemoveCommit(long commitNum)
+        {
+            deviceFactory.Delete(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
+        }
+
+        /// <inheritdoc />
+        public void RemoveAllCommits()
+        {
+            foreach (var commitNum in ListCommits())
+                RemoveCommit(commitNum);
+        }
+
+        /// <inheritdoc />
         public byte[] GetCommitMetadata(long commitNum)
         {
-            IDevice device;
-            if (overwriteLogCommits)
-            {
-                if (_disposed) return null;
-                if (singleLogCommitDevice == null)
-                {
-                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
-                    if (_disposed)
-                    {
-                        singleLogCommitDevice?.Dispose();
-                        singleLogCommitDevice = null;
-                    }
-                }
-                device = singleLogCommitDevice;
-            }
-            else
-            {
-                device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
-                this.commitNum = commitNum + 1;
-            }
-            if (device == null) return null;
-            
+            using var device = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
             int size = BitConverter.ToInt32(writePad, 0);
@@ -160,37 +174,13 @@ namespace FASTER.core
                 body = writePad;
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
-            
-            if (!overwriteLogCommits)
-                device.Dispose();
 
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
         }
-
-        private IDevice NextCommitDevice()
-        {
-            if (overwriteLogCommits)
-            {
-                if (_disposed) return null;
-                if (singleLogCommitDevice == null)
-                {
-                    singleLogCommitDevice = deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum));
-                    if (_disposed)
-                    {
-                        singleLogCommitDevice?.Dispose();
-                        singleLogCommitDevice = null;
-                        return null;
-                    }
-                }
-                return singleLogCommitDevice;
-            }
-
-            return deviceFactory.Get(checkpointNamingScheme.FasterLogCommitMetadata(commitNum++));
-        }
         #endregion
 
-
         #region ICheckpointManager
+
         /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
@@ -209,7 +199,7 @@ namespace FASTER.core
             {
                 var prior = indexTokenHistory[indexTokenHistoryOffset];
                 indexTokenHistory[indexTokenHistoryOffset] = indexToken;
-                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenCount;
+                indexTokenHistoryOffset = (byte)((indexTokenHistoryOffset + 1) % indexTokenCount);
                 if (prior != default)
                     deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(prior));
             }
@@ -239,7 +229,7 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
+        public virtual unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
             var device = NextLogCheckpointDevice(logToken);
 
@@ -256,19 +246,19 @@ namespace FASTER.core
             {
                 var prior = logTokenHistory[logTokenHistoryOffset];
                 logTokenHistory[logTokenHistoryOffset] = logToken;
-                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenCount;
+                logTokenHistoryOffset = (byte)((logTokenHistoryOffset + 1) % logTokenCount);
                 if (prior != default)
                     deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(prior));
             }
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogIncrementalCheckpoint(Guid logToken, int version, byte[] commitMetadata, DeltaLog deltaLog)
+        public virtual unsafe void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog)
         {
             deltaLog.Allocate(out int length, out long physicalAddress);
             if (length < commitMetadata.Length)
             {
-                deltaLog.Seal(0, type: 1);
+                deltaLog.Seal(0, DeltaLogEntryType.CHECKPOINT_METADATA);
                 deltaLog.Allocate(out length, out physicalAddress);
                 if (length < commitMetadata.Length)
                 {
@@ -280,7 +270,7 @@ namespace FASTER.core
             {
                 Buffer.MemoryCopy(ptr, (void*)physicalAddress, commitMetadata.Length, commitMetadata.Length);
             }
-            deltaLog.Seal(commitMetadata.Length, type: 1);
+            deltaLog.Seal(commitMetadata.Length, DeltaLogEntryType.CHECKPOINT_METADATA);
             deltaLog.FlushAsync().Wait();
         }
 
@@ -291,25 +281,43 @@ namespace FASTER.core
         }
 
         /// <inheritdoc />
-        public byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog)
+        public virtual byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             byte[] metadata = null;
-            if (deltaLog != null)
+            if (deltaLog != null && scanDelta)
             {
                 // Try to get latest valid metadata from delta-log
                 deltaLog.Reset();
-                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out int type))
+                while (deltaLog.GetNext(out long physicalAddress, out int entryLength, out var type))
                 {
-                    if (type != 1) continue; // consider only metadata records
-                    long endAddress = physicalAddress + entryLength;
-                    metadata = new byte[entryLength];
-                    unsafe
+                    switch (type)
                     {
-                        fixed (byte* m = metadata)
-                            Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                        case DeltaLogEntryType.DELTA:
+                            // consider only metadata records
+                            continue;
+                        case DeltaLogEntryType.CHECKPOINT_METADATA:
+                            metadata = new byte[entryLength];
+                            unsafe
+                            {
+                                fixed (byte* m = metadata)
+                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
+                            }
+                            HybridLogRecoveryInfo recoveryInfo = new();
+                            using (StreamReader s = new(new MemoryStream(metadata)))
+                            {
+                                recoveryInfo.Initialize(s);
+                                // Finish recovery if only specific versions are requested
+                                if (recoveryInfo.version == recoverTo || recoveryInfo.version < recoverTo && recoveryInfo.nextVersion > recoverTo) goto LoopEnd;
+                            }
+                            continue;
+                        default:
+                            throw new FasterException("Unexpected entry type");
                     }
+                LoopEnd:
+                    break;
                 }
                 if (metadata != null) return metadata;
+
             }
 
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
@@ -369,12 +377,12 @@ namespace FASTER.core
             if (indexToken != default)
             {
                 indexTokenHistory[indexTokenHistoryOffset] = indexToken;
-                indexTokenHistoryOffset = (indexTokenHistoryOffset + 1) % indexTokenCount;
+                indexTokenHistoryOffset = (byte)((indexTokenHistoryOffset + 1) % indexTokenCount);
             }
             if (logToken != default)
             {
                 logTokenHistory[logTokenHistoryOffset] = logToken;
-                logTokenHistoryOffset = (logTokenHistoryOffset + 1) % logTokenCount;
+                logTokenHistoryOffset = (byte)((logTokenHistoryOffset + 1) % logTokenCount);
             }
 
             // Purge all log checkpoints that were not used for recovery
@@ -392,6 +400,22 @@ namespace FASTER.core
             }
         }
 
+        /// <inheritdoc />
+        public void OnRecovery(long commitNum)
+        {
+            if (!removeOutdated) return;
+
+            foreach (var recoveredCommitNum in ListCommits())
+                if (recoveredCommitNum != commitNum) RemoveCommit(recoveredCommitNum);
+
+            // Add recovered tokens to history, for eventual purging
+            if (commitNum != default)
+            {
+                flogCommitHistory[flogCommitHistoryOffset] = commitNum;
+                flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
+            }
+        }
+
         private IDevice NextIndexCheckpointDevice(Guid token)
             => deviceFactory.Get(checkpointNamingScheme.IndexCheckpointMetadata(token));
 
@@ -403,7 +427,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                logger?.LogError("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
             }
             semaphore.Release();
         }
@@ -415,7 +439,7 @@ namespace FASTER.core
         /// <param name="address"></param>
         /// <param name="buffer"></param>
         /// <param name="size"></param>
-        private unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
+        protected unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
         {
             if (bufferPool == null)
                 bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
@@ -441,7 +465,7 @@ namespace FASTER.core
         /// <param name="address"></param>
         /// <param name="buffer"></param>
         /// <param name="size"></param>
-        private unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
+        protected unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
         {
             if (bufferPool == null)
                 bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
@@ -454,11 +478,16 @@ namespace FASTER.core
             {
                 Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
             }
-            
+
             device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
             semaphore.Wait();
 
             pbuffer.Return();
+        }
+
+        /// <inheritdoc />
+        public virtual void CheckpointVersionShift(long oldVersion, long newVersion)
+        {
         }
     }
 }

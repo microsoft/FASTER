@@ -26,7 +26,7 @@ namespace FASTER.test
         public void PageBlobWriteRead()
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
-            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests"));
+            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests", logger: TestUtils.TestLoggerFactory.CreateLogger("asd")));
         }
 
         [Test]
@@ -35,7 +35,7 @@ namespace FASTER.test
         public void PageBlobWriteReadWithLease()
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
-            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests",null,true,true));
+            TestDeviceWriteRead(new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests",null,true,true, logger: TestUtils.TestLoggerFactory.CreateLogger("asd")));
         }
 
         [Test]
@@ -48,7 +48,7 @@ namespace FASTER.test
             IDevice localDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests.log", deleteOnClose: true, capacity: 1 << 30);
             if (TestUtils.IsRunningAzureTests)
             {
-                IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests");
+                IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskFASTERTests", logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
                 tested = new TieredStorageDevice(1, localDevice, cloudDevice);
             }
             else
@@ -70,6 +70,26 @@ namespace FASTER.test
             IDevice localDevice2 = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskFASTERTests2.log", deleteOnClose: true, capacity: 1 << 30);
             var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
             TestDeviceWriteRead(device);
+        }
+
+        [Test]
+        [Category("FasterKV")]
+        [Category("Smoke")]
+        public void OmitSegmentIdTest([Values] TestUtils.DeviceType deviceType)
+        {
+            var filename = TestUtils.MethodTestDir + "/test.log";
+            var omit = false;
+            for (var ii = 0; ii < 2; ++ii) 
+            { 
+                using IDevice device = TestUtils.CreateTestDevice(deviceType, filename, omitSegmentIdFromFilename: omit);
+                var storageBase = (StorageDeviceBase)device;
+                var segmentFilename = storageBase.GetSegmentFilename(filename, 0);
+                if (omit)
+                    Assert.AreEqual(filename, segmentFilename);
+                else
+                    Assert.AreEqual(filename + ".0", segmentFilename);
+                omit = true;
+            }
         }
 
         void TestDeviceWriteRead(IDevice log)
@@ -95,7 +115,7 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
                 var status = session.RMW(ref key1, ref input, Empty.Default, 0);
-                if (status == Status.PENDING)
+                if (status.IsPending)
                     session.CompletePending(true);
             }
 
@@ -106,7 +126,7 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0) == Status.PENDING)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
                 {
                     session.CompletePending(true);
                 }
@@ -114,13 +134,13 @@ namespace FASTER.test
                 {
                     if (i < 100)
                     {
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1 + 1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2 + 1);
+                        Assert.AreEqual(value.vfield1 + 1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2 + 1, output.value.vfield2);
                     }
                     else
                     {
-                        Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                        Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                        Assert.AreEqual(value.vfield1, output.value.vfield1);
+                        Assert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                 }
             }

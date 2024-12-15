@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -26,18 +27,6 @@ namespace FASTER.core
     /// </summary>
     public static class Utility
     {
-        /// <summary>
-        /// Get size of type
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        internal static unsafe int GetSize<T>(this T value)
-        {
-            T[] arr = new T[2];
-            return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
-        }
-
         internal static bool IsBlittableType(Type t)
         {
             var mi = typeof(Utility).GetMethod("IsBlittable", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.InvokeMethod);
@@ -46,12 +35,117 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Parse size in string notation into long.
+        /// Examples: 4k, 4K, 4KB, 4 KB, 8m, 8MB, 12g, 12 GB, 16t, 16 TB, 32p, 32 PB.
+        /// </summary>
+        /// <param name="value">String version of number</param>
+        /// <returns>The number</returns>
+        public static long ParseSize(string value)
+        {
+            char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
+            long result = 0;
+            foreach (char c in value)
+            {
+                if (char.IsDigit(c))
+                {
+                    result = result * 10 + (byte)c - '0';
+                }
+                else
+                {
+                    for (int i = 0; i < suffix.Length; i++)
+                    {
+                        if (char.ToLower(c) == suffix[i])
+                        {
+                            result *= (long)Math.Pow(1024, i + 1);
+                            return result;
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Num bits in the previous power of 2 for specified number
+        /// </summary>
+        /// <param name="v"></param>
+        /// <param name="logger"></param>
+        /// <returns></returns>
+        internal static int NumBitsPreviousPowerOf2(long v, ILogger logger = null)
+        {
+            long adjustedSize = PreviousPowerOf2(v);
+            if (v != adjustedSize)
+                logger?.LogError($"Warning: using lower value {adjustedSize} instead of specified value {v}");
+            return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
+        /// Previous power of 2
+        /// </summary>
+        /// <param name="v"></param>
+        /// <returns></returns>
+        internal static long PreviousPowerOf2(long v)
+        {
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v - (v >> 1);
+        }
+
+        /// <summary>
+        /// Pretty print value
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        internal static string PrettySize(long value)
+        {
+            char[] suffix = new char[] { 'K', 'M', 'G', 'T', 'P' };
+            double v = value;
+            int exp = 0;
+            while (v - Math.Floor(v) > 0)
+            {
+                if (exp >= 18)
+                    break;
+                exp += 3;
+                v *= 1024;
+                v = Math.Round(v, 12);
+            }
+
+            while (Math.Floor(v).ToString().Length > 3)
+            {
+                if (exp <= -18)
+                    break;
+                exp -= 3;
+                v /= 1024;
+                v = Math.Round(v, 12);
+            }
+            if (exp > 0)
+                return v.ToString() + suffix[exp / 3 - 1] + "B";
+            else if (exp < 0)
+                return v.ToString() + suffix[-exp / 3 - 1] + "B";
+            return v.ToString() + "B";
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsReadCache(long address) => (address & Constants.kReadCacheBitMask) != 0;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long AbsoluteAddress(long address) => address & ~Constants.kReadCacheBitMask;
+
+        /// <summary>
         /// Is type blittable
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <returns></returns>
         internal static bool IsBlittable<T>()
         {
+#if NETSTANDARD2_1_OR_GREATER || NET6_0_OR_GREATER
+            return !RuntimeHelpers.IsReferenceOrContainsReferences<T>();
+#else
+
             if (default(T) == null)
                 return false;
 
@@ -66,6 +160,7 @@ namespace FASTER.core
                 return false;
             }
             return true;
+#endif
         }
 
         /// <summary>
@@ -242,23 +337,6 @@ namespace FASTER.core
             return ((ulong)x < 4294967295ul);
         }
 
-
-        /// <summary>
-        /// A 32-bit murmur3 implementation.
-        /// </summary>
-        /// <param name="h"></param>
-        /// <returns></returns>
-        internal static int Murmur3(int h)
-        {
-            uint a = (uint)h;
-            a ^= a >> 16;
-            a *= 0x85ebca6b;
-            a ^= a >> 13;
-            a *= 0xc2b2ae35;
-            a ^= a >> 16;
-            return (int)a;
-        }
-
         /// <summary>
         /// Updates the variable to newValue only if the current value is smaller than the new value.
         /// </summary>
@@ -325,5 +403,15 @@ namespace FASTER.core
             // make sure any exceptions in the task get unwrapped and exposed to the caller.
             return await task;
         }
+
+        internal static string GetHashString(long hash)
+        {
+            // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
+            var hashSign = hash < 0 ? "-" : string.Empty;
+            var absHash = hash >= 0 ? hash : -hash;
+            return $"{hashSign}{absHash}";
+        }
+
+        internal static string GetHashString(long? hash) => hash.HasValue ? GetHashString(hash.Value) : "null";
     }
 }

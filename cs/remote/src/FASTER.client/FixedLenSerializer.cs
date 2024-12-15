@@ -55,6 +55,22 @@ namespace FASTER.client
         }
 
         /// <inheritdoc />
+        public Key ReadKey(ref byte* src)
+        {
+            var _src = src;
+            src += Unsafe.SizeOf<Key>();
+            return Unsafe.AsRef<Key>(_src);
+        }
+
+        /// <inheritdoc />
+        public Value ReadValue(ref byte* src)
+        {
+            var _src = src;
+            src += Unsafe.SizeOf<Value>();
+            return Unsafe.AsRef<Value>(_src);
+        }
+
+        /// <inheritdoc />
         public Output ReadOutput(ref byte* src)
         {
             var _src = src;

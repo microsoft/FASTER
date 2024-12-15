@@ -32,6 +32,11 @@ namespace FASTER.core
             this.dictionary = new(initialCollection);
         }
 
+        public SafeConcurrentDictionary(IEqualityComparer<TKey> comparer)
+        {
+            this.dictionary = new(comparer);
+        }
+
         /// <summary>
         /// Returns the count of the dictionary.
         /// </summary>
@@ -217,6 +222,17 @@ namespace FASTER.core
         public bool TryRemove(TKey key, out TValue value)
         {
             return dictionary.TryRemove(key, out value);
+        }
+
+        /// <summary>
+        /// Attempts to remove the value for the specified key based on equality to <paramref name="ifValue"/>.
+        /// Returns true if successful, false otherwise (value changed or key not found).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryRemoveConditional(TKey key, in TValue ifValue)
+        {
+            // From https://devblogs.microsoft.com/pfxteam/little-known-gems-atomic-conditional-removals-from-concurrentdictionary/
+            return ((ICollection<KeyValuePair<TKey, TValue>>)dictionary).Remove(new KeyValuePair<TKey, TValue>(key, ifValue));
         }
 
         /// <summary>

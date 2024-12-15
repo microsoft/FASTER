@@ -2,7 +2,7 @@
 title: "Quick-Start Guide"
 permalink: /docs/quick-start-guide/
 excerpt: "Get started with FASTER"
-last_modified_at: 2021-04-23
+last_modified_at: 2022-03-04
 toc: false
 classes: wide
 ---
@@ -13,8 +13,8 @@ classes: wide
 
 * Home Page: [https://aka.ms/FASTER](https://aka.ms/FASTER)
 * Source Code: [https://github.com/microsoft/FASTER](https://github.com/microsoft/FASTER)
-* C# Samples: [https://github.com/microsoft/FASTER/tree/master/cs/samples](https://github.com/microsoft/FASTER/tree/master/cs/samples)
-* C# Remote: [https://github.com/microsoft/FASTER/tree/master/cs/remote](https://github.com/microsoft/FASTER/tree/master/cs/remote)
+* C# Samples: [https://github.com/microsoft/FASTER/tree/main/cs/samples](https://github.com/microsoft/FASTER/tree/main/cs/samples)
+* C# Remote: [https://github.com/microsoft/FASTER/tree/main/cs/remote](https://github.com/microsoft/FASTER/tree/main/cs/remote)
 * C# NuGet binary feed:
   * [Microsoft.FASTER.Core](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
   * [Microsoft.FASTER.Devices.AzureStorage](https://www.nuget.org/packages/Microsoft.FASTER.Devices.AzureStorage/)

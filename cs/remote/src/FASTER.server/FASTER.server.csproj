@@ -1,7 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net5.0;netstandard2.1;netstandard2.0;net461</TargetFrameworks>
+    <TargetFrameworks>net7.0;net6.0;netstandard2.1;netstandard2.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Platforms>AnyCPU</Platforms>
     <LangVersion>latest</LangVersion>
@@ -13,13 +16,13 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <DefineConstants>TRACE;DEBUG</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <DebugType>full</DebugType>
     <OutputPath>bin\$(Platform)\Debug\</OutputPath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DefineConstants>TRACE</DefineConstants>
+    <DefineConstants></DefineConstants>
     <Optimize>true</Optimize>
     <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
@@ -27,7 +30,8 @@
   <ItemGroup>
     <ProjectReference Include="..\FASTER.common\FASTER.common.csproj" />
     <ProjectReference Include="..\..\..\src\core\FASTER.core.csproj" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All"/>
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="7.0.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>

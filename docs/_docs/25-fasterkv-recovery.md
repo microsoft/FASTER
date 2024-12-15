@@ -138,7 +138,7 @@ public class PersistenceExample
         long key = 1, input = 10;
         while (true)
         {
-            key = (seq % 1L << 20);
+            key = seq % (1L << 20);
             session.RMW(ref key, ref input, Empty.Default, seq++);
         }
     }
@@ -151,7 +151,7 @@ public class PersistenceExample
         long key = 1, input = 10;
         while (true)
         {
-            key = (seq % 1L << 20);
+            key = seq % (1L << 20);
             session.RMW(ref key, ref input, Empty.Default, seq++);
         }
     }
@@ -191,5 +191,5 @@ checkpoint, because the session was not active at the time of checkpointing.
 
 The commit point information can be used by the session to clear any in-memory buffer of operations waiting to be performed. 
 During recovery, sessions can continue using `ResumeSession` invoked with the same session ID. The function returns the thread-local 
-sequence number until which that session hash been recovered. The new thread may use this information to replay all uncommitted 
+sequence number until which that session has been recovered. The new thread may use this information to replay all uncommitted 
 operations since that point.

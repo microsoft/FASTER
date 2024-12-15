@@ -158,6 +158,7 @@ ClientBin/
 *.pfx
 *.publishsettings
 node_modules/
+**/log-commits
 
 # RIA/Silverlight projects
 Generated_Code/
@@ -198,3 +199,5 @@ nativebin/
 cs/.idea/
 cs/remote/.idea
 cs/libdpr/.idea
+
+cs/**/BenchmarkDotNet.Artifacts/

@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#if DEBUG
+#define CHECK_FREE      // disabled by default in Release due to overhead
+#endif
 // #define CHECK_FOR_LEAKS // disabled by default due to overhead
 
 using System;
@@ -17,6 +20,9 @@ namespace FASTER.core
     /// </summary>
     public unsafe sealed class SectorAlignedMemory
     {
+        // Byte #31 is used to denote free (1) or in-use (0) page
+        const int kFreeBitMask = 1 << 31;
+
         /// <summary>
         /// Actual buffer
         /// </summary>
@@ -52,13 +58,45 @@ namespace FASTER.core
         /// </summary>
         public int available_bytes;
 
-        internal int level;
+        private int level;
+        internal int Level => this.level
+#if CHECK_FREE
+            & ~kFreeBitMask
+#endif
+            ;
+
         internal SectorAlignedBufferPool pool;
+
+#if CHECK_FREE
+        internal bool Free
+        {
+            get => (level & kFreeBitMask) != 0;
+            set 
+            {
+                if (value)
+                {
+                    if (Free)
+                        throw new FasterException("Attempting to return an already-free block");
+                    this.level |= kFreeBitMask;
+                }
+                else
+                {
+                    if (!Free)
+                        throw new FasterException("Attempting to allocate an already-allocated block");
+                    this.level &= ~kFreeBitMask;
+                }
+            }
+        }
+#endif // CHECK_FREE
 
         /// <summary>
         /// Default constructor
         /// </summary>
-        public SectorAlignedMemory() { }
+        public SectorAlignedMemory(int level = default)
+        {
+            this.level = level;
+            // Assume ctor is called for allocation and leave Free unset
+        }
 
         /// <summary>
         /// Create new instance of SectorAlignedMemory
@@ -70,10 +108,16 @@ namespace FASTER.core
             int recordSize = 1;
             int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
 
+#if NET5_0_OR_GREATER
+            buffer = GC.AllocateArray<byte>(requiredSize, true);
+#else
             buffer = new byte[requiredSize];
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-            aligned_pointer = (byte*)(((long)handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
-            offset = (int)((long)aligned_pointer - (long)handle.AddrOfPinnedObject());
+#endif
+            long bufferAddr = (long)Unsafe.AsPointer(ref buffer[0]);
+            aligned_pointer = (byte*)((bufferAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
+            offset = (int)((long)aligned_pointer - bufferAddr);
+            // Assume ctor is called for allocation and leave Free unset
         }
 
         /// <summary>
@@ -81,8 +125,13 @@ namespace FASTER.core
         /// </summary>
         public void Dispose()
         {
+#if !NET5_0_OR_GREATER
             handle.Free();
+#endif
             buffer = null;
+#if CHECK_FREE
+            this.Free = true;
+#endif
         }
 
         /// <summary>
@@ -91,7 +140,7 @@ namespace FASTER.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Return()
         {
-            pool.Return(this);
+            pool?.Return(this);
         }
 
         /// <summary>
@@ -110,7 +159,11 @@ namespace FASTER.core
         /// <returns></returns>
         public override string ToString()
         {
-            return string.Format("{0} {1} {2} {3} {4}", (long)aligned_pointer, offset, valid_offset, required_bytes, available_bytes);
+            return string.Format($"{(long)aligned_pointer} {offset} {valid_offset} {required_bytes} {available_bytes}"
+#if CHECK_FREE
+                + $" {this.Free}"
+#endif
+                );
         }
     }
 
@@ -123,9 +176,17 @@ namespace FASTER.core
     public sealed class SectorAlignedBufferPool
     {
         /// <summary>
-        /// Disable buffer pool
+        /// Disable buffer pool.
+        /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
         /// </summary>
-        public static bool Disabled = false;
+        public static bool Disabled;
+
+        /// <summary>
+        /// Unpin objects when they are returned to the pool, so that we do not hold pinned objects long term.
+        /// If set, we will unpin when objects are returned and re-pin when objects are returned from the pool.
+        /// This static option should be enabled on program entry, and not modified once FASTER is instantiated.
+        /// </summary>
+        public static bool UnpinOnReturn;
 
         private const int levels = 32;
         private readonly int recordSize;
@@ -158,16 +219,32 @@ namespace FASTER.core
             Interlocked.Increment(ref totalReturns);
 #endif
 
-            Debug.Assert(queue[page.level] != null);
+#if CHECK_FREE
+            page.Free = true;
+#endif // CHECK_FREE
+
+            Debug.Assert(queue[page.Level] != null);
             page.available_bytes = 0;
             page.required_bytes = 0;
             page.valid_offset = 0;
             Array.Clear(page.buffer, 0, page.buffer.Length);
             if (!Disabled)
-                queue[page.level].Enqueue(page);
+            {
+                if (UnpinOnReturn)
+                {
+                    page.handle.Free();
+                    page.handle = default;
+                }
+                queue[page.Level].Enqueue(page);
+            }
             else
             {
+#if NET5_0_OR_GREATER
+                if (UnpinOnReturn)
+                    page.handle.Free();
+#else
                 page.handle.Free();
+#endif
                 page.buffer = null;
             }
         }
@@ -210,17 +287,31 @@ namespace FASTER.core
 
             if (!Disabled && queue[index].TryDequeue(out SectorAlignedMemory page))
             {
+#if CHECK_FREE
+                page.Free = false;
+#endif // CHECK_FREE
+                if (UnpinOnReturn)
+                {
+                    page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
+                    page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
+                    page.offset = (int)((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
+                }
                 return page;
             }
 
-            page = new SectorAlignedMemory
-            {
-                level = index,
-                buffer = new byte[sectorSize * (1 << index)]
-            };
+            page = new SectorAlignedMemory(level: index);
+
+#if NET5_0_OR_GREATER
+            page.buffer = GC.AllocateArray<byte>(sectorSize * (1 << index), !UnpinOnReturn);
+            if (UnpinOnReturn)
+                page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
+#else
+            page.buffer = new byte[sectorSize * (1 << index)];
             page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
-            page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
-            page.offset = (int) ((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
+#endif
+            long pageAddr = (long)Unsafe.AsPointer(ref page.buffer[0]);
+            page.aligned_pointer = (byte*)((pageAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
+            page.offset = (int)((long)page.aligned_pointer - pageAddr);
             page.pool = this;
             return page;
         }
@@ -239,7 +330,10 @@ namespace FASTER.core
                 if (queue[i] == null) continue;
                 while (queue[i].TryDequeue(out SectorAlignedMemory result))
                 {
-                    result.handle.Free();
+#if !NET5_0_OR_GREATER
+                    if (!UnpinOnReturn)
+                        result.handle.Free();
+#endif
                     result.buffer = null;
                 }
             }

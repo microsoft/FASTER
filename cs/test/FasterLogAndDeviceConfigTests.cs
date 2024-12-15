@@ -63,7 +63,7 @@ namespace FASTER.test
             log.Commit(true);
 
             // Verify  
-            Assert.IsTrue(File.Exists(path+"/log-commits/commit.0.0"));
+            Assert.IsTrue(File.Exists(path+"/log-commits/commit.1.0"));
             Assert.IsTrue(File.Exists(path + "/DeviceConfig.0"));
 
             // Read the log just to verify can actually read it
@@ -72,7 +72,7 @@ namespace FASTER.test
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
-                       Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as "+currentEntry.ToString() );
+                       Assert.AreEqual(currentEntry, result[currentEntry]);
                        currentEntry++;
                 }
             }

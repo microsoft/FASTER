@@ -1,8 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-using System;
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FASTER.core
@@ -10,85 +11,91 @@ namespace FASTER.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class BlittableScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>
+    public sealed class BlittableScanIterator<Key, Value> : ScanIteratorBase, IFasterScanIterator<Key, Value>, IPushScanIterator<Key>
     {
+        private readonly FasterKV<Key, Value> store;
         private readonly BlittableAllocator<Key, Value> hlog;
+        private readonly IFasterEqualityComparer<Key> comparer;
         private readonly BlittableFrame frame;
         private readonly bool forceInMemory;
 
         private Key currentKey;
         private Value currentValue;
-        private long currentPhysicalAddress;
+        private long framePhysicalAddress;
 
         /// <summary>
-        /// Constructor
+        /// Constructor for use with head-to-tail scan
         /// </summary>
+        /// <param name="store"></param>
         /// <param name="hlog"></param>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
-        /// <param name="epoch"></param>
+        /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
-        public BlittableScanIterator(BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits)
+        /// <param name="logger"></param>
+        internal BlittableScanIterator(FasterKV<Key, Value> store, BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, 
+                LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
         {
+            this.store = store;
             this.hlog = hlog;
             this.forceInMemory = forceInMemory;
-
             if (frameSize > 0)
                 frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
         }
 
         /// <summary>
-        /// Gets reference to current key
+        /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        /// <returns></returns>
-        public ref Key GetKey()
+        internal BlittableScanIterator(FasterKV<Key, Value> store, BlittableAllocator<Key, Value> hlog, IFasterEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, epoch, hlog.LogPageSizeBits, logger: logger)
         {
-            if (currentPhysicalAddress != 0)
-                return ref hlog.GetKey(currentPhysicalAddress);
-            return ref currentKey;
+            this.store = store;
+            this.hlog = hlog;
+            this.comparer = comparer;
+            this.forceInMemory = false;
+            if (frameSize > 0)
+                frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
         }
 
         /// <summary>
-        /// Gets reference to current value
+        /// Get a reference to the current key
         /// </summary>
-        /// <returns></returns>
-        public ref Value GetValue()
+        public ref Key GetKey() => ref framePhysicalAddress != 0 ? ref hlog.GetKey(framePhysicalAddress) : ref currentKey;
+
+        /// <summary>
+        /// Get a reference to the current value
+        /// </summary>
+        public ref Value GetValue() => ref framePhysicalAddress != 0 ? ref hlog.GetValue(framePhysicalAddress) : ref currentValue;
+
+        ref RecordInfo IPushScanIterator<Key>.GetLockableInfo()
         {
-            if (currentPhysicalAddress != 0)
-                return ref hlog.GetValue(currentPhysicalAddress);
-            return ref currentValue;
+            Debug.Assert(framePhysicalAddress == 0, "GetLockableInfo should be in memory (i.e. should not have a frame)");
+            return ref hlog.GetInfo(hlog.GetPhysicalAddress(this.currentAddress));
         }
 
         /// <summary>
-        /// Get next record
+        /// Get next record in iterator
         /// </summary>
-        /// <param name="recordInfo"></param>
         /// <returns>True if record found, false if end of scan</returns>
-        public bool GetNext(out RecordInfo recordInfo)
+        public unsafe bool GetNext(out RecordInfo recordInfo)
         {
             recordInfo = default;
 
             while (true)
             {
                 currentAddress = nextAddress;
-
-                // Check for boundary conditions
                 if (currentAddress >= endAddress)
-                {
                     return false;
-                }
 
                 epoch?.Resume();
                 var headAddress = hlog.HeadAddress;
 
                 if (currentAddress < hlog.BeginAddress && !forceInMemory)
-                {
-                    epoch?.Suspend();
-                    throw new FasterException("Iterator address is less than log BeginAddress " + hlog.BeginAddress);
-                }
+                    currentAddress = hlog.BeginAddress;
 
+                // If currentAddress < headAddress and we're not buffering and not guaranteeing the records are in memory, fail.
                 if (frameSize == 0 && currentAddress < headAddress && !forceInMemory)
                 {
                     epoch?.Suspend();
@@ -101,19 +108,10 @@ namespace FASTER.core
                 if (currentAddress < headAddress && !forceInMemory)
                     BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, endAddress);
 
-                long physicalAddress;
-                if (currentAddress >= headAddress || forceInMemory)
-                {
-                    physicalAddress = hlog.GetPhysicalAddress(currentAddress);
-                    currentPhysicalAddress = 0;
-                }
-                else
-                {
-                    currentPhysicalAddress = physicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
-                }
-
-                // Check if record fits on page, if not skip to next page
+                long physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
                 var recordSize = hlog.GetRecordSize(physicalAddress).Item2;
+
+                // If record does not fit on page, skip to the next page.
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
                 {
                     nextAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
@@ -123,31 +121,112 @@ namespace FASTER.core
 
                 nextAddress = currentAddress + recordSize;
 
-                ref var info = ref hlog.GetInfo(physicalAddress);
-                if (info.Invalid || info.IsNull())
+                recordInfo = hlog.GetInfo(physicalAddress);
+                if (recordInfo.SkipOnScan || recordInfo.IsNull())
                 {
                     epoch?.Suspend();
                     continue;
                 }
 
-                recordInfo = info;
-                if (currentPhysicalAddress == 0)
+                OperationStackContext<Key, Value> stackCtx = default;
+                try
                 {
-                    currentKey = hlog.GetKey(physicalAddress);
-                    currentValue = hlog.GetValue(physicalAddress);
+                    // Lock to ensure no value tearing while copying to temp storage.
+                    // We cannot use GetKey() and GetLockableInfo() because they have not yet been set.
+                    if (currentAddress >= headAddress && store is not null)
+                        store.LockForScan(ref stackCtx, ref hlog.GetKey(physicalAddress), ref ((IPushScanIterator<Key>)this).GetLockableInfo());
+                    CopyDataMembers(physicalAddress);
                 }
+                finally
+                {
+                    if (stackCtx.recSrc.HasLock)
+                        store.UnlockForScan(ref stackCtx, ref hlog.GetKey(physicalAddress), ref ((IPushScanIterator<Key>)this).GetLockableInfo());
+                }
+
+                // Success
                 epoch?.Suspend();
                 return true;
             }
         }
 
         /// <summary>
+        /// Get previous record and keep the epoch held while we call the user's scan functions
+        /// </summary>
+        /// <returns>True if record found, false if end of scan</returns>
+        bool IPushScanIterator<Key>.BeginGetPrevInMemory(ref Key key, out RecordInfo recordInfo, out bool continueOnDisk)
+        {
+            recordInfo = default;
+            continueOnDisk = false;
+
+            while (true)
+            {
+                // "nextAddress" is reused as "previous address" for this operation.
+                currentAddress = nextAddress;
+                if (currentAddress < hlog.HeadAddress)
+                {
+                    continueOnDisk = currentAddress >= hlog.BeginAddress;
+                    return false;
+                }
+
+                epoch?.Resume();
+                var headAddress = hlog.HeadAddress;
+
+                var currentPage = currentAddress >> hlog.LogPageSizeBits;
+                var offset = currentAddress & hlog.PageSizeMask;
+
+                long physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
+
+                recordInfo = hlog.GetInfo(physicalAddress);
+                nextAddress = recordInfo.PreviousAddress;
+
+                // Do not SkipOnScan here; we Seal previous versions.
+                if (recordInfo.IsNull() || !comparer.Equals(ref hlog.GetKey(physicalAddress), ref key))
+                {
+                    epoch?.Suspend();
+                    continue;
+                }
+
+                // Success; defer epoch?.Suspend(); to EndGetPrevInMemory
+                return CopyDataMembers(physicalAddress);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool IPushScanIterator<Key>.EndGetPrevInMemory()
+        {
+            epoch?.Suspend();
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        long GetPhysicalAddress(long currentAddress, long headAddress, long currentPage, long offset)
+        {
+            if (currentAddress >= headAddress)
+            {
+                // physicalAddress is in memory; set framePhysicalAddress to 0 so we'll set currentKey and currentValue from physicalAddress below
+                framePhysicalAddress = 0;
+                return hlog.GetPhysicalAddress(currentAddress);
+            }
+
+            // physicalAddress is not in memory, so we'll GetKey and GetValue will use framePhysicalAddress
+            return framePhysicalAddress = frame.GetPhysicalAddress(currentPage % frameSize, offset);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool CopyDataMembers(long physicalAddress)
+        {
+            if (framePhysicalAddress == 0)
+            {
+                // Copy the values from the log to data members so we have no ref into the log after the epoch.Suspend().
+                currentKey = hlog.GetKey(physicalAddress);
+                currentValue = hlog.GetValue(physicalAddress);
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Get next record in iterator
         /// </summary>
-        /// <param name="recordInfo"></param>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
         public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
         {
             if (GetNext(out recordInfo))
@@ -159,7 +238,6 @@ namespace FASTER.core
 
             key = default;
             value = default;
-
             return false;
         }
 
@@ -181,7 +259,7 @@ namespace FASTER.core
 
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncReadPagesCallback error: {errorCode}");
                 result.cts?.Cancel();
             }
 
@@ -193,9 +271,7 @@ namespace FASTER.core
             }
 
             if (errorCode == 0)
-            {
                 result.handle?.Signal();
-            }
 
             Interlocked.MemoryBarrier();
         }

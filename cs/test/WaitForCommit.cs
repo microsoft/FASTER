@@ -14,7 +14,8 @@ namespace FASTER.test
         public IDevice device;
         private string path;
         static readonly byte[] entry = new byte[10];
-        static readonly AutoResetEvent ev = new AutoResetEvent(false);
+        static readonly AutoResetEvent ev = new(false);
+        static readonly AutoResetEvent done = new(false);
 
         [SetUp]
         public void Setup()
@@ -48,7 +49,7 @@ namespace FASTER.test
         [Category("Smoke")]
         public void WaitForCommitBasicTest(string SyncTest)
         {
-            CancellationTokenSource cts = new CancellationTokenSource();
+            CancellationTokenSource cts = new();
             CancellationToken token = cts.Token;
 
             // make it small since launching each on separate threads 
@@ -82,7 +83,7 @@ namespace FASTER.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        Assert.IsTrue(result[currentEntry] == (byte)currentEntry, $"Fail - Result[{currentEntry}]:{result[0]} not match expected:{currentEntry}");
+                        Assert.AreEqual((byte)currentEntry, result[currentEntry]);
                         currentEntry++;
                     }
                 }
@@ -90,6 +91,8 @@ namespace FASTER.test
 
             // Make sure expected entries is same as current - also makes sure that data verification was not skipped
             Assert.AreEqual(expectedEntries, currentEntry,$"expectedEntries:{expectedEntries} does not equal currentEntry:{currentEntry}");
+
+            done.WaitOne();
         }
 
         static void LogWriter()
@@ -100,6 +103,7 @@ namespace FASTER.test
             log.Enqueue(entry);
             ev.Set();
             log.WaitForCommit(log.TailAddress);
+            done.Set();
         }
 
         static void LogWriterAsync()
@@ -111,6 +115,7 @@ namespace FASTER.test
             log.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
             ev.Set();
             log.WaitForCommitAsync(log.TailAddress).AsTask().GetAwaiter().GetResult();
+            done.Set();
         }
     }
 }

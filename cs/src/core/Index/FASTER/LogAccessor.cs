@@ -2,8 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
-using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace FASTER.core
@@ -23,7 +22,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="fht"></param>
         /// <param name="allocator"></param>
-        public LogAccessor(FasterKV<Key, Value> fht, AllocatorBase<Key, Value> allocator)
+        internal LogAccessor(FasterKV<Key, Value> fht, AllocatorBase<Key, Value> allocator)
         {
             this.fht = fht;
             this.allocator = allocator;
@@ -72,6 +71,11 @@ namespace FASTER.core
         }
 
         /// <summary>
+        /// Maximum possible number of empty pages in Allocator
+        /// </summary>
+        public int MaxEmptyPageCount => allocator.MaxEmptyPageCount;
+
+        /// <summary>
         /// Set empty page count in allocator
         /// </summary>
         /// <param name="pageCount">New empty page count</param>
@@ -85,34 +89,55 @@ namespace FASTER.core
                 ShiftHeadAddress(newHeadAddress, wait);
             }
         }
-        
+
         /// <summary>
         /// Total in-memory circular buffer capacity (in number of pages)
         /// </summary>
         public int BufferSize => allocator.BufferSize;
 
         /// <summary>
-        /// Actual memory used by log (not including heap objects)
+        /// Actual memory used by log (not including heap objects) and overflow pages
         /// </summary>
         public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
 
         /// <summary>
-        /// Memory allocatable on the log (not including heap objects)
+        /// Number of pages allocated
         /// </summary>
-        public long AllocatableMemorySizeBytes => ((long)(allocator.BufferSize - allocator.EmptyPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+        public int AllocatedPageCount => allocator.AllocatedPageCount;
 
         /// <summary>
-        /// Truncate the log until, but not including, untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to false.
+        /// Shift begin address to the provided untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to 
+        /// false. Destructive operation if truncateLog is set to true.
         /// </summary>
         /// <param name="untilAddress">Address to shift begin address until</param>
         /// <param name="snapToPageStart">Whether given address should be snapped to nearest earlier page start address</param>
-        public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false)
+        /// <param name="truncateLog">If true, we will also truncate the log on disk until the given BeginAddress. Truncate is a destructive operation 
+        /// that can result in data loss. If false, log will be truncated after the next checkpoint.</param>
+        public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
         {
             if (snapToPageStart)
                 untilAddress &= ~allocator.PageSizeMask;
 
-            allocator.ShiftBeginAddress(untilAddress);
+            bool epochProtected = fht.epoch.ThisInstanceProtected();
+            try
+            {
+                if (!epochProtected)
+                    fht.epoch.Resume();
+                allocator.ShiftBeginAddress(untilAddress, truncateLog);
+            }
+            finally
+            {
+                if (!epochProtected)
+                    fht.epoch.Suspend();
+            }
         }
+
+        /// <summary>
+        /// Truncate physical log on disk until the current BeginAddress. Use ShiftBeginAddress to shift the begin address.
+        /// Truncate is a destructive operation that can result in data loss. For data safety, take a checkpoint instead of 
+        /// using this call, as a checkpoint truncates the log to the BeginAddress after persisting the data and metadata.
+        /// </summary>
+        public void Truncate() => ShiftBeginAddress(BeginAddress, truncateLog: true);
 
         /// <summary>
         /// Shift log head address to prune memory foorprint of hybrid log
@@ -232,14 +257,26 @@ namespace FASTER.core
         /// <summary>
         /// Scan the log given address range, returns all records with address less than endAddress
         /// </summary>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <returns></returns>
-        public IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
-        {
-            return allocator.Scan(beginAddress, endAddress, scanBufferingMode);
-        }
+        /// <returns>Scan iterator instance</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public IFasterScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering) 
+            => allocator.Scan(store: null, beginAddress, endAddress, scanBufferingMode);
+
+        /// <summary>
+        /// Scan the log given address range, returns all records with address less than endAddress
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => allocator.Scan(fht, beginAddress, endAddress, ref scanFunctions, scanBufferingMode);
+
+        /// <summary>
+        /// Iterate versions of the specified key, starting with most recent
+        /// </summary>
+        /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool IterateKeyVersions<TScanFunctions>(ref TScanFunctions scanFunctions, ref Key key)
+            where TScanFunctions : IScanIteratorFunctions<Key, Value>
+            => allocator.IterateKeyVersions(fht, ref key, ref scanFunctions);
 
         /// <summary>
         /// Flush log until current tail (records are still retained in memory)
@@ -273,151 +310,67 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log.
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
         /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
-        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
-        /// ensures that records written to the tail during compaction are first made stable.</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, bool shiftBeginAddress)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, shiftBeginAddress);
+        public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+            where Functions : IFunctions<Key, Value, Input, Output, Context> 
+            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, compactionType, sessionVariableLengthStructSettings);
 
         /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log.
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
         /// <param name="functions">Functions used to manage key-values during compaction</param>
-        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
+        /// <param name="input">Input for SingleWriter</param>
+        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
         /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="shiftBeginAddress">Whether to shift begin address to untilAddress after compaction. To avoid
-        /// data loss on failure, set this to false, and shift begin address only after taking a checkpoint. This
-        /// ensures that records written to the tail during compaction are first made stable.</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, bool shiftBeginAddress)
+        public long Compact<Input, Output, Context, Functions>(Functions functions, ref Input input, ref Output output, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
+            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, ref input, ref output, untilAddress, compactionType, sessionVariableLengthStructSettings);
+
+        /// <summary>
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
+        /// </summary>
+        /// <param name="functions">Functions used to manage key-values during compaction</param>
+        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>)</param>
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
-            if (untilAddress > fht.Log.SafeReadOnlyAddress)
-                throw new FasterException("Can compact only until Log.SafeReadOnlyAddress");
-            var originalUntilAddress = untilAddress;
-            var expectedAddress = untilAddress;
-
-            var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
-            using var fhtSession = fht.For(lf).NewSession<LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>();
-
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null;
-            VariableLengthStructSettings<Key, long> variableLengthStructSettingsKaddr = null;
-            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
-            {
-                variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
-                };
-                variableLengthStructSettingsKaddr = new VariableLengthStructSettings<Key, long>
-                {
-                    keyLength = varLen.KeyLength,
-                    valueLength = null,
-                };
-            }
-
-            using (var tempKv = new FasterKV<Key, Value>(fht.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings))
-            using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
-            {
-                using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
-                {
-                    while (iter1.GetNext(out var recordInfo))
-                    {
-                        ref var key = ref iter1.GetKey();
-                        ref var value = ref iter1.GetValue();
-
-                        if (recordInfo.Tombstone || cf.IsDeleted(key, value))
-                        {
-                            tempKvSession.Delete(ref key, default, 0);
-                        }
-                        else
-                        {
-                            tempKvSession.Upsert(ref key, ref value, default, 0);
-                            // below is to get and preserve information in RecordInfo, if we need.
-                            /*tempKvSession.ContainsKeyInMemory(ref key, out long logicalAddress);
-                            long physicalAddress = tempKv.hlog.GetPhysicalAddress(logicalAddress);
-                            ref var tempRecordInfo = ref tempKv.hlog.GetInfo(physicalAddress);
-                            RecordInfo.WriteInfo(ref tempRecordInfo,
-                                tempRecordInfo.Version, false, false, tempRecordInfo.PreviousAddress);*/
-                        }
-                    }
-                    // Ensure address is at record boundary
-                    untilAddress = originalUntilAddress = iter1.NextAddress;
-                    expectedAddress = untilAddress;
-                }
-
-                // Scan until SafeReadOnlyAddress
-                var scanUntil = fht.Log.SafeReadOnlyAddress;
-                if (untilAddress < scanUntil)
-                    LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
-                
-                using var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress);
-                while (iter3.GetNext(out var recordInfo))
-                {
-                    if (!recordInfo.Tombstone)
-                    {
-                        // Ensure that the key wasn't inserted in memory
-                        if (fhtSession.ContainsKeyInMemory(ref iter3.GetKey(), out _, scanUntil) != Status.NOTFOUND)
-                            continue;
-
-                        // There is a infinitesimally small possibility that a record enters tail at this
-                        // point, escapes the scan below, and then escapes to disk before the final upsert
-                        // can catch it. This case is not handled by log compaction.
-
-                        // Ensure we have checked at least all records not in memory
-                        scanUntil = fht.Log.SafeReadOnlyAddress;
-                        if (untilAddress < scanUntil)
-                            LogScanForValidity(ref untilAddress, scanUntil, tempKvSession);
-
-                        // Safe to check tombstone bit directly, as tempKv is pure in-memory
-                        Debug.Assert(iter3.CurrentAddress >= tempKv.Log.HeadAddress);
-                        if (tempKv.hlog.GetInfo(tempKv.hlog.GetPhysicalAddress(iter3.CurrentAddress)).Tombstone)
-                            continue;
-
-                        // If record is not the latest in memory
-                        if (tempKvSession.ContainsKeyInMemory(ref iter3.GetKey(), out long tempKeyAddress) == Status.OK)
-                        {
-                            if (iter3.CurrentAddress != tempKeyAddress)
-                                continue;
-                        }
-                        else
-                        {
-                            // Possibly deleted key (once ContainsKeyInMemory is updated to check Tombstones)
-                            continue;
-                        }
-                        // Note: we use untilAddress as expectedAddress here.
-                        // As long as there's no record of the same key whose address is greater than untilAddress,
-                        // i.e., the last address that this compact covers, we are safe to copy the old record to the tail.
-                        fhtSession.CopyToTail(ref iter3.GetKey(), ref iter3.GetValue(), ref recordInfo, expectedAddress);
-                    }
-                }
-            }
-
-            if (shiftBeginAddress)
-                ShiftBeginAddress(originalUntilAddress);
-
-            return originalUntilAddress;
+            Input input = default;
+            Output output = default;
+            return Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType, sessionVariableLengthStructSettings);
         }
 
-        private void LogScanForValidity<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession)
+        /// <summary>
+        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
+        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
+        /// </summary>
+        /// <param name="functions">Functions used to manage key-values during compaction</param>
+        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>)</param>
+        /// <param name="input">Input for SingleWriter</param>
+        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
+        /// <param name="untilAddress">Compact log until this address</param>
+        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
+        /// <param name="sessionVariableLengthStructSettings">Session variable length struct settings</param>
+        /// <returns>Address until which compaction was done</returns>
+        public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, Input> sessionVariableLengthStructSettings = null)
             where Functions : IFunctions<Key, Value, Input, Output, Context>
-        {
-            using var iter2 = fht.Log.Scan(untilAddress, scanUntil);
-            while (iter2.GetNext(out var _))
-            {
-                ref var k = ref iter2.GetKey();
-                ref var v = ref iter2.GetValue();
-
-                tempKvSession.Delete(ref k, default, 0);
-            }
-            untilAddress = scanUntil;
-        }
+            where CompactionFunctions : ICompactionFunctions<Key, Value>
+            => fht.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType, sessionVariableLengthStructSettings);
     }
 }

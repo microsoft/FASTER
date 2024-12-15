@@ -3,6 +3,7 @@
 
 using FASTER.core;
 using NUnit.Framework;
+using static FASTER.test.TestUtils;
 
 namespace FASTER.test
 {
@@ -16,16 +17,15 @@ namespace FASTER.test
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait:true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericDiskDeleteTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericDiskDeleteTests.obj.log", deleteOnClose: true);
+            DeleteDirectory(MethodTestDir, wait:true);
+            log = Devices.CreateLogDevice(MethodTestDir + "/GenericDiskDeleteTests.log", deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(MethodTestDir + "/GenericDiskDeleteTests.obj.log", deleteOnClose: true);
 
             fht = new FasterKV<MyKey, MyValue>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
-                checkpointSettings: new CheckpointSettings { CheckPointType = CheckpointType.FoldOver },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
+                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
+                concurrencyControlMode: ConcurrencyControlMode.None);
             session = fht.For(new MyFunctionsDelete()).NewSession<MyFunctionsDelete>();
         }
 
@@ -41,7 +41,7 @@ namespace FASTER.test
             objlog?.Dispose();
             objlog = null;
 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         [Test]
@@ -66,13 +66,13 @@ namespace FASTER.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                if (session.Read(ref key1, ref input, ref output, 0, 0) == Status.PENDING)
+                if (session.Read(ref key1, ref input, ref output, 0, 0).IsPending)
                 {
                     session.CompletePending(true);
                 }
                 else
                 {
-                    Assert.IsTrue(output.value.value == value.value);
+                    Assert.AreEqual(value.value, output.value.value);
                 }
             }
 
@@ -90,14 +90,12 @@ namespace FASTER.test
 
                 var status = session.Read(ref key1, ref input, ref output, 1, 0);
                 
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    (status, _) = GetSinglePendingResult(outputs);
                 }
-                else
-                {
-                    Assert.IsTrue(status == Status.NOTFOUND);
-                }
+                Assert.IsFalse(status.Found);
             }
 
 
@@ -108,7 +106,7 @@ namespace FASTER.test
                 if (recordInfo.Tombstone)
                     val++;
             }
-            Assert.IsTrue(totalRecords == val);
+            Assert.AreEqual(val, totalRecords);
         }
 
 
@@ -133,25 +131,25 @@ namespace FASTER.test
             var input = new MyInput { value = 1000 };
             var output = new MyOutput();
             var status = session.Read(ref key100, ref input, ref output, 1, 0);
-            Assert.IsTrue(status == Status.NOTFOUND);
+            Assert.IsFalse(status.Found, status.ToString());
 
             status = session.Upsert(ref key100, ref value100, 0, 0);
-            Assert.IsTrue(status == Status.OK);
+            Assert.IsTrue(!status.Found, status.ToString());
 
             status = session.Read(ref key100, ref input, ref output, 0, 0);
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.value == value100.value);
+            Assert.IsTrue(status.Found, status.ToString());
+            Assert.AreEqual(value100.value, output.value.value);
 
             session.Delete(ref key100, 0, 0);
             session.Delete(ref key200, 0, 0);
 
             // This RMW should create new initial value, since item is deleted
             status = session.RMW(ref key200, ref input, 1, 0);
-            Assert.IsTrue(status == Status.NOTFOUND);
+            Assert.IsFalse(status.Found);
 
             status = session.Read(ref key200, ref input, ref output, 0, 0);
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.value == input.value);
+            Assert.IsTrue(status.Found, status.ToString());
+            Assert.AreEqual(input.value, output.value.value);
 
             // Delete key 200 again
             session.Delete(ref key200, 0, 0);
@@ -164,17 +162,17 @@ namespace FASTER.test
                 session.Upsert(ref _key, ref _value, 0, 0);
             }
             status = session.Read(ref key100, ref input, ref output, 1, 0);
-            Assert.IsTrue(status == Status.PENDING);
+            Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
 
             // This RMW should create new initial value, since item is deleted
             status = session.RMW(ref key200, ref input, 1, 0);
-            Assert.IsTrue(status == Status.PENDING);
+            Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
 
             status = session.Read(ref key200, ref input, ref output, 0, 0);
-            Assert.IsTrue(status == Status.OK);
-            Assert.IsTrue(output.value.value == input.value);
+            Assert.IsTrue(status.Found, status.ToString());
+            Assert.AreEqual(input.value, output.value.value);
         }
     }
 }

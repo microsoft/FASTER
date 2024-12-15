@@ -1,10 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#pragma warning disable 0162
-
-//#define WAIT_FOR_INDEX_CHECKPOINT
-
 using System;
 using System.Linq;
 using System.Text;
@@ -36,8 +32,7 @@ namespace FASTER.core
     public partial class FasterKV<Key, Value>
     {
         
-        internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs
-            = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
             
         internal Guid _indexCheckpointToken;
         internal Guid _hybridLogCheckpointToken;
@@ -46,19 +41,9 @@ namespace FASTER.core
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
-        internal void AcquireSharedLatchesForAllPendingRequests<Input, Output, Context>(FasterExecutionContext<Input, Output, Context> ctx)
-        {
-            foreach (var _ctx in ctx.retryRequests)
-            {
-                AcquireSharedLatch(_ctx.key.Get());
-            }
+        internal void CheckpointVersionShift(long oldVersion, long newVersion)
+            => checkpointManager.CheckpointVersionShift(oldVersion, newVersion);
 
-            foreach (var _ctx in ctx.ioPendingRequests.Values)
-            {
-                AcquireSharedLatch(_ctx.key.Get());
-            }
-        }
-        
         internal void WriteHybridLogMetaInfo()
         {
             var metadata = _hybridLogCheckpoint.info.ToByteArray();
@@ -68,6 +53,7 @@ namespace FASTER.core
                 metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
             }
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, metadata);
+            Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
         }
 
         internal void WriteHybridLogIncrementalMetaInfo(DeltaLog deltaLog)
@@ -79,6 +65,7 @@ namespace FASTER.core
                 metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
             }
             checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, metadata, deltaLog);
+            Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
         }
 
         internal void WriteIndexMetaInfo()
@@ -97,9 +84,15 @@ namespace FASTER.core
             _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, checkpointManager);
         }
 
-        internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, int version)
+        internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
+            _hybridLogCheckpoint.info.manualLockingActive = this.hlog.NumActiveLockingSessions > 0;
+        }
+
+        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(IFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType, SessionVariableLengthStructSettings<Value, object> sessionVariableLengthStructSettings) where CompactionFunctions : ICompactionFunctions<Key, Value>
+        {
+            throw new NotImplementedException();
         }
 
         // #endregion

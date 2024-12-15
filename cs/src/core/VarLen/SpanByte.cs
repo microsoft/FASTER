@@ -3,21 +3,27 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace FASTER.core
 {
     /// <summary>
     /// Represents a pinned variable length byte array that is viewable as a fixed (pinned) Span&lt;byte&gt;
-    /// Format: [4-byte (int) length of payload][payload bytes...]
+    /// Format: [4-byte (int) length of payload][[optional 8-byte metadata] payload bytes...]
+    /// First 2 bits of length are used as a mask for properties, so max payload length is 1GB
     /// </summary>
-    [StructLayout(LayoutKind.Explicit)]
+    [StructLayout(LayoutKind.Explicit, Pack = 4)]
     public unsafe struct SpanByte
     {
-        // Byte #30 and #31 are used for read-only and lock respectively
-        const int kTypeBitMask = 1 << 29;
-        const int kHeaderMask = 7 << 29;
+        // Byte #31 is used to denote unserialized (1) or serialized (0) data 
+        const int kUnserializedBitMask = 1 << 31;
+        // Byte #30 is used to denote extra metadata present (1) or absent (0) in payload
+        const int kExtraMetadataBitMask = 1 << 30;
+        // Mask for header
+        const int kHeaderMask = 0x3 << 30;
 
         /// <summary>
         /// Length of the payload
@@ -34,7 +40,29 @@ namespace FASTER.core
         internal IntPtr Pointer => payload;
 
         /// <summary>
-        /// Length of payload
+        /// Pointer to the beginning of payload, not including metadata if any
+        /// </summary>
+        public byte* ToPointer()
+        {
+            if (Serialized)
+                return MetadataSize + (byte*)Unsafe.AsPointer(ref payload);
+            else
+                return MetadataSize + (byte*)payload;
+        }
+
+        /// <summary>
+        /// Pointer to the beginning of payload, including metadata if any
+        /// </summary>
+        public byte* ToPointerWithMetadata()
+        {
+            if (Serialized)
+                return (byte*)Unsafe.AsPointer(ref payload);
+            else
+                return (byte*)payload;
+        }
+
+        /// <summary>
+        /// Length of payload, including metadata if any
         /// </summary>
         public int Length
         {
@@ -43,15 +71,24 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Format of structure
+        /// Length of payload, not including metadata if any
         /// </summary>
-        public bool Serialized => (length & kTypeBitMask) == 0;
+        public int LengthWithoutMetadata => (length & ~kHeaderMask) - MetadataSize;
 
         /// <summary>
-        /// Total serialized size in bytes, including header
+        /// Format of structure
         /// </summary>
-        public int TotalSize => Length + sizeof(int);
+        public bool Serialized => (length & kUnserializedBitMask) == 0;
 
+        /// <summary>
+        /// Total serialized size in bytes, including header and metadata if any
+        /// </summary>
+        public int TotalSize => sizeof(int) + Length;
+
+        /// <summary>
+        /// Size of metadata header, if any (returns 0 or 8)
+        /// </summary>
+        public int MetadataSize => (length & kExtraMetadataBitMask) >> (30 - 3);
 
         /// <summary>
         /// Constructor
@@ -60,8 +97,52 @@ namespace FASTER.core
         /// <param name="payload"></param>
         public SpanByte(int length, IntPtr payload)
         {
-            this.length = length | kTypeBitMask;
+            Debug.Assert(length <= ~kHeaderMask);
+            this.length = length | kUnserializedBitMask;
             this.payload = payload;
+        }
+
+        /// <summary>
+        /// Extra metadata header
+        /// </summary>
+        public long ExtraMetadata
+        {
+            get
+            {
+                if (Serialized)
+                    return MetadataSize > 0 ? *(long*)Unsafe.AsPointer(ref payload) : 0;
+                else
+                    return MetadataSize > 0 ? *(long*)payload : 0;
+            }
+            set
+            {
+                if (value > 0)
+                {
+                    length |= kExtraMetadataBitMask;
+                    Debug.Assert(Length >= MetadataSize);
+                    if (Serialized)
+                        *(long*)Unsafe.AsPointer(ref payload) = value;
+                    else
+                        *(long*)payload = value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Mark SpanByte as having 8-byte metadata in header of payload
+        /// </summary>
+        public void MarkExtraMetadata()
+        {
+            Debug.Assert(Length >= 8);
+            length |= kExtraMetadataBitMask;
+        }
+
+        /// <summary>
+        /// Unmark SpanByte as having 8-byte metadata in header of payload
+        /// </summary>
+        public void UnmarkExtraMetadata()
+        {
+            length &= ~kExtraMetadataBitMask;
         }
 
         /// <summary>
@@ -69,11 +150,11 @@ namespace FASTER.core
         /// </summary>
         public bool Invalid
         {
-            get { return ((length & kTypeBitMask) != 0) && payload == IntPtr.Zero; }
+            get { return ((length & kUnserializedBitMask) != 0) && payload == IntPtr.Zero; }
             set { 
                 if (value) 
                 { 
-                    length |= kTypeBitMask;
+                    length |= kUnserializedBitMask;
                     payload = IntPtr.Zero;
                 }
                 else
@@ -84,27 +165,51 @@ namespace FASTER.core
         }
 
         /// <summary>
-        /// Get Span&lt;byte&gt; for this SpanByte's payload
+        /// Get Span&lt;byte&gt; for this SpanByte's payload (excluding metadata if any)
         /// </summary>
         /// <returns></returns>
         public Span<byte> AsSpan()
         {
             if (Serialized)
-                return new Span<byte>(Unsafe.AsPointer(ref payload), Length);
+                return new Span<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
             else
-                return new Span<byte>((void*)payload, Length);
+                return new Span<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
         }
 
         /// <summary>
-        /// Get ReadOnlySpan&lt;byte&gt; for this SpanByte's payload
+        /// Get ReadOnlySpan&lt;byte&gt; for this SpanByte's payload (excluding metadata if any)
         /// </summary>
         /// <returns></returns>
         public ReadOnlySpan<byte> AsReadOnlySpan()
         {
             if (Serialized)
-                return new ReadOnlySpan<byte>(Unsafe.AsPointer(ref payload), Length);
+                return new ReadOnlySpan<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
             else
-                return new ReadOnlySpan<byte>((void*)payload, Length);
+                return new ReadOnlySpan<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
+        }
+
+        /// <summary>
+        /// Get Span&lt;byte&gt; for this SpanByte's payload (including metadata if any)
+        /// </summary>
+        /// <returns></returns>
+        public Span<byte> AsSpanWithMetadata()
+        {
+            if (Serialized)
+                return new Span<byte>((byte*)Unsafe.AsPointer(ref payload), Length);
+            else
+                return new Span<byte>((byte*)payload, Length);
+        }
+
+        /// <summary>
+        /// Get ReadOnlySpan&lt;byte&gt; for this SpanByte's payload (including metadata if any)
+        /// </summary>
+        /// <returns></returns>
+        public ReadOnlySpan<byte> AsReadOnlySpanWithMetadata()
+        {
+            if (Serialized)
+                return new ReadOnlySpan<byte>((byte*)Unsafe.AsPointer(ref payload), Length);
+            else
+                return new ReadOnlySpan<byte>((byte*)payload, Length);
         }
 
         /// <summary>
@@ -115,7 +220,7 @@ namespace FASTER.core
         public SpanByte Deserialize()
         {
             if (!Serialized) return this;
-            return new SpanByte(Length, (IntPtr)Unsafe.AsPointer(ref payload));
+            return new SpanByte(Length - MetadataSize, (IntPtr)(MetadataSize + (byte*)Unsafe.AsPointer(ref payload)));
         }
 
         /// <summary>
@@ -125,6 +230,8 @@ namespace FASTER.core
         /// <returns></returns>
         public static ref SpanByte Reinterpret(Span<byte> span)
         {
+            Debug.Assert(span.Length - sizeof(int) <= ~kHeaderMask);
+
             fixed (byte* ptr = span)
             {
                 *(int*)ptr = span.Length - sizeof(int);
@@ -254,7 +361,9 @@ namespace FASTER.core
         /// <param name="dst"></param>
         public void CopyTo(ref SpanByte dst)
         {
-            AsReadOnlySpan().CopyTo(dst.AsSpan());
+            dst.UnmarkExtraMetadata();
+            dst.ExtraMetadata = ExtraMetadata;
+            AsReadOnlySpan().CopyTo(dst.AsSpan());            
         }
 
         /// <summary>
@@ -262,7 +371,7 @@ namespace FASTER.core
         /// FASTER hybrid log, pointed to by the given SpanByte.
         /// Zeroes out the extra space to retain log scan correctness.
         /// </summary>
-        /// <param name="newLength"></param>
+        /// <param name="newLength">New length of payload (including metadata)</param>
         /// <returns></returns>
         public bool ShrinkSerializedLength(int newLength)
         {
@@ -271,7 +380,7 @@ namespace FASTER.core
             // Zero-fill extra space - needed so log scan does not see spurious data
             if (newLength < Length)
             {
-                AsSpan().Slice(newLength).Clear();
+                AsSpanWithMetadata().Slice(newLength).Clear();
                 Length = newLength;
             }
             return true;
@@ -315,7 +424,9 @@ namespace FASTER.core
                     var span = dst.SpanByte.AsSpan();
                     fixed (byte* ptr = span)
                         *(int*)ptr = Length;
-                    AsReadOnlySpan().CopyTo(span.Slice(sizeof(int)));
+                    dst.SpanByte.ExtraMetadata = ExtraMetadata;
+
+                    AsReadOnlySpan().CopyTo(span.Slice(sizeof(int) + MetadataSize));
                     return;
                 }
                 dst.ConvertToHeap();
@@ -325,7 +436,8 @@ namespace FASTER.core
             dst.Length = TotalSize;
             fixed (byte* ptr = dst.Memory.Memory.Span)
                 *(int*)ptr = Length;
-            AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
+            dst.SpanByte.ExtraMetadata = ExtraMetadata;
+            AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int) + MetadataSize));
         }
 
         /// <summary>
@@ -334,37 +446,29 @@ namespace FASTER.core
         /// <param name="destination"></param>
         public void CopyTo(byte* destination)
         {
-            *(int*)destination = Length;
             if (Serialized)
             {
+                *(int*)destination = length;
                 Buffer.MemoryCopy(Unsafe.AsPointer(ref payload), destination + sizeof(int), Length, Length);
             }
             else
             {
+                *(int*)destination = length & ~kUnserializedBitMask;
                 Buffer.MemoryCopy((void*)payload, destination + sizeof(int), Length, Length);
             }
         }
 
-        /// <summary>
-        /// Lock SpanByte, using 2 most significant bits from the length header
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SpinLock() => IntExclusiveLocker.SpinLock(ref length);
-
-        /// <summary>
-        /// Unlock SpanByte, using 2 most significant bits from the length header
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Unlock() => IntExclusiveLocker.Unlock(ref length);
-
-        /// <summary>
-        /// Mark SpanByte as read-only, using 2 most significant bits from the length header
-        /// </summary>
-        public void MarkReadOnly() => IntExclusiveLocker.Mark(ref length);
-
-        /// <summary>
-        /// Check if SpanByte is marked as read-only, using 2 most significant bits from the length header
-        /// </summary>
-        public bool IsMarkedReadOnly() => IntExclusiveLocker.IsMarked(ref length);
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            var bytes = AsSpan();
+            var len = Math.Min(this.Length, 8);
+            StringBuilder sb = new();
+            for (var ii = 0; ii < len; ++ii)
+                sb.Append(bytes[ii].ToString("x2"));
+            if (bytes.Length > len)
+                sb.Append("...");
+            return sb.ToString();
+        }
     }
 }

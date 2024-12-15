@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -13,44 +14,20 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
-    /// <summary>
-    /// Flags for the Read-by-address methods
-    /// </summary>
-    /// <remarks>Note: must be kept in sync with corresponding PendingContext k* values</remarks>
-    [Flags]
-    public enum ReadFlags
-    {
-        /// <summary>Default read operation</summary>
-        None = 0,
-
-        /// <summary>Skip the ReadCache when reading, including not inserting to ReadCache when pending reads are complete</summary>
-        SkipReadCache = 0x00000001,
-
-        /// <summary>The minimum address at which to resolve the Key; return <see cref="Status.NOTFOUND"/> if the key is not found at this address or higher</summary>
-        MinAddress = 0x00000002,
-    }
-
-    public partial class FasterKV<Key, Value> : FasterBase,
-        IFasterKV<Key, Value>
+    public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
         internal readonly AllocatorBase<Key, Value> hlog;
-        private readonly AllocatorBase<Key, Value> readcache;
-        private readonly IFasterEqualityComparer<Key> comparer;
-
-        internal readonly bool UseReadCache;
-        private readonly CopyReadsToTail CopyReadsToTail;
-        private readonly bool FoldOverSnapshot;
-        internal readonly int sectorSize;
-        private readonly bool WriteDefaultOnDelete;
-        internal bool RelaxedCPR;
+        internal readonly AllocatorBase<Key, Value> readcache;
 
         /// <summary>
-        /// Use relaxed version of CPR, where ops pending I/O
-        /// are not part of CPR checkpoint. This mode allows
-        /// us to eliminate the WAIT_PENDING phase, and allows
-        /// sessions to be suspended. Do not modify during checkpointing.
+        /// Compares two keys
         /// </summary>
-        internal void UseRelaxedCPR() => RelaxedCPR = true;
+        internal readonly IFasterEqualityComparer<Key> comparer;
+
+        internal readonly bool UseReadCache;
+        private readonly ReadCopyOptions ReadCopyOptions;
+        internal readonly int sectorSize;
+        private readonly bool WriteDefaultOnDelete;
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
@@ -82,10 +59,39 @@ namespace FASTER.core
         /// </summary>
         public LogAccessor<Key, Value> ReadCache { get; }
 
-        internal ConcurrentDictionary<string, CommitPoint> _recoveredSessions;
+        ConcurrentDictionary<int, (string, CommitPoint)> _recoveredSessions;
+        ConcurrentDictionary<string, int> _recoveredSessionNameMap;
+        int maxSessionID;
+
+        internal readonly bool DoTransientLocking;  // uses LockTable
+        internal readonly bool DoEphemeralLocking;  // uses RecordInfo
+        internal bool IsLocking => DoTransientLocking || DoEphemeralLocking;
+        internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
+        internal readonly OverflowBucketLockTable<Key, Value> LockTable;
+
+        internal void IncrementNumLockingSessions()
+        {
+            _hybridLogCheckpoint.info.manualLockingActive = true;
+            Interlocked.Increment(ref this.hlog.NumActiveLockingSessions);
+        }
+        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref this.hlog.NumActiveLockingSessions);
+
+        internal readonly int ThrottleCheckpointFlushDelayMs = -1;
+        
+        /// <summary>
+        /// Create FasterKV instance
+        /// </summary>
+        /// <param name="fasterKVSettings">Config settings</param>
+        public FasterKV(FasterKVSettings<Key, Value> fasterKVSettings) :
+            this(
+                fasterKVSettings.GetIndexSizeCacheLines(), fasterKVSettings.GetLogSettings(),
+                fasterKVSettings.GetCheckpointSettings(), fasterKVSettings.GetSerializerSettings(),
+                fasterKVSettings.EqualityComparer, fasterKVSettings.GetVariableLengthStructSettings(),
+                fasterKVSettings.TryRecoverLatest, fasterKVSettings.ConcurrencyControlMode, null, fasterKVSettings.logger)
+        { }
 
         /// <summary>
-        /// Create FASTER instance
+        /// Create FasterKV instance
         /// </summary>
         /// <param name="size">Size of core index (#cache lines)</param>
         /// <param name="logSettings">Log settings</param>
@@ -93,18 +99,27 @@ namespace FASTER.core
         /// <param name="serializerSettings">Serializer settings</param>
         /// <param name="comparer">FASTER equality comparer for key</param>
         /// <param name="variableLengthStructSettings"></param>
+        /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
+        /// <param name="concurrencyControlMode">How FASTER should do record locking</param>
+        /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="FasterKVSettings{Key, Value}"/>).</param>
+        /// <param name="logger">Logger to use.</param>
+        /// <param name="lockTableSize">Number of buckets in the lock table</param>
         public FasterKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             IFasterEqualityComparer<Key> comparer = null,
-            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null)
+            VariableLengthStructSettings<Key, Value> variableLengthStructSettings = null, bool tryRecoverLatest = false, ConcurrencyControlMode concurrencyControlMode = ConcurrencyControlMode.LockTable,
+            ILoggerFactory loggerFactory = null, ILogger logger = null, int lockTableSize = Constants.kDefaultLockTableSize)
         {
+            this.loggerFactory = loggerFactory;
+            this.logger = logger ?? this.loggerFactory?.CreateLogger("FasterKV Constructor");
+
             if (comparer != null)
                 this.comparer = comparer;
             else
             {
                 if (typeof(IFasterEqualityComparer<Key>).IsAssignableFrom(typeof(Key)))
                 {
-                    if (default(Key) != null)
+                    if (default(Key) is not null)
                     {
                         this.comparer = default(Key) as IFasterEqualityComparer<Key>;
                     }
@@ -119,49 +134,47 @@ namespace FASTER.core
                 }
             }
 
-            if (checkpointSettings == null)
+            this.DoTransientLocking = concurrencyControlMode == ConcurrencyControlMode.LockTable;
+            this.DoEphemeralLocking = concurrencyControlMode == ConcurrencyControlMode.RecordIsolation;
+
+            if (checkpointSettings is null)
                 checkpointSettings = new CheckpointSettings();
 
+            this.CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
+            this.ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
+
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
-                throw new FasterException(
-                    "Specify either CheckpointManager or CheckpointDir for CheckpointSettings, not both");
+                logger?.LogInformation("CheckpointManager and CheckpointDir specified, ignoring CheckpointDir");
 
-            bool oldCheckpointManager = false;
+            checkpointManager = checkpointSettings.CheckpointManager ??
+                new DeviceLogCommitCheckpointManager
+                (new LocalStorageNamedDeviceFactory(),
+                    new DefaultCheckpointNamingScheme(
+                        new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
 
-            if (oldCheckpointManager)
-            {
-                checkpointManager = checkpointSettings.CheckpointManager ??
-                                new LocalCheckpointManager(checkpointSettings.CheckpointDir ?? "");
-            }
-            else
-            {
-                checkpointManager = checkpointSettings.CheckpointManager ??
-                    new DeviceLogCommitCheckpointManager
-                    (new LocalStorageNamedDeviceFactory(),
-                        new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
-            }
-
-            if (checkpointSettings.CheckpointManager == null)
+            if (checkpointSettings.CheckpointManager is null)
                 disposeCheckpointManager = true;
 
-            FoldOverSnapshot = checkpointSettings.CheckPointType == core.CheckpointType.FoldOver;
-            CopyReadsToTail = logSettings.CopyReadsToTail;
+            UseReadCache = logSettings.ReadCacheSettings is not null;
 
-            if (logSettings.ReadCacheSettings != null)
-            {
-                CopyReadsToTail = CopyReadsToTail.None;
-                UseReadCache = true;
-            }
+            this.ReadCopyOptions = logSettings.ReadCopyOptions;
+            if (this.ReadCopyOptions.CopyTo == ReadCopyTo.Inherit)
+                this.ReadCopyOptions.CopyTo = UseReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.None;
+            else if (this.ReadCopyOptions.CopyTo == ReadCopyTo.ReadCache && !UseReadCache)
+                this.ReadCopyOptions.CopyTo = ReadCopyTo.None;
+
+            if (this.ReadCopyOptions.CopyFrom == ReadCopyFrom.Inherit)
+                this.ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
 
             UpdateVarLen(ref variableLengthStructSettings);
+            IVariableLengthStruct<Key> keyLen = null;
 
-            if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength == null) ||
-                (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength == null))
+            if ((!Utility.IsBlittable<Key>() && variableLengthStructSettings?.keyLength is null) ||
+                (!Utility.IsBlittable<Value>() && variableLengthStructSettings?.valueLength is null))
             {
                 WriteDefaultOnDelete = true;
 
-                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch);
+                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
@@ -174,15 +187,16 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch);
+                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator ReadCache"));
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
             }
             else if (variableLengthStructSettings != null)
             {
+                keyLen = variableLengthStructSettings.keyLength;
                 hlog = new VariableLengthBlittableAllocator<Key, Value>(logSettings, variableLengthStructSettings,
-                    this.comparer, null, epoch);
+                    this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("VariableLengthAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
@@ -194,26 +208,26 @@ namespace FASTER.core
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch);
+                        }, variableLengthStructSettings, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("VariableLengthAllocator ReadCache"));
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
             }
             else
             {
-                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch);
+                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("BlittableAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)
                 {
                     readcache = new BlittableAllocator<Key, Value>(
                         new LogSettings
-                        {
+                       {
                             LogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, this.comparer, ReadCacheEvict, epoch);
+                        }, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("VariableLengthAllocator ReadCache"));
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
@@ -224,27 +238,25 @@ namespace FASTER.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            systemState = default;
-            systemState.phase = Phase.REST;
-            systemState.version = 1;
+            this.LockTable = new OverflowBucketLockTable<Key, Value>(concurrencyControlMode == ConcurrencyControlMode.LockTable ? this : null);
+
+            systemState = SystemState.Make(Phase.REST, 1);
+
+            if (tryRecoverLatest)
+            {
+                try
+                {
+                    Recover();
+                }
+                catch { }
+            }
         }
 
-        /// <summary>
-        /// Initiate full checkpoint
-        /// </summary>
-        /// <param name="token">Checkpoint token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
-        /// <returns>
-        /// Whether we successfully initiated the checkpoint (initiation may
-        /// fail if we are already taking a checkpoint or performing some other
-        /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
-        /// </returns>
-        public bool TakeFullCheckpoint(out Guid token, long targetVersion = -1) 
-            => TakeFullCheckpoint(out token, this.FoldOverSnapshot ? CheckpointType.FoldOver : CheckpointType.Snapshot, targetVersion);
+        /// <summary>Get the hashcode for a key.</summary>
+        public long GetKeyHash(Key key) => this.comparer.GetHashCode64(ref key);
+
+        /// <summary>Get the hashcode for a key.</summary>
+        public long GetKeyHash(ref Key key) => this.comparer.GetHashCode64(ref key);
 
         /// <summary>
         /// Initiate full checkpoint
@@ -261,7 +273,7 @@ namespace FASTER.core
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TakeFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
+        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
         {
             ISynchronizationTask backend;
             if (checkpointType == CheckpointType.FoldOver)
@@ -300,7 +312,7 @@ namespace FASTER.core
         public async ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType,
             CancellationToken cancellationToken = default, long targetVersion = -1)
         {
-            var success = TakeFullCheckpoint(out Guid token, checkpointType, targetVersion);
+            var success = TryInitiateFullCheckpoint(out Guid token, checkpointType, targetVersion);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -313,7 +325,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token">Checkpoint token</param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeIndexCheckpoint(out Guid token)
+        public bool TryInitiateIndexCheckpoint(out Guid token)
         {
             var result = StartStateMachine(new IndexSnapshotStateMachine());
             token = _indexCheckpointToken;
@@ -334,35 +346,12 @@ namespace FASTER.core
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeIndexCheckpointAsync(CancellationToken cancellationToken = default)
         {
-            var success = TakeIndexCheckpoint(out Guid token);
+            var success = TryInitiateIndexCheckpoint(out Guid token);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
 
             return (success, token);
-        }
-
-        /// <summary>
-        /// Initiate log-only checkpoint
-        /// </summary>
-        /// <param name="token">Checkpoint token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
-        /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, long targetVersion = -1)
-        {
-            ISynchronizationTask backend;
-            if (FoldOverSnapshot)
-                backend = new FoldOverCheckpointTask();
-            else
-                backend = new SnapshotCheckpointTask();
-
-            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
-            token = _hybridLogCheckpointToken;
-            return result;
         }
 
         /// <summary>
@@ -377,7 +366,7 @@ namespace FASTER.core
         /// number is -1, checkpoint will unconditionally create a new version. 
         /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
-        public bool TakeHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
+        public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
             long targetVersion = -1)
         {
             ISynchronizationTask backend;
@@ -385,7 +374,7 @@ namespace FASTER.core
                 backend = new FoldOverCheckpointTask();
             else if (checkpointType == CheckpointType.Snapshot)
             {
-                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlog.FlushedUntilAddress)
+                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlog.FlushedUntilAddress && (hlog is not GenericAllocator<Key, Value>))
                     backend = new IncrementalSnapshotCheckpointTask();
                 else
                     backend = new SnapshotCheckpointTask();
@@ -404,6 +393,11 @@ namespace FASTER.core
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <param name="cancellationToken">Cancellation token</param>
+        /// <param name="targetVersion">
+        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
+        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
+        /// number is -1, checkpoint will unconditionally create a new version. 
+        /// </param>
         /// <returns>
         /// (bool success, Guid token)
         /// success: Whether we successfully initiated the checkpoint (initiation may
@@ -415,7 +409,7 @@ namespace FASTER.core
         public async ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType,
             bool tryIncremental = false, CancellationToken cancellationToken = default, long targetVersion = -1)
         {
-            var success = TakeHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental, targetVersion);
+            var success = TryInitiateHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental, targetVersion);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -428,9 +422,12 @@ namespace FASTER.core
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        public void Recover(int numPagesToPreload = -1, bool undoNextVersion = true)
+        /// <param name="recoverTo"> specific version requested or -1 for latest version. FASTER will recover to the largest version number checkpointed that's smaller than the required version. </param>
+        /// <returns>Version we actually recovered to</returns>
+        public long Recover(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1)
         {
-            InternalRecoverFromLatestCheckpoints(numPagesToPreload, undoNextVersion);
+            FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
+            return InternalRecover(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo);
         }
 
         /// <summary>
@@ -438,9 +435,15 @@ namespace FASTER.core
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
+        /// <param name="recoverTo"> specific version requested or -1 for latest version. FASTER will recover to the largest version number checkpointed that's smaller than the required version.</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
-            => InternalRecoverFromLatestCheckpointsAsync(numPagesToPreload, undoNextVersion, cancellationToken);
+        /// <returns>Version we actually recovered to</returns>
+        public ValueTask<long> RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1,
+            CancellationToken cancellationToken = default)
+        {
+            FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
+            return InternalRecoverAsync(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo, cancellationToken);
+        }
 
         /// <summary>
         /// Recover from specific token (blocking operation)
@@ -448,9 +451,10 @@ namespace FASTER.core
         /// <param name="fullCheckpointToken">Token</param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        public void Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
+        /// <returns>Version we actually recovered to</returns>
+        public long Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
         {
-            InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion);
+            return InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1);
         }
 
         /// <summary>
@@ -460,8 +464,9 @@ namespace FASTER.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default) 
-            => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, cancellationToken);
+        /// <returns>Version we actually recovered to</returns>
+        public ValueTask<long> RecoverAsync(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default)
+            => InternalRecoverAsync(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1, cancellationToken);
 
         /// <summary>
         /// Recover from specific index and log token (blocking operation)
@@ -470,9 +475,49 @@ namespace FASTER.core
         /// <param name="hybridLogCheckpointToken"></param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        public void Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
+        /// <returns>Version we actually recovered to</returns>
+        public long Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
         {
-            InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion);
+            return InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1);
+        }
+
+        /// <summary>
+        /// Enumerate all currently recoverable sessions
+        /// </summary>
+        public IEnumerable<(int, string, CommitPoint)> RecoverableSessions
+        {
+            get
+            {
+                if (_recoveredSessions != null)
+                {
+                    foreach (var kvp in _recoveredSessions)
+                    {
+                        yield return (kvp.Key, kvp.Value.Item1, kvp.Value.Item2);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Dispose recoverable session with given ID, use RecoverableSessions to get recoverable session details
+        /// </summary>
+        /// <param name="sessionID"></param>
+        public void DisposeRecoverableSession(int sessionID)
+        {
+            if (_recoveredSessions != null && _recoveredSessions.TryRemove(sessionID, out var entry))
+            {
+                if (entry.Item1 != null)
+                    _recoveredSessionNameMap.TryRemove(entry.Item1, out _);
+            }
+        }
+
+        /// <summary>
+        /// Dispose (all) recoverable sessions
+        /// </summary>
+        public void DisposeRecoverableSessions()
+        {
+            _recoveredSessions = null;
+            _recoveredSessionNameMap = null;
         }
 
         /// <summary>
@@ -483,8 +528,9 @@ namespace FASTER.core
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        public ValueTask RecoverAsync(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default) 
-            => InternalRecoverAsync(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, cancellationToken);
+        /// <returns>Version we actually recovered to</returns>
+        public ValueTask<long> RecoverAsync(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true, CancellationToken cancellationToken = default) 
+            => InternalRecoverAsync(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1, cancellationToken);
 
         /// <summary>
         /// Wait for ongoing checkpoint to complete
@@ -492,33 +538,41 @@ namespace FASTER.core
         /// <returns></returns>
         public async ValueTask CompleteCheckpointAsync(CancellationToken token = default)
         {
-            if (LightEpoch.AnyInstanceProtected())
-                throw new FasterException("Cannot use CompleteCheckpointAsync when using legacy or non-async sessions");
+            if (epoch.ThisInstanceProtected())
+                throw new FasterException("Cannot use CompleteCheckpointAsync when using non-async sessions");
 
             token.ThrowIfCancellationRequested();
 
             while (true)
             {
                 var systemState = this.systemState;
-                if (systemState.phase == Phase.REST || systemState.phase == Phase.PREPARE_GROW ||
-                    systemState.phase == Phase.IN_PROGRESS_GROW)
+                if (systemState.Phase == Phase.REST || systemState.Phase == Phase.PREPARE_GROW ||
+                    systemState.Phase == Phase.IN_PROGRESS_GROW)
                     return;
 
                 List<ValueTask> valueTasks = new();
 
                 try
                 {
+                    epoch.Resume();
                     ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, valueTasks, token);
                 }
                 catch (Exception)
                 {
                     this._indexCheckpoint.Reset();
-                    this._hybridLogCheckpoint.Reset();
+                    this._hybridLogCheckpoint.Dispose();
                     throw;
+                }
+                finally
+                {
+                    epoch.Suspend();
                 }
 
                 if (valueTasks.Count == 0)
+                {
+                    // Note: The state machine will not advance as long as there are active locking sessions.
                     continue; // we need to re-check loop, so we return only when we are at REST
+                }
 
                 foreach (var task in valueTasks)
                 {
@@ -529,165 +583,136 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            var internalStatus = InternalRead(ref key, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions);
+            OperationStatus internalStatus;
+            var keyHash = comparer.GetHashCode64(ref key);
 
-            Status status;
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-            {
-                status = (Status)internalStatus;
-            }
-            else
-            {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
-            }
+            do
+                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, Constants.kInvalidAddress, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
+
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref RecordInfo recordInfo, ReadFlags readFlags, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextRead<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context,
+                FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(readFlags, recordInfo.PreviousAddress);
-            var internalStatus = InternalRead(ref key, ref input, ref output, recordInfo.PreviousAddress, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions, ref readOptions);
+            OperationStatus internalStatus;
+            var keyHash = readOptions.KeyHash ?? comparer.GetHashCode64(ref key);
 
-            Status status;
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-            {
-                recordInfo = pcontext.recordInfo;
-                status = (Status)internalStatus;
-            }
-            else
-            {
-                recordInfo = default;
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
-            }
+            do
+                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
+
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(long address, ref Input input, ref Output output, ReadFlags readFlags, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextReadAtAddress<Input, Output, Context, FasterSession>(ref Input input, ref Output output, ref ReadOptions readOptions, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
-            pcontext.SetOperationFlags(readFlags, address, noKey: true);
+            var pcontext = new PendingContext<Input, Output, Context>(fasterSession.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
             Key key = default;
-            var internalStatus = InternalRead(ref key, ref input, ref output, address, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            Debug.Assert(internalStatus != OperationStatus.RETRY_NOW);
+            OperationStatus internalStatus;
+            do
+                internalStatus = InternalRead(ref key, keyHash: 0L, ref input, ref output, readOptions.StartAddress, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            Status status;
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-            {
-                status = (Status)internalStatus;
-            }
-            else
-            {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
-            }
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, ref Value value, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, ref value, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            Status status;
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
 
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-            {
-                status = (Status)internalStatus;
-            }
-            else
-            {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
-            }
-
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, ref Input input, ref Output output, Context context, FasterSession fasterSession, long serialNo,
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextUpsert<Input, Output, Context, FasterSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
+                                                                            Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalRMW(ref key, ref input, ref output, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            Status status;
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-            {
-                status = (Status)internalStatus;
-            }
-            else
-            {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
-            }
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<Input, Output, Context, FasterSession>(
-            ref Key key, 
-            Context context, 
-            FasterSession fasterSession, 
-            long serialNo, 
-            FasterExecutionContext<Input, Output, Context> sessionCtx)
+        internal Status ContextRMW<Input, Output, Context, FasterSession>(ref Key key, long keyHash, ref Input input, ref Output output, out RecordMetadata recordMetadata, 
+                                                                          Context context, FasterSession fasterSession, long serialNo)
             where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalDelete(ref key, ref context, ref pcontext, fasterSession, sessionCtx, serialNo);
-            while (internalStatus == OperationStatus.RETRY_NOW);
+                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-            Status status;
-            if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-            {
-                status = (Status)internalStatus;
-            }
-            else
-            {
-                status = HandleOperationStatus(sessionCtx, sessionCtx, ref pcontext, fasterSession, internalStatus, false, out _);
-            }
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
+            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
 
-            Debug.Assert(serialNo >= sessionCtx.serialNum, "Operation serial numbers must be non-decreasing");
-            sessionCtx.serialNum = serialNo;
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
+            return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextDelete<Input, Output, Context, FasterSession>(ref Key key, long keyHash, Context context, FasterSession fasterSession, long serialNo)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
+        {
+            var pcontext = default(PendingContext<Input, Output, Context>);
+            OperationStatus internalStatus;
+
+            do
+                internalStatus = InternalDelete(ref key, keyHash, ref context, ref pcontext, fasterSession, serialNo);
+            while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
+
+            var status = HandleOperationStatus(fasterSession.Ctx, ref pcontext, internalStatus);
+
+            Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+            fasterSession.Ctx.serialNum = serialNo;
             return status;
         }
 
@@ -698,8 +723,8 @@ namespace FASTER.core
         /// <returns>Whether the grow completed</returns>
         public bool GrowIndex()
         {
-            if (LightEpoch.AnyInstanceProtected())
-                throw new FasterException("Cannot use GrowIndex when using legacy or non-async sessions");
+            if (epoch.ThisInstanceProtected())
+                throw new FasterException("Cannot use GrowIndex when using non-async sessions");
 
             if (!StartStateMachine(new IndexResizeStateMachine())) return false;
 
@@ -710,25 +735,21 @@ namespace FASTER.core
                 while (true)
                 {
                     SystemState _systemState = SystemState.Copy(ref systemState);
-                    if (_systemState.phase == Phase.IN_PROGRESS_GROW)
-                    {
+                    if (_systemState.Phase == Phase.PREPARE_GROW)
+                        ThreadStateMachineStep<Empty, Empty, Empty, NullFasterSession>(null, NullFasterSession.Instance, default);
+                    else if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
                         SplitBuckets(0);
-                        epoch.ProtectAndDrain();
-                    }
-                    else
-                    {
-                        SystemState.RemoveIntermediate(ref _systemState);
-                        if (_systemState.phase != Phase.PREPARE_GROW && _systemState.phase != Phase.IN_PROGRESS_GROW)
-                        {
-                            return true;
-                        }
-                    }
+                    else if (_systemState.Phase == Phase.REST)
+                        break;
+                    epoch.ProtectAndDrain();
+                    Thread.Yield();
                 }
             }
             finally
             {
                 epoch.Suspend();
             }
+            return true;
         }
 
         /// <summary>
@@ -739,13 +760,13 @@ namespace FASTER.core
             Free();
             hlog.Dispose();
             readcache?.Dispose();
-            _lastSnapshotCheckpoint.deltaLog?.Dispose();
-            _lastSnapshotCheckpoint.deltaFileDevice?.Dispose();
+            LockTable.Dispose();
+            _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
         }
 
-        private void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+        private static void UpdateVarLen(ref VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
         {
             if (typeof(Key) == typeof(SpanByte))
             {
@@ -834,8 +855,8 @@ namespace FASTER.core
                     for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
                         if (b.bucket_entries[bucket_entry] >= beginAddress)
                             ++total_entry_count;
-                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
-                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0) break;
+                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
                 }
             }
             return total_entry_count;
@@ -860,7 +881,7 @@ namespace FASTER.core
                     {
                         var x = default(HashBucketEntry);
                         x.word = b.bucket_entries[bucket_entry];
-                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && ((x.Address & ~Constants.kReadCacheBitMask) >= readcache.HeadAddress)))
+                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readcache.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new FasterException("Duplicate tag found in index");
@@ -869,8 +890,8 @@ namespace FASTER.core
                             ++total_record_count;
                         }
                     }
-                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
-                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0) break;
+                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
                 }
 
                 if (!histogram.ContainsKey(cnt)) histogram[cnt] = 0;

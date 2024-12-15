@@ -15,7 +15,7 @@ namespace FASTER.core
     /// <summary>
     /// Local storage device
     /// </summary>
-#if NET5_0
+#if NET5_0_OR_GREATER
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 #endif
     public unsafe class LocalStorageDevice : StorageDeviceBase
@@ -55,11 +55,12 @@ namespace FASTER.core
         /// <param name="filename">File name (or prefix) with path</param>
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
-        /// <param name="disableFileBuffering"></param>
+        /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
         public LocalStorageDevice(string filename,
+
                                   bool preallocateFile = false,
                                   bool deleteOnClose = false,
                                   bool disableFileBuffering = true,
@@ -101,12 +102,14 @@ namespace FASTER.core
                                       bool useIoCompletionPort = true)
                 : base(filename, GetSectorSize(filename), capacity)
         {
-#if NETSTANDARD || NET
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 throw new FasterException("Cannot use LocalStorageDevice from non-Windows OS platform, use ManagedLocalStorageDevice instead.");
             }
-#endif
+
+            if (filename.Length > Native32.WIN32_MAX_PATH - 11)     // -11 to allow for ".<segment>"
+                throw new FasterException($"Path {filename} is too long");
+
             ThrottleLimit = 120;
             this.useIoCompletionPort = useIoCompletionPort;
             this._disposed = false;
@@ -143,6 +146,19 @@ namespace FASTER.core
                 RecoverFiles();
         }
 
+        /// <inheritdoc />
+        public override void Reset()
+        {
+            while (logHandles.Count > 0)
+            {
+                foreach (var handle in logHandles)
+                {
+                    logHandles.TryRemove(handle.Key, out _);
+                    handle.Value.Dispose();
+                }
+            }
+        }
+
         private void RecoverFiles()
         {
             FileInfo fi = new(FileName); // may not exist
@@ -154,6 +170,10 @@ namespace FASTER.core
             List<int> segids = new();
             foreach (System.IO.FileInfo item in di.GetFiles(bareName + "*"))
             {
+                if (item.Name == bareName)
+                {
+                    continue;
+                }
                 segids.Add(int.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
             }
             segids.Sort();
@@ -272,9 +292,9 @@ namespace FASTER.core
 
             try
             {
-                var logHandle = GetOrAddHandle(segmentId);
-
                 Interlocked.Increment(ref numPending);
+
+                var logHandle = GetOrAddHandle(segmentId);
 
                 bool _result = Native32.WriteFile(logHandle,
                                         sourceAddress,
@@ -312,10 +332,8 @@ namespace FASTER.core
         public override void RemoveSegment(int segment)
         {
             if (logHandles.TryRemove(segment, out SafeFileHandle logHandle))
-            {
                 logHandle.Dispose();
-                Native32.DeleteFileW(GetSegmentName(segment));
-            }
+            Native32.DeleteFileW(GetSegmentName(segment));
         }
 
         /// <summary>
@@ -361,10 +379,7 @@ namespace FASTER.core
                 _callback((uint)errorCode, num_bytes, nativeOverlapped);
                 return true;
             }
-            else
-            {
-                return false;
-            }
+            return false;
         }
 
         /// <inheritdoc/>
@@ -375,10 +390,13 @@ namespace FASTER.core
             return size;
         }
 
+        private SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort)
+            => CreateHandle(segmentId, disableFileBuffering, deleteOnClose, preallocateFile, segmentSize, fileName, ioCompletionPort, OmitSegmentIdFromFileName);
+
         /// <summary>
         /// Creates a SafeFileHandle for the specified segment. This can be used by derived classes to prepopulate logHandles in the constructor.
         /// </summary>
-        protected internal static SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort)
+        protected internal static SafeFileHandle CreateHandle(int segmentId, bool disableFileBuffering, bool deleteOnClose, bool preallocateFile, long segmentSize, string fileName, IntPtr ioCompletionPort, bool omitSegmentId = false)
         {
             uint fileAccess = Native32.GENERIC_READ | Native32.GENERIC_WRITE;
             uint fileShare = unchecked(((uint)FileShare.ReadWrite & ~(uint)FileShare.Inheritable));
@@ -387,20 +405,21 @@ namespace FASTER.core
 
             if (disableFileBuffering)
             {
-                fileFlags = fileFlags | Native32.FILE_FLAG_NO_BUFFERING;
+                fileFlags |= Native32.FILE_FLAG_NO_BUFFERING;
             }
 
             if (deleteOnClose)
             {
-                fileFlags = fileFlags | Native32.FILE_FLAG_DELETE_ON_CLOSE;
+                fileFlags |= Native32.FILE_FLAG_DELETE_ON_CLOSE;
 
                 // FILE_SHARE_DELETE allows multiple FASTER instances to share a single log directory and each can specify deleteOnClose.
                 // This will allow the files to persist until all handles across all instances have been closed.
-                fileShare = fileShare | Native32.FILE_SHARE_DELETE;
+                fileShare |= Native32.FILE_SHARE_DELETE;
             }
 
+            string segmentFileName = GetSegmentFilename(fileName, segmentId, omitSegmentId);
             var logHandle = Native32.CreateFileW(
-                GetSegmentName(fileName, segmentId),
+                segmentFileName,
                 fileAccess, fileShare,
                 IntPtr.Zero, fileCreation,
                 fileFlags, IntPtr.Zero);
@@ -408,7 +427,10 @@ namespace FASTER.core
             if (logHandle.IsInvalid)
             {
                 var error = Marshal.GetLastWin32Error();
-                throw new IOException($"Error creating log file for {GetSegmentName(fileName, segmentId)}, error: {error}", Native32.MakeHRFromErrorCode(error));
+                var message = $"Error creating log file for {segmentFileName}, error: {error} 0x({Native32.MakeHRFromErrorCode(error)})";
+                if (error == Native32.ERROR_PATH_NOT_FOUND)
+                    message += $" (Path not found; name length = {segmentFileName.Length}, MAX_PATH = {Native32.WIN32_MAX_PATH}";
+                throw new IOException(message);
             }
 
             if (preallocateFile && segmentSize != -1)
@@ -427,18 +449,10 @@ namespace FASTER.core
                 }
                 catch (Exception e)
                 {
-                    throw new FasterException("Error binding log handle for " + GetSegmentName(fileName, segmentId) + ": " + e.ToString());
+                    throw new FasterException("Error binding log handle for " + segmentFileName + ": " + e.ToString());
                 }
             }
             return logHandle;
-        }
-
-        /// <summary>
-        /// Static method to construct segment name
-        /// </summary>
-        protected static string GetSegmentName(string fileName, int segmentId)
-        {
-            return fileName + "." + segmentId;
         }
 
         /// <summary>
@@ -446,7 +460,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="segmentId"></param>
         /// <returns></returns>
-        protected string GetSegmentName(int segmentId) => GetSegmentName(FileName, segmentId);
+        protected string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
         /// <summary>
         /// 
@@ -538,7 +552,7 @@ namespace FASTER.core
         public bool IsCompleted => throw new NotImplementedException();
     }
 
-#if NET5_0
+#if NET5_0_OR_GREATER
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 #endif
     unsafe sealed class LocalStorageDeviceCompletionWorker

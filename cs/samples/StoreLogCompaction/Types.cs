@@ -87,17 +87,19 @@ namespace StoreLogCompaction
 
     public sealed class CacheFunctions : FunctionsBase<CacheKey, CacheValue, CacheInput, CacheOutput, CacheContext>
     {
-        public override void SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
+        public override bool SingleReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref ReadInfo readInfo)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst)
+        public override bool ConcurrentReader(ref CacheKey key, ref CacheInput input, ref CacheValue value, ref CacheOutput dst, ref ReadInfo readInfo)
         {
             dst.value = value;
+            return true;
         }
 
-        public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status)
+        public override void ReadCompletionCallback(ref CacheKey key, ref CacheInput input, ref CacheOutput output, CacheContext ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx.type == 0)
             {
@@ -108,7 +110,7 @@ namespace StoreLogCompaction
             {
                 long ticks = DateTime.Now.Ticks - ctx.ticks;
 
-                if (status == Status.NOTFOUND)
+                if (!status.Found)
                     Console.WriteLine("Async: Value not found, latency = {0}ms", new TimeSpan(ticks).TotalMilliseconds);
 
                 if (output.value.value != key.key)

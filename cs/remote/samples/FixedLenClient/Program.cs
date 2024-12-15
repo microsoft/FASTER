@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using FASTER.client;
 
@@ -16,6 +17,7 @@ namespace FixedLenClient
     {
         static void Main(string[] args)
         {
+            Environment.SetEnvironmentVariable("DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS", "1");
             string ip = "127.0.0.1";
             int port = 3278;
 
@@ -31,13 +33,17 @@ namespace FixedLenClient
 
             // Create a client session to the FasterKV server.
             // Sessions are mono-threaded, similar to normal FasterKV sessions.
-            using var session = client.NewSession(new Functions()); // Uses protocol WireFormat.DefaultFixedLenKV by default
+            using var session = client.NewSession(new Functions());
+            using var session2 = client.NewSession(new Functions());
 
             // Explicit version of NewSession call, where you provide all types, callback functions, and serializer
             // using var session = client.NewSession<long, long, byte, Functions, FixedLenSerializer<long, long, long, long>>(new Functions(), new FixedLenSerializer<long, long, long, long>());
 
             // Samples using sync client API
             SyncSamples(session);
+
+            // Samples using sync subscription client API
+            SyncSubscriptionSamples(session, session2);
 
             // Samples using async client API
             AsyncSamples(session).Wait();
@@ -47,6 +53,9 @@ namespace FixedLenClient
 
         static void SyncSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session)
         {
+            session.Upsert(23, 23 + 10000);
+            session.CompletePending(true);
+
             for (int i = 0; i < 1000; i++)
                 session.Upsert(i, i + 10000);
 
@@ -94,6 +103,28 @@ namespace FixedLenClient
             session.CompletePending(true);
         }
 
+        static void SyncSubscriptionSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session, ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session2)
+        {
+            session2.SubscribeKV(23);
+            session2.CompletePending(true);
+
+            for (int i = 0; i < 1000000; i++)
+                session.Upsert(23, i + 10);
+
+            // Flushes partially filled batches, does not wait for responses
+            session.Flush();
+            session.CompletePending(true);
+
+            session.RMW(23, 25);
+            session.CompletePending(true);
+
+            session.Flush();
+            session.CompletePending(true);
+
+            Thread.Sleep(1000);
+        }
+
+
         static async Task AsyncSamples(ClientSession<long, long, long, long, byte, Functions, FixedLenSerializer<long, long, long, long>> session)
         {
             for (int i = 0; i < 1000; i++)
@@ -102,7 +133,7 @@ namespace FixedLenClient
             // By default, we flush async operations as soon as they are issued
             // To instead flush manually, set forceFlush = false in calls below
             var (status, output) = await session.ReadAsync(23);
-            if (status != Status.OK || output != 23 + 10000)
+            if (!status.Found || output != 23 + 10000)
                 throw new Exception("Error!");
 
             // Measure read latency
@@ -122,36 +153,36 @@ namespace FixedLenClient
 
             long key = 25;
             (status, _) = await session.ReadAsync(key);
-            if (status != Status.NOTFOUND)
-                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
+            if (!status.NotFound)
+                throw new Exception($"Error! Key = {key}; Status = expected NotFound, actual {status}");
 
             key = 9999;
             (status, _) = await session.ReadAsync(9999);
-            if (status != Status.NOTFOUND)
-                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
+            if (!status.NotFound)
+                throw new Exception($"Error! Key = {key}; Status = expected NotFound, actual {status}");
 
             key = 9998;
             await session.DeleteAsync(key);
 
             (status, _) = await session.ReadAsync(9998);
-            if (status != Status.NOTFOUND)
-                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}");
+            if (!status.NotFound)
+                throw new Exception($"Error! Key = {key}; Status = expected NotFound, actual {status}");
 
             (status, output) = await session.RMWAsync(9998, 10);
-            if (status != Status.NOTFOUND || output != 10)
-                throw new Exception($"Error! Key = {key}; Status = expected NOTFOUND, actual {status}; output = expected {10}, actual {output}");
+            if (!status.Found || output != 10)
+                throw new Exception($"Error! Key = {key}; Status = expected NotFound, actual {status}; output = expected {10}, actual {output}");
 
             (status, output) = await session.ReadAsync(key);
-            if (status != Status.OK || output != 10)
-                throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status}; output = expected {10}, actual {output}");
+            if (!status.Found || output != 10)
+                throw new Exception($"Error! Key = {key}; Status = expected Found, actual {status}; output = expected {10}, actual {output}");
 
             (status, output) = await session.RMWAsync(key, 10);
-            if (status != Status.OK || output != 20)
-                throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status} output = expected {10}, actual {output}");
+            if (!status.Found || output != 20)
+                throw new Exception($"Error! Key = {key}; Status = expected Found, actual {status} output = expected {10}, actual {output}");
 
             (status, output) = await session.ReadAsync(key);
-            if (status != Status.OK || output != 20)
-                throw new Exception($"Error! Key = {key}; Status = expected OK, actual {status}, output = expected {10}, actual {output}");
+            if (!status.Found || output != 20)
+                throw new Exception($"Error! Key = {key}; Status = expected Found, actual {status}, output = expected {10}, actual {output}");
         }
     }
 }

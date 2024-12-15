@@ -3,7 +3,6 @@
 
 #define CALLOC
 
-using System;
 using System.Threading;
 
 namespace FASTER.core
@@ -50,6 +49,53 @@ namespace FASTER.core
     }
 
     /// <summary>
+    /// Shared flush completion tracker, when bulk-flushing many pages
+    /// </summary>
+    internal class FlushCompletionTracker
+    {
+        /// <summary>
+        /// Semaphore to set on flush completion
+        /// </summary>
+        readonly SemaphoreSlim completedSemaphore;
+
+        /// <summary>
+        /// Semaphore to wait on for flush completion
+        /// </summary>
+        readonly SemaphoreSlim flushSemaphore;
+        
+        /// <summary>
+        /// Number of pages being flushed
+        /// </summary>
+        int count;
+
+        /// <summary>
+        /// Create a flush completion tracker
+        /// </summary>
+        /// <param name="completedSemaphore">Semaphpore to release when all flushes completed</param>
+        /// <param name="flushSemaphore">Semaphpore to release when each flush completes</param>
+        /// <param name="count">Number of pages to flush</param>
+        public FlushCompletionTracker(SemaphoreSlim completedSemaphore, SemaphoreSlim flushSemaphore, int count)
+        {
+            this.completedSemaphore = completedSemaphore;
+            this.flushSemaphore = flushSemaphore;
+            this.count = count;
+        }
+
+        /// <summary>
+        /// Complete flush of one page
+        /// </summary>
+        public void CompleteFlush()
+        {
+            flushSemaphore?.Release();
+            if (Interlocked.Decrement(ref count) == 0)
+                completedSemaphore.Release();
+        }
+        
+        public void WaitOneFlush()
+            => flushSemaphore?.Wait();
+    }
+
+    /// <summary>
     /// Page async flush result
     /// </summary>
     /// <typeparam name="TContext"></typeparam>
@@ -74,7 +120,7 @@ namespace FASTER.core
         internal SectorAlignedMemory freeBuffer1;
         internal SectorAlignedMemory freeBuffer2;
         internal AutoResetEvent done;
-        internal SemaphoreSlim completedSemaphore;
+        internal FlushCompletionTracker flushCompletionTracker;
 
         /// <summary>
         /// Free
@@ -92,7 +138,7 @@ namespace FASTER.core
                 freeBuffer2 = null;
             }
 
-            completedSemaphore?.Release();
+            flushCompletionTracker?.CompleteFlush();
         }
     }
 }

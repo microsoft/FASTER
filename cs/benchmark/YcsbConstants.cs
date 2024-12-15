@@ -5,17 +5,11 @@ using FASTER.core;
 
 namespace FASTER.benchmark
 {
-    enum BenchmarkType : int
+    enum BenchmarkType : byte
     {
-        Ycsb,
+        Ycsb = 0,
         SpanByte,
         ConcurrentDictionaryYcsb
-    };
-
-    enum LockImpl : int
-    {
-        None,
-        RecordInfo
     };
 
     enum AddressLineNum : int
@@ -40,13 +34,6 @@ namespace FASTER.benchmark
         FinalFullOps = 11,
         FinalTrimmedIns = 20,
         FinalTrimmedOps = 21
-    }
-
-    public enum Op : ulong
-    {
-        Upsert = 0,
-        Read = 1,
-        ReadModifyWrite = 2
     }
 
     public static class YcsbConstants

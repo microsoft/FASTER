@@ -3,6 +3,7 @@
 
 using System.Threading;
 using System;
+using Microsoft.Extensions.Logging;
 
 namespace FASTER.core
 {
@@ -53,6 +54,21 @@ namespace FASTER.core
         public long NextAddress => nextAddress;
 
         /// <summary>
+        /// The starting address of the scan
+        /// </summary>
+        public long BeginAddress => beginAddress;
+
+        /// <summary>
+        /// The ending address of the scan
+        /// </summary>
+        public long EndAddress => endAddress;
+
+        /// <summary>
+        /// Logger instance
+        /// </summary>
+        protected ILogger logger;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="beginAddress"></param>
@@ -61,8 +77,10 @@ namespace FASTER.core
         /// <param name="epoch"></param>
         /// <param name="logPageSizeBits"></param>
         /// <param name="initForReads"></param>
-        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int logPageSizeBits, bool initForReads = true)
+        /// <param name="logger"></param>
+        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int logPageSizeBits, bool initForReads = true, ILogger logger = null)
         {
+            this.logger = logger;
             // If we are protected when creating the iterator, we do not need per-GetNext protection
             if (epoch != null && !epoch.ThisInstanceProtected())
                 this.epoch = epoch;
@@ -160,6 +178,35 @@ namespace FASTER.core
             return WaitForFrameLoad(currentAddress, currentFrame);
         }
 
+        /// <summary>
+        /// Whether we need to buffer new page from disk
+        /// </summary>
+        protected unsafe bool NeedBufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
+        {
+            for (int i = 0; i < frameSize; i++)
+            {
+                var nextPage = currentPage + i;
+
+                var pageStartAddress = nextPage << logPageSizeBits;
+
+                // Cannot load page if it is entirely in memory or beyond the end address
+                if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
+                    continue;
+
+                var pageEndAddress = (nextPage + 1) << logPageSizeBits;
+                if (endAddress < pageEndAddress)
+                    pageEndAddress = endAddress;
+                if (headAddress < pageEndAddress)
+                    pageEndAddress = headAddress;
+
+                var nextFrame = (currentFrame + i) % frameSize;
+
+                if (nextLoadedPage[nextFrame] < pageEndAddress || loadedPage[nextFrame] < pageEndAddress)
+                    return true;
+            }
+            return false;
+        }
+
         internal abstract void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
         private bool WaitForFrameLoad(long currentAddress, long currentFrame)
@@ -225,5 +272,8 @@ namespace FASTER.core
             currentAddress = -1;
             nextAddress = beginAddress;
         }
+
+        /// <inheritdoc/>
+        public override string ToString() => $"BA {BeginAddress}, EA {EndAddress}, CA {CurrentAddress}, NA {NextAddress}";
     }
 }

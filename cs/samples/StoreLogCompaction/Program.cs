@@ -43,7 +43,7 @@ namespace StoreLogCompaction
 
             Console.WriteLine("Writing keys from 0 to {0} to FASTER", max);
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
             for (int i = 0; i < max; i++)
             {
@@ -65,7 +65,7 @@ namespace StoreLogCompaction
             Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
 
             // Issue mix of deletes and upserts
-            Random r = new Random(3);
+            Random r = new(3);
 
             while (true)
             {
@@ -92,14 +92,18 @@ namespace StoreLogCompaction
                         }
                     }
                     sw.Stop();
-                    Console.WriteLine("Total time to delete/upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds / 1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
+                    Console.WriteLine("Time to delete/upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", max, sw.ElapsedMilliseconds / 1000.0, max / (sw.ElapsedMilliseconds / 1000.0));
+                    Console.WriteLine("Log begin address: {0}", h.Log.BeginAddress);
                     Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);
                 }
 
                 s.CompletePending(true);
 
-                Console.WriteLine("Compacting log");
-                s.Compact(h.Log.HeadAddress, true);
+                sw.Restart();
+                s.Compact(h.Log.HeadAddress, CompactionType.Scan);
+                sw.Stop();
+                Console.WriteLine("Time to compact: {0:0.000} secs", sw.ElapsedMilliseconds / 1000.0);
+                h.Log.Truncate();
 
                 Console.WriteLine("Log begin address: {0}", h.Log.BeginAddress);
                 Console.WriteLine("Log tail address: {0}", h.Log.TailAddress);

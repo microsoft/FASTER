@@ -7,6 +7,7 @@ using NUnit.Framework;
 using FASTER.test.recovery.sumstore;
 using System;
 using FASTER.devices;
+using System.Linq;
 
 namespace FASTER.test.recovery
 {
@@ -32,7 +33,7 @@ namespace FASTER.test.recovery
             }
 
             path = TestUtils.MethodTestDir + "/";
-            log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: false);
             TestUtils.RecreateDirectory(path);
         }
 
@@ -45,23 +46,23 @@ namespace FASTER.test.recovery
 
         public class MyFunctions : SimpleFunctions<long, long>
         {
-            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.AreEqual(Status.OK, status, $"status = {status}");
+                Assert.IsTrue(status.Found, $"status = {status}");
                 Assert.AreEqual(key, output, $"output = {output}");
             }
         }
 
         public class MyFunctions2 : SimpleFunctions<long, long>
         {
-            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status)
+            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 Verify(status, key, output);
             }
 
             internal static void Verify(Status status, long key, long output)
             {
-                Assert.AreEqual(Status.OK, status);
+                Assert.IsTrue(status.Found);
                 if (key < 950)
                     Assert.AreEqual(key, output);
                 else
@@ -105,9 +106,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s1.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.IsPending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -142,9 +143,9 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (status != Status.PENDING)
+                if (!status.IsPending)
                 {
-                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.IsTrue(status.Found, $"status = {status}");
                     Assert.AreEqual(key, output, $"output = {output}");
                 }
             }
@@ -194,9 +195,9 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (status != Status.PENDING)
+                        if (!status.IsPending)
                         {
-                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.IsTrue(status.Found, $"status = {status}");
                             Assert.AreEqual(key, output, $"output = {output}");
                         }
                     }
@@ -225,14 +226,200 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.IsPending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
                 s2.CompletePending(true);
             }
+        }
+
+        [Test]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        public void RecoveryCheck2Repeated([Values] CheckpointType checkpointType)
+        {
+            Guid token = default;
+
+            for (int i = 0; i < 6; i++)
+            {
+                using var fht1 = new FasterKV<long, long>
+                    (128,
+                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                    );
+
+                if (i > 0)
+                {
+                    fht1.Recover(default, token);
+                    if (i == 3) fht1.DisposeRecoverableSessions();
+                    int recoverableSessionCount = fht1.RecoverableSessions.Count();
+                    if (i < 3)
+                        Assert.AreEqual(i, recoverableSessionCount);
+                    else
+                        Assert.AreEqual(i - 3, recoverableSessionCount);
+                }
+
+                using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
+
+                for (long key = 1000 * i; key < 1000 * i + 1000; key++)
+                {
+                    s1.Upsert(ref key, ref key);
+                }
+
+                var task = fht1.TakeHybridLogCheckpointAsync(checkpointType);
+                bool success;
+                (success, token) = task.AsTask().GetAwaiter().GetResult();
+                Assert.IsTrue(success);
+
+                using var s2 = fht1.NewSession(new SimpleFunctions<long, long>());
+                for (long key = 0; key < 1000 * i + 1000; key++)
+                {
+                    long output = default;
+                    var status = s2.Read(ref key, ref output);
+                    if (!status.IsPending)
+                    {
+                        Assert.IsTrue(status.Found, $"status = {status}");
+                        Assert.AreEqual(key, output, $"output = {output}");
+                    }
+                }
+                s2.CompletePending(true);
+            }
+        }
+
+        [Test]
+        [Category("FasterKV"), Category("CheckpointRestore")]
+        public void RecoveryRollback([Values] CheckpointType checkpointType)
+        {
+            using var fht1 = new FasterKV<long, long>
+                (128,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 11, SegmentSizeBits = 11 },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                );
+
+            using var s1 = fht1.NewSession(new SimpleFunctions<long, long>());
+
+            for (long key = 0; key < 1000; key++)
+            {
+                s1.Upsert(ref key, ref key);
+            }
+
+            var task = fht1.TakeHybridLogCheckpointAsync(checkpointType);
+            (bool success, Guid token) = task.AsTask().GetAwaiter().GetResult();
+            Assert.IsTrue(success);
+
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.Found, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
+            }
+            s1.CompletePendingWithOutputs(out var completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.Found);
+                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+            }
+            completedOutputs.Dispose();
+
+            for (long key = 1000; key < 2000; key++)
+            {
+                s1.Upsert(ref key, ref key);
+            }
+
+            // Reset store to empty state
+            fht1.Reset();
+
+            for (long key = 0; key < 2000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.NotFound, $"status = {status}");
+                }
+            }
+            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.NotFound);
+            }
+            completedOutputs.Dispose();
+
+            // Rollback to previous checkpoint
+            fht1.Recover(default, token);
+
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.Found, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
+            }
+            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.Found);
+                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+            }
+            completedOutputs.Dispose();
+
+            for (long key = 1000; key < 2000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.NotFound, $"status = {status}");
+                }
+            }
+            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.NotFound);
+            }
+            completedOutputs.Dispose();
+
+            for (long key = 1000; key < 2000; key++)
+            {
+                s1.Upsert(ref key, ref key);
+            }
+
+            for (long key = 0; key < 2000; key++)
+            {
+                long output = default;
+                var status = s1.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    Assert.IsTrue(status.Found, $"status = {status}");
+                    Assert.AreEqual(key, output, $"output = {output}");
+                }
+                else
+                {
+                    s1.CompletePendingWithOutputs(out completedOutputs, true);
+                    while (completedOutputs.Next())
+                    {
+                        Assert.IsTrue(completedOutputs.Current.Status.Found);
+                        Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                    }
+                    completedOutputs.Dispose();
+                }
+            }
+            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            while (completedOutputs.Next())
+            {
+                Assert.IsTrue(completedOutputs.Current.Status.Found);
+                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+            }
+            completedOutputs.Dispose();
         }
     }
 
@@ -277,9 +464,9 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (status != Status.PENDING)
+                        if (!status.IsPending)
                         {
-                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.IsTrue(status.Found, $"status = {status}");
                             Assert.AreEqual(key, output, $"output = {output}");
                         }
                     }
@@ -308,9 +495,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.IsPending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -361,9 +548,9 @@ namespace FASTER.test.recovery
                     {
                         long output = default;
                         var status = s1.Read(ref key, ref output);
-                        if (status != Status.PENDING)
+                        if (!status.IsPending)
                         {
-                            Assert.AreEqual(Status.OK, status, $"status = {status}");
+                            Assert.IsTrue(status.Found, $"status = {status}");
                             Assert.AreEqual(key, output, $"output = {output}");
                         }
                     }
@@ -395,9 +582,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s2.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.IsPending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -424,7 +611,8 @@ namespace FASTER.test.recovery
             using var fht1 = new FasterKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = path },
+                concurrencyControlMode : ConcurrencyControlMode.RecordIsolation
                 );
 
             using var s1 = fht1.NewSession(new MyFunctions());
@@ -440,9 +628,9 @@ namespace FASTER.test.recovery
                 {
                     long output = default;
                     var status = s1.Read(ref key, ref output);
-                    if (status != Status.PENDING)
+                    if (!status.IsPending)
                     {
-                        Assert.AreEqual(Status.OK, status, $"status = {status}");
+                        Assert.IsTrue(status.Found, $"status = {status}");
                         Assert.AreEqual(key, output, $"output = {output}");
                     }
                 }
@@ -455,9 +643,9 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s1.Read(ref key, ref output);
-                if (status != Status.PENDING)
+                if (!status.IsPending)
                 {
-                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.IsTrue(status.Found, $"status = {status}");
                     Assert.AreEqual(key, output, $"output = {output}");
                 }
             }
@@ -491,9 +679,9 @@ namespace FASTER.test.recovery
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (status != Status.PENDING)
+                if (!status.IsPending)
                 {
-                    Assert.AreEqual(Status.OK, status, $"status = {status}");
+                    Assert.IsTrue(status.Found, $"status = {status}");
                     Assert.AreEqual(key, output, $"output = {output}");
                 }
             }
@@ -558,23 +746,26 @@ namespace FASTER.test.recovery
                 s1.Upsert(key, key+1);
             }
 
-            var _result1 = fht1.TakeHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
+            var version1 = fht1.CurrentVersion;
+            var _result1 = fht1.TryInitiateHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result1);
-            Assert.IsTrue(_token1 == token);
+            Assert.AreEqual(token, _token1);
 
             for (long key = 1000; key < 2000; key++)
             {
                 s1.Upsert(key, key + 1);
             }
 
-            var _result2 = fht1.TakeHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
+            var version2 = fht1.CurrentVersion;
+            var _result2 = fht1.TryInitiateHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
             await fht1.CompleteCheckpointAsync();
 
             Assert.IsTrue(_result2);
-            Assert.IsTrue(_token2 == token);
+            Assert.AreEqual(token, _token2);
 
+            // Test that we can recover to latest version
             using var fht2 = new FasterKV<long, long>
                 (1 << 10,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
@@ -583,19 +774,41 @@ namespace FASTER.test.recovery
 
             await fht2.RecoverAsync(default, _token2);
 
-            Assert.IsTrue(fht1.Log.TailAddress == fht2.Log.TailAddress, $"fht1 tail = {fht1.Log.TailAddress}; fht2 tail = {fht2.Log.TailAddress}");
+            Assert.AreEqual(fht2.Log.TailAddress, fht1.Log.TailAddress);
 
             using var s2 = fht2.NewSession(new MyFunctions2());
             for (long key = 0; key < 2000; key++)
             {
                 long output = default;
                 var status = s2.Read(ref key, ref output);
-                if (status != Status.PENDING)
+                if (!status.IsPending)
                 {
                     MyFunctions2.Verify(status, key, output);
                 }
             }
             s2.CompletePending(true);
+            
+            // Test that we can recover to earlier version
+            using var fht3 = new FasterKV<long, long>
+            (1 << 10,
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
+                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
+            );
+
+            await fht3.RecoverAsync(recoverTo: version1);
+
+            Assert.IsTrue(fht3.EntryCount == 1000);
+            using var s3 = fht3.NewSession(new MyFunctions2());
+            for (long key = 0; key < 1000; key++)
+            {
+                long output = default;
+                var status = s3.Read(ref key, ref output);
+                if (!status.IsPending)
+                {
+                    MyFunctions2.Verify(status, key, output);
+                }
+            }
+            s3.CompletePending(true);
         }
     }
 }

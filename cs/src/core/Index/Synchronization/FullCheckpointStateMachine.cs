@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -16,7 +19,7 @@ namespace FASTER.core
             SystemState next,
             FasterKV<Key, Value> faster)
         {
-            switch (next.phase)
+            switch (next.Phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
                     Debug.Assert(faster._indexCheckpoint.IsDefault() &&
@@ -25,11 +28,11 @@ namespace FASTER.core
                     faster._indexCheckpointToken = fullCheckpointToken;
                     faster._hybridLogCheckpointToken = fullCheckpointToken;
                     faster.InitializeIndexCheckpoint(faster._indexCheckpointToken);
-                    faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.version);
+                    faster.InitializeHybridLogCheckpoint(faster._hybridLogCheckpointToken, next.Version);
                     break;
                 case Phase.WAIT_FLUSH:
                     faster._indexCheckpoint.info.num_buckets = faster.overflowBucketsAllocator.GetMaxValidAddress();
-                    faster.ObtainCurrentTailAddress(ref faster._indexCheckpoint.info.finalLogicalAddress);
+                    faster._indexCheckpoint.info.finalLogicalAddress = faster.hlog.GetTailAddress();
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     faster.WriteIndexMetaInfo();
@@ -79,19 +82,19 @@ namespace FASTER.core
         public override SystemState NextState(SystemState start)
         {
             var result = SystemState.Copy(ref start);
-            switch (start.phase)
+            switch (start.Phase)
             {
                 case Phase.REST:
-                    result.phase = Phase.PREP_INDEX_CHECKPOINT;
+                    result.Phase = Phase.PREP_INDEX_CHECKPOINT;
                     break;
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    result.phase = Phase.PREPARE;
+                    result.Phase = Phase.PREPARE;
                     break;
-                case Phase.WAIT_PENDING:
-                    result.phase = Phase.WAIT_INDEX_CHECKPOINT;
+                case Phase.IN_PROGRESS:
+                    result.Phase = Phase.WAIT_INDEX_CHECKPOINT;
                     break;
                 case Phase.WAIT_INDEX_CHECKPOINT:
-                    result.phase = Phase.WAIT_FLUSH;
+                    result.Phase = Phase.WAIT_FLUSH;
                     break;
                 default:
                     result = base.NextState(start);

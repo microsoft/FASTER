@@ -11,35 +11,40 @@ namespace FASTER.core
 {
     public partial class FasterKV<Key, Value> : FasterBase, IFasterKV<Key, Value>
     {
-        internal struct DeleteAsyncOperation<Input, Output, Context> : IUpdateAsyncOperation<Input, Output, Context, DeleteAsyncResult<Input, Output, Context>>
+        internal struct DeleteAsyncOperation<Input, Output, Context> : IAsyncOperation<Input, Output, Context, DeleteAsyncResult<Input, Output, Context>>
         {
+            DeleteOptions deleteOptions;
+
+            internal DeleteAsyncOperation(ref DeleteOptions deleteOptions)
+            {
+                this.deleteOptions = deleteOptions;
+            }
+
             /// <inheritdoc/>
-            public DeleteAsyncResult<Input, Output, Context> CreateResult(Status status, Output output) => new DeleteAsyncResult<Input, Output, Context>(status);
+            public DeleteAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new DeleteAsyncResult<Input, Output, Context>(status);
 
             /// <inheritdoc/>
             public Status DoFastOperation(FasterKV<Key, Value> fasterKV, ref PendingContext<Input, Output, Context> pendingContext, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, bool asyncOp, out CompletionEvent flushEvent, out Output output)
+                                            out Output output)
             {
                 OperationStatus internalStatus;
+                ref var key = ref pendingContext.key.Get();
+                var keyHash = deleteOptions.KeyHash ?? fasterKV.comparer.GetHashCode64(ref key);
                 do
                 {
-                    flushEvent = fasterKV.hlog.FlushEvent;
-                    internalStatus = fasterKV.InternalDelete(ref pendingContext.key.Get(), ref pendingContext.userContext, ref pendingContext, fasterSession, currentCtx, pendingContext.serialNum);
-                } while (internalStatus == OperationStatus.RETRY_NOW);
+                    internalStatus = fasterKV.InternalDelete(ref key, keyHash, ref pendingContext.userContext, ref pendingContext, fasterSession, pendingContext.serialNum);
+                } while (fasterKV.HandleImmediateRetryStatus(internalStatus, fasterSession, ref pendingContext));
                 output = default;
                 return TranslateStatus(internalStatus);
             }
 
             /// <inheritdoc/>
             public ValueTask<DeleteAsyncResult<Input, Output, Context>> DoSlowOperation(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                                            FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, CompletionEvent flushEvent, CancellationToken token)
-                => SlowDeleteAsync(fasterKV, fasterSession, currentCtx, pendingContext, flushEvent, token);
+                                            PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
+                => SlowDeleteAsync(fasterKV, fasterSession, pendingContext, deleteOptions, token);
 
             /// <inheritdoc/>
-            public bool CompletePendingIO(IFasterSession<Key, Value, Input, Output, Context> fasterSession) => false;
-
-            /// <inheritdoc/>
-            public void DecrementPending(FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pendingContext) { }
+            public bool HasPendingIO => false;
         }
 
         /// <summary>
@@ -47,7 +52,7 @@ namespace FASTER.core
         /// </summary>
         public struct DeleteAsyncResult<Input, Output, Context>
         {
-            internal readonly UpdateAsyncInternal<Input, Output, Context, DeleteAsyncOperation<Input, Output, Context>, DeleteAsyncResult<Input, Output, Context>> updateAsyncInternal;
+            internal readonly AsyncOperationInternal<Input, Output, Context, DeleteAsyncOperation<Input, Output, Context>, DeleteAsyncResult<Input, Output, Context>> updateAsyncInternal;
 
             /// <summary>Current status of the Upsert operation</summary>
             public Status Status { get; }
@@ -59,71 +64,64 @@ namespace FASTER.core
             }
 
             internal DeleteAsyncResult(FasterKV<Key, Value> fasterKV, IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-                FasterExecutionContext<Input, Output, Context> currentCtx, PendingContext<Input, Output, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo)
+                PendingContext<Input, Output, Context> pendingContext, ref DeleteOptions deleteOptions, ExceptionDispatchInfo exceptionDispatchInfo)
             {
-                this.Status = Status.PENDING;
-                updateAsyncInternal = new UpdateAsyncInternal<Input, Output, Context, DeleteAsyncOperation<Input, Output, Context>, DeleteAsyncResult<Input, Output, Context>>(
-                                        fasterKV, fasterSession, currentCtx, pendingContext, exceptionDispatchInfo, new DeleteAsyncOperation<Input, Output, Context>());
+                this.Status = new(StatusCode.Pending);
+                updateAsyncInternal = new AsyncOperationInternal<Input, Output, Context, DeleteAsyncOperation<Input, Output, Context>, DeleteAsyncResult<Input, Output, Context>>(
+                                        fasterKV, fasterSession, pendingContext, exceptionDispatchInfo, new (ref deleteOptions));
             }
 
             /// <summary>Complete the Delete operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
             /// <returns>ValueTask for Delete result. User needs to await again if result status is Status.PENDING.</returns>
             public ValueTask<DeleteAsyncResult<Input, Output, Context>> CompleteAsync(CancellationToken token = default)
-                => this.Status != Status.PENDING
-                    ? new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(this.Status))
-                    : updateAsyncInternal.CompleteAsync(token);
+                => this.Status.IsPending
+                    ? updateAsyncInternal.CompleteAsync(token)
+                    : new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(this.Status));
 
             /// <summary>Complete the Delete operation, issuing additional I/O synchronously if needed.</summary>
             /// <returns>Status of Delete operation</returns>
-            public Status Complete() => this.Status != Status.PENDING ? this.Status : updateAsyncInternal.Complete().Status;
+            public Status Complete() => this.Status.IsPending ? updateAsyncInternal.CompleteSync().Status : this.Status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<DeleteAsyncResult<Input, Output, Context>> DeleteAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-            FasterExecutionContext<Input, Output, Context> currentCtx, ref Key key, Context userContext, long serialNo, CancellationToken token = default)
+        internal ValueTask<DeleteAsyncResult<Input, Output, Context>> DeleteAsync<Input, Output, Context, FasterSession>(FasterSession fasterSession,
+                ref Key key, ref DeleteOptions deleteOptions, Context userContext, long serialNo, CancellationToken token = default)
+            where FasterSession : IFasterSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
-            return DeleteAsync(fasterSession, currentCtx, ref pcontext, ref key, userContext, serialNo, token);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<DeleteAsyncResult<Input, Output, Context>> DeleteAsync<Input, Output, Context>(IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-            FasterExecutionContext<Input, Output, Context> currentCtx, ref PendingContext<Input, Output, Context> pcontext, ref Key key, Context userContext, long serialNo, CancellationToken token)
-        {
-            CompletionEvent flushEvent;
 
             fasterSession.UnsafeResumeThread();
             try
             {
                 OperationStatus internalStatus;
+                var keyHash = deleteOptions.KeyHash ?? comparer.GetHashCode64(ref key);
                 do
                 {
-                    flushEvent = hlog.FlushEvent;
-                    internalStatus = InternalDelete(ref key, ref userContext, ref pcontext, fasterSession, currentCtx, serialNo);
-                } while (internalStatus == OperationStatus.RETRY_NOW);
+                    internalStatus = InternalDelete(ref key, keyHash, ref userContext, ref pcontext, fasterSession, serialNo);
+                } while (HandleImmediateRetryStatus(internalStatus, fasterSession, ref pcontext));
 
-                if (internalStatus == OperationStatus.SUCCESS || internalStatus == OperationStatus.NOTFOUND)
-                    return new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>((Status)internalStatus));
+                if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
+                    return new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(status));
                 Debug.Assert(internalStatus == OperationStatus.ALLOCATE_FAILED);
             }
             finally
             {
-                Debug.Assert(serialNo >= currentCtx.serialNum, "Operation serial numbers must be non-decreasing");
-                currentCtx.serialNum = serialNo;
+                Debug.Assert(serialNo >= fasterSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
+                fasterSession.Ctx.serialNum = serialNo;
                 fasterSession.UnsafeSuspendThread();
             }
 
-            return SlowDeleteAsync(this, fasterSession, currentCtx, pcontext, flushEvent, token);
+            return SlowDeleteAsync(this, fasterSession, pcontext, deleteOptions, token);
         }
 
         private static async ValueTask<DeleteAsyncResult<Input, Output, Context>> SlowDeleteAsync<Input, Output, Context>(
             FasterKV<Key, Value> @this,
             IFasterSession<Key, Value, Input, Output, Context> fasterSession,
-            FasterExecutionContext<Input, Output, Context> currentCtx,
-            PendingContext<Input, Output, Context> pcontext, CompletionEvent flushEvent, CancellationToken token = default)
+            PendingContext<Input, Output, Context> pcontext, DeleteOptions deleteOptions, CancellationToken token = default)
         {
-            ExceptionDispatchInfo exceptionDispatchInfo = await WaitForFlushCompletionAsync(@this, currentCtx, flushEvent, token).ConfigureAwait(false);
-            return new DeleteAsyncResult<Input, Output, Context>(@this, fasterSession, currentCtx, pcontext, exceptionDispatchInfo);
+            ExceptionDispatchInfo exceptionDispatchInfo = await WaitForFlushCompletionAsync(@this, pcontext.flushEvent, token).ConfigureAwait(false);
+            pcontext.flushEvent = default;
+            return new DeleteAsyncResult<Input, Output, Context>(@this, fasterSession, pcontext, ref deleteOptions, exceptionDispatchInfo);
         }
     }
 }

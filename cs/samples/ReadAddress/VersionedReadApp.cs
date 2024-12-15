@@ -63,9 +63,7 @@ namespace ReadAddress
             await PopulateStore(store);
             
             const int keyToScan = 42;
-            ScanStore(store, keyToScan);
-            var cts = new CancellationTokenSource();
-            await ScanStoreAsync(store, keyToScan, cts.Token);
+            IterateKeyVersions(store, keyToScan);
 
             // Clean up
             store.Dispose();
@@ -89,18 +87,14 @@ namespace ReadAddress
                 LogDevice = log,
                 ObjectLogDevice = new NullDevice(),
                 ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null,
-                // Use small-footprint values
+                // Use small-footprint values to get some on-disk records
                 PageSizeBits = 12, // (4K pages)
                 MemorySizeBits = 20 // (1M memory for main log)
             };
 
-            var store = new FasterKV<Key, Value>(
-                size: 1L << 20,
-                logSettings: logSettings,
+            var store = new FasterKV<Key, Value>(size: 1L << 20, logSettings: logSettings,
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path },
-                serializerSettings: null,
-                comparer: new Key.Comparer()
-                );
+                serializerSettings: null, comparer: new Key.Comparer());
             return (store, log, path);
         }
 
@@ -110,7 +104,7 @@ namespace ReadAddress
             using var s = store.For(new Functions()).NewSession<Functions>();
             Console.WriteLine($"Writing {numKeys} keys to FASTER", numKeys);
 
-            Stopwatch sw = new Stopwatch();
+            Stopwatch sw = new();
             sw.Start();
             var prevLap = 0;
             for (int ii = 0; ii < numKeys; ii++)
@@ -141,66 +135,44 @@ namespace ReadAddress
             Console.WriteLine("Total time to upsert {0} elements: {1:0.000} secs ({2:0.00} inserts/sec)", numKeys, numSec, numKeys / numSec);
         }
 
-        private static void ScanStore(FasterKV<Key, Value> store, int keyValue)
+        struct KeyIteratorFunctions : IScanIteratorFunctions<Key, Value>
         {
-            // Start session with FASTER
-            using var session = store.For(new Functions()).NewSession<Functions>();
+            readonly FasterKV<Key, Value> store;
+            internal bool done;
 
-            Console.WriteLine($"Sync scanning records for key {keyValue}");
+            internal KeyIteratorFunctions(FasterKV<Key, Value> store) => this.store = store;
 
-            var output = default(Value);
-            var input = default(Value);
-            var key = new Key(keyValue);
-            RecordInfo recordInfo = default;
-            var context = new Context();
-            int version = int.MaxValue;
-            for (int lap = 9; /* tested in loop */; --lap)
+            public bool OnStart(long beginAddress, long endAddress) => true;
+
+            public bool ConcurrentReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords);
+
+            public bool SingleReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords)
             {
-                var status = session.Read(ref key, ref input, ref output, ref recordInfo, userContext: context, serialNo: maxLap + 1);
-                if (status == Status.PENDING)
-                {
-                    // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving chains for multiple records.
-                    session.CompletePending(wait: true);
-                    recordInfo = context.recordInfo;
-                    status = context.status;
-                }
-                if (!ProcessRecord(store, status, recordInfo, lap, ref output, ref version))
-                    break;
+                Debug.Assert(!done, "Expected iteration to be complete");
+                if (maxLap - numberOfRecords == deleteLap)
+                    Debug.Assert(recordMetadata.RecordInfo.Tombstone, "Expected deleted record");
+                else
+                    Debug.Assert(!recordMetadata.RecordInfo.Tombstone, "Did not expect deleted record");
+                var output = recordMetadata.RecordInfo.Tombstone ? "<deleted>" : value.value.ToString();
+                Console.WriteLine($"  {output}; PrevAddress: {recordMetadata.RecordInfo.PreviousAddress}");
+
+                // Check for end of loop
+                done = recordMetadata.RecordInfo.PreviousAddress < store.Log.BeginAddress;
+                return true;
             }
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+
+            public void OnStop(bool completed, long numberOfRecords) { }
         }
 
-        private static async Task ScanStoreAsync(FasterKV<Key, Value> store, int keyValue, CancellationToken cancellationToken)
+        private static void IterateKeyVersions(FasterKV<Key, Value> store, int keyValue)
         {
-            // Start session with FASTER
-            using var session = store.For(new Functions()).NewSession<Functions>();
-
-            Console.WriteLine($"Async scanning records for key {keyValue}");
-
-            var input = default(Value);
+            KeyIteratorFunctions scanFunctions = new(store);
             var key = new Key(keyValue);
-            RecordInfo recordInfo = default;
-            int version = int.MaxValue;
-            for (int lap = 9; /* tested in loop */; --lap)
-            {
-                var readAsyncResult = await session.ReadAsync(ref key, ref input, recordInfo.PreviousAddress, default, serialNo: maxLap + 1, cancellationToken: cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                var (status, output) = readAsyncResult.Complete(out recordInfo);
-                if (!ProcessRecord(store, status, recordInfo, lap, ref output, ref version))
-                    break;
-            }
-        }
-
-        private static bool ProcessRecord(FasterKV<Key, Value> store, Status status, RecordInfo recordInfo, int lap, ref Value output, ref int previousVersion)
-        {
-            Debug.Assert((status == Status.NOTFOUND) == recordInfo.Tombstone);
-            Debug.Assert((lap == deleteLap) == recordInfo.Tombstone);
-            var value = recordInfo.Tombstone ? "<deleted>" : output.value.ToString();
-            Debug.Assert(previousVersion >= recordInfo.Version);
-            Console.WriteLine($"  {value}; Version = {recordInfo.Version}; PrevAddress: {recordInfo.PreviousAddress}");
-
-            // Check for end of loop
-            previousVersion = recordInfo.Version;
-            return recordInfo.PreviousAddress >= store.Log.BeginAddress;
+            Debug.Assert(store.Log.IterateKeyVersions(ref scanFunctions, ref key), "Iteration did not complete successfully");
+            Debug.Assert(scanFunctions.done, "Iteration did not complete as expected");
         }
     }
 }

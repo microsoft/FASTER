@@ -4,7 +4,11 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+#if NET5_0_OR_GREATER
+using System.Runtime.CompilerServices;
+#else
 using System.Runtime.InteropServices;
+#endif
 using System.Threading;
 
 namespace FASTER.core
@@ -24,9 +28,11 @@ namespace FASTER.core
     /// </summary>
     public unsafe sealed class LocalMemoryDevice : StorageDeviceBase
     {
-        readonly byte*[] ram_segments;
+        readonly byte[][] orig_ram_segments;
+        readonly byte*[] ram_segment_ptrs;
+#if !NET5_0_OR_GREATER
         readonly GCHandle[] ram_segment_handles;
-
+#endif
         private readonly int num_segments;
         private readonly ConcurrentQueue<IORequestLocalMemory>[] ioQueue;
         private readonly Thread[] ioProcessors;
@@ -44,24 +50,32 @@ namespace FASTER.core
         /// <param name="latencyMs">Induced callback latency in ms (for testing purposes)</param>
         /// <param name="sector_size">Sector size for device (default 64)</param>
         /// <param name="fileName">Virtual path for the device</param>
-        public LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 64, string fileName = "/userspace/ram/storage")
+        public unsafe LocalMemoryDevice(long capacity, long sz_segment, int parallelism, int latencyMs = 0, uint sector_size = 64, string fileName = "/userspace/ram/storage")
             : base(fileName, sector_size, capacity)
         {
             if (capacity == Devices.CAPACITY_UNSPECIFIED) throw new Exception("Local memory device must have a capacity!");
-            Console.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
+            Debug.WriteLine("LocalMemoryDevice: Creating a " + capacity + " sized local memory device.");
             num_segments = (int)(capacity / sz_segment);
             this.sz_segment = sz_segment;
             this.latencyTicks = latencyMs * TimeSpan.TicksPerMillisecond;
 
-            ram_segments = new byte*[num_segments];
+            ram_segment_ptrs = new byte*[num_segments];
+            orig_ram_segments = new byte[num_segments][];
+
+#if !NET5_0_OR_GREATER
             ram_segment_handles = new GCHandle[num_segments];
+#endif
 
             for (int i = 0; i < num_segments; i++)
             {
-                var new_segment = new byte[sz_segment];
-
-                ram_segment_handles[i] = GCHandle.Alloc(new_segment, GCHandleType.Pinned);
-                ram_segments[i] = (byte*)(long)ram_segment_handles[i].AddrOfPinnedObject();
+#if NET5_0_OR_GREATER
+                orig_ram_segments[i] = GC.AllocateArray<byte>((int)sz_segment, true);
+                ram_segment_ptrs[i] = (byte*)Unsafe.AsPointer(ref orig_ram_segments[i][0]);
+#else
+                orig_ram_segments[i] = new byte[sz_segment];
+                ram_segment_handles[i] = GCHandle.Alloc(orig_ram_segments[i], GCHandleType.Pinned);
+                ram_segment_ptrs[i] = (byte*)(long)ram_segment_handles[i].AddrOfPinnedObject();
+#endif
             }
             terminated = false;
             ioQueue = new ConcurrentQueue<IORequestLocalMemory>[parallelism];
@@ -75,7 +89,7 @@ namespace FASTER.core
                 ioProcessors[i].Start();
             }
 
-            Console.WriteLine("LocalMemoryDevice: " + ram_segments.Length + " pinned in-memory segments created, each with " + sz_segment + " bytes");
+            Debug.WriteLine("LocalMemoryDevice: " + ram_segment_ptrs.Length + " pinned in-memory segments created, each with " + sz_segment + " bytes");
         }
 
         private void ProcessIOQueue(ConcurrentQueue<IORequestLocalMemory> q)
@@ -114,7 +128,7 @@ namespace FASTER.core
             var q = ioQueue[segmentId % parallelism];
             var req = new IORequestLocalMemory
             {
-                srcAddress = ram_segments[segmentId] + sourceAddress,
+                srcAddress = ram_segment_ptrs[segmentId] + sourceAddress,
                 dstAddress = (void*)destinationAddress,
                 bytes = readLength,
                 callback = callback,
@@ -150,7 +164,7 @@ namespace FASTER.core
             var req = new IORequestLocalMemory
             {
                 srcAddress = (void*)sourceAddress,
-                dstAddress = ram_segments[segmentId % parallelism] + destinationAddress,
+                dstAddress = ram_segment_ptrs[segmentId % parallelism] + destinationAddress,
                 bytes = numBytesToWrite,
                 callback = callback,
                 context = context
@@ -191,11 +205,12 @@ namespace FASTER.core
             {
                 ioProcessors[i].Join();
             }
+#if !NET5_0_OR_GREATER
             for (int i = 0; i < ram_segment_handles.Length; i++)
             {
                 ram_segment_handles[i].Free();
-                ram_segments[i] = null;
             }
+#endif
         }
     }
 }

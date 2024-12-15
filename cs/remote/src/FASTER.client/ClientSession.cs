@@ -27,23 +27,23 @@ namespace FASTER.client
             where Functions : ICallbackFunctions<Key, Value, Input, Output, Context>
             where ParameterSerializer : IClientSerializer<Key, Value, Input, Output>
     {
-        readonly NetworkSender messageManager;
+        readonly INetworkSender networkSender;        
         readonly Functions functions;
-        readonly ParameterSerializer serializer;
-        readonly Socket sendSocket;
+        readonly ParameterSerializer serializer;        
         readonly HeaderReaderWriter hrw;
         readonly int bufferSize;
         readonly WireFormat wireFormat;
         readonly MaxSizeSettings maxSizeSettings;
+        private bool subscriptionSession;
 
-        bool disposed;
-        ReusableObject<SeaaBuffer> sendObject;
+        bool disposed;        
         byte* offset;
         int numMessages;
         int numPendingBatches;
 
         readonly ElasticCircularBuffer<(Key, Value, Context)> upsertQueue;
         readonly ElasticCircularBuffer<(Key, Input, Output, Context)> readrmwQueue;
+        readonly ElasticCircularBuffer<(Key, Value, Context)> pubsubQueue;
         readonly ElasticCircularBuffer<TaskCompletionSource<(Status, Output)>> tcsQueue;
 
         /// <summary>
@@ -55,25 +55,32 @@ namespace FASTER.client
         /// <param name="wireFormat"></param>
         /// <param name="serializer">Serializer</param>
         /// <param name="maxSizeSettings">Size settings</param>
-        public ClientSession(string address, int port, Functions functions, WireFormat wireFormat, ParameterSerializer serializer, MaxSizeSettings maxSizeSettings)
+        public ClientSession(
+            string address, 
+            int port, 
+            Functions functions, 
+            WireFormat wireFormat, 
+            ParameterSerializer serializer, 
+            MaxSizeSettings maxSizeSettings)
         {
             this.functions = functions;
             this.serializer = serializer;
             this.wireFormat = wireFormat;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
             this.bufferSize = BufferSizeUtils.ClientBufferSize(this.maxSizeSettings);
-            this.messageManager = new NetworkSender(bufferSize);
             this.disposed = false;
+            this.subscriptionSession = false;
 
             upsertQueue = new ElasticCircularBuffer<(Key, Value, Context)>();
             readrmwQueue = new ElasticCircularBuffer<(Key, Input, Output, Context)>();
+            pubsubQueue = new ElasticCircularBuffer<(Key, Value, Context)>();
             tcsQueue = new ElasticCircularBuffer<TaskCompletionSource<(Status, Output)>>();
 
-            numPendingBatches = 0;
-            sendObject = messageManager.GetReusableSeaaBuffer();
-            offset = sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size;
+            numPendingBatches = 0;            
+            this.networkSender = new TcpNetworkSender(GetSendSocket(address, port), maxSizeSettings ?? new MaxSizeSettings());
+            networkSender.GetResponseObject();
+            offset = networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size;
             numMessages = 0;
-            sendSocket = GetSendSocket(address, port);
         }
 
         /// <summary>
@@ -215,31 +222,76 @@ namespace FASTER.client
             => InternalDelete(MessageType.Delete, ref key, userContext, serialNo);
 
         /// <summary>
+        /// SubscribeKV operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public void SubscribeKV(Key key, Input input = default, Context userContext = default, long serialNo = 0)
+            => InternalSubscribeKV(MessageType.SubscribeKV, ref key, ref input, userContext, serialNo);
+
+        /// <summary>
+        /// PSubscribeKV operation
+        /// </summary>
+        /// <param name="prefix">Key</param>
+        /// <param name="input">Input</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public void PSubscribeKV(Key prefix, Input input = default, Context userContext = default, long serialNo = 0)
+            => InternalSubscribeKV(MessageType.PSubscribeKV, ref prefix, ref input, userContext, serialNo);
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="desiredValue">Desired value</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public Status Publish(Key key, Value desiredValue, Context userContext = default, long serialNo = 0)
+            => InternalPublish(MessageType.Publish, ref key, ref desiredValue, userContext, serialNo);
+
+        /// <summary>
+        /// SubscribeKV operation
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public void Subscribe(Key key, Context userContext = default, long serialNo = 0)
+            => InternalSubscribe(MessageType.Subscribe, ref key, userContext, serialNo);
+
+        /// <summary>
+        /// PSubscribe operation
+        /// </summary>
+        /// <param name="prefix">Key</param>
+        /// <param name="userContext">User context</param>
+        /// <param name="serialNo">Serial number</param>
+        /// <returns>Status of operation</returns>
+        public void PSubscribe(Key prefix, Context userContext = default, long serialNo = 0)
+            => InternalSubscribe(MessageType.PSubscribe, ref prefix, userContext, serialNo);
+
+        /// <summary>
         /// Flush current buffer of outgoing messages. Does not wait for responses.
         /// </summary>
         public void Flush()
         {
-            if (offset > sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size)
+            if (offset > networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size)
             {
-                int payloadSize = (int)(offset - sendObject.obj.bufferPtr);
+                int payloadSize = (int)(offset - networkSender.GetResponseObjectHead());
 
-                ((BatchHeader*)(sendObject.obj.bufferPtr + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
+                ((BatchHeader*)(networkSender.GetResponseObjectHead() + sizeof(int)))->SetNumMessagesProtocol(numMessages, wireFormat);
                 Interlocked.Increment(ref numPendingBatches);
 
                 // Set packet size in header
-                *(int*)sendObject.obj.bufferPtr = -(payloadSize - sizeof(int));
+                *(int*)networkSender.GetResponseObjectHead() = -(payloadSize - sizeof(int));
 
-                try
-                {
-                    messageManager.Send(sendSocket, sendObject, 0, payloadSize);
-                }
-                catch
-                {
-                    Dispose();
-                    throw;
-                }
-                sendObject = messageManager.GetReusableSeaaBuffer();
-                offset = sendObject.obj.bufferPtr + sizeof(int) + BatchHeader.Size;
+                networkSender.SendResponse(0, payloadSize);
+                networkSender.GetResponseObject();
+                offset = networkSender.GetResponseObjectHead() + sizeof(int) + BatchHeader.Size;
                 numMessages = 0;
             }
         }
@@ -263,9 +315,7 @@ namespace FASTER.client
         public void Dispose()
         {
             disposed = true;
-            sendObject.Dispose();
-            sendSocket.Dispose();
-            messageManager.Dispose();
+            networkSender.Dispose();            
         }
 
         /// <summary>
@@ -281,6 +331,7 @@ namespace FASTER.client
 
 
         int lastSeqNo = -1;
+        readonly Dictionary<int, (Key, Value, Context)> pubsubPendingContext = new();
         readonly Dictionary<int, (Key, Input, Output, Context)> readRmwPendingContext = new();
         readonly Dictionary<int, TaskCompletionSource<(Status, Output)>> readRmwPendingTcs = new();
 
@@ -292,7 +343,7 @@ namespace FASTER.client
                 var src = b;
                 var seqNo = ((BatchHeader*)src)->SeqNo;
                 var count = ((BatchHeader*)src)->NumMessages;
-                if (seqNo != lastSeqNo + 1)
+                if (seqNo != lastSeqNo + 1 && !subscriptionSession)
                     throw new Exception("Out of order message within session");
                 lastSeqNo = seqNo;
 
@@ -321,15 +372,15 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
-                                if (status == Status.OK)
-                                {
-                                    result.Item3 = serializer.ReadOutput(ref src);
-                                    functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
-                                }
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingContext.Add(p, result);
+                                }
+                                else if (status.Found)
+                                {
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
                                 }
                                 else
                                     functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
@@ -341,13 +392,13 @@ namespace FASTER.client
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
-                                if (status == Status.OK)
-                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingTcs.Add(p, tcs);
                                 }
+                                else if (status.Found)
+                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
                                 else
                                     tcs.SetResult((status, default));
                                 break;
@@ -356,15 +407,15 @@ namespace FASTER.client
                             {
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
-                                if (status == Status.OK || status == Status.NOTFOUND)
-                                {
-                                    result.Item3 = serializer.ReadOutput(ref src);
-                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
-                                }
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingContext.Add(p, result);
+                                }
+                                else if (status.IsCompletedSuccessfully)
+                                {
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
                                 }
                                 else
                                     functions.RMWCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
@@ -375,13 +426,13 @@ namespace FASTER.client
                                 var status = ReadStatus(ref src);
                                 var result = readrmwQueue.Dequeue();
                                 var tcs = tcsQueue.Dequeue();
-                                if (status == Status.OK || status == Status.NOTFOUND)
-                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
-                                else if (status == Status.PENDING)
+                                if (status.IsPending)
                                 {
                                     var p = hrw.ReadPendingSeqNo(ref src);
                                     readRmwPendingTcs.Add(p, tcs);
                                 }
+                                else if (status.IsCompletedSuccessfully)
+                                    tcs.SetResult((status, serializer.ReadOutput(ref src)));
                                 else
                                     tcs.SetResult((status, default));
                                 break;
@@ -401,6 +452,102 @@ namespace FASTER.client
                                 tcs.SetResult((status, default));
                                 break;
                             }
+                        case MessageType.SubscribeKV:
+                            {
+                                var status = ReadStatus(ref src);
+                                var p = hrw.ReadPendingSeqNo(ref src);
+                                if (status.IsPending)
+                                {
+                                    var result = readrmwQueue.Dequeue();
+                                    readRmwPendingContext.Add(p, result);
+                                }
+                                else if (status.Found)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                                }
+                                else
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
+                                }
+                                break;
+                            }
+                        case MessageType.PSubscribeKV:
+                            {
+                                var status = ReadStatus(ref src);
+                                var p = hrw.ReadPendingSeqNo(ref src);
+                                if (status.IsPending)
+                                {
+                                    var result = readrmwQueue.Dequeue();
+                                    readRmwPendingContext.Add(p, result);
+                                }
+                                else if (status.Found)
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item1 = serializer.ReadKey(ref src);
+                                    result.Item3 = serializer.ReadOutput(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                                }
+                                else
+                                {
+                                    readRmwPendingContext.TryGetValue(p, out var result);
+                                    result.Item1 = serializer.ReadKey(ref src);
+                                    functions.SubscribeKVCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
+                                }
+                                break;
+                            }
+                        case MessageType.Publish:
+                            {
+                                var status = ReadStatus(ref src);
+                                (Key, Value, Context) result = upsertQueue.Dequeue();
+                                functions.PublishCompletionCallback(ref result.Item1, ref result.Item2, result.Item3);
+                                break;
+                            }
+                        case MessageType.Subscribe:
+                            {
+                                var status = ReadStatus(ref src);
+                                var p = hrw.ReadPendingSeqNo(ref src);
+                                if (status.IsPending)
+                                {
+                                    var result = pubsubQueue.Dequeue();
+                                    pubsubPendingContext.Add(p, result);
+                                }
+                                else if (status.Found)
+                                {
+                                    pubsubPendingContext.TryGetValue(p, out var result);
+                                    result.Item2 = serializer.ReadValue(ref src);
+                                    functions.SubscribeCallback(ref result.Item1, ref result.Item2, result.Item3);
+                                }
+                                else
+                                {
+                                    throw new Exception("Unexpected status of SubscribeKV");
+                                }
+                                break;
+                            }
+                        case MessageType.PSubscribe:
+                            {
+                                var status = ReadStatus(ref src);
+                                var p = hrw.ReadPendingSeqNo(ref src);
+                                if (status.IsPending)
+                                {
+                                    var result = pubsubQueue.Dequeue();
+                                    pubsubPendingContext.Add(p, result);
+                                }
+                                else if (status.Found)
+                                {
+                                    pubsubPendingContext.TryGetValue(p, out var result);
+                                    result.Item1 = serializer.ReadKey(ref src);
+                                    result.Item2 = serializer.ReadValue(ref src);
+                                    functions.SubscribeCallback(ref result.Item1, ref result.Item2, result.Item3);
+                                }
+                                else
+                                {
+                                    throw new Exception("Unexpected status of SubscribeKV");
+                                }
+                                break;
+                            }
                         case MessageType.PendingResult:
                             {
                                 HandlePending(ref src);
@@ -415,7 +562,7 @@ namespace FASTER.client
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status ReadStatus(ref byte* dst) => (Status)(*dst++);
+        private Status ReadStatus(ref byte* dst) => new((StatusCode)(*dst++));
 
         private void HandlePending(ref byte* src)
         {
@@ -433,7 +580,7 @@ namespace FASTER.client
                         readRmwPendingContext.TryGetValue(p, out var result);
                         readRmwPendingContext.Remove(p);
 #endif
-                        if (status == Status.OK)
+                        if (status.Found)
                         {
                             result.Item3 = serializer.ReadOutput(ref src);
                             functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
@@ -452,7 +599,7 @@ namespace FASTER.client
                         readRmwPendingTcs.Remove(p);
 #endif
 
-                        if (status == Status.OK)
+                        if (status.Found)
                             result.SetResult((status, serializer.ReadOutput(ref src)));
                         else
                             result.SetResult((status, default));
@@ -467,7 +614,7 @@ namespace FASTER.client
                         readRmwPendingContext.TryGetValue(p, out var result);
                         readRmwPendingContext.Remove(p);
 #endif
-                        if (status == Status.OK || status == Status.NOTFOUND)
+                        if (status.IsCompletedSuccessfully)
                         {
                             result.Item3 = serializer.ReadOutput(ref src);
                             functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
@@ -485,10 +632,28 @@ namespace FASTER.client
                         readRmwPendingTcs.TryGetValue(p, out var result);
                         readRmwPendingTcs.Remove(p);
 #endif
-                        if (status == Status.OK || status == Status.NOTFOUND)
+                        if (status.IsCompletedSuccessfully)
                             result.SetResult((status, serializer.ReadOutput(ref src)));
                         else
                             result.SetResult((status, default));
+                        break;
+                    }
+                case MessageType.SubscribeKV:
+                    {
+                        var status = ReadStatus(ref src);
+                        if (!readRmwPendingContext.TryGetValue(p, out var result))
+                        {
+                            Debug.WriteLine("Received unexpected subsription key");
+                            break;
+                        }
+
+                        if (status.Found)
+                        {
+                            result.Item3 = serializer.ReadOutput(ref src);
+                            functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref result.Item3, result.Item4, status);
+                        }
+                        else
+                            functions.ReadCompletionCallback(ref result.Item1, ref result.Item2, ref defaultOutput, result.Item4, status);
                         break;
                     }
                 default:
@@ -539,9 +704,11 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalRead(MessageType messageType, ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
+            Debug.Assert(!subscriptionSession);
+
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -551,18 +718,43 @@ namespace FASTER.client
                                 numMessages++;
                                 offset = curr;
                                 readrmwQueue.Enqueue((key, input, output, userContext));
-                                return Status.PENDING;
+                                return Status.CreatePending();
                             }
                 Flush();
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe Status InternalUpsert(MessageType messageType, ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0)
+        private unsafe Status InternalSubscribeKV(MessageType messageType, ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
         {
+            subscriptionSession = true;
+
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
+                byte* curr = offset;
+                if (hrw.Write(messageType, ref curr, (int)(end - curr)))
+                    if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
+                        if (serializer.Write(ref key, ref curr, (int)(end - curr)))
+                            if (serializer.Write(ref input, ref curr, (int)(end - curr)))
+                            {
+                                numMessages++;
+                                offset = curr;
+                                readrmwQueue.Enqueue((key, input, default, userContext));
+                                return Status.CreatePending();
+                            }
+                Flush();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe Status InternalPublish(MessageType messageType, ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0)
+        {
+            Debug.Assert(!subscriptionSession);
+
+            while (true)
+            {
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -572,7 +764,52 @@ namespace FASTER.client
                                 numMessages++;
                                 offset = curr;
                                 upsertQueue.Enqueue((key, desiredValue, userContext));
-                                return Status.PENDING;
+                                return Status.CreatePending();
+                            }
+                Flush();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe Status InternalSubscribe(MessageType messageType, ref Key key, Context userContext = default, long serialNo = 0)
+        {
+            subscriptionSession = true;
+
+            while (true)
+            {
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
+                byte* curr = offset;
+                if (hrw.Write(messageType, ref curr, (int)(end - curr)))
+                    if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
+                        if (serializer.Write(ref key, ref curr, (int)(end - curr)))
+                        {
+                            numMessages++;
+                            offset = curr;
+                            pubsubQueue.Enqueue((key, default, userContext));
+                            return Status.CreatePending();
+                        }
+                Flush();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe Status InternalUpsert(MessageType messageType, ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0)
+        {
+            Debug.Assert(!subscriptionSession);
+
+            while (true)
+            {
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
+                byte* curr = offset;
+                if (hrw.Write(messageType, ref curr, (int)(end - curr)))
+                    if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
+                        if (serializer.Write(ref key, ref curr, (int)(end - curr)))
+                            if (serializer.Write(ref desiredValue, ref curr, (int)(end - curr)))
+                            {
+                                numMessages++;
+                                offset = curr;
+                                upsertQueue.Enqueue((key, desiredValue, userContext));
+                                return Status.CreatePending();
                             }
                 Flush();
             }
@@ -581,9 +818,11 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalRMW(MessageType messageType, ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
         {
+            Debug.Assert(!subscriptionSession);
+
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -593,7 +832,7 @@ namespace FASTER.client
                                 numMessages++;
                                 offset = curr;
                                 readrmwQueue.Enqueue((key, input, output, userContext));
-                                return Status.PENDING;
+                                return Status.CreatePending();
                             }
                 Flush();
             }
@@ -602,9 +841,11 @@ namespace FASTER.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe Status InternalDelete(MessageType messageType, ref Key key, Context userContext = default, long serialNo = 0)
         {
+            Debug.Assert(!subscriptionSession);
+
             while (true)
             {
-                byte* end = sendObject.obj.bufferPtr + bufferSize;
+                byte* end = networkSender.GetResponseObjectHead() + bufferSize;
                 byte* curr = offset;
                 if (hrw.Write(messageType, ref curr, (int)(end - curr)))
                     if (hrw.Write(serialNo, ref curr, (int)(end - curr)))
@@ -613,7 +854,7 @@ namespace FASTER.client
                             numMessages++;
                             offset = curr;
                             upsertQueue.Enqueue((key, default, userContext));
-                            return Status.PENDING;
+                            return Status.CreatePending();
                         }
                 Flush();
             }
@@ -632,7 +873,15 @@ namespace FASTER.client
 
             connState.AddBytesRead(e.BytesTransferred);
             var newHead = connState.TryConsumeMessages(e.Buffer);
-            e.SetBuffer(newHead, e.Buffer.Length - newHead);
+            if (newHead == e.Buffer.Length)
+            {
+                // Need to grow input buffer
+                var newBuffer = new byte[e.Buffer.Length * 2];
+                Array.Copy(e.Buffer, newBuffer, e.Buffer.Length);
+                e.SetBuffer(newBuffer, newHead, newBuffer.Length - newHead);
+            }
+            else
+                e.SetBuffer(newHead, e.Buffer.Length - newHead);
             return true;
         }
 

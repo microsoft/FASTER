@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -14,6 +15,11 @@ namespace FASTER.core
     {
         internal ICheckpointManager checkpointManager;
         internal bool disposeCheckpointManager;
+
+        /// <summary>
+        /// CheckpointManager
+        /// </summary>
+        public ICheckpointManager CheckpointManager => checkpointManager;
 
         // Derived class exposed API
         internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
@@ -143,7 +149,7 @@ namespace FASTER.core
         {
             if (errorCode != 0)
             {
-                Trace.TraceError("AsyncPageReadCallback error: {0}", errorCode);
+                logger?.LogError($"AsyncPageReadCallback error: {errorCode}");
             }
             recoveryCountdown.Decrement();
         }
@@ -158,18 +164,19 @@ namespace FASTER.core
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
-                HashBucket b = *(ptable_ + bucket);
+                HashBucket* b = ptable_ + bucket;
                 while (true)
                 {
                     for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
                     {
-                        entry.word = b.bucket_entries[bucket_entry];
+                        entry.word = b->bucket_entries[bucket_entry];
                         if (entry.Tentative)
-                            b.bucket_entries[bucket_entry] = 0;
+                            b->bucket_entries[bucket_entry] = 0;
                     }
-
-                    if (b.bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
-                    b = *((HashBucket*)overflowBucketsAllocator.GetPhysicalAddress((b.bucket_entries[Constants.kOverflowBucketIndex])));
+                    // Reset any ephemeral bucket level locks
+                    b->bucket_entries[Constants.kOverflowBucketIndex] &= Constants.kAddressMask;
+                    if (b->bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
+                    b = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b->bucket_entries[Constants.kOverflowBucketIndex]);
                 }
             }
         }

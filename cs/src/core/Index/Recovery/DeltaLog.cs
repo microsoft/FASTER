@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -10,6 +11,22 @@ using System.Threading.Tasks;
 
 namespace FASTER.core
 {
+    /// <summary>
+    /// The type of a record in the delta (incremental) log
+    /// </summary>
+    public enum DeltaLogEntryType : int
+    {
+        /// <summary>
+        /// The entry is a delta record
+        /// </summary>
+        DELTA,
+
+        /// <summary>
+        /// The entry is checkpoint metadata
+        /// </summary>
+        CHECKPOINT_METADATA
+    }
+    
     [StructLayout(LayoutKind.Explicit, Size = DeltaLog.HeaderSize)]
     struct DeltalogHeader
     {
@@ -18,7 +35,7 @@ namespace FASTER.core
         [FieldOffset(8)]
         public int Length;
         [FieldOffset(12)]
-        public int Type;
+        public DeltaLogEntryType Type;
     }
 
     /// <summary>
@@ -57,8 +74,8 @@ namespace FASTER.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits, long tailAddress)
-            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, default, logPageSizeBits, false)
+        public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits, long tailAddress, ILogger logger = null)
+            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, default, logPageSizeBits, false, logger: logger)
         {
             LogPageSizeBits = logPageSizeBits;
             PageSize = 1 << LogPageSizeBits;
@@ -151,7 +168,7 @@ namespace FASTER.core
 
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncReadPagesCallback error: {0}", errorCode);
+                    logger?.LogError($"AsyncReadPagesCallback error: {errorCode}");
                     result.cts?.Cancel();
                 }
                 Debug.Assert(result.freeBuffer1 == null);
@@ -177,14 +194,14 @@ namespace FASTER.core
         /// <param name="entryLength"></param>
         /// <param name="type"></param>
         /// <returns></returns>
-        public unsafe bool GetNext(out long physicalAddress, out int entryLength, out int type)
+        public unsafe bool GetNext(out long physicalAddress, out int entryLength, out DeltaLogEntryType type)
         {
             while (true)
             {
                 physicalAddress = 0;
                 entryLength = 0;
                 currentAddress = nextAddress;
-                type = 0;
+                type = DeltaLogEntryType.DELTA;
 
                 var _currentPage = currentAddress >> LogPageSizeBits;
                 var _currentFrame = _currentPage % frameSize;
@@ -211,8 +228,15 @@ namespace FASTER.core
 
                 if (entryLength == 0)
                 {
+                    if (_currentOffset == 0)
+                    {
+                        // We found a hole at beginning of page, this must imply end of delta log
+                        return false;
+                    }
+
+                    // Hole at end of page, skip to next page
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
-                    if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
+                    if (!Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         return false;
                     else
                         continue;
@@ -222,7 +246,7 @@ namespace FASTER.core
                 if (entryLength < 0 || (_currentOffset + recordSize > PageSize))
                 {
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
-                    if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
+                    if (!Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         return false;
                     else
                         continue;
@@ -232,7 +256,7 @@ namespace FASTER.core
                 if (!VerifyBlockChecksum((byte*)physicalAddress, entryLength))
                 {
                     currentAddress = (1 + (currentAddress >> LogPageSizeBits)) << LogPageSizeBits;
-                    if (Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
+                    if (!Utility.MonotonicUpdate(ref nextAddress, currentAddress, out _))
                         return false;
                     else
                         continue;
@@ -264,7 +288,7 @@ namespace FASTER.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe static void SetBlockHeader(int length, int type, byte* dest)
+        private unsafe static void SetBlockHeader(int length, DeltaLogEntryType type, byte* dest)
         {
             ref var header = ref GetHeader((long)dest);
             header.Length = length;
@@ -301,7 +325,7 @@ namespace FASTER.core
         /// </summary>
         /// <param name="entryLength">Entry length</param>
         /// <param name="type">Optional record type</param>
-        public unsafe void Seal(int entryLength, int type = 0)
+        public unsafe void Seal(int entryLength, DeltaLogEntryType type = DeltaLogEntryType.DELTA)
         {
             if (entryLength > 0)
             {
@@ -376,7 +400,7 @@ namespace FASTER.core
             {
                 if (errorCode != 0)
                 {
-                    Trace.TraceError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
+                    logger?.LogError($"AsyncFlushPageToDeviceCallback error: {errorCode}");
                 }
 
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;

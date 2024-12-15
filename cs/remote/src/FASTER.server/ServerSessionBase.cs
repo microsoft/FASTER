@@ -1,109 +1,69 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
 using System.Net.Sockets;
 using FASTER.common;
+using FASTER.core;
+using System.Runtime.CompilerServices;
 
 namespace FASTER.server
 {
     /// <summary>
     /// Abstract base class for server session provider
     /// </summary>
-    public abstract class ServerSessionBase : IServerSession
-    {
-        /// <summary>
-        /// Socket
-        /// </summary>
-        protected readonly Socket socket;
-
-        /// <summary>
-        /// Max size settings
-        /// </summary>
-        protected readonly MaxSizeSettings maxSizeSettings;
-
-        /// <summary>
-        /// Response object
-        /// </summary>
-        protected ReusableObject<SeaaBuffer> responseObject;
-
+    public abstract class ServerSessionBase : IMessageConsumer
+    {      
         /// <summary>
         /// Bytes read
         /// </summary>
-        protected int bytesRead;
-
-        private readonly NetworkSender messageManager;
-        private readonly int serverBufferSize;
-        
+        protected int bytesRead;           
 
         /// <summary>
-        /// Create new instance
+        /// NetworkSender instance
         /// </summary>
-        /// <param name="socket"></param>
-        /// <param name="maxSizeSettings"></param>
-        public ServerSessionBase(Socket socket, MaxSizeSettings maxSizeSettings)
+        protected readonly INetworkSender networkSender;
+
+        /// <summary>
+        ///  Create instance of session backed by given networkSender
+        /// </summary>
+        /// <param name="networkSender"></param>
+        public ServerSessionBase(INetworkSender networkSender)
         {
-            this.socket = socket;
-            this.maxSizeSettings = maxSizeSettings;
-            serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
-            messageManager = new NetworkSender(serverBufferSize);
+            this.networkSender = networkSender;
             bytesRead = 0;
         }
 
         /// <inheritdoc />
-        public abstract int TryConsumeMessages(byte[] buf);
-
-        /// <inheritdoc />
-        public void AddBytesRead(int bytesRead) => this.bytesRead += bytesRead;
+        public abstract unsafe int TryConsumeMessages(byte* req_buf, int bytesRead);
 
         /// <summary>
-        /// Get response object
+        /// Publish an update to a key to all the subscribers of the key
         /// </summary>
-        protected void GetResponseObject() { if (responseObject.obj == null) responseObject = messageManager.GetReusableSeaaBuffer(); }
+        /// <param name="keyPtr"></param>
+        /// <param name="keyLength"></param>
+        /// <param name="valPtr"></param>
+        /// <param name="valLength"></param>
+        /// <param name="inputPtr"></param>
+        /// <param name="sid"></param>
+        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
 
         /// <summary>
-        /// Send response
+        /// Publish an update to a key to all the (prefix) subscribers of the key
         /// </summary>
-        /// <param name="size"></param>
-        protected void SendResponse(int size)
-        {
-            try
-            {
-                messageManager.Send(socket, responseObject, 0, size);
-            }
-            catch
-            {
-                responseObject.Dispose();
-            }
-        }
+        /// <param name="prefixPtr"></param>
+        /// <param name="prefixLength"></param>
+        /// <param name="keyPtr"></param>
+        /// <param name="keyLength"></param>
+        /// <param name="valPtr"></param>
+        /// <param name="valLength"></param>
+        /// <param name="inputPtr"></param>
+        /// <param name="sid"></param>
+        public abstract unsafe void PrefixPublish(byte* prefixPtr, int prefixLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
 
-        /// <summary>
-        /// Send response
-        /// </summary>
-        /// <param name="offset"></param>
-        /// <param name="size"></param>
-        protected void SendResponse(int offset, int size)
-        {
-            try
-            {
-                messageManager.Send(socket, responseObject, offset, size);
-            }
-            catch
-            {
-                responseObject.Dispose();
-            }
-        }
-
-        
         /// <summary>
         /// Dispose
         /// </summary>
-        public virtual void Dispose()
-        {
-            socket.Dispose();
-            if (responseObject.obj != null)
-                responseObject.Dispose();
-            messageManager.Dispose();
-        }
+        public virtual void Dispose() => networkSender?.Dispose();
     }
 }

@@ -42,7 +42,7 @@ namespace FASTER.test.async
 
             fht1 = new (128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
+                new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -60,7 +60,7 @@ namespace FASTER.test.async
                 }
             }
 
-            fht1.TakeFullCheckpoint(out Guid token);
+            fht1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             await fht1.CompleteCheckpointAsync();
 
             fht1.Dispose();
@@ -72,7 +72,7 @@ namespace FASTER.test.async
 
             fht2 = new(128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = test_path, CheckPointType = checkpointType },
+                new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -84,13 +84,13 @@ namespace FASTER.test.async
                     var key = new MyKey { key = keycnt };
                     var status = s2.Read(ref key, ref input, ref output, Empty.Default, 0);
 
-                    if (status == Status.PENDING)
+                    if (status.IsPending)
                         await s2.CompletePendingAsync();
                     else
                     {
                         for (int i = 0; i < output.value.value.Length; i++)
                         {
-                            Assert.IsTrue(output.value.value[i] == (byte)(output.value.value.Length + i));
+                            Assert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);
                         }
                     }
                 }

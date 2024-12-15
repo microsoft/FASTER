@@ -42,7 +42,7 @@ namespace FASTER.server
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref SpanByte ReadValueByRef(ref byte* src)
-        {
+        {            
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
             src += ret.TotalSize;
             return ref ret;
@@ -56,6 +56,20 @@ namespace FASTER.server
             src += ret.TotalSize;
             return ref ret;
         }
+
+        /// <inheritdoc />
+        public bool Write(ref SpanByte k, ref byte* dst, int length)
+        {
+            if (k.Length > length) return false;
+
+            *(int*)dst = k.Length;
+            dst += sizeof(int);
+            var dest = new SpanByte(k.Length, (IntPtr)dst);
+            k.CopyTo(ref dest);
+            dst += k.Length;
+            return true;
+        }
+
 
         /// <inheritdoc />
         public bool Write(ref SpanByteAndMemory k, ref byte* dst, int length)
@@ -73,7 +87,6 @@ namespace FASTER.server
         /// <inheritdoc />
         public ref SpanByteAndMemory AsRefOutput(byte* src, int length)
         {
-            *(int*)src = length - sizeof(int);
             output = SpanByteAndMemory.FromFixedSpan(new Span<byte>(src, length));
             return ref output;
         }

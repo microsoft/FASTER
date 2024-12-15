@@ -18,6 +18,7 @@ namespace FASTER.core
     {
         private readonly bool preallocateFile;
         private readonly bool deleteOnClose;
+        private readonly bool disableFileBuffering;
         private readonly bool osReadBuffering;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
@@ -35,10 +36,11 @@ namespace FASTER.core
         /// <param name="filename">File name (or prefix) with path</param>
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
+        /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="osReadBuffering">Enable OS read buffering</param>
-        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false)
+        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false)
             : base(filename, GetSectorSize(filename), capacity)
         {
             pool = new(1, 1);
@@ -51,10 +53,29 @@ namespace FASTER.core
             this._disposed = false;
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
+            this.disableFileBuffering = disableFileBuffering;
             this.osReadBuffering = osReadBuffering;
             logHandles = new();
             if (recoverDevice)
                 RecoverFiles();
+        }
+
+        /// <inheritdoc />
+        public override void Reset()
+        {
+            while (logHandles.Count > 0)
+            {
+                foreach (var entry in logHandles)
+                {
+                    if (logHandles.TryRemove(entry.Key, out _))
+                    {
+                        entry.Value.Item1.Dispose();
+                        entry.Value.Item2.Dispose();
+                        if (deleteOnClose)
+                            File.Delete(GetSegmentName(entry.Key));
+                    }
+                }
+            }
         }
 
         /// <inheritdoc />
@@ -72,6 +93,10 @@ namespace FASTER.core
             List<int> segids = new();
             foreach (FileInfo item in di.GetFiles(bareName + "*"))
             {
+                if (item.Name == bareName)
+                {
+                    continue;
+                }
                 segids.Add(Int32.Parse(item.Name.Replace(bareName, "").Replace(".", "")));
             }
             segids.Sort();
@@ -417,8 +442,11 @@ namespace FASTER.core
             {
                 logHandle.Item1.Dispose();
                 logHandle.Item2.Dispose();
-                File.Delete(GetSegmentName(segment));
             }
+            try
+            {
+                File.Delete(GetSegmentName(segment));
+            } catch { }
         }
 
         /// <summary>
@@ -463,21 +491,16 @@ namespace FASTER.core
             pool.Free();
         }
 
-
-        private string GetSegmentName(int segmentId)
-        {
-            return FileName + "." + segmentId;
-        }
+        private string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
         private static uint GetSectorSize(string filename)
         {
-#if NETSTANDARD || NET
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 Debug.WriteLine("Assuming 512 byte sector alignment for disk with file " + filename);
                 return 512;
             }
-#endif
+
             if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3),
                                         out uint lpSectorsPerCluster,
                                         out uint _sectorSize,
@@ -511,10 +534,12 @@ namespace FASTER.core
         {
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
-                (FileOptions)FILE_FLAG_NO_BUFFERING |
                 FileOptions.WriteThrough |
                 FileOptions.Asynchronous |
                 FileOptions.None;
+
+            if (disableFileBuffering)
+                fo |= (FileOptions)FILE_FLAG_NO_BUFFERING;
 
             var logWriteHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,

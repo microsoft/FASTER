@@ -4,7 +4,7 @@
 using FASTER.core;
 using NUnit.Framework;
 
-namespace FASTER.test
+namespace FASTER.test.ReadCacheTests
 {
     [TestFixture]
     internal class NativeReadCacheTests
@@ -60,7 +60,7 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.PENDING);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -72,9 +72,9 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Evict the read cache entirely
@@ -88,7 +88,7 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.PENDING);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -100,9 +100,9 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
             
             // Upsert to overwrite the read cache
@@ -120,14 +120,14 @@ namespace FASTER.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
                 var status = session.RMW(ref key1, ref input, ref output, Empty.Default, 0);
-                if (status == Status.PENDING)
+                if (status.IsPending)
                 {
                     session.CompletePending(true);
                 }
                 else
                 {
-                    Assert.IsTrue(output.value.vfield1 == i + 1);
-                    Assert.IsTrue(output.value.vfield2 == i + 2);
+                    Assert.AreEqual(i + 1, output.value.vfield1);
+                    Assert.AreEqual(i + 2, output.value.vfield2);
                 }
             }
 
@@ -139,9 +139,9 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
 
@@ -172,7 +172,7 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.PENDING);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -184,9 +184,9 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Evict the read cache entirely
@@ -200,7 +200,7 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.PENDING);
+                Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
 
@@ -212,9 +212,9 @@ namespace FASTER.test
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status == Status.OK);
-                Assert.IsTrue(output.value.vfield1 == value.vfield1);
-                Assert.IsTrue(output.value.vfield2 == value.vfield2);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
     }

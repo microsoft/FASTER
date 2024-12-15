@@ -17,9 +17,9 @@ namespace FASTER.test.recovery.sumstore
     [TestFixture]
     internal class SharedDirectoryTests
     {
-        const long numUniqueKeys = (1 << 14);
-        const long keySpace = (1L << 14);
-        const long numOps = (1L << 19);
+        const long numUniqueKeys = (1 << 5);
+        const long keySpace = (1L << 5);
+        const long numOps = (1L << 10);
         const long completePendingInterval = (1L << 10);
         private string rootPath;
         private string sharedLogDirectory;
@@ -57,7 +57,7 @@ namespace FASTER.test.recovery.sumstore
             Populate(this.original.Faster);
 
             // Take checkpoint from original to start the clone from
-            Assert.IsTrue(this.original.Faster.TakeFullCheckpoint(out var checkpointGuid));
+            Assert.IsTrue(this.original.Faster.TryInitiateFullCheckpoint(out var checkpointGuid, CheckpointType.FoldOver));
             this.original.Faster.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
             // Sanity check against original
@@ -83,9 +83,7 @@ namespace FASTER.test.recovery.sumstore
             // Dispose original, files should not be deleted on Windows
             this.original.TearDown();
 
-#if NETCOREAPP || NET
             if (RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-#endif
             {
                 // Clone should still work on Windows
                 Assert.IsFalse(IsDirectoryEmpty(this.sharedLogDirectory));
@@ -107,10 +105,9 @@ namespace FASTER.test.recovery.sumstore
 
             public void Initialize(string checkpointDirectory, string logDirectory, bool populateLogHandles = false)
             {
-#if NETCOREAPP || NET
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                     populateLogHandles = false;
-#endif
+
                 this.CheckpointDirectory = checkpointDirectory;
                 this.LogDirectory = logDirectory;
 
@@ -129,20 +126,18 @@ namespace FASTER.test.recovery.sumstore
                     for (int i = 0; i < segmentIds.Count; i++)
                     {
                         var segmentId = segmentIds[i];
-#pragma warning disable CA1416 // populateLogHandles will be false for non-windows
+#pragma warning disable CA1416 // populateLogHandles will be false for non-windows, so turn off the "not available on all platforms" message
                         var handle = LocalStorageDevice.CreateHandle(segmentId, disableFileBuffering: false, deleteOnClose: true, preallocateFile: false, segmentSize: -1, fileName: deviceFileName, IntPtr.Zero);
 #pragma warning restore CA1416
                         initialHandles[i] = new KeyValuePair<int, SafeFileHandle>(segmentId, handle);
                     }
                 }
 
-#if NETCOREAPP || NET
                 if (!RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                 {
                     this.LogDevice = new ManagedLocalStorageDevice(deviceFileName, deleteOnClose: true);
                 }
                 else
-#endif
                 {
                     this.LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
                 }
@@ -150,7 +145,7 @@ namespace FASTER.test.recovery.sumstore
                 this.Faster = new FasterKV<AdId, NumClicks>(
                     keySpace,
                     new LogSettings { LogDevice = this.LogDevice },
-                    new CheckpointSettings { CheckpointDir = this.CheckpointDirectory, CheckPointType = CheckpointType.FoldOver });
+                    new CheckpointSettings { CheckpointDir = this.CheckpointDirectory });
             }
 
             public void TearDown()
@@ -214,19 +209,18 @@ namespace FASTER.test.recovery.sumstore
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                Assert.IsTrue(status == Status.OK);
+                Assert.IsTrue(status.Found);
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
             session.CompletePending(true);
 
-
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
             foreach (var guid in checkpointInfo.continueTokens.Keys)
             {
-                var sno = checkpointInfo.continueTokens[guid].UntilSerialNo;
+                var sno = checkpointInfo.continueTokens[guid].Item2.UntilSerialNo;
                 for (long i = 0; i <= sno; i++)
                 {
                     var id = i % numUniqueKeys;

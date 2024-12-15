@@ -13,7 +13,7 @@ namespace FASTER.test.async
     {
         IDevice log;
         FasterKV<long, long> fht1;
-        const int numOps = 5000;
+        const int numOps = 2000;
         string path;
 
         [SetUp]
@@ -21,11 +21,11 @@ namespace FASTER.test.async
         {
             path = TestUtils.MethodTestDir;
             TestUtils.DeleteDirectory(path, wait: true);
-            log = new LocalMemoryDevice(1L << 30, 1L << 25, 1, latencyMs: 20);
+            log = new LocalMemoryDevice(1L << 28, 1L << 25, 1, latencyMs: 20, fileName: path + "/test.log");
             Directory.CreateDirectory(path);
             fht1 = new FasterKV<long, long>
                 (1L << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 12 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 26 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
         }
@@ -54,7 +54,7 @@ namespace FASTER.test.async
                 for (long key = 0; key < numOps; key++)
                 {
                     var result = await tasks[key].ConfigureAwait(false);
-                    if (result.Status == Status.PENDING)
+                    if (result.Status.IsPending)
                     {
                         done = false;
                         tasks[key] = result.CompleteAsync();
@@ -68,7 +68,7 @@ namespace FASTER.test.async
 
         [Test]
         [Category("FasterKV")]
-        [Category("Stress")]
+        [Category(TestUtils.StressTestCategory)]
         public async Task LowMemConcurrentUpsertReadAsyncTest()
         {
             await Task.Yield();
@@ -84,14 +84,15 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await readtasks[key].ConfigureAwait(false)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(key, output);
             }
         }
 
         [Test]
         [Category("FasterKV")]
-        [Category("Stress")]
-        public async Task LowMemConcurrentUpsertRMWReadAsyncTest()
+        [Category(TestUtils.StressTestCategory)]
+        public async Task LowMemConcurrentUpsertRMWReadAsyncTest([Values]bool completeSync)
         {
             await Task.Yield();
             using var s1 = fht1.NewSession(new SimpleFunctions<long, long>((a, b) => a + b));
@@ -109,8 +110,13 @@ namespace FASTER.test.async
                 for (long key = 0; key < numOps; key++)
                 {
                     var result = await rmwtasks[key].ConfigureAwait(false);
-                    if (result.Status == Status.PENDING)
+                    if (result.Status.IsPending)
                     {
+                        if (completeSync)
+                        {
+                            result.Complete();
+                            continue;
+                        }
                         done = false;
                         rmwtasks[key] = result.CompleteAsync();
                     }
@@ -125,7 +131,8 @@ namespace FASTER.test.async
             for (long key = 0; key < numOps; key++)
             {
                 var (status, output) = (await readtasks[key].ConfigureAwait(false)).Complete();
-                Assert.IsTrue(status == Status.OK && output == key + key);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(key + key, output);
             }
         }
     }

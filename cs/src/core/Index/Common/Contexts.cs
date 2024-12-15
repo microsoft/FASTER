@@ -1,10 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -18,50 +18,115 @@ namespace FASTER.core
         READ,
         RMW,
         UPSERT,
-        INSERT,
-        DELETE
+        DELETE,
+        CONDITIONAL_INSERT,
     }
 
+    [Flags]
     internal enum OperationStatus
     {
-        SUCCESS,
-        NOTFOUND,
+        // Completed Status codes
+
+        /// <summary>
+        /// Operation completed successfully, and a record with the specified key was found.
+        /// </summary>
+        SUCCESS = StatusCode.Found,
+
+        /// <summary>
+        /// Operation completed successfully, and a record with the specified key was not found; the operation may have created a new one.
+        /// </summary>
+        NOTFOUND = StatusCode.NotFound,
+
+        /// <summary>
+        /// Operation was canceled by the client.
+        /// </summary>
+        CANCELED = StatusCode.Canceled,
+
+        /// <summary>
+        /// The maximum range that directly maps to the <see cref="StatusCode"/> enumeration; the operation completed. 
+        /// This is an internal code to reserve ranges in the <see cref="OperationStatus"/> enumeration.
+        /// </summary>
+        MAX_MAP_TO_COMPLETED_STATUSCODE = CANCELED,
+
+        // Not-completed Status codes
+
+        /// <summary>
+        /// Retry operation immediately, within the current epoch. This is only used in situations where another thread does not need to do another operation 
+        /// to bring things into a consistent state.
+        /// </summary>
         RETRY_NOW,
+
+        /// <summary>
+        /// Retry operation immediately, after refreshing the epoch. This is used in situations where another thread may have done an operation that requires it
+        /// to do a subsequent operation to bring things into a consistent state; that subsequent operation may require <see cref="LightEpoch.BumpCurrentEpoch()"/>.
+        /// </summary>
         RETRY_LATER,
+
+        /// <summary>
+        /// I/O has been enqueued and the caller must go through <see cref="IFasterContext{Key, Value, Input, Output, Context}.CompletePending(bool, bool)"/> or
+        /// <see cref="IFasterContext{Key, Value, Input, Output, Context}.CompletePendingWithOutputs(out CompletedOutputIterator{Key, Value, Input, Output, Context}, bool, bool)"/>,
+        /// or one of the Async forms.
+        /// </summary>
         RECORD_ON_DISK,
-        SUCCESS_UNMARK,
+
+        /// <summary>
+        /// A checkpoint is in progress so the operation must be retried internally after refreshing the epoch and updating the session context version.
+        /// </summary>
         CPR_SHIFT_DETECTED,
-        CPR_PENDING_DETECTED,
-        ALLOCATE_FAILED
+
+        /// <summary>
+        /// Allocation failed, due to a need to flush pages. Clients do not see this status directly; they see <see cref="Status.IsPending"/>.
+        /// <list type="bullet">
+        ///   <item>For Sync operations we retry this as part of <see cref="FasterKV{Key, Value}.HandleImmediateRetryStatus{Input, Output, Context, FasterSession}(OperationStatus, FasterSession, ref FasterKV{Key, Value}.PendingContext{Input, Output, Context})"/>.</item>
+        ///   <item>For Async operations we retry this as part of the ".Complete(...)" or ".CompleteAsync(...)" operation on the appropriate "*AsyncResult{}" object.</item>
+        /// </list>
+        /// </summary>
+        ALLOCATE_FAILED,
+
+        /// <summary>
+        /// An internal code to reserve ranges in the <see cref="OperationStatus"/> enumeration.
+        /// </summary>
+        BASIC_MASK = 0xFF,      // Leave plenty of space for future expansion
+
+        ADVANCED_MASK = 0x700,  // Coordinate any changes with OperationStatusUtils.OpStatusToStatusCodeShif
+        CREATED_RECORD = StatusCode.CreatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        INPLACE_UPDATED_RECORD = StatusCode.InPlaceUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPY_UPDATED_RECORD = StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPIED_RECORD = StatusCode.CopiedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
+        COPIED_RECORD_TO_READ_CACHE = StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift,
+        // unused (StatusCode)0x60,
+        // unused (StatusCode)0x70,
+        EXPIRED = StatusCode.Expired << OperationStatusUtils.OpStatusToStatusCodeShift
     }
 
-    internal class SerializedFasterExecutionContext
+    internal static class OperationStatusUtils
     {
-        internal int version;
-        internal long serialNum;
-        internal string guid;
+        // StatusCode has this in the high nybble of the first (only) byte; put it in the low nybble of the second byte here).
+        // Coordinate any changes with OperationStatus.ADVANCED_MASK.
+        internal const int OpStatusToStatusCodeShift = 4;
 
-        /// <summary>
-        /// </summary>
-        /// <param name="writer"></param>
-        public void Write(StreamWriter writer)
+        internal static OperationStatus BasicOpCode(OperationStatus status) => status & OperationStatus.BASIC_MASK;
+
+        internal static OperationStatus AdvancedOpCode(OperationStatus status, StatusCode advancedStatusCode) => status | (OperationStatus)((int)advancedStatusCode << OpStatusToStatusCodeShift);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool TryConvertToCompletedStatusCode(OperationStatus advInternalStatus, out Status statusCode)
         {
-            writer.WriteLine(version);
-            writer.WriteLine(guid);
-            writer.WriteLine(serialNum);
+            var internalStatus = BasicOpCode(advInternalStatus);
+            if (internalStatus <= OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE)
+            {
+                statusCode = new(advInternalStatus);
+                return true;
+            }
+            statusCode = default;
+            return false;
         }
 
-        /// <summary>
-        /// </summary>
-        /// <param name="reader"></param>
-        public void Load(StreamReader reader)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsAppend(OperationStatus internalStatus)
         {
-            string value = reader.ReadLine();
-            version = int.Parse(value);
-
-            guid = reader.ReadLine();
-            value = reader.ReadLine();
-            serialNum = long.Parse(value);
+            var advInternalStatus = internalStatus & OperationStatus.ADVANCED_MASK;
+            return advInternalStatus == OperationStatus.CREATED_RECORD || advInternalStatus == OperationStatus.COPY_UPDATED_RECORD;
         }
     }
 
@@ -76,26 +141,50 @@ namespace FASTER.core
             internal IHeapContainer<Input> input;
             internal Output output;
             internal Context userContext;
+            internal long keyHash;
 
             // Some additional information about the previous attempt
             internal long id;
-            internal int version;
+            internal long version;
             internal long logicalAddress;
             internal long serialNum;
             internal HashBucketEntry entry;
-            internal LatchOperation heldLatch;
 
-            internal byte operationFlags;
+            // operationFlags values
+            internal ushort operationFlags;
+            internal const ushort kNoOpFlags = 0;
+            internal const ushort kNoKey = 0x0001;
+            internal const ushort kIsAsync = 0x0002;
+            internal const ushort kHadStartAddress = 0x0004;
+
+            internal ReadCopyOptions readCopyOptions;
+
             internal RecordInfo recordInfo;
             internal long minAddress;
+            internal WriteReason writeReason;   // for ConditionalCopyToTail
 
-            // Note: Must be kept in sync with corresponding ReadFlags enum values
-            internal const byte kSkipReadCache = 0x01;
-            internal const byte kMinAddress = 0x02;
+            // For flushing head pages on tail allocation.
+            internal CompletionEvent flushEvent;
 
-            internal const byte kNoKey = 0x10;
-            internal const byte kSkipCopyReadsToTail = 0x20;
-            internal const byte kIsAsync = 0x40;
+            // For RMW if an allocation caused the source record for a copy to go from readonly to below HeadAddress, or for any operation with CAS failure.
+            internal long retryNewLogicalAddress;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions, bool isAsync = false, bool noKey = false)
+            {
+                // The async flag is often set when the PendingContext is created, so preserve that.
+                this.operationFlags = (ushort)((noKey ? kNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
+                this.readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
+                this.minAddress = readOptions.StopAddress;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal PendingContext(ReadCopyOptions readCopyOptions, bool isAsync = false, bool noKey = false)
+            {
+                // The async flag is often set when the PendingContext is created, so preserve that.
+                this.operationFlags = (ushort)((noKey ? kNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
+                this.readCopyOptions = readCopyOptions;
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal IHeapContainer<Key> DetachKey()
@@ -113,75 +202,63 @@ namespace FASTER.core
                 return tempInputContainer;
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static byte GetOperationFlags(ReadFlags readFlags, bool noKey = false)
-            {
-                Debug.Assert((byte)ReadFlags.SkipReadCache == kSkipReadCache);
-                Debug.Assert((byte)ReadFlags.MinAddress == kMinAddress);
-                byte flags = (byte)(readFlags & (ReadFlags.SkipReadCache | ReadFlags.MinAddress));
-                if (noKey) flags |= kNoKey;
-
-                // This is always set true for the Read overloads (Reads by address) that call this method.
-                flags |= kSkipCopyReadsToTail;
-                return flags;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(ReadFlags readFlags, long address, bool noKey = false) 
-                => this.SetOperationFlags(GetOperationFlags(readFlags, noKey), address);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SetOperationFlags(byte flags, long address)
-            {
-                this.operationFlags = flags;
-                if (this.HasMinAddress)
-                    this.minAddress = address;
-            }
-
             internal bool NoKey
             {
                 get => (operationFlags & kNoKey) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kNoKey) : (byte)(operationFlags & ~kNoKey);
+                set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
             }
 
-            internal bool SkipReadCache
-            {
-                get => (operationFlags & kSkipReadCache) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kSkipReadCache) : (byte)(operationFlags & ~kSkipReadCache);
-            }
-
-            internal bool HasMinAddress
-            {
-                get => (operationFlags & kMinAddress) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kMinAddress) : (byte)(operationFlags & ~kMinAddress);
-            }
-
-            internal bool SkipCopyReadsToTail
-            {
-                get => (operationFlags & kSkipCopyReadsToTail) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kSkipCopyReadsToTail) : (byte)(operationFlags & ~kSkipCopyReadsToTail);
-            }
+            internal bool HasMinAddress => this.minAddress != Constants.kInvalidAddress;
 
             internal bool IsAsync
             {
                 get => (operationFlags & kIsAsync) != 0;
-                set => operationFlags = value ? (byte)(operationFlags | kIsAsync) : (byte)(operationFlags & ~kIsAsync);
+                set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
+            }
+
+            internal bool HadStartAddress
+            {
+                get => (operationFlags & kHadStartAddress) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kHadStartAddress) : (ushort)(operationFlags & ~kHadStartAddress);
+            }
+
+            internal long InitialEntryAddress
+            {
+                get => recordInfo.PreviousAddress;
+                set => recordInfo.PreviousAddress = value;
+            }
+
+            internal long InitialLatestLogicalAddress
+            {
+                get => entry.Address;
+                set => entry.Address = value;
             }
 
             public void Dispose()
             {
                 key?.Dispose();
+                key = default;
                 value?.Dispose();
+                value = default;
                 input?.Dispose();
+                input = default;
             }
         }
 
-        internal sealed class FasterExecutionContext<Input, Output, Context> : SerializedFasterExecutionContext
+        internal sealed class FasterExecutionContext<Input, Output, Context>
         {
+            internal int sessionID;
+            internal string sessionName;
+
+            // Control automatic Read copy operations. These flags override flags specified at the FasterKV level, but may be overridden on the individual Read() operations
+            internal ReadCopyOptions ReadCopyOptions;
+
+            internal long version;
+            internal long serialNum;
             public Phase phase;
+
             public bool[] markers;
             public long totalPending;
-            public Queue<PendingContext<Input, Output, Context>> retryRequests;
             public Dictionary<long, PendingContext<Input, Output, Context>> ioPendingRequests;
             public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
@@ -191,14 +268,10 @@ namespace FASTER.core
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 
-            public bool HasNoPendingRequests
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get
-                {
-                    return SyncIoPendingCount == 0 && retryRequests.Count == 0;
-                }
-            }
+            internal void MergeReadCopyOptions(ReadCopyOptions storeCopyOptions, ReadCopyOptions copyOptions)
+                => this.ReadCopyOptions = ReadCopyOptions.Merge(storeCopyOptions, copyOptions);
+
+            public bool HasNoPendingRequests => SyncIoPendingCount == 0;
 
             public void WaitPending(LightEpoch epoch)
             {
@@ -221,6 +294,8 @@ namespace FASTER.core
                 if (SyncIoPendingCount > 0)
                     await readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
             }
+
+            public bool InNewVersion => phase < Phase.REST;
 
             public FasterExecutionContext<Input, Output, Context> prevCtx;
         }
@@ -247,7 +322,7 @@ namespace FASTER.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        const int CheckpointVersion = 2;
+        const int CheckpointVersion = 5;
 
         /// <summary>
         /// Guid
@@ -260,15 +335,19 @@ namespace FASTER.core
         /// <summary>
         /// Version
         /// </summary>
-        public int version;
+        public long version;
         /// <summary>
         /// Next Version
         /// </summary>
-        public int nextVersion;
+        public long nextVersion;
         /// <summary>
-        /// Flushed logical address
+        /// Flushed logical address; indicates the latest immutable address on the main FASTER log at checkpoint commit time.
         /// </summary>
         public long flushedLogicalAddress;
+        /// <summary>
+        /// Flushed logical address at snapshot start; indicates device offset for snapshot file
+        /// </summary>
+        public long snapshotStartFlushedLogicalAddress;
         /// <summary>
         /// Start logical address
         /// </summary>
@@ -292,14 +371,30 @@ namespace FASTER.core
         public long beginAddress;
 
         /// <summary>
-        /// Commit tokens per session restored during Continue
+        /// If true, there was at least one IFasterContext implementation active that did manual locking at some point during the checkpoint;
+        /// these pages must be scanned for lock cleanup.
         /// </summary>
-        public ConcurrentDictionary<string, CommitPoint> continueTokens;
+        public bool manualLockingActive;
+
+        /// <summary>
+        /// Commit tokens per session restored during Restore()
+        /// </summary>
+        public ConcurrentDictionary<int, (string, CommitPoint)> continueTokens;
+
+        /// <summary>
+        /// Map of session name to session ID restored during Restore()
+        /// </summary>
+        public ConcurrentDictionary<string, int> sessionNameMap;
 
         /// <summary>
         /// Commit tokens per session created during Checkpoint
         /// </summary>
-        public ConcurrentDictionary<string, CommitPoint> checkpointTokens;
+        public ConcurrentDictionary<int, (string, CommitPoint)> checkpointTokens;
+
+        /// <summary>
+        /// Max session ID
+        /// </summary>
+        public int maxSessionID;
 
         /// <summary>
         /// Object log segment offsets
@@ -308,7 +403,9 @@ namespace FASTER.core
 
 
         /// <summary>
-        /// Tail address of delta file
+        /// Tail address of delta file: -1 indicates this is not a delta checkpoint metadata
+        /// At recovery, this value denotes the delta tail address excluding the metadata record for the checkpoint
+        /// because we create the metadata before writing to the delta file.
         /// </summary>
         public long deltaTailAddress;
 
@@ -317,19 +414,20 @@ namespace FASTER.core
         /// </summary>
         /// <param name="token"></param>
         /// <param name="_version"></param>
-        public void Initialize(Guid token, int _version)
+        public void Initialize(Guid token, long _version)
         {
             guid = token;
             useSnapshotFile = 0;
             version = _version;
             flushedLogicalAddress = 0;
+            snapshotStartFlushedLogicalAddress = 0;
             startLogicalAddress = 0;
             finalLogicalAddress = 0;
             snapshotFinalLogicalAddress = 0;
-            deltaTailAddress = 0;
+            deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
             headAddress = 0;
 
-            checkpointTokens = new ConcurrentDictionary<string, CommitPoint>();
+            checkpointTokens = new();
 
             objectLogSegmentOffsets = null;
         }
@@ -340,10 +438,15 @@ namespace FASTER.core
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            continueTokens = new ConcurrentDictionary<string, CommitPoint>();
+            continueTokens = new();
 
             string value = reader.ReadLine();
             var cversion = int.Parse(value);
+
+            bool translateV4toV5 = (cversion == 4 && CheckpointVersion == 5);
+
+            if (cversion != CheckpointVersion && !translateV4toV5)
+                throw new FasterException($"Invalid checkpoint version {cversion} encountered, current version is {CheckpointVersion}, cannot recover with this checkpoint");
 
             value = reader.ReadLine();
             var checksum = long.Parse(value);
@@ -355,13 +458,23 @@ namespace FASTER.core
             useSnapshotFile = int.Parse(value);
 
             value = reader.ReadLine();
-            version = int.Parse(value);
+            version = long.Parse(value);
 
             value = reader.ReadLine();
-            nextVersion = int.Parse(value);
+            nextVersion = long.Parse(value);
 
             value = reader.ReadLine();
             flushedLogicalAddress = long.Parse(value);
+
+            if (!translateV4toV5)
+            {
+                value = reader.ReadLine();
+                snapshotStartFlushedLogicalAddress = long.Parse(value);
+            }
+            else
+            {
+                snapshotStartFlushedLogicalAddress = flushedLogicalAddress;
+            }
 
             value = reader.ReadLine();
             startLogicalAddress = long.Parse(value);
@@ -382,24 +495,34 @@ namespace FASTER.core
             deltaTailAddress = long.Parse(value);
 
             value = reader.ReadLine();
+            manualLockingActive = bool.Parse(value);
+
+            value = reader.ReadLine();
             var numSessions = int.Parse(value);
 
             for (int i = 0; i < numSessions; i++)
             {
-                var guid = reader.ReadLine();
-                value = reader.ReadLine();
-                var serialno = long.Parse(value);
+                var sessionID = int.Parse(reader.ReadLine());
+                var sessionName = reader.ReadLine();
+                if (sessionName == "") sessionName = null;
+                var serialno = long.Parse(reader.ReadLine());
 
                 var exclusions = new List<long>();
                 var exclusionCount = int.Parse(reader.ReadLine());
                 for (int j = 0; j < exclusionCount; j++)
                     exclusions.Add(long.Parse(reader.ReadLine()));
 
-                continueTokens.TryAdd(guid, new CommitPoint
+                continueTokens.TryAdd(sessionID, (sessionName, new CommitPoint
                 {
                     UntilSerialNo = serialno,
                     ExcludedSerialNos = exclusions
-                });
+                }));
+                if (sessionName != null)
+                {
+                    sessionNameMap ??= new();
+                    sessionNameMap.TryAdd(sessionName, sessionID);
+                }
+                if (sessionID > maxSessionID) maxSessionID = sessionID;
             }
 
             // Read object log segment offsets
@@ -415,9 +538,6 @@ namespace FASTER.core
                 }
             }
 
-            if (cversion != CheckpointVersion)
-                throw new FasterException("Invalid version");
-
             if (checksum != Checksum(continueTokens.Count))
                 throw new FasterException("Invalid checksum for checkpoint");
         }
@@ -428,15 +548,20 @@ namespace FASTER.core
         /// <param name="token"></param>
         /// <param name="checkpointManager"></param>
         /// <param name="deltaLog"></param>
-        internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null)
+        /// <param name = "scanDelta">
+        /// whether to scan the delta log to obtain the latest info contained in an incremental snapshot checkpoint.
+        /// If false, this will recover the base snapshot info but avoid potentially expensive scans.
+        /// </param>
+        /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
+        internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog);
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
         }
-        
+
         /// <summary>
         ///  Recover info from token
         /// </summary>
@@ -444,15 +569,26 @@ namespace FASTER.core
         /// <param name="checkpointManager"></param>
         /// <param name="deltaLog"></param>
         /// <param name="commitCookie"> Any user-specified commit cookie written as part of the checkpoint </param>
-        internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null)
+        /// <param name = "scanDelta">
+        /// whether to scan the delta log to obtain the latest info contained in an incremental snapshot checkpoint.
+        /// If false, this will recover the base snapshot info but avoid potentially expensive scans.
+        /// </param>
+        /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
+
+        internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog);
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
             if (metadata == null)
                 throw new FasterException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
+            if (scanDelta && deltaLog != null && deltaTailAddress >= 0)
+            {
+                // Adjust delta tail address to include the metadata record
+                deltaTailAddress = deltaLog.NextAddress;
+            }
             var cookie = s.ReadToEnd();
-            commitCookie =  cookie.Length == 0 ? null : Convert.FromBase64String(cookie);
+            commitCookie = cookie.Length == 0 ? null : Convert.FromBase64String(cookie);
         }
 
         /// <summary>
@@ -472,20 +608,23 @@ namespace FASTER.core
                     writer.WriteLine(version);
                     writer.WriteLine(nextVersion);
                     writer.WriteLine(flushedLogicalAddress);
+                    writer.WriteLine(snapshotStartFlushedLogicalAddress);
                     writer.WriteLine(startLogicalAddress);
                     writer.WriteLine(finalLogicalAddress);
                     writer.WriteLine(snapshotFinalLogicalAddress);
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
                     writer.WriteLine(deltaTailAddress);
+                    writer.WriteLine(manualLockingActive);
 
                     writer.WriteLine(checkpointTokens.Count);
                     foreach (var kvp in checkpointTokens)
                     {
                         writer.WriteLine(kvp.Key);
-                        writer.WriteLine(kvp.Value.UntilSerialNo);
-                        writer.WriteLine(kvp.Value.ExcludedSerialNos.Count);
-                        foreach (long item in kvp.Value.ExcludedSerialNos)
+                        writer.WriteLine(kvp.Value.Item1);
+                        writer.WriteLine(kvp.Value.Item2.UntilSerialNo);
+                        writer.WriteLine(kvp.Value.Item2.ExcludedSerialNos.Count);
+                        foreach (long item in kvp.Value.Item2.ExcludedSerialNos)
                             writer.WriteLine(item);
                     }
 
@@ -508,39 +647,41 @@ namespace FASTER.core
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
+            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
                 ^ checkpointTokensCount ^ (objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
         }
 
         /// <summary>
         /// Print checkpoint info for debugging purposes
         /// </summary>
-        public readonly void DebugPrint()
+        public readonly void DebugPrint(ILogger logger)
         {
-            Debug.WriteLine("******** HybridLog Checkpoint Info for {0} ********", guid);
-            Debug.WriteLine("Version: {0}", version);
-            Debug.WriteLine("Next Version: {0}", nextVersion);
-            Debug.WriteLine("Is Snapshot?: {0}", useSnapshotFile == 1);
-            Debug.WriteLine("Flushed LogicalAddress: {0}", flushedLogicalAddress);
-            Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
-            Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
-            Debug.WriteLine("Snapshot Final Logical Address: {0}", snapshotFinalLogicalAddress);
-            Debug.WriteLine("Head Address: {0}", headAddress);
-            Debug.WriteLine("Begin Address: {0}", beginAddress);
-            Debug.WriteLine("Delta Tail Address: {0}", deltaTailAddress);
-            Debug.WriteLine("Num sessions recovered: {0}", continueTokens.Count);
-            Debug.WriteLine("Recovered sessions: ");
+            logger?.LogInformation("******** HybridLog Checkpoint Info for {guid} ********", guid);
+            logger?.LogInformation("Version: {version}", version);
+            logger?.LogInformation("Next Version: {nextVersion}", nextVersion);
+            logger?.LogInformation("Is Snapshot?: {useSnapshotFile}", useSnapshotFile == 1);
+            logger?.LogInformation("Flushed LogicalAddress: {flushedLogicalAddress}", flushedLogicalAddress);
+            logger?.LogInformation("SnapshotStart Flushed LogicalAddress: {snapshotStartFlushedLogicalAddress}", snapshotStartFlushedLogicalAddress);
+            logger?.LogInformation("Start Logical Address: {startLogicalAddress}", startLogicalAddress);
+            logger?.LogInformation("Final Logical Address: {finalLogicalAddress}", finalLogicalAddress);
+            logger?.LogInformation("Snapshot Final Logical Address: {snapshotFinalLogicalAddress}", snapshotFinalLogicalAddress);
+            logger?.LogInformation("Head Address: {headAddress}", headAddress);
+            logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
+            logger?.LogInformation("Delta Tail Address: {deltaTailAddress}", deltaTailAddress);
+            logger?.LogInformation("Manual Locking Active: {manualLockingActive}", manualLockingActive);
+            logger?.LogInformation("Num sessions recovered: {continueTokensCount}", continueTokens.Count);
+            logger?.LogInformation("Recovered sessions: ");
             foreach (var sessionInfo in continueTokens.Take(10))
             {
-                Debug.WriteLine("{0}: {1}", sessionInfo.Key, sessionInfo.Value);
+                logger?.LogInformation("{sessionInfo.Key}: {sessionInfo.Value}", sessionInfo.Key, sessionInfo.Value);
             }
 
             if (continueTokens.Count > 10)
-                Debug.WriteLine("... {0} skipped", continueTokens.Count - 10);
+                logger?.LogInformation("... {continueTokensSkipped} skipped", continueTokens.Count - 10);
         }
     }
 
-    internal struct HybridLogCheckpointInfo
+    internal struct HybridLogCheckpointInfo : IDisposable
     {
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
@@ -548,55 +689,68 @@ namespace FASTER.core
         public IDevice deltaFileDevice;
         public DeltaLog deltaLog;
         public SemaphoreSlim flushedSemaphore;
-        public int prevVersion;
+        public long prevVersion;
 
-        public void Initialize(Guid token, int _version, ICheckpointManager checkpointManager)
+        public void Initialize(Guid token, long _version, ICheckpointManager checkpointManager)
         {
             info.Initialize(token, _version);
             checkpointManager.InitializeLogCheckpoint(token);
         }
 
-        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits)
+        public void Dispose()
         {
-            deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
-            deltaFileDevice.Initialize(-1);
-            if (deltaFileDevice.GetFileSize(0) > 0)
-            {
-                deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
-                deltaLog.InitializeForReads();
-                info.Recover(token, checkpointManager, deltaLog);
-            }
-            else
-            {
-                info.Recover(token, checkpointManager, null);
-            }
+            snapshotFileDevice?.Dispose();
+            snapshotFileObjectLogDevice?.Dispose();
+            deltaLog?.Dispose();
+            deltaFileDevice?.Dispose();
+            this = default;
+        }
+
+        public HybridLogCheckpointInfo Transfer()
+        {
+            // Ownership transfer of handles across struct copies
+            var dest = this;
+            dest.snapshotFileDevice = default;
+            dest.snapshotFileObjectLogDevice = default;
+            this.deltaLog = default;
+            this.deltaFileDevice = default;
+            return dest;
         }
 
         public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
-            out byte[] commitCookie)
+            bool scanDelta = false, long recoverTo = -1)
         {
             deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
-            deltaFileDevice.Initialize(-1);
-            if (deltaFileDevice.GetFileSize(0) > 0)
+            if (deltaFileDevice is not null)
             {
-                deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
-                deltaLog.InitializeForReads();
-                info.Recover(token, checkpointManager, out commitCookie, deltaLog);
+                deltaFileDevice.Initialize(-1);
+                if (deltaFileDevice.GetFileSize(0) > 0)
+                {
+                    deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
+                    deltaLog.InitializeForReads();
+                    info.Recover(token, checkpointManager, deltaLog, scanDelta, recoverTo);
+                    return;
+                }
             }
-            else
-            {
-                info.Recover(token, checkpointManager, out commitCookie);
-            }
+            info.Recover(token, checkpointManager, null);
         }
 
-        public void Reset()
+        public void Recover(Guid token, ICheckpointManager checkpointManager, int deltaLogPageSizeBits,
+            out byte[] commitCookie, bool scanDelta = false, long recoverTo = -1)
         {
-            flushedSemaphore = null;
-            info = default;
-            snapshotFileDevice?.Dispose();
-            snapshotFileDevice = null;
-            snapshotFileObjectLogDevice?.Dispose();
-            snapshotFileObjectLogDevice = null;
+            deltaFileDevice = checkpointManager.GetDeltaLogDevice(token);
+            if (deltaFileDevice is not null)
+            {
+                deltaFileDevice.Initialize(-1);
+                if (deltaFileDevice.GetFileSize(0) > 0)
+                {
+                    deltaLog = new DeltaLog(deltaFileDevice, deltaLogPageSizeBits, -1);
+                    deltaLog.InitializeForReads();
+                    info.Recover(token, checkpointManager, out commitCookie, deltaLog, scanDelta, recoverTo);
+                    return;
+                }
+            }
+            info.Recover(token, checkpointManager, out commitCookie);
         }
 
         public bool IsDefault()
@@ -665,6 +819,7 @@ namespace FASTER.core
 
         public void Recover(Guid guid, ICheckpointManager checkpointManager)
         {
+            this.token = guid;
             var metadata = checkpointManager.GetIndexCheckpointMetadata(guid);
             if (metadata == null)
                 throw new FasterException("Invalid index commit metadata for ID " + guid.ToString());
@@ -702,15 +857,15 @@ namespace FASTER.core
                         ^ num_buckets ^ startLogicalAddress ^ finalLogicalAddress;
         }
 
-        public readonly void DebugPrint()
+        public readonly void DebugPrint(ILogger logger)
         {
-            Debug.WriteLine("******** Index Checkpoint Info for {0} ********", token);
-            Debug.WriteLine("Table Size: {0}", table_size);
-            Debug.WriteLine("Main Table Size (in GB): {0}", ((double)num_ht_bytes) / 1000.0 / 1000.0 / 1000.0);
-            Debug.WriteLine("Overflow Table Size (in GB): {0}", ((double)num_ofb_bytes) / 1000.0 / 1000.0 / 1000.0);
-            Debug.WriteLine("Num Buckets: {0}", num_buckets);
-            Debug.WriteLine("Start Logical Address: {0}", startLogicalAddress);
-            Debug.WriteLine("Final Logical Address: {0}", finalLogicalAddress);
+            logger?.LogInformation("******** Index Checkpoint Info for {token} ********", token);
+            logger?.LogInformation("Table Size: {table_size}", table_size);
+            logger?.LogInformation("Main Table Size (in GB): {num_ht_bytes}", ((double)num_ht_bytes) / 1000.0 / 1000.0 / 1000.0);
+            logger?.LogInformation("Overflow Table Size (in GB): {num_ofb_bytes}", ((double)num_ofb_bytes) / 1000.0 / 1000.0 / 1000.0);
+            logger?.LogInformation("Num Buckets: {num_buckets}", num_buckets);
+            logger?.LogInformation("Start Logical Address: {startLogicalAddress}", startLogicalAddress);
+            logger?.LogInformation("Final Logical Address: {finalLogicalAddress}", finalLogicalAddress);
         }
 
         public void Reset()
