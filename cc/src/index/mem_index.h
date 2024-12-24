@@ -138,6 +138,11 @@ class MemHashIndex : public IHashIndex<D> {
   template<class R>
   void Grow();
 
+  // Compact index by moving valid entries from deeper overflow buckets
+  // to empty ones (i.e., "holes") available earlier.
+  // UNSAFE operation -- do not use concurrently with other index ops
+  void UnsafeCompact();
+
   // Hash index ops do not go pending
   void StartSession() { };
   void StopSession() { };
@@ -185,6 +190,11 @@ class MemHashIndex : public IHashIndex<D> {
   bool AllocateNextBucket(hash_bucket_t*& current, uint8_t version) {
     return HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>::AllocateNextBucket(
       overflow_buckets_allocator_[version], current);
+  }
+  FixedPageAddress UnsafeFreeBucket(uint8_t version, FixedPageAddress bucket_address,
+                                    hash_bucket_t* previous = nullptr) {
+    return HashBucketOverflowEntryHelper<D, HID, HasOverflowBucket>::UnsafeFreeBucket(
+      overflow_buckets_allocator_[version], bucket_address, previous);
   }
 
   // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
@@ -470,6 +480,41 @@ struct HashBucketOverflowEntryHelper {
     current = &overflow_buckets_allocator_.Get(new_bucket_addr);
     return true;
   }
+
+  static FixedPageAddress UnsafeFreeBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                                           FixedPageAddress bucket_address, hash_bucket_t* previous) {
+    FixedPageAddress current_bucket_address{ FixedPageAddress::kInvalidAddress };
+    if (previous != nullptr) {
+      // retrieve bucket address
+      current_bucket_address = previous->overflow_entry.load().address();
+      // mark overflow entry of previous bucket
+      previous->overflow_entry.store(HashBucketEntry::kInvalidEntry);
+    }
+
+    if (bucket_address.control() == FixedPageAddress::kInvalidAddress) {
+      if (current_bucket_address.control() != FixedPageAddress::kInvalidAddress) {
+        // use prev->next address to populate missing bucket_address value
+        bucket_address = current_bucket_address;
+      } else {
+        log_error("Provided bucket address is invalid [%lu]", bucket_address.control());
+        return FixedPageAddress::kInvalidAddress;
+      }
+    } else if (current_bucket_address.control() != FixedPageAddress::kInvalidAddress) {
+      log_warn("Bucket addresses differ [prev->next: %lu, curr: %lu]",
+               current_bucket_address.control(), bucket_address.control());
+    }
+
+    // store the address of next bucket (if any)
+    FixedPageAddress next_address;
+    hash_bucket_t* current = &overflow_buckets_allocator_.Get(bucket_address);
+    HashBucketOverflowEntry overflow_entry{ current->overflow_entry.load() };
+    if (!overflow_entry.unused()) {
+      next_address = overflow_entry.address();
+    }
+    // free current bucket
+    overflow_buckets_allocator_.FreeAtEpoch(bucket_address, 0);
+    return next_address;
+  }
 };
 
 template <class D, class HID>
@@ -500,6 +545,11 @@ struct HashBucketOverflowEntryHelper<D, HID, false> {
   static bool AllocateNextBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
                                 hash_bucket_t*& current) {
     return false;
+  }
+
+  static FixedPageAddress UnsafeFreeBucket(overflow_buckets_allocator_t& overflow_buckets_allocator_,
+                                           FixedPageAddress bucket_address, hash_bucket_t* previous) {
+    return FixedPageAddress::kInvalidAddress;
   }
 };
 
@@ -755,6 +805,95 @@ inline void MemHashIndex<D, HID>::Grow() {
     }
   }
 }
+
+template <class D, class HID>
+inline void MemHashIndex<D, HID>::UnsafeCompact() {
+  FixedPageAddress next_bucket_address{ FixedPageAddress::kInvalidAddress };
+  uint8_t version = this->resize_info.version;
+
+  for (uint64_t idx = 0; idx < table_[version].size(); ++idx) {
+    hash_bucket_t* front_bucket = &table_[version].bucket(idx);
+    hash_bucket_t* back_bucket = front_bucket;
+
+    AtomicHashBucketEntry* next_free_entry = nullptr;
+    uint32_t back_entry_idx = 0;
+
+    do {
+      for(uint32_t front_entry_idx = 0; front_entry_idx < hash_bucket_t::kNumEntries; ++front_entry_idx) {
+        AtomicHashBucketEntry* front_atomic_entry = &(front_bucket->entries[front_entry_idx]);
+        hash_bucket_entry_t front_bucket_entry{ front_atomic_entry->load() };
+        HashBucketEntry front_bucket_expected_entry{ front_bucket_entry };
+
+        if (front_bucket_entry.unused()) {
+          if (next_free_entry == nullptr) {
+            next_free_entry = front_atomic_entry;
+            back_bucket = front_bucket;
+            back_entry_idx = front_entry_idx;
+          }
+          continue;
+        }
+        // Entry is occupied!
+
+        if (next_free_entry) {
+          // Move occupied entry to closest (forward-wise) free entry
+          HashBucketEntry empty_entry{ HashBucketEntry::kInvalidEntry };
+          if (!next_free_entry->compare_exchange_strong(empty_entry, front_bucket_expected_entry)) {
+            log_error("Expected empty entry -- found it occupied...");
+          } else {
+            if (!front_atomic_entry->compare_exchange_strong(front_bucket_expected_entry, empty_entry)) {
+              log_error("Expected occupied entry -- found it empty...");
+            }
+          }
+          next_free_entry = nullptr;
+
+          // Try to find next available free entry
+          AtomicHashBucketEntry* back_atomic_entry;
+          do {
+            for (; back_entry_idx < hash_bucket_t::kNumEntries; ++back_entry_idx) {
+              back_atomic_entry = &(back_bucket->entries[back_entry_idx]);
+              hash_bucket_entry_t back_bucket_entry{ back_atomic_entry->load() };
+              if (back_bucket_entry.unused()) {
+                // Found new available entry!
+                next_free_entry = back_atomic_entry;
+                break;
+              }
+              if (back_atomic_entry == front_atomic_entry) {
+                break; // Reached front pointer!
+              }
+            }
+            if ((back_atomic_entry == front_atomic_entry) ||
+                (next_free_entry != nullptr)) {
+              break;
+            }
+
+            if(GetNextBucket(back_bucket, version)) {
+              back_entry_idx = 0; // start next bucket from first entry
+            } else {
+              log_error("Expected more buckets -- found the end of hash chain...");
+              goto skip_chain;
+            }
+          } while (true);
+        }
+      }
+      // Go to next bucket in the chain.
+      if (!GetNextBucket(front_bucket, version)) {
+        break; // No more buckets in the chain.
+      }
+    } while (true);
+
+    if (next_free_entry != nullptr && back_bucket != front_bucket) {
+      // Mark back bucket as the last valid one and deallocate the next bucket (if any)
+      next_bucket_address = UnsafeFreeBucket(version, FixedPageAddress::kInvalidAddress, back_bucket);
+      // Deallocate remaining buckets
+      while (next_bucket_address.control() != FixedPageAddress::kInvalidAddress) {
+        next_bucket_address = UnsafeFreeBucket(version, next_bucket_address);
+      }
+    }
+
+skip_chain: ;
+  }
+}
+
 
 template <class D, class HID>
 inline void MemHashIndex<D, HID>::AddHashEntry(hash_bucket_t*& bucket, uint32_t& next_idx,
