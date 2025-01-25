@@ -2338,7 +2338,7 @@ OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionC
       // Try to insert record to read cache
       // NOTE: Insert only if record will be valid after any potential concurrent log trimming operation
       if (UseReadCache() && io_context.address >= next_hlog_begin_address_.load()) {
-        Status rc_status = read_cache_->Insert(context, *pending_context, record);
+        Status rc_status = read_cache_->TryInsert(context, *pending_context, record);
         assert(rc_status == Status::Ok || rc_status == Status::Aborted);
       }
 

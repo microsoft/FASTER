@@ -71,8 +71,9 @@ class ReadCache {
   Address SkipAndInvalidate(C& pending_context);
 
   template <class C>
-  Status Insert(ExecutionContext& exec_context, C& pending_context,
-                record_t* record, bool is_cold_log_record = false);
+  Status TryInsert(ExecutionContext& exec_context, C& pending_context,
+                   record_t* record, bool is_cold_log_record = false,
+                   Address rc_address = Address::kInvalidAddress);
 
   // Eviction-related methods
   // Called from ReadCachePersistentMemoryMalloc, when head address is shifted
@@ -119,7 +120,7 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
     Address rc_address = address.readcache_address();
 
     record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(rc_address));
-    ReadCacheRecordInfo rc_record_info = ReadCacheRecordInfo{ record->header };
+    ReadCacheRecordInfo rc_record_info{ record->header };
 
     assert(!rc_record_info.tombstone); // read cache does not store tombstones
 
@@ -130,8 +131,9 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
         if (CopyToTail && rc_address < read_cache_.read_only_address.load()) {
           ExecutionContext exec_context; // init invalid/empty context; not used in sync (hot) hash index
 
-          Status status = Insert(exec_context, pending_context, record,
-                              ReadCacheRecordInfo{ record->header }.in_cold_hlog);
+          Status status = TryInsert(exec_context, pending_context, record,
+                                    ReadCacheRecordInfo{ record->header }.in_cold_hlog,
+                                    rc_address);
           if (status == Status::Ok) {
             // Invalidate this record, since we copied it to the tail
             record->header.invalid = true;
@@ -139,7 +141,6 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
         }
         return Status::Ok;
       }
-      assert(rc_address >= read_cache_.head_address.load());
     }
 
     address = rc_record_info.previous_address();
@@ -213,8 +214,8 @@ inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(C& pending_context) {
 
 template <class K, class V, class D, class H>
 template <class C>
-inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& pending_context,
-                                            record_t* record, bool is_cold_log_record) {
+inline Status ReadCache<K, V, D, H>::TryInsert(ExecutionContext& exec_context, C& pending_context,
+                                               record_t* record, bool is_cold_log_record, Address rc_address) {
   // Store previous info wrt expected hash bucket entry
   HashBucketEntry orig_expected_entry = pending_context.entry;
   AtomicHashBucketEntry* orig_atomic_entry = pending_context.atomic_entry;
@@ -245,12 +246,17 @@ inline Status ReadCache<K, V, D, H>::Insert(ExecutionContext& exec_context, C& p
 
   // Create new record
   Address new_address = (*block_allocate_callback_)(faster_, record->size());
+  // block allocate moved RC head address forward -- RC-resident record is invalid
+  bool invalid = (rc_address != Address::kInvalidAddress && rc_address < read_cache_.safe_head_address.load());
+
   record_t* new_record = reinterpret_cast<record_t*>(read_cache_.Get(new_address));
-  memcpy(reinterpret_cast<void*>(new_record), reinterpret_cast<void*>(record), record->size());
+  if (!invalid) {
+    memcpy(reinterpret_cast<void*>(new_record), reinterpret_cast<void*>(record), record->size());
+  }
   // Replace header
   ReadCacheRecordInfo record_info {
     static_cast<uint16_t>(exec_context.version),
-    is_cold_log_record, false, false, hlog_address.control()
+    is_cold_log_record, false, invalid, hlog_address.control()
   };
   new(new_record) record_t{ record_info.ToRecordInfo() };
 

@@ -334,7 +334,7 @@ inline Status F2Kv<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback callback,
   if (status == Status::Ok && hot_store.UseReadCache()) {
     // Try to insert cold log-resident record to read cache
     auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(f2_context.record);
-    Status rc_status = hot_store.read_cache_->Insert(hot_store.thread_ctx(), f2_context, record, true);
+    Status rc_status = hot_store.read_cache_->TryInsert(hot_store.thread_ctx(), f2_context, record, true);
     assert(rc_status == Status::Ok || rc_status == Status::Aborted);
   }
   // OK (no read-cache), not_found, pending or error status
@@ -373,7 +373,7 @@ inline void F2Kv<K, V, D, HHI, CHI>::AsyncContinuePendingRead(IAsyncContext* ctx
       // try to insert to read cache
       auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(context->record);
       auto& hot_store = f2->hot_store;
-      Status rc_status = hot_store.read_cache_->Insert(hot_store.thread_ctx(), *context.get(), record, true);
+      Status rc_status = hot_store.read_cache_->TryInsert(hot_store.thread_ctx(), *context.get(), record, true);
       assert(rc_status == Status::Ok || rc_status == Status::Aborted);
     }
     // call user-provided callback
