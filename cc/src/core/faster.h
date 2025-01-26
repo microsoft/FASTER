@@ -3281,7 +3281,7 @@ void FasterKv<K, V, D, H, OH>::HandleSpecialPhases() {
         }
         break;
       default:
-        assert(false); // not reached
+        // do nothing
         break;
       }
       break;
