@@ -157,7 +157,7 @@ inline Address ReadCache<K, V, D, H>::Skip(C& pending_context) const {
   const record_t* record;
 
   if (address.in_readcache()) {
-    assert(address.readcache_address() >= read_cache_.begin_address.load());
+    assert(address.readcache_address() >= read_cache_.safe_head_address.load());
     record = reinterpret_cast<const record_t*>(read_cache_.Get(address.readcache_address()));
     address = ReadCacheRecordInfo{ record->header }.previous_address();
     assert(!address.in_readcache());
@@ -170,7 +170,7 @@ inline Address ReadCache<K, V, D, H>::Skip(Address address) {
   const record_t* record;
 
   if (address.in_readcache()) {
-    assert(address.readcache_address() >= read_cache_.begin_address.load());
+    assert(address.readcache_address() >= read_cache_.safe_head_address.load());
     record = reinterpret_cast<const record_t*>(read_cache_.Get(address.readcache_address()));
     address = ReadCacheRecordInfo{ record->header }.previous_address();
     assert(!address.in_readcache());
@@ -185,7 +185,7 @@ inline Address ReadCache<K, V, D, H>::Skip(C& pending_context) {
   record_t* record;
 
   if (address.in_readcache()) {
-    assert(address.readcache_address() >= read_cache_.begin_address.load());
+    assert(address.readcache_address() >= read_cache_.safe_head_address.load());
     record = reinterpret_cast<record_t*>(read_cache_.Get(address.readcache_address()));
     address = ReadCacheRecordInfo{ record->header }.previous_address();
     assert(!address.in_readcache());
@@ -200,7 +200,7 @@ inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(C& pending_context) {
   record_t* record;
 
   if (address.in_readcache()) {
-    assert(address.readcache_address() >= read_cache_.begin_address.load());
+    assert(address.readcache_address() >= read_cache_.safe_head_address.load());
     record = reinterpret_cast<record_t*>(read_cache_.Get(address.readcache_address()));
     if (pending_context.is_key_equal(record->key())) {
       // invalidate record if keys match
@@ -392,7 +392,7 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
 
 template <class K, class V, class D, class H>
 inline void ReadCache<K, V, D, H>::SkipBucket(hash_bucket_t* const bucket) const {
-  Address begin_address = read_cache_.begin_address.load();
+  Address head_address = read_cache_.head_address.load();
   assert(bucket != nullptr);
 
   for (uint32_t idx = 0; idx < hash_bucket_t::kNumEntries; idx++) {
@@ -405,10 +405,12 @@ inline void ReadCache<K, V, D, H>::SkipBucket(hash_bucket_t* const bucket) const
       }
 
       // Retrieve hlog address, and replace entry with it
-      assert(entry.address().readcache_address() >= begin_address);
-      const record_t* record = reinterpret_cast<const record_t*>(read_cache_.Get(entry.address().readcache_address()));
+      Address rc_address{ entry.address().readcache_address() };
+      assert(rc_address >= head_address);
+      const record_t* record = reinterpret_cast<const record_t*>(read_cache_.Get(rc_address));
 
-      hash_bucket_entry_t new_entry{ ReadCacheRecordInfo{ record->header }.previous_address(), entry.tag(), entry.tentative() };
+      hash_bucket_entry_t new_entry{ ReadCacheRecordInfo{ record->header }.previous_address(),
+                                     entry.tag(), entry.tentative() };
       assert(!new_entry.address().in_readcache());
 
       HashBucketEntry expected_entry{ entry };
