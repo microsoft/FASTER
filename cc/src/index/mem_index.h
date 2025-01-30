@@ -376,9 +376,7 @@ inline Status MemHashIndex<D, HID>::TryUpdateEntry(ExecutionContext& context, C&
     new_entry = HashBucketEntry::kInvalidEntry;
   }
 
-  hash_bucket_entry_t before{ pending_context.entry };
   bool success = pending_context.atomic_entry->compare_exchange_strong(pending_context.entry, new_entry);
-  hash_bucket_entry_t after{ pending_context.entry };
 
 #ifdef STATISTICS
   if (collect_stats_) {
