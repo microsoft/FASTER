@@ -184,12 +184,13 @@ class AsyncF2ReadContext : public F2Context<K> {
   typedef V value_t;
 
  protected:
-  AsyncF2ReadContext(void* f2_, ReadOperationStage stage_, IAsyncContext& caller_context_,
-                     AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
+  AsyncF2ReadContext(void* f2_, ReadOperationStage stage_, Address orig_hlog_tail_address_,
+                     IAsyncContext& caller_context_, AsyncCallback caller_callback_,
+                     uint64_t monotonic_serial_num_)
     : F2Context<key_t>(f2_, caller_context_, caller_callback_, monotonic_serial_num_)
     , stage{ stage_ }
-    , entry{ HashBucketEntry::kInvalidEntry }
-    , atomic_entry{ nullptr }
+    , hot_index_expected_entry{ HashBucketEntry::kInvalidEntry }
+    , orig_hlog_tail_address{ orig_hlog_tail_address_ }
     , record{ nullptr }
   {}
  public:
@@ -198,17 +199,13 @@ class AsyncF2ReadContext : public F2Context<K> {
       delete[] record;
     }
   }
-  void set_index_entry(HashBucketEntry entry_, AtomicHashBucketEntry* atomic_entry_) {
-    entry = entry_;
-    atomic_entry = atomic_entry_;
-  }
  protected:
   /// The deep-copy constructor.
   AsyncF2ReadContext(AsyncF2ReadContext& other_, IAsyncContext* caller_context_)
     : F2Context<key_t>(other_, caller_context_)
     , stage{ other_.stage }
-    , entry{ other_.entry }
-    , atomic_entry{ other_.atomic_entry }
+    , hot_index_expected_entry{ other_.hot_index_expected_entry }
+    , orig_hlog_tail_address{ other_.orig_hlog_tail_address }
     , record{ other_.record }
   {}
  public:
@@ -220,8 +217,8 @@ class AsyncF2ReadContext : public F2Context<K> {
   virtual void GetAtomic(const void* rec) = 0;
 
   ReadOperationStage stage;
-  HashBucketEntry entry;
-  AtomicHashBucketEntry* atomic_entry;
+  HashBucketEntry hot_index_expected_entry;
+  Address orig_hlog_tail_address;
 
   uint8_t* record;
 };
@@ -235,9 +232,10 @@ class F2ReadContext : public AsyncF2ReadContext<typename RC::key_t, typename RC:
   typedef typename read_context_t::value_t value_t;
   typedef Record<key_t, value_t> record_t;
 
-  F2ReadContext(void* f2_, ReadOperationStage stage_, read_context_t& caller_context_,
-                AsyncCallback caller_callback_, uint64_t monotonic_serial_num_)
-    : AsyncF2ReadContext<key_t, value_t>(f2_, stage_, caller_context_,
+  F2ReadContext(void* f2_, ReadOperationStage stage_, Address orig_hlog_tail_address_,
+                read_context_t& caller_context_, AsyncCallback caller_callback_,
+                uint64_t monotonic_serial_num_)
+    : AsyncF2ReadContext<key_t, value_t>(f2_, stage_, orig_hlog_tail_address_, caller_context_,
                                          caller_callback_, monotonic_serial_num_)
     {}
 

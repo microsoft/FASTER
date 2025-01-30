@@ -306,6 +306,7 @@ inline Status F2Kv<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback callback,
   typedef F2ReadContext<read_context_t> f2_read_context_t;
 
   f2_read_context_t f2_context{ this, ReadOperationStage::HOT_LOG_READ,
+                                hot_store.hlog.GetTailAddress(),
                                 context, callback, monotonic_serial_num };
 
   // Store latest hash index entry before initiating Read op
@@ -314,8 +315,8 @@ inline Status F2Kv<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback callback,
                               hot_store.thread_ctx(), index_context);
   assert(index_status == Status::Ok || index_status == Status::NotFound);
   // index_context.entry can be either HashBucketEntry::kInvalidEntry or a valid one (either hlog or read cache)
-  f2_context.entry = index_context.entry;
-  f2_context.atomic_entry = index_context.atomic_entry;
+  f2_context.hot_index_expected_entry = index_context.entry;
+  assert(index_status == Status::Ok || (index_context.entry == HashBucketEntry::kInvalidEntry));
 
   // Issue request to hot log
   Status status = hot_store.Read(f2_context, AsyncContinuePendingRead, monotonic_serial_num, true);
@@ -331,7 +332,16 @@ inline Status F2Kv<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback callback,
   status = cold_store.Read(f2_context, AsyncContinuePendingRead, monotonic_serial_num);
   assert(status != Status::Aborted); // impossible when !abort_if_tombstone
 
-  if (status == Status::Ok && hot_store.UseReadCache()) {
+  if (hot_store.UseReadCache()
+      && status == Status::Ok
+      // This last check covers a super rare corner case where we might violate our RC invariant,
+      // (i.e., RC always keeps the newer record for a key). This case happens when:
+      //   (1) hot index entry is invalid, and
+      //   (2) newer record for this key made its way to the cold log, and
+      //   (3) due to lack of synchronization, we found some *older* record for this key
+      //       (i.e., newer record is at a later address, but when we started going backwards, it was not present)
+      && f2_context.orig_hlog_tail_address >= hot_store.hlog.begin_address.load()
+    ) {
     // Try to insert cold log-resident record to read cache
     auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(f2_context.record);
 
@@ -372,7 +382,10 @@ inline void F2Kv<K, V, D, HHI, CHI>::AsyncContinuePendingRead(IAsyncContext* ctx
   }
 
   if (context->stage == ReadOperationStage::COLD_LOG_READ) {
-    if (f2->hot_store.UseReadCache() && result == Status::Ok) {
+    if (f2->hot_store.UseReadCache()
+        && result == Status::Ok
+        && context->orig_hlog_tail_address >= f2->hot_store.hlog.begin_address.load()
+    ) {
       // try to insert to read cache
       auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(context->record);
 
