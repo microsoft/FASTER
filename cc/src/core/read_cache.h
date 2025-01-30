@@ -75,12 +75,11 @@ class ReadCache {
   Address Skip(C& pending_context);
 
   template <class C>
-  Address SkipAndInvalidate(C& pending_context);
+  Address SkipAndInvalidate(const C& pending_context);
 
   template <class C>
   Status TryInsert(ExecutionContext& exec_context, C& pending_context,
-                   record_t* record, bool is_cold_log_record = false,
-                   Address rc_address = Address::kInvalidAddress);
+                   record_t* record, bool is_cold_log_record = false);
 
   // Eviction-related methods
   // Called from ReadCachePersistentMemoryMalloc, when head address is shifted
@@ -161,11 +160,9 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
         pending_context.Get(record);
 
         if (CopyToTail && rc_address < read_cache_.read_only_address.load()) {
-          ExecutionContext exec_context; // init invalid/empty context; not used in sync (hot) hash index
-
+          ExecutionContext exec_context; // dummy context; not actually used
           Status status = TryInsert(exec_context, pending_context, record,
-                                    ReadCacheRecordInfo{ record->header }.in_cold_hlog,
-                                    rc_address);
+                                    ReadCacheRecordInfo{ record->header }.in_cold_hlog);
           if (status == Status::Ok) {
             // Invalidate this record, since we copied it to the tail
             record->header.invalid = true;
@@ -247,48 +244,57 @@ inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(C& pending_context) {
 template <class K, class V, class D, class H>
 template <class C>
 inline Status ReadCache<K, V, D, H>::TryInsert(ExecutionContext& exec_context, C& pending_context,
-                                               record_t* record, bool is_cold_log_record, Address rc_address) {
+                                               record_t* record, bool is_cold_log_record) {
   // Store previous info wrt expected hash bucket entry
-  HashBucketEntry orig_expected_entry = pending_context.entry;
-  AtomicHashBucketEntry* orig_atomic_entry = pending_context.atomic_entry;
+  HashBucketEntry orig_expected_entry{ pending_context.entry };
+  bool invalid_hot_index_entry = (orig_expected_entry == HashBucketEntry::kInvalidEntry);
+  // Expected hot index entry cannot be invalid, unless record is cold-resident,
+  // otherwise, how did we even ended-up in this record? :)
+  assert(is_cold_log_record || !invalid_hot_index_entry);
 
   Status index_status = hash_index_->FindOrCreateEntry(exec_context, pending_context);
+  assert(pending_context.atomic_entry != nullptr);
   assert(index_status == Status::Ok);
 
-  bool new_index_entry = (pending_context.entry.address() == Address::kInvalidAddress);
-  assert(is_cold_log_record || !new_index_entry);
-
-  // find first non-read cache address
-  Address hlog_address = Skip(pending_context);
-  assert(!hlog_address.in_readcache());
-  assert(is_cold_log_record || hlog_address != Address::kInvalidAddress);
-
-  if (!is_cold_log_record || !new_index_entry) {
-    // Restore expected hash bucket entry info to perform the hash bucket CAS
-    pending_context.set_index_entry(orig_expected_entry, orig_atomic_entry);
-  }
-  if (pending_context.atomic_entry == nullptr) {
+  bool created_index_entry = (pending_context.entry.address() == Address::kInvalidAddress);
+  // Address should not be invalid, unless record is cold-log-resident OR some deletion op took place
+  if (!is_cold_log_record && created_index_entry) {
     return Status::Aborted;
   }
 
-  // NOTE: it is possible for orig_expected_entry to be invalid (i.e., empty)
-  // and the current hash index entry to be valid. This can happen when
-  // a concurrent hot-cold compaction takes place, and GCs the hash index after
-  // trimming the log.
+  // Find first non-read cache address, to be used as previous address for this RC record
+  Address hlog_address = Skip(pending_context);
+  assert(!hlog_address.in_readcache());
+  // Again, address should not be invalid, unless record is cold-log-resident OR some deletion op took place
+  if (!is_cold_log_record && (hlog_address == Address::kInvalidAddress)) {
+    return Status::Aborted;
+  }
+
+  // Typically, we use as expected_entry, the original hot index entry we retrieved at the start of FASTER/F2's Read.
+  // -----
+  // Yet for F2, if this record is cold-resident AND new hot index entry was created, it means that there is no record
+  // with the same key in hot log. Thus, we can safely keep this newly-created entry, as our expected entry, because
+  // we can guarrantee that no newer record for this key has been inserted in the hot/cold log in the meantime.
+  // (i.e., if they were, they would have been found by the cold_store.Read op that called this method).
+  // NOTE: There is a slim case where we cannot guarrantee that (i.e., see F2's Read op). If so, we skip inserting to RC.
+  if (!is_cold_log_record || !created_index_entry) {
+    pending_context.entry = orig_expected_entry;
+  }
+  // Proactive check on expected entry, before actually allocating space in read-cache log
+  if (pending_context.atomic_entry->load() != pending_context.entry) {
+    return Status::Aborted;
+  }
 
   // Create new record
   Address new_address = (*block_allocate_callback_)(faster_, record->size());
-  // block allocate moved RC head address forward -- RC-resident record is invalid
-  bool invalid = (rc_address != Address::kInvalidAddress && rc_address < read_cache_.safe_head_address.load());
 
+  // Populate new record
   record_t* new_record = reinterpret_cast<record_t*>(read_cache_.Get(new_address));
-  if (!invalid) {
-    memcpy(reinterpret_cast<void*>(new_record), reinterpret_cast<void*>(record), record->size());
-  }
-  // Replace header
+  memcpy(reinterpret_cast<void*>(new_record), reinterpret_cast<void*>(record), record->size());
+  // Overwrite record header
   ReadCacheRecordInfo record_info {
     static_cast<uint16_t>(exec_context.version),
-    is_cold_log_record, false, invalid, hlog_address.control()
+    is_cold_log_record, false, false, hlog_address.control()
   };
   new(new_record) record_t{ record_info.ToRecordInfo() };
 
