@@ -168,9 +168,7 @@ class FasterKv {
 
     log_debug("Read cache is %s", rc_config.enabled ? "ENABLED" : "DISABLED");
     if (rc_config.enabled) {
-      read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, hlog,
-                                                  BlockAllocateReadCacheCallback, rc_config);
-      read_cache_->SetFasterInstance(static_cast<void*>(this));
+      read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, hlog, rc_config);
     }
 
     log_debug("Auto compaction is %s", hlog_compaction_config.enabled ? "ENABLED" : "DISABLED");
@@ -329,8 +327,6 @@ class FasterKv {
                                       Address min_address, uint8_t side);
 
   inline Address BlockAllocate(uint32_t record_size);
-  static Address BlockAllocateReadCacheCallback(void* faster, uint32_t record_size);
-  inline Address BlockAllocateReadCache(uint32_t record_size);
 
   static void DoRefreshCallback(void* faster);
 
@@ -2136,32 +2132,6 @@ inline Address FasterKv<K, V, D, H, OH>::BlockAllocate(uint32_t record_size) {
       if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
     }
     retval = hlog.Allocate(record_size, page);
-  }
-  return retval;
-}
-
-template <class K, class V, class D, class H, class OH>
-Address FasterKv<K, V, D, H, OH>::BlockAllocateReadCacheCallback(void* faster, uint32_t record_size) {
-  faster_t* self = reinterpret_cast<faster_t*>(faster);
-  return self->BlockAllocateReadCache(record_size);
-}
-
-template <class K, class V, class D, class H, class OH>
-inline Address FasterKv<K, V, D, H, OH>::BlockAllocateReadCache(uint32_t record_size) {
-  uint32_t page;
-  Address retval = read_cache_->read_cache_.Allocate(record_size, page);
-  while (retval < read_cache_->read_cache_.read_only_address.load()) {
-    Refresh();
-    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
-    if (refresh_callback_) refresh_callback_(refresh_callback_store_);
-    bool page_closed = (retval == Address::kInvalidAddress);
-    while (page_closed) {
-      page_closed = !read_cache_->read_cache_.NewPage(page);
-      Refresh();
-      if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
-      if (refresh_callback_) refresh_callback_(refresh_callback_store_);
-    }
-    retval = read_cache_->read_cache_.Allocate(record_size, page);
   }
   return retval;
 }

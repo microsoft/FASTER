@@ -39,17 +39,13 @@ class ReadCache {
 
   constexpr static bool CopyToTail = true;
 
-  ReadCache(LightEpoch& epoch, hash_index_t& hash_index, faster_hlog_t& faster_hlog,
-            ReadCacheBlockAllocateCallback block_allocate_callback,
-            ReadCacheConfig& config)
+  ReadCache(LightEpoch& epoch, hash_index_t& hash_index, faster_hlog_t& faster_hlog, ReadCacheConfig& config)
     : epoch_{ epoch }
     , hash_index_{ &hash_index }
-    , faster_{ nullptr }
-    , block_allocate_callback_{ block_allocate_callback }
     , disk_{ "", epoch, "" }
     , faster_hlog_{ &faster_hlog }
-    , read_cache_{ true, config.mem_size, epoch, disk_, disk_.log(), config.mutable_fraction,
-                  config.pre_allocate, EvictCallback}
+    , read_cache_{ true, config.mem_size, epoch, disk_, disk_.log(),
+                   config.mutable_fraction, config.pre_allocate, EvictCallback}
     , evicted_to_{ Constants::kCacheLineBytes }     // First page starts with kCacheLineBytes offset
     , evicted_to_req_{ Constants::kCacheLineBytes } // First page starts with kCacheLineBytes offset
     , evicting_to_{ 0 }
@@ -92,10 +88,6 @@ class ReadCache {
 
   void Evict(Address from_head_address, Address to_head_address);
 
-  void SetFasterInstance(void* faster) {
-    faster_ = faster;
-  }
-
   // Checkpoint-related methods
   Status Checkpoint(CheckpointState<file_t>& checkpoint);
   void SkipBucket(hash_bucket_t* const bucket) const;
@@ -103,9 +95,6 @@ class ReadCache {
  private:
   LightEpoch& epoch_;
   hash_index_t* hash_index_;
-
-  void* faster_;
-  ReadCacheBlockAllocateCallback block_allocate_callback_;
 
   disk_t disk_;
   faster_hlog_t* faster_hlog_;
@@ -285,8 +274,20 @@ inline Status ReadCache<K, V, D, H>::TryInsert(ExecutionContext& exec_context, C
     return Status::Aborted;
   }
 
-  // Create new record
-  Address new_address = (*block_allocate_callback_)(faster_, record->size());
+
+  // Try Allocate space in the RC log (best-effort)
+  uint32_t page;
+  Address new_address = read_cache_.Allocate(record->size(), page);
+  if (new_address < read_cache_.read_only_address.load()) {
+    // No space in this page -- ask for a new one and abort
+    assert(new_address == Address::kInvalidAddress);
+    // NOTE: Even if we wanted to retry multiple times here, it would be tricky to guarrantee correctness!
+    //       Consider the case where we copy a read-cache-resident record that resides in RC's RO region.
+    //       If we Allocate() after a successful NewPage(), then an RC eviction process might have been
+    //       triggered, potentially invalidating our source record; we would have to duplicate the record...
+    read_cache_.NewPage(page);
+    return Status::Aborted;
+  }
 
   // Populate new record
   record_t* new_record = reinterpret_cast<record_t*>(read_cache_.Get(new_address));
