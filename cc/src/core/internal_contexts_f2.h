@@ -537,25 +537,20 @@ class F2RmwReadContext : public IAsyncContext {
 };
 
 /// Context used for F2 sync hash index operations
-/// Currently only used when retrying RMW operations
-template <class C>
+/// Currently used by F2's Read() and RMW() ops
 class F2IndexContext : public IAsyncContext {
  public:
   /// Constructs and returns a context given a F2 context
-  F2IndexContext(C* context)
-    : context_{ context }
+  F2IndexContext(KeyHash key_hash)
+    : key_hash_{ key_hash }
     , entry{ HashBucketEntry::kInvalidEntry }
     , atomic_entry{ nullptr } {
   }
   /// Copy constructor deleted -- op does not go async
-  F2IndexContext(const F2IndexContext& from)
-    : context_{ from.context_ }
-    , entry{ from.entry }
-    , atomic_entry{ from.atomic_entry } {
-  }
+  F2IndexContext(const F2IndexContext& from) = delete;
 
   inline KeyHash get_key_hash() const {
-    return context_->get_key_hash();
+    return key_hash_;
   }
   inline void set_index_entry(HashBucketEntry entry_, AtomicHashBucketEntry* atomic_entry_) {
     entry = entry_;
@@ -566,14 +561,13 @@ class F2IndexContext : public IAsyncContext {
   /// Copies this context into a passed-in pointer if the operation goes
   /// asynchronous inside FASTER.
   Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-    return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    throw std::runtime_error{ "F2IndexContext should not go async!" };
   }
 
  private:
-  /// Pointer to the record
-  C* context_;
+  KeyHash key_hash_;
+
  public:
-  ///
   HashBucketEntry entry;
   AtomicHashBucketEntry* atomic_entry;
 };

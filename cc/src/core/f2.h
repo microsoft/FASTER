@@ -33,6 +33,7 @@ class F2Kv {
   typedef AsyncF2RmwContext<K, V> async_f2_rmw_context_t;
   typedef F2RmwReadContext<K, V> f2_rmw_read_context_t;
   typedef F2RmwConditionalInsertContext<K, V> f2_rmw_ci_context_t;
+  typedef F2IndexContext f2_index_context_t;
 
   typedef K key_t;
   typedef V value_t;
@@ -303,13 +304,12 @@ inline Status F2Kv<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback callback,
                                             uint64_t monotonic_serial_num) {
   typedef RC read_context_t;
   typedef F2ReadContext<read_context_t> f2_read_context_t;
-  typedef F2IndexContext<f2_read_context_t> f2_index_context_t;
 
   f2_read_context_t f2_context{ this, ReadOperationStage::HOT_LOG_READ,
                                 context, callback, monotonic_serial_num };
 
   // Store latest hash index entry before initiating Read op
-  f2_index_context_t index_context{ &f2_context };
+  f2_index_context_t index_context{ f2_context.get_key_hash() };
   Status index_status = hot_store.hash_index_.template FindEntry<f2_index_context_t>(
                               hot_store.thread_ctx(), index_context);
   assert(index_status == Status::Ok || index_status == Status::NotFound);
@@ -334,7 +334,10 @@ inline Status F2Kv<K, V, D, HHI, CHI>::Read(RC& context, AsyncCallback callback,
   if (status == Status::Ok && hot_store.UseReadCache()) {
     // Try to insert cold log-resident record to read cache
     auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(f2_context.record);
-    Status rc_status = hot_store.read_cache_->TryInsert(hot_store.thread_ctx(), f2_context, record, true);
+
+    f2_index_context_t index_context{ f2_context.get_key_hash() };
+    index_context.set_index_entry(f2_context.hot_index_expected_entry, nullptr);
+    Status rc_status = hot_store.read_cache_->TryInsert(hot_store.thread_ctx(), index_context, record, true);
     assert(rc_status == Status::Ok || rc_status == Status::Aborted);
   }
   // OK (no read-cache), not_found, pending or error status
@@ -372,8 +375,11 @@ inline void F2Kv<K, V, D, HHI, CHI>::AsyncContinuePendingRead(IAsyncContext* ctx
     if (f2->hot_store.UseReadCache() && result == Status::Ok) {
       // try to insert to read cache
       auto record = reinterpret_cast<typename hot_faster_store_t::record_t*>(context->record);
-      auto& hot_store = f2->hot_store;
-      Status rc_status = hot_store.read_cache_->TryInsert(hot_store.thread_ctx(), *context.get(), record, true);
+
+      f2_index_context_t index_context{ context->get_key_hash() };
+      index_context.set_index_entry(context->hot_index_expected_entry, nullptr);
+      Status rc_status = f2->hot_store.read_cache_->TryInsert(f2->hot_store.thread_ctx(), index_context,
+                                                              record, true);
       assert(rc_status == Status::Ok || rc_status == Status::Aborted);
     }
     // call user-provided callback
@@ -398,7 +404,6 @@ inline Status F2Kv<K, V, D, HHI, CHI>::Rmw(MC& context, AsyncCallback callback,
                                            uint64_t monotonic_serial_num) {
   typedef MC rmw_context_t;
   typedef F2RmwContext<rmw_context_t> f2_rmw_context_t;
-  typedef F2IndexContext<f2_rmw_context_t> f2_index_context_t;
 
   // Keep hash bucket entry
   f2_rmw_context_t f2_rmw_context{ this, RmwOperationStage::HOT_LOG_RMW,
@@ -406,7 +411,7 @@ inline Status F2Kv<K, V, D, HHI, CHI>::Rmw(MC& context, AsyncCallback callback,
                                   hot_store.hlog.GetTailAddress(),
                                   context, callback, monotonic_serial_num };
 
-  f2_index_context_t index_context{ &f2_rmw_context };
+  f2_index_context_t index_context{ f2_rmw_context.get_key_hash() };
   Status status = hot_store.hash_index_.template FindOrCreateEntry<f2_index_context_t>(
                         hot_store.thread_ctx(), index_context);
   assert(status == Status::Ok);
@@ -944,13 +949,11 @@ inline void F2Kv<K, V, D, HHI, CHI>::CheckSystemState() {
 
 template<class K, class V, class D, class HHI, class CHI>
 inline void F2Kv<K, V, D, HHI, CHI>::CompleteRmwRetryRequests() {
-  typedef F2IndexContext<async_f2_rmw_context_t> f2_index_context_t;
-
   async_f2_rmw_context_t* ctxt;
   while (retry_rmw_requests.try_pop(ctxt)) {
     CallbackContext<async_f2_rmw_context_t> context{ ctxt };
     // Get hash bucket entry
-    f2_index_context_t index_context{ context.get() };
+    f2_index_context_t index_context{ context->get_key_hash() };
     Status index_status = hot_store.hash_index_.template FindOrCreateEntry<f2_index_context_t>(
                                   hot_store.thread_ctx(), index_context);
     assert(index_status == Status::Ok); // Non-pending status
