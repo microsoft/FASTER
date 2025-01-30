@@ -224,7 +224,7 @@ inline Address ReadCache<K, V, D, H>::Skip(C& pending_context) {
 
 template <class K, class V, class D, class H>
 template <class C>
-inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(C& pending_context) {
+inline Address ReadCache<K, V, D, H>::SkipAndInvalidate(const C& pending_context) {
   Address address = pending_context.entry.address();
   record_t* record;
 
