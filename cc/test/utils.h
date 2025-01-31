@@ -25,6 +25,17 @@ void CreateNewLogDir(const std::string& root) {
   }
 }
 
+void CreateNewLogDir(const std::string& root, std::string& log_fp) {
+  CreateNewLogDir(root);
+
+  std::string local_root{ root };
+  std::string separator{ FASTER::environment::kPathSeparator };
+  if (local_root.back() != separator.back()) {
+    local_root += separator;
+  }
+  log_fp = local_root + "log_";
+}
+
 void CreateNewLogDir(const std::string& root, std::string& hot_log_fp, std::string& cold_log_fp) {
   CreateNewLogDir(root);
 
