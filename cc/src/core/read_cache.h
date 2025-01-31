@@ -126,6 +126,32 @@ class ReadCache {
   // Points to next-to-be-checked for eviction record
   // NOTE: multiple threads may participate in eviction
   std::atomic<uint32_t> evict_record_addrs_idx_{ 0 };
+
+#ifdef STATISTICS
+ public:
+  void EnableStatsCollection() {
+    collect_stats_ = true;
+  }
+  void DisableStatsCollection() {
+    collect_stats_ = false;
+  }
+  // implementation at the end of this file
+  void PrintStats() const;
+
+ private:
+  bool collect_stats_{ true };
+  // Read
+  std::atomic<uint64_t> read_calls_{ 0 };
+  std::atomic<uint64_t> read_success_count_{ 0 };
+  std::atomic<uint64_t> read_copy_to_tail_calls_{ 0 };
+  std::atomic<uint64_t> read_copy_to_tail_success_count_{ 0 };
+  // TryInsert
+  std::atomic<uint64_t> try_insert_calls_{ 0 };
+  std::atomic<uint64_t> try_insert_success_count_{ 0 };
+  // Evict
+  std::atomic<uint64_t> evicted_records_count_{ 0 };
+  std::atomic<uint64_t> evicted_records_invalid_{ 0 };
+#endif
 };
 
 template <class K, class V, class D, class H>
@@ -136,29 +162,53 @@ inline Status ReadCache<K, V, D, H>::Read(C& pending_context, Address& address) 
     return Status::NotFound;
   }
 
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++read_calls_;
+  }
+  #endif
+
   if (address.in_readcache()) {
     Address rc_address = address.readcache_address();
-
     record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(rc_address));
     ReadCacheRecordInfo rc_record_info{ record->header };
 
     assert(!rc_record_info.tombstone); // read cache does not store tombstones
 
-    if (!rc_record_info.invalid && pending_context.is_key_equal(record->key())) {
-      if (rc_address >= read_cache_.safe_head_address.load()) {
-        pending_context.Get(record);
+    if (!rc_record_info.invalid
+        && rc_address >= read_cache_.safe_head_address.load()
+        && pending_context.is_key_equal(record->key())
+    ) {
+      pending_context.Get(record);
 
-        if (CopyToTail && rc_address < read_cache_.read_only_address.load()) {
-          ExecutionContext exec_context; // dummy context; not actually used
-          Status status = TryInsert(exec_context, pending_context, record,
-                                    ReadCacheRecordInfo{ record->header }.in_cold_hlog);
-          if (status == Status::Ok) {
-            // Invalidate this record, since we copied it to the tail
-            record->header.invalid = true;
-          }
-        }
-        return Status::Ok;
+      #ifdef STATISTICS
+      if (collect_stats_) {
+        ++read_success_count_;
       }
+      #endif
+
+      if (CopyToTail && rc_address < read_cache_.read_only_address.load()) {
+        #ifdef STATISTICS
+        if (collect_stats_) {
+          ++read_copy_to_tail_calls_;
+        }
+        #endif
+
+        ExecutionContext exec_context; // dummy context; not actually used
+        Status status = TryInsert(exec_context, pending_context, record,
+                                  ReadCacheRecordInfo{ record->header }.in_cold_hlog);
+        if (status == Status::Ok) {
+          // Invalidate this record, since we copied it to the tail
+          record->header.invalid = true;
+
+          #ifdef STATISTICS
+          if (collect_stats_) {
+            ++read_copy_to_tail_success_count_;
+          }
+          #endif
+        }
+      }
+      return Status::Ok;
     }
 
     address = rc_record_info.previous_address();
@@ -234,6 +284,12 @@ template <class K, class V, class D, class H>
 template <class C>
 inline Status ReadCache<K, V, D, H>::TryInsert(ExecutionContext& exec_context, C& pending_context,
                                                record_t* record, bool is_cold_log_record) {
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++try_insert_calls_;
+  }
+  #endif
+
   // Store previous info wrt expected hash bucket entry
   HashBucketEntry orig_expected_entry{ pending_context.entry };
   bool invalid_hot_index_entry = (orig_expected_entry == HashBucketEntry::kInvalidEntry);
@@ -274,7 +330,6 @@ inline Status ReadCache<K, V, D, H>::TryInsert(ExecutionContext& exec_context, C
     return Status::Aborted;
   }
 
-
   // Try Allocate space in the RC log (best-effort)
   uint32_t page;
   Address new_address = read_cache_.Allocate(record->size(), page);
@@ -305,6 +360,15 @@ inline Status ReadCache<K, V, D, H>::TryInsert(ExecutionContext& exec_context, C
   if (index_status == Status::Aborted) {
     new_record->header.invalid = true;
   }
+
+  #ifdef STATISTICS
+  if (index_status == Status::Ok) {
+    if (collect_stats_) {
+      ++try_insert_success_count_;
+    }
+  }
+  #endif
+
   return index_status;
 }
 
@@ -357,6 +421,10 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
         //log_debug("[PAGE: %u] from: %lu [offset: %lu]\t| to: %lu [offset: %lu]", page_idx,
         //          address_, address.offset(), until_address_, until_address.offset());
 
+        #ifdef STATISTICS
+        uint64_t invalid_records_count = 0;
+        #endif
+
         uint64_t records_in_page = 0;
         while (address < until_address) {
           record_t* record = reinterpret_cast<record_t*>(read_cache_.Get(address));
@@ -367,6 +435,12 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
           evict_record_addrs_.push_back(address);
           ++records_in_page;
 
+          #ifdef STATISTICS
+          if (collect_stats_) {
+            invalid_records_count += (record->header.invalid);
+          }
+          #endif
+
           if (address.offset() + record->size() > Address::kMaxOffset) {
             break; // no more records in this page!
           }
@@ -374,6 +448,13 @@ inline void ReadCache<K, V, D, H>::Evict(Address from_head_address, Address to_h
         }
         // reached end of the page
         log_debug("[PAGE: %lu]: Found %lu records in page", page_idx, records_in_page);
+
+        #ifdef STATISTICS
+        if (collect_stats_) {
+          evicted_records_count_ += records_in_page;
+          evicted_records_invalid_ += invalid_records_count;
+        }
+        #endif
       }
 
       // init multi-threaded record eviction process
@@ -512,6 +593,39 @@ inline void ReadCache<K, V, D, H>::SkipBucket(hash_bucket_t* const bucket) const
     } while (true);
   }
 }
+
+#ifdef STATISTICS
+template <class K, class V, class D, class H>
+inline void ReadCache<K, V, D, H>::PrintStats() const {
+  // Read
+  fprintf(stderr, "Read Calls\t: %lu\n", read_calls_.load());
+  double read_success_pct = (read_calls_.load() > 0)
+      ? (static_cast<double>(read_success_count_.load()) / read_calls_.load()) * 100.0
+      : std::numeric_limits<double>::quiet_NaN();
+  fprintf(stderr, "Status::Ok (%%): %.2lf\n", read_success_pct);
+
+  // Read [CopyToTail]
+  fprintf(stderr, "\nRead [CopyToTail] Calls: %lu\n", read_copy_to_tail_calls_.load());
+  double read_copy_to_tail_success_pct = (read_copy_to_tail_calls_.load() > 0)
+      ? (static_cast<double>(read_copy_to_tail_success_count_.load()) / read_copy_to_tail_calls_.load()) * 100.0
+      : std::numeric_limits<double>::quiet_NaN();
+  fprintf(stderr, "Status::Ok (%%): %.2lf\n", read_copy_to_tail_success_pct);
+
+  // TryInsert
+  fprintf(stderr, "\nTryInsert Calls\t: %lu\n", try_insert_calls_.load());
+  double try_insert_calls_success = (try_insert_calls_.load() > 0)
+      ? (static_cast<double>(try_insert_success_count_.load()) / try_insert_calls_.load()) * 100.0
+      : std::numeric_limits<double>::quiet_NaN();
+  fprintf(stderr, "Status::Ok (%%): %.2lf\n", try_insert_calls_success);
+
+  // Evicted Records
+  fprintf(stderr, "\nEvicted Records\t: %lu\n", evicted_records_count_.load());
+  double evicted_records_invalid_pct = (evicted_records_count_ > 0)
+    ? (static_cast<double>(evicted_records_invalid_.load()) / evicted_records_count_.load()) * 100.0
+    : std::numeric_limits<double>::quiet_NaN();
+  fprintf(stderr, "Invalid (%%): %.2lf\n", evicted_records_invalid_pct);
+}
+#endif
 
 }
 } // namespace FASTER::core

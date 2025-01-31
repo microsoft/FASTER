@@ -490,10 +490,16 @@ class FasterKv {
  public:
   void EnableStatsCollection() {
     hash_index_.EnableStatsCollection();
+    if (UseReadCache()) {
+      read_cache_.EnableStatsCollection();
+    }
     collect_stats_ = true;
   }
   void DisableStatsCollection() {
     hash_index_.DisableStatsCollection();
+    if (UseReadCache()) {
+      read_cache_.DisableStatsCollection();
+    }
     collect_stats_ = false;
   }
 
@@ -569,6 +575,13 @@ class FasterKv {
     fprintf(stderr, "\n ########## HASH INDEX #########\n");
     hash_index_.PrintStats();
     fprintf(stderr, "\n ########## ---------- #########\n");
+
+    // Print read cache stats
+    if (UseReadCache()) {
+      fprintf(stderr, "\n ########## READ CACHE #########\n");
+      read_cache_->PrintStats();
+      fprintf(stderr, "\n ########## ---------- #########\n");
+    }
   }
 
  private:
