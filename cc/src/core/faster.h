@@ -714,7 +714,6 @@ inline Guid FasterKv<K, V, D, H, OH>::StartSession(Guid guid) {
 
 template <class K, class V, class D, class H, class OH>
 inline uint64_t FasterKv<K, V, D, H, OH>::ContinueSession(const Guid& session_id) {
-  // TODO: Look into whether we can have a mapping of log session ids -> hash index session ids
   hash_index_.StartSession();
 
   auto iter = checkpoint_.continue_tokens.find(session_id);
@@ -1482,15 +1481,15 @@ inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_conte
 
   if(address >= read_only_address) {
     // Mutable region; try to update in place.
-    // TODO: fix this in the cold log; UPDATE: it might just be the case that there is no need to fix anything here.
-    // NOTE: TL;DR; cold log index cannot experience the lost-update anomaly.
-    //       Cold log only receives upserts during hot-cold compaction
-    //       During a single F2's hot-cold compaction, a record with a given key, can be updated AT MOST once!
-    //       This is guaranteed by the lookup compaction algorithm, as only a single hot-cold compaction is active at any given time.
-    //       In case of hash collisions, there should be no problem, as different threads are (up)inserting records with different keys.
-    //       Even when there is a concurrent cold-cold compaction occurring, these records are only being inserted *conditionally*.
-    //       This means that there will be inserted at the tail, ONLY IF there is *no* other record present anywhere in the cold log.
-    //       And since these records to be compacted are NOT located in the mutable region, then entering this if is impossible :)
+    // ---------------------------------------------
+    // NOTE: Cold log index cannot experience the lost-update anomaly.
+    //   Cold log only receives upserts during hot-cold compaction
+    //   During a single F2's hot-cold compaction, a record with a given key, can be updated AT MOST once!
+    //   This is guaranteed by the lookup compaction algorithm, as only a single hot-cold compaction is active at any given time.
+    //   In case of hash collisions, there should be no problem, as different threads are (up)inserting records with different keys.
+    //   Even when there is a concurrent cold-cold compaction occurring, these records are only being inserted *conditionally*.
+    //   This means that there will be inserted at the tail, ONLY IF there is *no* other record present anywhere in the cold log.
+    //   And since these records to be compacted are NOT located in the mutable region, then entering this if is impossible :)
     //
     assert(hash_index_.IsSync() && atomic_entry != nullptr);
     if(atomic_entry->load() != expected_entry) {
@@ -4013,8 +4012,6 @@ inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCal
     status = HandleOperationStatus(thread_ctx(), pending_context, internal_status, async);
   }
 
-  // TODO FIX THIS
-  //thread_ctx().serial_num = monotonic_serial_num;
   return status;
 }
 
@@ -4268,11 +4265,11 @@ inline void FasterKv<K, V, D, H, OH>::CompactRecords() {
 
   if (active_compaction) {
     // Help make the compaction faster by participating in this compaction
-    log_debug("Max hlog size reached -> participating in compaction...");
+    //log_debug("Max hlog size reached -> participating in compaction...");
     if (compaction_context_.pages_available.load()) {
       InternalCompact<faster_t>(-1, std::numeric_limits<uint32_t>::max());
     }
-    log_debug("Stopped participating in compaction!");
+    //log_debug("Stopped participating in compaction!");
   } else {
     if (!other_store_ || other_store_->next_hlog_begin_address_.load() == Address::kInvalidAddress) {
       //log_warn("Max hlog size reached \\w no active compactions! Are compactions scheduled properly?");
@@ -4280,9 +4277,9 @@ inline void FasterKv<K, V, D, H, OH>::CompactRecords() {
     }
     // Compaction of other log (typically hot) caused this log to reach its limit
     // Participate in compaction of other log; typically only hot log enters this part
-    log_debug("Max hlog size of other store reached -> participating in compaction...");
+    //log_debug("Max hlog size of other store reached -> participating in compaction...");
     other_store_->CompactRecords();
-    log_debug("Stopped participating in other store compaction!");
+    //log_debug("Stopped participating in other store compaction!");
   }
 }
 

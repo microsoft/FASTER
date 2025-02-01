@@ -850,7 +850,6 @@ class LogRecordIterator {
         // in persistent storage
         if ((currentFrame == 0 && current.offset() == 0) || (current == start)) {
           // block until we load pages into the memory
-          // TODO: further optimize this (i.e. async request for next page when we move to next frame)
           BlockAndLoad();
         }
         record = reinterpret_cast<record_t*>(frames[currentFrame] + current.offset());

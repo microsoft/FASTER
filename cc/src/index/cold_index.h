@@ -361,7 +361,7 @@ inline Status ColdIndex<D, HID>::ReadIndexEntry(ExecutionContext& exec_context, 
   context.set_hash_index((void*)this);
 #endif
 
-  // TODO: replace serial_num with thread-local (possibly inside )
+  // TODO: replace serial_num with thread-local
   Status status = store_->Read(context, AsyncEntryOperationDiskCallback, 0);
   assert(status == Status::Ok ||
         status == Status::NotFound ||
@@ -465,10 +465,9 @@ inline Status ColdIndex<D, HID>::RmwIndexEntry(ExecutionContext& exec_context, C
   hash_index_chunk_key_t key{ hash.chunk_id(table_size_), hash.tag() };
   HashIndexChunkPos pos{ hash.index_in_chunk(), hash.tag_in_chunk() };
 
-  // FIXME: avoid incrementing io_id for every request if possible
   uint64_t io_id = exec_context.io_id++;
 
-  // TODO: check usefulness of tentative flag here
+  // TODO: is tentative flag even necessary here?
   hash_bucket_chunk_entry_t desired_entry{ new_address, pos.tag, false };
   rmw_context_t context{ OperationType::RMW, pending_context, io_id,
                         &exec_context.index_io_responses,
@@ -530,7 +529,7 @@ void ColdIndex<D, HID>::AsyncEntryOperationDiskCallback(IAsyncContext* ctxt, Sta
   }
 #endif
 
-  // FIXME: store this inside ColdIndexReadContext
+  // TODO: store this inside ColdIndexReadContext
   AsyncIndexIOContext index_io_context{ context->caller_context, context->thread_io_responses,
                                         context->io_id};
   index_io_context.entry = context->entry;

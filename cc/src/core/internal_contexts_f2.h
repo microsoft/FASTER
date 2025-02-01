@@ -259,8 +259,8 @@ class F2ReadContext : public AsyncF2ReadContext<typename RC::key_t, typename RC:
   inline void copy_if_cold_log_record(const void* rec) {
     if (this->stage == ReadOperationStage::COLD_LOG_READ) {
       // Copy record to this context to be inserted later to Read Cache
-      // TODO: Use SectorAlignedMemory to "move" the record from the AsyncIOContext to here
-      // and avoid copying
+      // TODO: We can optimize this by using SectorAlignedMemory to "move" the
+      //       record from the AsyncIOContext to here and avoid copying
       const record_t* record_ = reinterpret_cast<const record_t*>(rec);
       this->record = new uint8_t[record_->size()];
       memcpy(this->record, record_, record_->size());
