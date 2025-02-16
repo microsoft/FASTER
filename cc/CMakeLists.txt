@@ -1,6 +1,5 @@
 cmake_minimum_required (VERSION 3.14)
 
-set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -17,7 +16,7 @@ OPTION(USE_URING "Enable io_uring based IO handler" OFF)
 
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /Gm- /W3 /WX /EHsc /GS /fp:precise /permissive- /Zc:wchar_t /Zc:forScope /Zc:inline /Gd /TP")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /wd4996")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /wd4996 /std:c++20 /DTOML_CONFIG")
 
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /RTC1 /MDd")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /Oi /Gy- /MD")
