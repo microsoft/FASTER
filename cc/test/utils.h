@@ -6,7 +6,10 @@
 #include <cstdio>
 #include <filesystem>
 #include <stdint.h>
+
+#ifndef _WIN32
 #include <sys/resource.h>
+#endif
 
 #include "environment/file.h"
 #include "common/log.h"
@@ -53,6 +56,7 @@ void RemoveDir(const std::string& root) {
   std::filesystem::remove_all(root);
 }
 
+#ifndef _WIN32
 bool set_stack_size(rlim_t new_size) {
   struct rlimit rl;
 
@@ -77,3 +81,4 @@ bool set_stack_size(rlim_t new_size) {
   log_info("New  stack size: %lu bytes", rl.rlim_cur);
   return true;
 }
+#endif

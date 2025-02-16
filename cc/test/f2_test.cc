@@ -1644,10 +1644,12 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
 
 
 int main(int argc, char** argv) {
+#ifndef _WIN32
   rlim_t new_stack_size = 64_MiB;
   if (!set_stack_size(new_stack_size)) {
     log_warn("Could not set stack size to %lu bytes", new_stack_size);
   }
+#endif
   ::testing::InitGoogleTest(&argc, argv);
   int ret = RUN_ALL_TESTS();
   if (ret == 0) {
