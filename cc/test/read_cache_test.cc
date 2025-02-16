@@ -47,9 +47,9 @@ static std::string ROOT_PATH{ "test_rc_store/" };
 // Parameterized test definition
 
 // FASTER: <# hash index buckets, num_threads, random_seed>
-using faster_param_types = std::tuple<uint32_t, int, uint64_t>;
+using faster_param_types = std::tuple<uint32_t, int, unsigned>;
 // F2: <# hash index buckets, num_threads, random_seed, auto_compaction>
-using f2_param_types = std::tuple<uint32_t, int, uint64_t, bool>;
+using f2_param_types = std::tuple<uint32_t, int, unsigned, bool>;
 
 // ============================================================================
 /// UpsertReadTest
@@ -297,7 +297,7 @@ struct StoreCompactionHelper<S, false> {
 // ============================================================================
 template <class S, class K, class V, bool HasColdLog>
 void UpsertReadTest(S& store, uint32_t num_threads,
-                    uint32_t random_seed, bool auto_compaction) {
+                    unsigned random_seed, bool auto_compaction) {
   using Key = K;
   using Value = V;
   store.StartSession();
@@ -518,9 +518,9 @@ TEST_P(FASTERUpsertReadParameterizedTestParam, UpsertRead) {
   auto args = GetParam();
   uint32_t table_size  = std::get<0>(args);
   uint32_t num_threads = std::get<1>(args);
-  uint64_t random_seed = std::get<2>(args);
+  unsigned random_seed = std::get<2>(args);
   bool auto_compaction = false;
-  log_info("\nTEST: [FASTER]\t Index size: %lu\t Num-threads: %lu\tRandom Seed: %lu",
+  log_info("\nTEST: [FASTER]\t Index size: %lu\t Num-threads: %lu\tRandom Seed: %u",
            table_size, num_threads, random_seed);
 
   ReadCacheConfig rc_config {
@@ -551,9 +551,9 @@ TEST_P(F2UpsertReadParameterizedTestParam, UpsertRead) {
   auto args = GetParam();
   uint32_t table_size  = std::get<0>(args);
   uint32_t num_threads = std::get<1>(args);
-  uint64_t random_seed = std::get<2>(args);
+  unsigned random_seed = std::get<2>(args);
   bool auto_compaction = std::get<3>(args);
-  log_info("\nTEST: [F2]\t Index size: %lu\t Num-threads: %lu\tRandom Seed: %lu"
+  log_info("\nTEST: [F2]\t Index size: %lu\t Num-threads: %lu\tRandom Seed: %u"
            "\tAuto-compaction: %s", table_size, num_threads, random_seed, auto_compaction ? "TRUE": "FALSE");
 
   ReadCacheConfig rc_config {

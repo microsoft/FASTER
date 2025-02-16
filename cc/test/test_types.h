@@ -98,7 +98,7 @@ class SimpleAtomicMediumValue {
   };
 
  private:
-  T extra[126];
+  T _pad[126];
 };
 
 
@@ -132,7 +132,7 @@ class SimpleAtomicLargeValue {
   };
 
  private:
-  T extra[992];
+  T _pad[992];
 };
 
 // Variable size keys / values
