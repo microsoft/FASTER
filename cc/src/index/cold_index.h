@@ -77,7 +77,7 @@ class ColdIndex : public IHashIndex<D> {
       // create cold index root path
       this->root_path_ = FASTER::environment::NormalizePath(this->root_path_ + "cold-index");
       log_debug("ColdIndex will be stored @ %s", this->root_path_.c_str());
-      std::experimental::filesystem::create_directories(this->root_path_);
+      std::filesystem::create_directories(this->root_path_);
 
       // checkpoint-related vars
       checkpoint_pending_.store(false);

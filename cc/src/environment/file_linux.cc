@@ -307,7 +307,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   if (res != 1) {
     return Status::IOError;
   }
-  
+
   io_context.release();
   return Status::Ok;
 }

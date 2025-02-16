@@ -4,7 +4,7 @@
 #pragma once
 
 #include <cstdint>
-#include <experimental/filesystem>
+#include <filesystem>
 #include <mutex>
 #include <string>
 
@@ -517,24 +517,24 @@ class FileSystemDisk {
 
   void CreateIndexCheckpointDirectory(const core::Guid& token) {
     std::string index_dir = index_checkpoint_path(token);
-    std::experimental::filesystem::path path{ index_dir };
+    std::filesystem::path path{ index_dir };
     try {
-      std::experimental::filesystem::remove_all(path);
-    } catch(std::experimental::filesystem::filesystem_error&) {
+      std::filesystem::remove_all(path);
+    } catch(std::filesystem::filesystem_error&) {
       // Ignore; throws when path doesn't exist yet.
     }
-    std::experimental::filesystem::create_directories(path);
+    std::filesystem::create_directories(path);
   }
 
   void CreateCprCheckpointDirectory(const core::Guid& token) {
     std::string cpr_dir = cpr_checkpoint_path(token);
-    std::experimental::filesystem::path path{ cpr_dir };
+    std::filesystem::path path{ cpr_dir };
     try {
-      std::experimental::filesystem::remove_all(path);
-    } catch(std::experimental::filesystem::filesystem_error&) {
+      std::filesystem::remove_all(path);
+    } catch(std::filesystem::filesystem_error&) {
       // Ignore; throws when path doesn't exist yet.
     }
-    std::experimental::filesystem::create_directories(path);
+    std::filesystem::create_directories(path);
   }
 
   file_t NewFile(const std::string& relative_path) {

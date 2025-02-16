@@ -21,6 +21,7 @@
 
 namespace FASTER {
 namespace environment {
+
 constexpr const char* kPathSeparator = "\\";
 
 /// The File class encapsulates the OS file handle.

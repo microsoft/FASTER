@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) {
     exit(0);
   }
 
-  std::experimental::filesystem::create_directory("sum_storage");
+  std::filesystem::create_directory("sum_storage");
 
   static constexpr uint64_t kKeySpace = (1L << 15);
 

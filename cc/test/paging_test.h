@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <experimental/filesystem>
+#include <filesystem>
 
 #include "test_types.h"
 
@@ -1726,6 +1726,4 @@ TEST(PagingTests, UnsafeBufferResize) {
   }
   store.CompletePending(true);
   store.StopSession();
-
-  std::experimental::filesystem::remove_all("logs/");
 }

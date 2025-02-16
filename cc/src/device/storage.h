@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 #include <atomic>
+#include <filesystem>
 #include <string>
-#include <experimental/filesystem>
 
 #ifdef _WIN32
 
@@ -1191,18 +1191,18 @@ class StorageDevice {
   /// directories are deleted.
   void CreateIndexCheckpointDirectory(const Guid& token) {
     std::string dir = index_checkpoint_path(token);
-    std::experimental::filesystem::path path{ dir };
-    std::experimental::filesystem::remove_all(path);
-    std::experimental::filesystem::create_directories(path);
+    std::filesystem::path path{ dir };
+    std::filesystem::remove_all(path);
+    std::filesystem::create_directories(path);
   }
 
   /// Creates a new directory to hold a cpr checkpoint. Any pre-existing
   /// directories are deleted.
   void CreateCprCheckpointDirectory(const Guid& token) {
     std::string dir = cpr_checkpoint_path(token);
-    std::experimental::filesystem::path path{ dir };
-    std::experimental::filesystem::remove_all(path);
-    std::experimental::filesystem::create_directories(path);
+    std::filesystem::path path{ dir };
+    std::filesystem::remove_all(path);
+    std::filesystem::create_directories(path);
   }
 
   /// Creates and returns a new file under the root directory.

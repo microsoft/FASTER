@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <experimental/filesystem>
+#include <filesystem>
 
 #include "test_types.h"
 
@@ -27,7 +27,6 @@ TEST(CLASS, MallocFixedPageSize) {
   std::random_device rd{};
   uint32_t seed = rd();
   std::mt19937_64 rng{ seed };
-  std::experimental::filesystem::create_directories("test_ofb");
 
   size_t num_bytes_written;
 
@@ -109,7 +108,7 @@ TEST(CLASS, InternalHashTable) {
   std::random_device rd{};
   uint32_t seed = rd();
   std::mt19937_64 rng{ seed };
-  std::experimental::filesystem::create_directories("test_ht");
+  std::filesystem::create_directories("test_ht");
 
   constexpr uint64_t kNumBuckets = 8388608/8;
   size_t num_bytes_written;
@@ -431,7 +430,6 @@ TEST(CLASS, Serial) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
 
   static constexpr size_t kNumRecords = 600000;
 
@@ -939,7 +937,6 @@ TEST(CLASS, Serial_VariableLengthKey) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
 
   static constexpr size_t kNumRecords = 600000;
 
@@ -1212,8 +1209,6 @@ TEST(CLASS, Concurrent_Insert_Small) {
     // Upserts don't go to disk.
     ASSERT_TRUE(false);
   };
-
-  std::experimental::filesystem::create_directories("storage");
 
   static constexpr uint32_t kNumRecords = 500000;
   static constexpr uint32_t kNumThreads = 2;
@@ -1579,7 +1574,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
+
 
   static constexpr uint32_t kNumRecords = 1000000;
   static constexpr uint32_t kNumThreads = 2;
@@ -1943,7 +1938,6 @@ TEST(CLASS, Concurrent_Update_Small) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
 
   static constexpr uint32_t kNumRecords = 200000;
   static constexpr uint32_t kNumThreads = 2;
@@ -2318,7 +2312,6 @@ TEST(CLASS, Concurrent_Update_Large) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
 
   static constexpr uint32_t kNumRecords = 1000000;
   static constexpr uint32_t kNumThreads = 2;
@@ -2716,7 +2709,6 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     uint32_t delta_;
   };
 
-  std::experimental::filesystem::create_directories("storage");
 
   static constexpr uint32_t kNumRecords = 200000;
   static constexpr uint32_t kNumThreads = 2;
@@ -3102,7 +3094,6 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     uint32_t delta_;
   };
 
-  std::experimental::filesystem::create_directories("storage");
 
   static constexpr uint32_t kNumRecords = 1000000;
   static constexpr uint32_t kNumThreads = 2;

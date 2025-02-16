@@ -4,7 +4,7 @@
 #pragma once
 
 #include <cstdio>
-#include <experimental/filesystem>
+#include <filesystem>
 #include <stdint.h>
 #include <sys/resource.h>
 
@@ -16,9 +16,9 @@ void CreateNewLogDir(const std::string& root) {
     log_warn("Setting root directory to local/current one");
     return;
   }
-  std::experimental::filesystem::remove_all(root);
+  std::filesystem::remove_all(root);
 
-  bool success = std::experimental::filesystem::create_directories(root);
+  bool success = std::filesystem::create_directories(root);
   if (!success) {
     log_error("Could not create directory @ %s", root.c_str());
     throw std::runtime_error{ "Could not create directory "};
@@ -50,7 +50,7 @@ void CreateNewLogDir(const std::string& root, std::string& hot_log_fp, std::stri
 
 void RemoveDir(const std::string& root) {
   // throw exception on OS error(s)
-  std::experimental::filesystem::remove_all(root);
+  std::filesystem::remove_all(root);
 }
 
 bool set_stack_size(rlim_t new_size) {

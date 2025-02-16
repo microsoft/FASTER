@@ -4,7 +4,8 @@
 #include <cassert>
 #include <iomanip>
 #include <sstream>
-#include "file.h"
+
+#include "file_windows.h"
 
 using namespace FASTER::core;
 

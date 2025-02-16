@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include <filesystem>
+
 #include "gtest/gtest.h"
 
 #include "core/f2.h"
@@ -143,6 +145,8 @@ TEST(TomlConfig, FasterFromConfigFile) {
   fclose(f);
 
   faster_t store = faster_t::FromConfigFile(filepath);
+
+  std::filesystem::remove(filepath);
 }
 
 TEST(TomlConfig, F2FromConfig) {
@@ -164,6 +168,8 @@ TEST(TomlConfig, F2FromConfigFile) {
   fclose(f);
 
   f2_t store = f2_t::FromConfigFile(filepath);
+
+  std::filesystem::remove(filepath);
 }
 
 
