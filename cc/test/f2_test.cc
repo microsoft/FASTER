@@ -61,7 +61,12 @@ INSTANTIATE_TEST_CASE_P(
   )
 );
 
-static std::string root_path{ "test_store/" };
+#ifdef _WIN32
+static std::string root_path{ "test_f2_store" };
+#else
+static std::string root_path{ "test_f2_store/" };
+#endif
+
 static constexpr uint64_t kCompletePendingInterval = 128;
 
 /// Upsert context required to insert data for unit testing.
@@ -374,7 +379,6 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
   }
 
   store.StopSession();
-  RemoveDir(root_path);
 }
 
 TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
@@ -472,7 +476,6 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
   }
 
   store.StopSession();
-  RemoveDir(root_path);
 }
 
 TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
@@ -596,7 +599,6 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
   }
 
   store.StopSession();
-  RemoveDir(root_path);
 }
 
 TEST_P(HotColdParameterizedTestParam, Rmw) {
@@ -776,7 +778,6 @@ TEST_P(HotColdParameterizedTestParam, Rmw) {
   }
 
   store.StopSession();
-  RemoveDir(root_path);
 }
 
 
@@ -954,7 +955,6 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
   }
   store.StopSession();
 
-  RemoveDir(root_path);
 }
 
 TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
@@ -1340,7 +1340,6 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
   store.CompletePending(true);
   store.StopSession();
 
-  RemoveDir(root_path);
 }
 
 TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
@@ -1641,7 +1640,6 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
   }
   store.StopSession();
 
-  RemoveDir(root_path);
 }
 
 
@@ -1651,5 +1649,9 @@ int main(int argc, char** argv) {
     log_warn("Could not set stack size to %lu bytes", new_stack_size);
   }
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  int ret = RUN_ALL_TESTS();
+  if (ret == 0) {
+    RemoveDir(root_path);
+  }
+  return ret;
 }

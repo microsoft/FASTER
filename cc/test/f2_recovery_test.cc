@@ -71,7 +71,12 @@ INSTANTIATE_TEST_CASE_P(
   )
 );
 
-static std::string ROOT_PATH{ "test_store/" };
+#ifdef _WIN32
+static std::string ROOT_PATH{ "test_f2_recovery_store" };
+#else
+static std::string ROOT_PATH{ "test_f2_recovery_store/" };
+#endif
+
 static constexpr uint64_t kCompletePendingInterval = 128;
 
 /// Upsert context required to insert data for unit testing.

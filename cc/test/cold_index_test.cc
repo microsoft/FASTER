@@ -278,7 +278,12 @@ typedef FASTER::device::FileSystemDisk<handler_t, 64_MiB> disk_t;
 using HI = ColdIndex<disk_t, ColdLogHashIndexDefinition<8>>;
 typedef FasterKv<Key, Value, disk_t, HI> faster_t;
 
-static std::string ROOT_PATH{ "test_store/" };
+#ifdef _WIN32
+static std::string ROOT_PATH{ "test_cold_hi_store" };
+#else
+static std::string ROOT_PATH{ "test_cold_hi_store/" };
+#endif
+
 constexpr size_t kCompletePendingInterval = 64;
 
 TEST_P(ColdIndexTestParams, UpsertRead_Serial) {
@@ -408,7 +413,6 @@ TEST_P(ColdIndexTestParams, UpsertRead_Serial) {
   ASSERT_EQ(kNumRecords, records_read.load());
 
   store.StopSession();
-  RemoveDir(ROOT_PATH);
 }
 
 TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
@@ -552,7 +556,6 @@ TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
   ASSERT_EQ(kNumRecords, records_read.load());
 
   store.StopSession();
-  RemoveDir(ROOT_PATH);
 }
 
 TEST_P(ColdIndexTestParams, UpsertDeleteHalfRead) {
@@ -652,7 +655,6 @@ TEST_P(ColdIndexTestParams, UpsertDeleteHalfRead) {
   store.CompletePending(true);
   store.StopSession();
 
-  RemoveDir(ROOT_PATH);
 }
 
 TEST_P(ColdIndexTestParams, UpsertUpdateAll) {
@@ -735,8 +737,6 @@ TEST_P(ColdIndexTestParams, UpsertUpdateAll) {
 
   store.CompletePending(true);
   store.StopSession();
-
-  RemoveDir(ROOT_PATH);
 }
 
 TEST_P(ColdIndexRecoveryTestParams, Serial) {
@@ -878,11 +878,13 @@ TEST_P(ColdIndexRecoveryTestParams, Serial) {
 
     log_debug("Success!");
   }
-
-  RemoveDir(ROOT_PATH);
 }
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  int ret = RUN_ALL_TESTS();
+  if (ret == 0) { // success
+    RemoveDir(ROOT_PATH);
+  }
+  return ret;
 }

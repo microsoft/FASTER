@@ -38,6 +38,12 @@ typedef FASTER::environment::ThreadPoolIoHandler handler_t;
 typedef FASTER::environment::QueueIoHandler handler_t;
 #endif
 
+#ifdef _WIN32
+static std::string ROOT_PATH{ "test_rc_store" };
+#else
+static std::string ROOT_PATH{ "test_rc_store/" };
+#endif
+
 // Parameterized test definition
 
 // FASTER: <# hash index buckets, num_threads, random_seed>
@@ -99,7 +105,6 @@ INSTANTIATE_TEST_CASE_P(
 );
 */
 
-static std::string root_path{ "test_store/" };
 static constexpr uint64_t kCompletePendingInterval = 128;
 
 /// Upsert context required to insert data for unit testing.
@@ -508,7 +513,7 @@ TEST_P(FASTERUpsertReadParameterizedTestParam, UpsertRead) {
   typedef FasterKv<Key, Value, disk_t> faster_t;
 
   std::string log_fp;
-  CreateNewLogDir(root_path, log_fp);
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   auto args = GetParam();
   uint32_t table_size  = std::get<0>(args);
@@ -531,8 +536,6 @@ TEST_P(FASTERUpsertReadParameterizedTestParam, UpsertRead) {
 
   // Run test
   UpsertReadTest<faster_t, Key, Value, false>(store, num_threads, random_seed, false);
-
-  RemoveDir(root_path);
 }
 
 TEST_P(F2UpsertReadParameterizedTestParam, UpsertRead) {
@@ -543,7 +546,7 @@ TEST_P(F2UpsertReadParameterizedTestParam, UpsertRead) {
   typedef F2Kv<Key, Value, disk_t> f2_t;
 
   std::string hot_fp, cold_fp;
-  CreateNewLogDir(root_path, hot_fp, cold_fp);
+  CreateNewLogDir(ROOT_PATH, hot_fp, cold_fp);
 
   auto args = GetParam();
   uint32_t table_size  = std::get<0>(args);
@@ -572,8 +575,6 @@ TEST_P(F2UpsertReadParameterizedTestParam, UpsertRead) {
 
   // Run test
   UpsertReadTest<f2_t, Key, Value, true>(store, num_threads, random_seed, auto_compaction);
-
-  RemoveDir(root_path);
 }
 
 /* Comment out test for -- test is flanky */
@@ -744,7 +745,7 @@ TEST_P(FASTERInsertAbortParameterizedTestParam, InsertAbort) {
   typedef FasterKv<Key, Value, disk_t> faster_t;
 
   std::string log_fp;
-  CreateNewLogDir(root_path, log_fp);
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   auto args = GetParam();
   uint32_t table_size  = std::get<0>(args);
@@ -767,8 +768,6 @@ TEST_P(FASTERInsertAbortParameterizedTestParam, InsertAbort) {
 
   // Run test
   InsertAbortTest<faster_t, Key, Value, false>(store, num_threads, random_seed, false);
-
-  RemoveDir(root_path);
 }
 */
 
@@ -778,5 +777,10 @@ int main(int argc, char** argv) {
     log_warn("Could not set stack size to %lu bytes", new_stack_size);
   }
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+
+  int ret = RUN_ALL_TESTS();
+  if (ret == 0) {
+    RemoveDir(ROOT_PATH);
+  }
+  return ret;
 }

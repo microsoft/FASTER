@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "test_types.h"
+#include "utils.h"
 
 using namespace FASTER;
 using FASTER::test::FixedSizeKey;
@@ -20,8 +21,20 @@ typedef FASTER::index::HotLogHashIndexDefinition hash_index_definition_t;
 typedef hash_index_definition_t::hash_bucket_t hash_bucket_t;
 typedef hash_index_definition_t::key_hash_t key_hash_t;
 
+#ifdef _WIN32
+static std::string ROOT_PATH{ "test_recovery_store" };
+#else
+static std::string ROOT_PATH{ "test_recovery_store/" };
+#endif
+
 TEST(CLASS, MallocFixedPageSize) {
   typedef MallocFixedPageSize<hash_bucket_t, disk_t> alloc_t;
+
+#ifdef _WIN32
+  CreateNewLogDir("test_ofb");
+#else
+  CreateNewLogDir("test_ofb/");
+#endif
 
   // Test copied from C#, RecoveryTest.cs.
   std::random_device rd{};
@@ -101,9 +114,21 @@ TEST(CLASS, MallocFixedPageSize) {
   ASSERT_EQ(FixedPageAddress{ num_buckets_to_add + 1 }, address);
 
   delete[] buckets;
+
+#ifdef _WIN32
+  RemoveDir("test_ofb");
+#else
+  RemoveDir("test_ofb/");
+#endif
 }
 
 TEST(CLASS, InternalHashTable) {
+#ifdef _WIN32
+  CreateNewLogDir("test_ht");
+#else
+  CreateNewLogDir("test_ht/");
+#endif
+
   // (Just the hash table itself--no overflow buckets.)
   std::random_device rd{};
   uint32_t seed = rd();
@@ -170,6 +195,12 @@ TEST(CLASS, InternalHashTable) {
     uint64_t random_num = rng2();
     ASSERT_EQ(random_num, recover_table.bucket(bucket_idx).overflow_entry.load().control_);
   }
+
+#ifdef _WIN32
+  RemoveDir("test_ht");
+#else
+  RemoveDir("test_ht/");
+#endif
 }
 
 TEST(CLASS, Serial) {
@@ -430,6 +461,8 @@ TEST(CLASS, Serial) {
     ASSERT_TRUE(false);
   };
 
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr size_t kNumRecords = 600000;
 
@@ -439,7 +472,7 @@ TEST(CLASS, Serial) {
   {
     // Populate and checkpoint the store.
     // 6 pages!
-    FasterKv<Key, Value1, disk_t> store{ 524288, 201326592, "storage", 0.4 };
+    FasterKv<Key, Value1, disk_t> store{ 524288, 201326592, log_fp, 0.4 };
 
     session_id = store.StartSession();
 
@@ -531,7 +564,7 @@ TEST(CLASS, Serial) {
   }
 
   // Test recovery.
-  FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, "storage", 0.4 };
+  FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> session_ids;
@@ -937,6 +970,8 @@ TEST(CLASS, Serial_VariableLengthKey) {
     ASSERT_TRUE(false);
   };
 
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr size_t kNumRecords = 600000;
 
@@ -946,7 +981,7 @@ TEST(CLASS, Serial_VariableLengthKey) {
   {
     // Populate and checkpoint the store.
     // 6 pages!
-    FasterKv<Key, Value1, disk_t> store{ 524288, 201326592, "storage", 0.4 };
+    FasterKv<Key, Value1, disk_t> store{ 524288, 201326592, log_fp, 0.4 };
 
     session_id = store.StartSession();
 
@@ -1038,7 +1073,7 @@ TEST(CLASS, Serial_VariableLengthKey) {
   }
 
   // Test recovery.
-  FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, "storage", 0.4 };
+  FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> session_ids;
@@ -1284,11 +1319,14 @@ TEST(CLASS, Concurrent_Insert_Small) {
     const uint32_t expected;
   };
 
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
+
   {
     // Populate and checkpoint the store.
 
     // 6 pages!
-    store_t store{ 8192, 201326592, "storage", 0.4 };
+    store_t store{ 8192, 201326592, log_fp, 0.4 };
 
     auto upsert_checkpoint_worker = [](store_t* store, uint32_t thread_id) {
       assert(thread_id == 0);
@@ -1381,7 +1419,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
   }
 
   // Test recovery.
-  store_t new_store{ 8192, 201326592, "storage", 0.4 };
+  store_t new_store{ 8192, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -1574,6 +1612,8 @@ TEST(CLASS, Concurrent_Insert_Large) {
     ASSERT_TRUE(false);
   };
 
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
 
   static constexpr uint32_t kNumRecords = 1000000;
@@ -1654,7 +1694,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     // Populate and checkpoint the store.
 
     // 6 pages!
-    store_t store{ 524288, 201326592, "storage", 0.4 };
+    store_t store{ 524288, 201326592, log_fp, 0.4 };
 
     auto upsert_checkpoint_worker = [](store_t* store, uint32_t thread_id) {
       assert(thread_id == 0);
@@ -1745,7 +1785,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
   }
 
   // Test recovery.
-  store_t new_store{ 524288, 201326592, "storage", 0.4 };
+  store_t new_store{ 524288, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -1938,6 +1978,8 @@ TEST(CLASS, Concurrent_Update_Small) {
     ASSERT_TRUE(false);
   };
 
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr uint32_t kNumRecords = 200000;
   static constexpr uint32_t kNumThreads = 2;
@@ -2015,7 +2057,7 @@ TEST(CLASS, Concurrent_Update_Small) {
 
   {
     // 6 pages!
-    store_t store{ 8192, 201326592, "storage", 0.4 };
+    store_t store{ 8192, 201326592, log_fp, 0.4 };
 
     // Populate the store.
     store.StartSession();
@@ -2120,7 +2162,7 @@ TEST(CLASS, Concurrent_Update_Small) {
   }
 
   // Test recovery.
-  store_t new_store{ 8192, 201326592, "storage", 0.4 };
+  store_t new_store{ 8192, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -2312,6 +2354,8 @@ TEST(CLASS, Concurrent_Update_Large) {
     ASSERT_TRUE(false);
   };
 
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr uint32_t kNumRecords = 1000000;
   static constexpr uint32_t kNumThreads = 2;
@@ -2397,7 +2441,7 @@ TEST(CLASS, Concurrent_Update_Large) {
 
   {
     // 6 pages!
-    store_t store{ 524288, 201326592, "storage", 0.4 };
+    store_t store{ 524288, 201326592, log_fp, 0.4 };
 
     // Populate the store.
     store.StartSession();
@@ -2517,7 +2561,7 @@ TEST(CLASS, Concurrent_Update_Large) {
   }
 
   // Test recovery.
-  store_t new_store{ 524288, 201326592, "storage", 0.4 };
+  store_t new_store{ 524288, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -2709,6 +2753,8 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     uint32_t delta_;
   };
 
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr uint32_t kNumRecords = 200000;
   static constexpr uint32_t kNumThreads = 2;
@@ -2786,7 +2832,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
 
   {
     // 6 pages!
-    store_t store{ 8192, 402653184, "storage", 0.4 };
+    store_t store{ 8192, 402653184, log_fp, 0.4 };
 
     // Populate the store.
     store.StartSession();
@@ -2902,7 +2948,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
   }
 
   // Test recovery.
-  store_t new_store{ 8192, 402653184, "storage", 0.4 };
+  store_t new_store{ 8192, 402653184, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -3094,6 +3140,8 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     uint32_t delta_;
   };
 
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr uint32_t kNumRecords = 1000000;
   static constexpr uint32_t kNumThreads = 2;
@@ -3172,7 +3220,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
 
   {
     // 6 pages!
-    store_t store{ 524288, 402653184, "storage", 0.4 };
+    store_t store{ 524288, 402653184, log_fp, 0.4 };
 
     // Populate the store.
     auto populate_worker0 = [](store_t* store, uint32_t thread_id) {
@@ -3315,7 +3363,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
   }
 
   // Test recovery.
-  store_t new_store{ 524288 * 2, 402653184, "storage", 0.4 };
+  store_t new_store{ 524288 * 2, 402653184, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;

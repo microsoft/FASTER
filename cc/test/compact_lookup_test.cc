@@ -34,6 +34,13 @@ typedef FASTER::environment::ThreadPoolIoHandler handler_t;
 typedef FASTER::environment::QueueIoHandler handler_t;
 #endif
 
+/// Define disk path
+#ifdef _WIN32
+static std::string ROOT_PATH{ "test_compact_lookup_store" };
+#else
+static std::string ROOT_PATH{ "test_compact_lookup_store/" };
+#endif
+
 // Parameterized test definition for in-memory tests
 // <shift_begin_address, n_threads>
 class CompactLookupParameterizedInMemTestFixture : public ::testing::TestWithParam<std::pair<bool, int>> {
@@ -909,6 +916,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthKey) {
     };
     // Create the key as a variable length array
     uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+    ASSERT_TRUE(key != nullptr);
     for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
@@ -1142,6 +1150,7 @@ TEST_P(CompactLookupParameterizedInMemTestFixture, InMemVariableLengthValue) {
       };
       // Create the value as a variable length array
       uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      ASSERT_TRUE(value != nullptr);
       for (uint32_t j = 0; j < idx; ++j) {
         value[j] = 2 * idx;
       }
@@ -1190,9 +1199,11 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLive) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
-  std::experimental::filesystem::create_directories("tmp_store");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
+
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store{ 2048, (1 << 20) * 192, log_fp, 0.4 };
   size_t numRecords = 50000;
 
   bool shift_begin_address = std::get<0>(GetParam());
@@ -1209,7 +1220,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLive) {
       // request will be sync -- callback won't be called
       ASSERT_TRUE(false);
     };
-    UpsertContext<Key, LargeValue> context{Key(idx), LargeValue(idx)};
+    UpsertContext<Key, LargeValue> context{ Key(idx), LargeValue(idx) };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
@@ -1247,8 +1258,6 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLive) {
   }
   store.CompletePending(true);
   store.StopSession();
-
-  std::experimental::filesystem::remove_all("tmp_store");
 }
 
 /// Inserts a bunch of records into a FASTER instance, deletes half of them
@@ -1258,9 +1267,11 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
-  std::experimental::filesystem::create_directories("tmp_store");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
+
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store{ 2048, (1 << 20) * 192, log_fp, 0.4 };
   size_t numRecords = 50000;
 
   bool shift_begin_address = std::get<0>(GetParam());
@@ -1276,7 +1287,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
-    UpsertContext<Key, LargeValue> context{Key(idx), LargeValue(idx)};
+    UpsertContext<Key, LargeValue> context{ Key(idx), LargeValue(idx) };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
@@ -1330,8 +1341,6 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskHalfLive) {
   }
   store.CompletePending(true);
   store.StopSession();
-
-  std::experimental::filesystem::remove_all("tmp_store");
 }
 
 TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
@@ -1342,9 +1351,11 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
-  std::experimental::filesystem::create_directories("tmp_store");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
+
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store{ 2048, (1 << 20) * 192, log_fp, 0.4 };
   uint32_t num_records = 20000; // ~160 MB of data
 
   bool shift_begin_address = std::get<0>(GetParam());
@@ -1485,7 +1496,6 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
   }
 
   store.StopSession();
-  std::experimental::filesystem::remove_all("tmp_store");
 }
 
 /// Inserts a bunch of records into a FASTER instance, deletes half of them,
@@ -1495,9 +1505,11 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
-  std::experimental::filesystem::create_directories("tmp_store");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
+
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store{ 2048, (1 << 20) * 192, log_fp, 0.4 };
   size_t numRecords = 50000;
 
   bool shift_begin_address = std::get<0>(GetParam());
@@ -1513,13 +1525,13 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
-    UpsertContext<Key, LargeValue> context{Key(idx), LargeValue(idx)};
+    UpsertContext<Key, LargeValue> context{ Key(idx), LargeValue(idx) };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
 
   // Delete every alternate key here.
-  for (size_t idx = 1; idx <= numRecords; idx+=2) {
+  for (size_t idx = 1; idx <= numRecords; idx += 2) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
@@ -1529,7 +1541,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
   }
 
   // Insert fresh entries for the alternate keys
-  for (size_t idx = 1; idx <= numRecords; idx+=2) {
+  for (size_t idx = 1; idx <= numRecords; idx += 2) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
@@ -1555,18 +1567,18 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
 
       CallbackContext<ReadContext<Key, LargeValue>> context(ctxt);
       ASSERT_TRUE(context->key().key > 0);
-      Key expected_key {(context->key().key % 2 == 0)
+      Key expected_key{ (context->key().key % 2 == 0)
                             ? context->output.value
-                            : context->output.value / 2};
+                            : context->output.value / 2 };
       ASSERT_EQ(context->key().key, expected_key.key);
     };
     ReadContext<Key, LargeValue> context{ Key(idx) };
     Status result = store.Read(context, callback, 1);
     EXPECT_TRUE(result == Status::Ok || result == Status::Pending);
     if (result == Status::Ok) {
-      Key expected_key {(idx % 2 == 0)
+      Key expected_key{ (idx % 2 == 0)
                           ? context.output.value
-                          : context.output.value / 2};
+                          : context.output.value / 2 };
       ASSERT_EQ(idx, expected_key.key);
     }
 
@@ -1576,8 +1588,6 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskAllLiveDeleteAndReInse
   }
   store.CompletePending(true);
   store.StopSession();
-
-  std::experimental::filesystem::remove_all("tmp_store");
 }
 
 /// Inserts a bunch of records into a FASTER instance, and invokes the
@@ -1588,9 +1598,11 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
-  std::experimental::filesystem::create_directories("tmp_store");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
+
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store{ 2048, (1 << 20) * 192, log_fp, 0.4 };
   static constexpr size_t numRecords = 50'000;
 
   bool shift_begin_address = std::get<0>(GetParam());
@@ -1607,7 +1619,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
-    UpsertContext<Key, LargeValue> context{Key(idx), LargeValue(idx)};
+    UpsertContext<Key, LargeValue> context{ Key(idx), LargeValue(idx) };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
@@ -1649,8 +1661,8 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
     store.StopSession();
   };
   // launch threads
-  std::thread upset_worker (upsert_worker_func);
-  std::thread delete_worker (delete_worker_func);
+  std::thread upset_worker(upsert_worker_func);
+  std::thread delete_worker(delete_worker_func);
 
   // perform compaction concurrently
   uint64_t until_address = store.hlog.safe_read_only_address.control();
@@ -1703,17 +1715,17 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskConcurrentOps) {
   }
   store.CompletePending(true);
   store.StopSession();
-
-  std::experimental::filesystem::remove_all("tmp_store");
 }
 
 TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<Key, LargeValue, disk_t> faster_t;
 
-  std::experimental::filesystem::create_directories("tmp_store");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
+
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store{ 2048, (1 << 20) * 192, log_fp, 0.4 };
   static constexpr size_t numRecords = 50000;
   static constexpr int num_read_threads = 32;
 
@@ -1723,7 +1735,7 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
     };
-    UpsertContext<Key, LargeValue> context{Key(idx), LargeValue(idx)};
+    UpsertContext<Key, LargeValue> context{ Key(idx), LargeValue(idx) };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
   }
@@ -1750,7 +1762,8 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
     for (uint64_t idx = start; idx <= end; idx++) {
       keys.push_back(idx);
     }
-    std::shuffle(keys.begin(), keys.end(), std::default_random_engine(start));
+    unsigned seed = static_cast<unsigned>(start);
+    std::shuffle(keys.begin(), keys.end(), std::default_random_engine(seed));
 
     store.StartSession();
 
@@ -1775,7 +1788,7 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
   };
 
   // launch threads
-  std::thread compaction_worker (compaction_worker_func);
+  std::thread compaction_worker(compaction_worker_func);
 
   std::vector<std::thread> read_threads;
   for (int i = 0; i < num_read_threads; i++) {
@@ -1791,8 +1804,6 @@ TEST(CompactLookup, OnDiskReadCompactionRaceCondition) {
   for (auto& t : read_threads) {
     t.join();
   }
-
-  std::experimental::filesystem::remove_all("tmp_store");
 }
 
 TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
@@ -1970,9 +1981,10 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t;
   typedef FasterKv<Key, Value, disk_t> faster_t;
 
-  std::experimental::filesystem::create_directories("tmp_store");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
-  faster_t store { (1 << 20), (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store{ (1 << 20), (1 << 20) * 192, log_fp, 0.4 };
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
   bool shift_begin_address = std::get<0>(GetParam());
@@ -1991,12 +2003,12 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
       ASSERT_TRUE(false);
     };
     // Create the key as a variable length array
-    uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+    uint32_t* key = (uint32_t*)malloc(idx * sizeof(uint32_t));
     for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
 
-    UpsertContext context{ key, idx, idx};
+    UpsertContext context{ key, idx, idx };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
     free(key);
@@ -2014,7 +2026,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
       free(context->key().key_data_);
     };
     // Create the key as a variable length array
-    uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+    uint32_t* key = (uint32_t*)malloc(idx * sizeof(uint32_t));
     for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
@@ -2038,12 +2050,12 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
         ASSERT_TRUE(false);
       };
       // Create the key as a variable length array
-      uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      uint32_t* key = (uint32_t*)malloc(idx * sizeof(uint32_t));
       for (uint32_t j = 0; j < idx; ++j) {
         key[j] = j;
       }
 
-      UpsertContext context{ key, idx, 2*idx };
+      UpsertContext context{ key, idx, 2 * idx };
       Status result = store.Upsert(context, callback, 1);
       ASSERT_EQ(Status::Ok, result);
       free(key);
@@ -2056,7 +2068,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
         ASSERT_TRUE(false); // deletes do not go pending
       };
       // Create the key as a variable length array
-      uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      uint32_t* key = (uint32_t*)malloc(idx * sizeof(uint32_t));
       for (uint32_t j = 0; j < idx; ++j) {
         key[j] = j;
       }
@@ -2077,7 +2089,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
         free(context->key().key_data_);
       };
       // Create the key as a variable length array
-      uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      uint32_t* key = (uint32_t*)malloc(idx * sizeof(uint32_t));
       for (uint32_t j = 0; j < idx; ++j) {
         key[j] = j;
       }
@@ -2102,7 +2114,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
   }
 
   // Read again.
-  for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
+  for (uint32_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       CallbackContext<ReadContext> context{ ctxt };
       // check request result & value
@@ -2125,7 +2137,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
       free(context->key().key_data_);
     };
     // Create the key as a variable length array
-    uint32_t* key = (uint32_t*) malloc(idx * sizeof(uint32_t));
+    uint32_t* key = (uint32_t*)malloc(idx * sizeof(uint32_t));
     for (uint32_t j = 0; j < idx; ++j) {
       key[j] = j;
     }
@@ -2141,8 +2153,9 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
         ASSERT_EQ(2 * idx, context.output.value);
       } else if (idx % 4 == 3) { // Intact
         ASSERT_EQ(idx, context.output.value);
+      } else {
+        ASSERT_TRUE(false);
       }
-      else ASSERT_TRUE(false);
       for (uint32_t j = 0; j < context.key().key_length_; ++j) {
         ASSERT_EQ(context.key().key_data_[j], j);
       }
@@ -2155,8 +2168,6 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
   }
   store.CompletePending(true);
   store.StopSession();
-
-  std::experimental::filesystem::remove_all("tmp_store");
 }
 
 TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
@@ -2324,9 +2335,10 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t;
   typedef FasterKv<Key, Value, disk_t> faster_t;
 
-  std::experimental::filesystem::create_directories("tmp_store");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
-  faster_t store { 2048, (1 << 20) * 192, "tmp_store", 0.4 };
+  faster_t store{ 2048, (1 << 20) * 192, log_fp, 0.4 };
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
   bool shift_begin_address = std::get<0>(GetParam());
@@ -2344,12 +2356,12 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
       ASSERT_TRUE(false); // upserts do not go pending
     };
     // Create the value as a variable length array
-    uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
+    uint32_t* value = (uint32_t*)malloc(idx * sizeof(uint32_t));
     for (uint32_t j = 0; j < idx; ++j) {
       value[j] = idx;
     }
 
-    UpsertContext context{ idx, value, idx};
+    UpsertContext context{ idx, value, idx };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
     free(value);
@@ -2382,7 +2394,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
         ASSERT_TRUE(false); // upserts do not go pending
       };
       // Create the value as a variable length array
-      uint32_t* value = (uint32_t*) malloc(idx * sizeof(uint32_t));
+      uint32_t* value = (uint32_t*)malloc(idx * sizeof(uint32_t));
       for (uint32_t j = 0; j < idx; ++j) {
         value[j] = 2 * idx;
       }
@@ -2405,7 +2417,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
   }
 
   // Read again.
-  for(uint32_t idx = 1; idx <= numRecords ; ++idx) {
+  for(uint32_t idx = 1; idx <= numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_EQ(Status::Ok, result);
       CallbackContext<ReadContext> context{ ctxt };
@@ -2423,17 +2435,20 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthValue) {
     Status result = store.Read(context, callback, 1);
     ASSERT_TRUE(result == Status::Ok || result == Status::Pending);
     if (result == Status::Ok) {
-      uint32_t value_id = (idx % 2 == 0) ? 2*idx : idx;
+      uint32_t value_id = (idx % 2 == 0) ? 2 * idx : idx;
       for (uint32_t j = 0; j < idx; ++j) {
         ASSERT_EQ(context.output[j], value_id);
       }
     }
   }
   store.StopSession();
-  std::experimental::filesystem::remove_all("tmp_store");
 }
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  int ret = RUN_ALL_TESTS();
+  if (ret == 0) { // success
+    RemoveDir(ROOT_PATH);
+  }
+  return ret;
 }

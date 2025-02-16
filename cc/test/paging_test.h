@@ -6,11 +6,19 @@
 #include <filesystem>
 
 #include "test_types.h"
+#include "utils.h"
 
 using namespace FASTER;
 
 /// Disk's log uses 64 MB segments.
 typedef FASTER::device::FileSystemDisk<handler_t, 64_MiB> disk_t;
+
+/// Define disk path
+#ifdef _WIN32
+static std::string ROOT_PATH{ "test_paging_test_store" };
+#else
+static std::string ROOT_PATH{ "test_paging_test_store/" };
+#endif
 
 // <# hash index entries, read cache, auto-compaction>
 using params_type = std::tuple<uint32_t, bool, bool>;
@@ -201,8 +209,9 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
     uint8_t expected_;
   };
 
-  std::experimental::filesystem::create_directories("logs");
   typedef FasterKv<Key, Value, disk_t> store_t;
+
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
@@ -219,7 +228,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
 
-  store_t store{ table_size, 256_MiB , "logs", 0.5,
+  store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
 
   store.StartSession();
@@ -500,8 +509,9 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
     uint8_t expected_;
   };
 
-  std::experimental::filesystem::create_directories("logs");
   typedef FasterKv<Key, Value, disk_t> store_t;
+
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
@@ -518,7 +528,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
 
-  store_t store{ table_size, 256_MiB , "logs", 0.5,
+  store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
 
   static constexpr size_t kNumRecords = 250000;
@@ -766,8 +776,9 @@ TEST_P(PagingTestParam, Rmw) {
     uint64_t val_;
   };
 
-  std::experimental::filesystem::create_directories("logs");
   typedef FasterKv<Key, Value, disk_t> store_t;
+
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
@@ -784,7 +795,7 @@ TEST_P(PagingTestParam, Rmw) {
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
 
-  store_t store{ table_size, 256_MiB , "logs", 0.5,
+  store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
 
   constexpr size_t kNumRecords = 200000;
@@ -959,8 +970,9 @@ TEST_P(PagingTestParam, Rmw_Large) {
     uint64_t val_;
   };
 
-  std::experimental::filesystem::create_directories("logs");
   typedef FasterKv<Key, Value, disk_t> store_t;
+
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
@@ -977,7 +989,7 @@ TEST_P(PagingTestParam, Rmw_Large) {
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
 
-  store_t store{ table_size, 256_MiB , "logs", 0.5,
+  store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
 
   constexpr size_t kNumRecords = 50000;
@@ -1258,8 +1270,9 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
     store_->StopSession();
   };
 
-  std::experimental::filesystem::create_directories("logs");
   typedef FasterKv<Key, Value, disk_t> store_t;
+
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
@@ -1276,7 +1289,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
 
-  store_t store{ table_size, 256_MiB , "logs", 0.5,
+  store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
 
   // Initial RMW.
@@ -1534,8 +1547,9 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
     store_->StopSession();
   };
 
-  std::experimental::filesystem::create_directories("logs");
   typedef FasterKv<Key, Value, disk_t> store_t;
+
+  CreateNewLogDir(ROOT_PATH);
 
   auto args = GetParam();
   uint32_t table_size = std::get<0>(args);
@@ -1552,7 +1566,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
   HlogCompactionConfig compaction_config{
     250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
 
-  store_t store{ table_size, 256_MiB , "logs", 0.5,
+  store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
 
   // Initial RMW.
@@ -1678,13 +1692,13 @@ TEST(PagingTests, UnsafeBufferResize) {
     value_t output;
   };
 
-
   typedef FASTER::device::FileSystemDisk<handler_t, (1 << 30)> disk_t; // 1GB file segments
   typedef FasterKv<K, V, disk_t> faster_t;
 
-  std::experimental::filesystem::create_directories("logs/");
+  CreateNewLogDir(ROOT_PATH);
+
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
-  faster_t store { 2048, 512_MiB, "logs/", 0.8 };
+  faster_t store { 2048, 512_MiB, ROOT_PATH, 0.8 };
   size_t numRecords = 50'000;
 
   store.StartSession();

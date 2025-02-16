@@ -10,7 +10,6 @@
 #include "gtest/gtest.h"
 #include "core/faster.h"
 #include "device/file_system_disk.h"
-#include "index/index.h"
 
 using namespace FASTER::core;
 
@@ -24,5 +23,9 @@ typedef FASTER::environment::QueueIoHandler handler_t;
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  int ret = RUN_ALL_TESTS();
+  if (ret == 0) {
+    RemoveDir(ROOT_PATH);
+  }
+  return ret;
 }
