@@ -1091,18 +1091,18 @@ inline void MemHashIndex<D, HID>::DumpDistribution() const {
   // Buckets Histogram
   fprintf(stderr, "# Buckets Histogram:\n");
   for(uint8_t idx = 0; idx < kNumBucketsHistBuckets - 1; ++idx) {
-    fprintf(stderr, "%2u : [%8lu] {%6.2lf%%}\n", idx, num_buckets_hist[idx],
+    fprintf(stderr, "%2u : [%8" PRIu64 "] {%6.2lf%%}\n", idx, num_buckets_hist[idx],
       (total_buckets_in_hist > 0) ? static_cast<double>(num_buckets_hist[idx]) / total_buckets_in_hist * 100.0 : 0.0);
   }
-  fprintf(stderr, "%2u+: [%8lu] {%6.2lf%%}\n", kNumBucketsHistBuckets - 1, num_buckets_hist[kNumBucketsHistBuckets - 1],
+  fprintf(stderr, "%2u+: [%8" PRIu64 "] {%6.2lf%%}\n", kNumBucketsHistBuckets - 1, num_buckets_hist[kNumBucketsHistBuckets - 1],
       (total_buckets_in_hist > 0) ? static_cast<double>(num_buckets_hist[kNumBucketsHistBuckets - 1]) / total_buckets_in_hist * 100.0 : 0.0);
   // Bucket Entries Histogram
   fprintf(stderr, "\n# Bucket Entries Histogram:\n");
   for(uint8_t idx = 0; idx < kNumEntriesHistBuckets - 1; ++idx) {
-    fprintf(stderr, "%2u : [%8lu] {%6.2lf%%}\n", idx, num_entries_hist[idx],
+    fprintf(stderr, "%2u : [%8" PRIu64 "] {%6.2lf%%}\n", idx, num_entries_hist[idx],
       (total_buckets_in_hist > 0) ? static_cast<double>(num_entries_hist[idx]) / total_buckets_in_hist * 100.0 : 0.0);
   }
-  fprintf(stderr, "%2u+: [%8lu] {%6.2lf%%}\n", kNumEntriesHistBuckets - 1, num_entries_hist[kNumEntriesHistBuckets - 1],
+  fprintf(stderr, "%2u+: [%8" PRIu64 "] {%6.2lf%%}\n", kNumEntriesHistBuckets - 1, num_entries_hist[kNumEntriesHistBuckets - 1],
       (total_buckets_in_hist > 0) ? static_cast<double>(num_entries_hist[kNumEntriesHistBuckets - 1]) / total_buckets_in_hist * 100.0 : 0.0);
 }
 

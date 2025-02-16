@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include <cstdio>
+#include <cinttypes>
 
 #include "../src/core/checkpoint_state.h"
 
@@ -29,21 +30,21 @@ int main(int argc, char* argv[])
   printf("Use snapshot file  : %s \n", log_metadata->use_snapshot_file ? "TRUE" : "FALSE");
   printf("Version            : %u\n", log_metadata->version);
   printf("Number of Threads  : %u\n", log_metadata->num_threads.load());
-  printf("Flushed address    : %15lu (page: %8u, offset: %8u)\n", log_metadata->flushed_address.control(),
+  printf("Flushed address    : %15" PRIu64 " (page: %8u, offset: %8u)\n", log_metadata->flushed_address.control(),
           log_metadata->flushed_address.page(), log_metadata->flushed_address.offset());
-  printf("Final address      : %15lu (page: %8u, offset: %8u)\n", log_metadata->final_address.control(),
+  printf("Final address      : %15" PRIu64 " (page: %8u, offset: %8u)\n", log_metadata->final_address.control(),
           log_metadata->final_address.page(), log_metadata->final_address.offset());
 
-  printf("Monotonic Serial Numbers [size: %lu]\n", Thread::kMaxNumThreads);
+  printf("Monotonic Serial Numbers [size: %" PRIu64 "]\n", Thread::kMaxNumThreads);
   for (size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
     if (log_metadata->monotonic_serial_nums[idx] != 0) {
-      printf("\t\t[%lu] %lu\n", idx, log_metadata->monotonic_serial_nums[idx]);
+      printf("\t\t[%" PRIu64 "] %" PRIu64 "\n", idx, log_metadata->monotonic_serial_nums[idx]);
     }
   }
-  printf("Guids [size: %lu]\n", Thread::kMaxNumThreads);
+  printf("Guids [size: %" PRIu64 "]\n", Thread::kMaxNumThreads);
   for (size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
     if (!Guid::IsNull(log_metadata->guids[idx])) {
-      printf("\t\t[%lu] %s\n", idx, log_metadata->guids[idx].ToString().c_str());
+      printf("\t\t[%" PRIu64 "] %s\n", idx, log_metadata->guids[idx].ToString().c_str());
     }
   }
 
