@@ -55,7 +55,7 @@ FetchContent_MakeAvailable(googletest)
 FetchContent_Declare(
   toml11
   GIT_REPOSITORY https://github.com/ToruNiina/toml11
-  GIT_TAG v4.2.0
+  GIT_TAG v4.3.0
 )
 FetchContent_MakeAvailable(toml11)
 include_directories(${toml11_SOURCE_DIR}/include)
