@@ -17,9 +17,12 @@ enum class Lvl : uint8_t {
   DEBUG = 0,
   INFO  = 1,
   WARN  = 2,
-  ERROR = 3,
-  REPORT = 4
+  ERR = 3,
+  REPORT = 4,
+
+  NUM
 };
+
 static const char* LvlStr[] = {
   "DEBUG", "INFO", "WARN", "ERROR", ""
 };
@@ -36,22 +39,39 @@ static const char* LvlStr[] = {
 #ifdef _WIN32
 #define __FILENAME__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)
 #define logMessage(l, f, ...) log_msg(l, __LINE__, __func__, __FILENAME__, f, __VA_ARGS__)
+
+// Define warn/error/report macros
+#define log_warn(f, ...) logMessage(Lvl::WARN, f, __VA_ARGS__)
+#define log_error(f, ...) logMessage(Lvl::ERR, f, __VA_ARGS__)
+#define log_rep(f, ...) logMessage(Lvl::REPORT, f, __VA_ARGS__)
+
 #else
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define logMessage(l, f, a...) log_msg(l, __LINE__, __func__, __FILENAME__, f, ##a)
+
+// Define warn/error/report macros
+#define log_warn(f, a...) logMessage(Lvl::WARN, f, ##a)
+#define log_error(f, a...) logMessage(Lvl::ERR, f, ##a)
+#define log_rep(f, a...) logMessage(Lvl::REPORT, f, ##a)
+
 #endif
 
+/// Disable debug/info macros for release mode
 #ifdef NDEBUG
-#define log_debug(f, a...) do {} while(0)
-#define log_info(f, a...) do {} while(0)
+#define log_debug(f, ...) do {} while(0)
+#define log_info(f, ...) do {} while(0)
+#else
+
+#ifdef _WIN32
+#define log_debug(f, ...) logMessage(Lvl::DEBUG, f, __VA_ARGS__)
+#define log_info(f, ...) logMessage(Lvl::INFO , f, __VA_ARGS__)
 #else
 #define log_debug(f, a...) logMessage(Lvl::DEBUG, f, ##a)
 #define log_info(f, a...) logMessage(Lvl::INFO , f, ##a)
 #endif
 
-#define log_warn(f, a...) logMessage(Lvl::WARN, f, ##a)
-#define log_error(f, a...) logMessage(Lvl::ERROR, f, ##a)
-#define log_rep(f, a...) logMessage(Lvl::REPORT, f, ##a)
+#endif
+
 
 typedef std::chrono::high_resolution_clock log_clock_t;
 
@@ -62,6 +82,7 @@ inline void log_msg(Lvl level, int line, const char* func,
                    const char* file, const char* fmt, ...) {
   // Do not print messages below the current level.
   if (level < static_cast<Lvl>(LEVEL)) return;
+  if (level >= static_cast<Lvl>(Lvl::NUM)) return;
 
   auto now = log_clock_t::now();
 
