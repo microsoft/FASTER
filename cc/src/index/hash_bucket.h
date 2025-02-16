@@ -20,7 +20,7 @@ namespace index {
 static_assert(Address::kAddressBits == 48, "Address::kAddressBits != 48");
 
 template <class U>
-class IndexHashBucketEntry;
+struct IndexHashBucketEntry;
 
 /// Entry stored in a hash bucket. Packed into 8 bytes.
 struct HashBucketEntry {
@@ -114,7 +114,7 @@ class AtomicHashBucketEntry {
 
 template <class U>
 struct IndexHashBucketEntry {
-  friend class HashBucketEntry;
+  friend struct HashBucketEntry;
 
   IndexHashBucketEntry()
     : entry_{ HashBucketEntry::kInvalidEntry } {

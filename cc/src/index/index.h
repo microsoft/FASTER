@@ -31,9 +31,12 @@ class HotLogHashIndexDefinition {
 template <uint16_t N>
 class ColdLogHashIndexDefinition {
  public:
-  constexpr static uint16_t kNumEntries = N;                          // Total number of hash bucket entries
-  constexpr static uint16_t kNumBuckets = (N >> 3);                   // Each bucket holds 8 hash bucket entries
-  constexpr static uint8_t kInChunkIndexBits = core::log2((N >> 3));  // How many bits to index all different buckets?
+  // Total number of hash bucket entries
+  constexpr static uint16_t kNumEntries = N;
+  // Each bucket holds 8 hash bucket entries
+  constexpr static uint16_t kNumBuckets = (N >> 3);
+  // How many bits to index all different buckets?
+  constexpr static uint8_t kInChunkIndexBits = static_cast<uint8_t>(core::log2((N >> 3)));
 
   static_assert(kNumEntries >= 8 && kNumEntries <= 512,
     "ColdLogHashIndexDefinition: Total number of entries should be between 8 and 512");
@@ -174,7 +177,7 @@ Status IHashIndex<D>::ReadCheckpointMetadata(const Guid& token, CheckpointState<
   // Create aligned buffer used in read async
   uint32_t read_size = sizeof(checkpoint.index_metadata);
   assert(read_size <= file.alignment());      // less than file alignment
-  read_size += file.alignment() - read_size;  // pad to file alignment
+  read_size += static_cast<uint32_t>(file.alignment()) - read_size;  // pad to file alignment
   assert(read_size % file.alignment() == 0);
   uint8_t* buffer = reinterpret_cast<uint8_t*>(core::aligned_alloc(file.alignment(), read_size));
   memset(buffer, 0, read_size);
@@ -216,7 +219,7 @@ Status IHashIndex<D>::WriteCheckpointMetadata(CheckpointState<file_t>& checkpoin
   // Create aligned buffer used in write async
   uint32_t write_size = sizeof(checkpoint.index_metadata);
   assert(write_size <= file.alignment());       // less than file alignment
-  write_size += file.alignment() - write_size;  // pad to file alignment
+  write_size += static_cast<uint32_t>(file.alignment()) - write_size;  // pad to file alignment
   assert(write_size % file.alignment() == 0);
   uint8_t* buffer = reinterpret_cast<uint8_t*>(core::aligned_alloc(file.alignment(), write_size));
   std::memset(reinterpret_cast<void*>(buffer), 0, write_size);

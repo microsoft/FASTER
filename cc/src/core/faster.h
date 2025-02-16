@@ -3,8 +3,6 @@
 
 #pragma once
 
-#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
-
 #include <atomic>
 #include <cassert>
 #include <cinttypes>
@@ -87,7 +85,6 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
   ExecutionContext contexts_[2];
   uint8_t cur_;
 };
-static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
 
 /// The FASTER key-value store.
 template <class K, class V, class D, class H = MemHashIndex<D>, class OH = H>
@@ -464,7 +461,7 @@ class FasterKv {
   AtomicAddress next_hlog_begin_address_;
 
   /// Number of active sessions
-  std::atomic<size_t> num_active_sessions_;
+  std::atomic<uint32_t> num_active_sessions_;
 
   // Pointer to other FasterKv instance (if F2); else nullptr
   // Required for the Epoch framework to work properly

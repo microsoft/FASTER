@@ -101,7 +101,7 @@ struct f2_context_helper<false>
   }
   template<class MC, class Key>
   static inline void write_deep_key_at(MC& context, Key* dst) {
-    using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::result_of_t<decltype(&MC::key)(MC)>>>;
+    using key_or_shallow_key_t = std::remove_const_t<std::remove_reference_t<std::invoke_result_t<decltype(&MC::key), MC>>>;
     constexpr static const bool kIsShallowKey = !std::is_same<key_or_shallow_key_t, Key>::value;
 
     write_deep_key_at_helper<kIsShallowKey>::execute(context.key(), dst);

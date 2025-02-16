@@ -138,6 +138,7 @@ class ReadCachePersistentMemoryMalloc : public PersistentMemoryMalloc<D> {
                                 ReadCacheEvictCallback evict_callback) // read-cache specific
     : PersistentMemoryMalloc<disk_t>(has_no_backing_storage, log_size, epoch, disk_, file_,
                                     log_mutable_fraction, pre_allocate_log)
+    , readcache_{ nullptr }
     , evict_callback_{ evict_callback } {
       // evict callback should be provided
       assert(evict_callback_ != nullptr);
