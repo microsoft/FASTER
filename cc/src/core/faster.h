@@ -3,8 +3,6 @@
 
 #pragma once
 
-#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
-
 #include <atomic>
 #include <cassert>
 #include <cinttypes>
@@ -13,35 +11,50 @@
 #include <cstring>
 #include <type_traits>
 #include <algorithm>
+#include <unordered_set>
 
+#ifdef STATISTICS
+#include <chrono>
+#endif
+
+#include "common/log.h"
 #include "device/file_system_disk.h"
+#include "index/cold_index.h"
+#include "index/mem_index.h"
 
+#include "address.h"
 #include "alloc.h"
 #include "checkpoint_locks.h"
 #include "checkpoint_state.h"
 #include "constants.h"
+#include "compact.h"
+#include "config.h"
 #include "gc_state.h"
 #include "grow_state.h"
 #include "guid.h"
-#include "hash_table.h"
 #include "internal_contexts.h"
 #include "key_hash.h"
+#include "log_scan.h"
 #include "malloc_fixed_page_size.h"
 #include "persistent_memory_malloc.h"
+#include "read_cache.h"
 #include "record.h"
 #include "recovery_status.h"
 #include "state_transitions.h"
 #include "status.h"
 #include "utility.h"
-#include "log_scan.h"
-#include "compact.h"
 
 using namespace std::chrono_literals;
+using namespace FASTER::index;
 
 /// The FASTER key-value store, and related classes.
 
 namespace FASTER {
 namespace core {
+
+// Forward class declaration
+template<class K, class V, class D, class HHI, class CHI>
+class F2Kv;
 
 class alignas(Constants::kCacheLineBytes) ThreadContext {
  public:
@@ -72,13 +85,22 @@ class alignas(Constants::kCacheLineBytes) ThreadContext {
   ExecutionContext contexts_[2];
   uint8_t cur_;
 };
-static_assert(sizeof(ThreadContext) == 448, "sizeof(ThreadContext) != 448");
 
 /// The FASTER key-value store.
-template <class K, class V, class D>
+template <class K, class V, class D, class H = MemHashIndex<D>, class OH = H>
 class FasterKv {
  public:
-  typedef FasterKv<K, V, D> faster_t;
+  typedef FasterKv<K, V, D, H, OH> faster_t;
+  typedef FasterKv<K, V, D, OH, H> other_faster_t;
+
+  template <class Ki, class Vi, class Di, class HHIi, class CHIi>
+  friend class F2Kv;
+
+  friend class FASTER::index::ColdIndex<D, typename H::hash_index_definition_t>;
+
+  // Make friend all templated instances of this class
+  template <class Ki, class Vi, class Di, class Hi, class OHi>
+  friend class FasterKv;
 
   /// Keys and values stored in this key-value store.
   typedef K key_t;
@@ -89,6 +111,16 @@ class FasterKv {
   typedef typename D::log_file_t log_file_t;
 
   typedef PersistentMemoryMalloc<disk_t> hlog_t;
+  typedef ConcurrentLogPage<key_t, value_t> concurrent_log_page_t;
+
+  typedef H hash_index_t;
+  typedef typename H::key_hash_t key_hash_t;
+  typedef typename H::Config IndexConfig;
+  typedef FASTER::index::HashBucketEntry HashBucketEntry;
+
+  typedef ReadCache<K, V, D, H> read_cache_t;
+
+  typedef FasterKvConfig<hash_index_t> Config;
 
   /// Contexts that have been deep-copied, for async continuations, and must be accessed via
   /// virtual function calls.
@@ -96,25 +128,72 @@ class FasterKv {
   typedef AsyncPendingUpsertContext<key_t> async_pending_upsert_context_t;
   typedef AsyncPendingRmwContext<key_t> async_pending_rmw_context_t;
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
+  typedef AsyncPendingConditionalInsertContext<key_t> async_pending_ci_context_t;
 
-  FasterKv(uint64_t table_size, uint64_t log_size, const std::string& filename,
-           double log_mutable_fraction = 0.9, bool pre_allocate_log = false,
-           const std::string& config = "")
-    : min_table_size_{ table_size }
-    , disk{ filename, epoch_, config }
-    , hlog{ filename.empty() /*hasNoBackingStorage*/, log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
-    , system_state_{ Action::None, Phase::REST, 1 }
-    , num_pending_ios{ 0 } {
-    if(!Utility::IsPowerOfTwo(table_size)) {
-      throw std::invalid_argument{ " Size is not a power of 2" };
-    }
-    if(table_size > INT32_MAX) {
-      throw std::invalid_argument{ " Cannot allocate such a large hash table " };
+  static constexpr unsigned kMaxPendingIOs = FASTER::environment::kMaxIoEvents;
+
+  FasterKv(IndexConfig index_config, uint64_t hlog_mem_size, const std::string& filepath,
+           double hlog_mutable_fraction = DEFAULT_HLOG_MUTABLE_FRACTION,
+           ReadCacheConfig rc_config = DEFAULT_READ_CACHE_CONFIG,
+           HlogCompactionConfig hlog_compaction_config = DEFAULT_HLOG_COMPACTION_CONFIG,
+           bool pre_allocate_log = false, const std::string& config = "")
+    : system_state_{ Action::None, Phase::REST, 1 }
+    , disk{ filepath, epoch_, config }
+    , hlog{ filepath.empty() /*hasNoBackingStorage*/, hlog_mem_size, epoch_, disk, disk.log(), hlog_mutable_fraction, pre_allocate_log }
+    , grow_state_{ &hlog }
+    , hash_index_{ filepath, disk, epoch_, gc_state_, grow_state_ }
+    , read_cache_{ nullptr }
+    , read_cache_enabled_{ rc_config.enabled }
+    , min_index_table_size_{ index_config.table_size }
+    , num_pending_ios_{ 0 }
+    , num_compaction_truncations_{ 0 }
+    , next_hlog_begin_address_{ Address::kInvalidAddress }
+    , num_active_sessions_{ 0 }
+    , other_store_{ nullptr }
+    , refresh_callback_store_{ nullptr }
+    , refresh_callback_{ nullptr }
+    , hlog_compaction_config_{ hlog_compaction_config }
+    , auto_compaction_active_{ false }
+    , auto_compaction_scheduled_{ false }
+    , max_hlog_size_{ 0 } {
+
+    log_debug("Hash Index Size: %lu", index_config.table_size);
+    hash_index_.Initialize(index_config);
+    if (!hash_index_.IsSync()) {
+      hash_index_.SetRefreshCallback(static_cast<void*>(this), DoRefreshCallback);
     }
 
-    resize_info_.version = 0;
-    state_[0].Initialize(table_size, disk.log().alignment());
-    overflow_buckets_allocator_[0].Initialize(disk.log().alignment(), epoch_);
+    log_debug("Read cache is %s", rc_config.enabled ? "ENABLED" : "DISABLED");
+    if (rc_config.enabled) {
+      read_cache_ = std::make_unique<read_cache_t>(epoch_, hash_index_, hlog, rc_config);
+    }
+
+    log_debug("Auto compaction is %s", hlog_compaction_config.enabled ? "ENABLED" : "DISABLED");
+    if (hlog_compaction_config.enabled) {
+      auto_compaction_active_.store(true);
+      compaction_thread_ = std::move(std::thread(&FasterKv::AutoCompactHlog, this));
+    }
+
+    #ifdef STATISTICS
+    InitializeStats();
+    #endif
+  }
+
+  FasterKv(const Config& config)
+    : FasterKv{ config.index_config, config.hlog_config.in_mem_size, config.filepath,
+                config.hlog_config.mutable_fraction, config.rc_config,
+                config.hlog_compaction_config, config.hlog_config.pre_allocate } {
+  }
+
+  ~FasterKv() {
+    while (system_state_.phase() != Phase::REST) {
+      std::this_thread::yield();
+    }
+    if (compaction_thread_.joinable()) {
+      // shut down compaction thread
+      auto_compaction_active_.store(false);
+      compaction_thread_.join();
+    }
   }
 
   // No copy constructor.
@@ -122,60 +201,83 @@ class FasterKv {
 
  public:
   /// Thread-related operations
-  Guid StartSession();
+  Guid StartSession(Guid guid = Guid());
   uint64_t ContinueSession(const Guid& guid);
   void StopSession();
-  void Refresh();
+  void Refresh(bool from_callback = false);
 
   /// Store interface
   template <class RC>
-  inline Status Read(RC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
+  inline Status Read(RC& context, AsyncCallback callback, uint64_t monotonic_serial_num,
+                      bool abort_if_tombstone = false);
 
   template <class UC>
   inline Status Upsert(UC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
 
   template <class MC>
-  inline Status Rmw(MC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
+  inline Status Rmw(MC& context, AsyncCallback callback, uint64_t monotonic_serial_num,
+                      bool create_if_not_exists = true);
 
   template <class DC>
-  inline Status Delete(DC& context, AsyncCallback callback, uint64_t monotonic_serial_num);
+  inline Status Delete(DC& context, AsyncCallback callback, uint64_t monotonic_serial_num,
+                        bool force_tombstone = false);
 
   inline bool CompletePending(bool wait = false);
 
+  inline void CompletePendingCompactions();
+
   /// Checkpoint/recovery operations.
-  bool Checkpoint(void(*index_persistence_callback)(Status result),
-                  void(*hybrid_log_persistence_callback)(Status result,
-                      uint64_t persistent_serial_num), Guid& token);
-  bool CheckpointIndex(void(*index_persistence_callback)(Status result), Guid& token);
-  bool CheckpointHybridLog(void(*hybrid_log_persistence_callback)(Status result,
-                           uint64_t persistent_serial_num), Guid& token);
+  bool Checkpoint(IndexPersistenceCallback index_persistence_callback,
+                  HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                  Guid& token);
+  bool CheckpointIndex(IndexPersistenceCallback index_persistence_callback, Guid& token);
+  bool CheckpointHybridLog(HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                            Guid& token);
   Status Recover(const Guid& index_token, const Guid& hybrid_log_token, uint32_t& version,
                  std::vector<Guid>& session_ids);
 
   /// Log compaction entry method.
   bool Compact(uint64_t untilAddress);
+  bool CompactWithLookup(uint64_t until_address, bool shift_begin_address,
+                          int n_threads = kNumCompactionThreads,
+                          bool to_other_store = false,
+                          bool checkpoint = false);
 
   /// Truncating the head of the log.
   bool ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
                          GcState::complete_callback_t complete_callback);
 
   /// Make the hash table larger.
-  bool GrowIndex(GrowState::callback_t caller_callback);
+  bool GrowIndex(GrowCompleteCallback caller_callback);
+
+  #ifdef TOML_CONFIG
+  static faster_t FromConfigString(const std::string& config);
+  static faster_t FromConfigFile(const std::string& filepath);
+  #endif
 
   /// Statistics
   inline uint64_t Size() const {
-    return hlog.GetTailAddress().control();
+    return hlog.GetTailAddress().control() - hlog.begin_address.control();
   }
   inline void DumpDistribution() {
-    state_[resize_info_.version].DumpDistribution(
-      overflow_buckets_allocator_[resize_info_.version]);
+    hash_index_.DumpDistribution();
   }
+  inline uint32_t NumActiveSessions() const {
+    return num_active_sessions_.load();
+  }
+  inline bool AutoCompactionScheduled() const {
+    return auto_compaction_scheduled_.load();
+  }
+  inline bool HlogMaxSizeReached() const {
+    return (max_hlog_size_ > 0 && Size() >= max_hlog_size_);
+  }
+
 
  private:
   typedef Record<key_t, value_t> record_t;
-
   typedef PendingContext<key_t> pending_context_t;
 
+ public:
   template <class C>
   inline OperationStatus InternalRead(C& pending_context) const;
 
@@ -188,20 +290,31 @@ class FasterKv {
   inline OperationStatus InternalRetryPendingRmw(async_pending_rmw_context_t& pending_context);
 
   template<class C>
-  inline OperationStatus InternalDelete(C& pending_context);
+  inline OperationStatus InternalDelete(C& pending_context, bool force_tombstone);
 
+ private:
+  void InternalContinuePendingRequest(ExecutionContext& ctx, AsyncIOContext& io_context);
   OperationStatus InternalContinuePendingRead(ExecutionContext& ctx,
-      AsyncIOContext& io_context);
+      AsyncIOContext& io_context, bool& log_truncated);
   OperationStatus InternalContinuePendingRmw(ExecutionContext& ctx,
       AsyncIOContext& io_context);
+  OperationStatus InternalContinuePendingConditionalInsert(ExecutionContext& ctx,
+      AsyncIOContext& io_context);
 
-  // Find the hash bucket entry, if any, corresponding to the specified hash.
-  // The caller can use the "expected_entry" to CAS its desired address into the entry.
-  inline const AtomicHashBucketEntry* FindEntry(KeyHash hash, HashBucketEntry& expected_entry) const;
-  // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
-  // create a new entry. The caller can use the "expected_entry" to CAS its desired address into
-  // the entry.
-  inline AtomicHashBucketEntry* FindOrCreateEntry(KeyHash hash, HashBucketEntry& expected_entry);
+  inline bool InternalCompactWithLookup(uint64_t until_address, bool shift_begin_address,
+                                  int n_threads, bool to_other_store, bool checkpoint, Guid& token);
+
+  bool InternalCheckpoint(InternalIndexPersistenceCallback index_persistence_callback,
+                  InternalHybridLogPersistenceCallback hybrid_log_persistence_callback,
+                  Guid& token, void* callback_context);
+
+  bool InternalShiftBeginAddress(Address address, GcState::internal_truncate_callback_t truncate_callback,
+                                 GcState::internal_complete_callback_t complete_callback,
+                                 IAsyncContext* callback_context, bool after_compaction = false);
+
+  template<class F>
+  inline void InternalCompact(int thread_id, uint32_t max_records);
+
   template<class C>
   inline Address TraceBackForKeyMatchCtxt(const C& ctxt, Address from_address,
                                       Address min_offset) const;
@@ -210,15 +323,9 @@ class FasterKv {
   Address TraceBackForOtherChainStart(uint64_t old_size,  uint64_t new_size, Address from_address,
                                       Address min_address, uint8_t side);
 
-  // If a hash bucket entry corresponding to the specified hash exists, return it; otherwise,
-  // return an unused bucket entry.
-  inline AtomicHashBucketEntry* FindTentativeEntry(KeyHash hash, HashBucket* bucket,
-      uint8_t version, HashBucketEntry& expected_entry);
-  // Looks for an entry that has the same
-  inline bool HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
-                                  const AtomicHashBucketEntry* atomic_entry) const;
-
   inline Address BlockAllocate(uint32_t record_size);
+
+  static void DoRefreshCallback(void* faster);
 
   inline Status HandleOperationStatus(ExecutionContext& ctx,
                                       pending_context_t& pending_context,
@@ -227,31 +334,30 @@ class FasterKv {
                               bool& async);
   inline Status RetryLater(ExecutionContext& ctx, pending_context_t& pending_context,
                            bool& async);
-  inline constexpr uint32_t MinIoRequestSize() const;
   inline Status IssueAsyncIoRequest(ExecutionContext& ctx, pending_context_t& pending_context,
                                     bool& async);
-
+  void DoThrottling();
   void AsyncGetFromDisk(Address address, uint32_t num_records, AsyncIOCallback callback,
                         AsyncIOContext& context);
   static void AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status result,
                                        size_t bytes_transferred);
 
   void CompleteIoPendingRequests(ExecutionContext& context);
+  void CompleteIndexPendingRequests(ExecutionContext& context);
   void CompleteRetryRequests(ExecutionContext& context);
 
-  void InitializeCheckpointLocks();
+  template<class CIC>
+  inline Status ConditionalInsert(CIC& context, AsyncCallback callback,
+                                  Address min_start_offset, bool to_other_store);
+
+  template<class C>
+  inline OperationStatus InternalConditionalInsert(C& pending_context);
 
   /// Checkpoint/recovery methods.
+  void InitializeCheckpointLocks();
   void HandleSpecialPhases();
   bool GlobalMoveToNextState(SystemState current_state);
 
-  Status CheckpointFuzzyIndex();
-  Status CheckpointFuzzyIndexComplete();
-  Status RecoverFuzzyIndex();
-  Status RecoverFuzzyIndexComplete(bool wait);
-
-  Status WriteIndexMetadata();
-  Status ReadIndexMetadata(const Guid& token);
   Status WriteCprMetadata();
   Status ReadCprMetadata(const Guid& token);
   Status WriteCprContext();
@@ -264,14 +370,17 @@ class FasterKv {
 
   void MarkAllPendingRequests();
 
-  inline void HeavyEnter();
-  bool CleanHashTableBuckets();
-  void SplitHashTableBuckets();
-  void AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version,
-                    HashBucketEntry entry);
+  /// Grow Index methods
+  void HeavyEnter();
+  void GrowIndexBlocking();
 
+  /// Compaction/Garbage collect methods
+  void CompactRecords();
   Address LogScanForValidity(Address from, faster_t* temp);
-  bool ContainsKeyInMemory(key_t key, Address offset);
+  bool ContainsKeyInMemory(IndexContext<key_t, value_t> key, Address offset);
+
+  // Auto-compaction daemon
+  void AutoCompactHlog();
 
   /// Access the current and previous (thread-local) execution contexts.
   const ExecutionContext& thread_ctx() const {
@@ -284,63 +393,326 @@ class FasterKv {
     return thread_contexts_[Thread::id()].prev();
   }
 
+  inline constexpr uint32_t MinIoRequestSize() const {
+    return static_cast<uint32_t>(
+            sizeof(value_t) + pad_alignment(record_t::min_disk_key_size(),
+                alignof(value_t)));
+  }
+
+  const bool UseReadCache() const {
+    return read_cache_enabled_;
+  }
+  void SetOtherStore(other_faster_t* other_store) {
+    assert(other_store_ == nullptr); // set only once
+    other_store_ = other_store;
+  }
+ public:
+  void SetRefreshCallback(void* faster, RefreshCallback refresh_callback) {
+    assert(refresh_callback_store_ == nullptr);
+    refresh_callback_ = refresh_callback;
+    refresh_callback_store_ = faster;
+  }
+
  private:
+  // Epoch protection framework
   LightEpoch epoch_;
+  // FASTER System state
+  AtomicSystemState system_state_;
 
  public:
   disk_t disk;
   hlog_t hlog;
 
  private:
+  /// Garbage collection state.
+  typename hash_index_t::gc_state_t gc_state_;
+  /// Grow (hash table) state.
+  typename hash_index_t::grow_state_t grow_state_;
+
+ public:
+  hash_index_t hash_index_;
+  std::unique_ptr<read_cache_t> read_cache_;
+
+ private:
   static constexpr bool kCopyReadsToTail = false;
-  static constexpr uint64_t kGcHashTableChunkSize = 16384;
-  static constexpr uint64_t kGrowHashTableChunkSize = 16384;
+  static constexpr int kNumCompactionThreads = 8;
+  static constexpr bool fold_over_snapshot = true;
 
-  bool fold_over_snapshot = true;
+  const bool read_cache_enabled_;
 
-  /// Initial size of the table
-  uint64_t min_table_size_;
+  /// Initial size of the index table
+  uint64_t min_index_table_size_;
 
-  // Allocator for the hash buckets that don't fit in the hash table.
-  MallocFixedPageSize<HashBucket, disk_t> overflow_buckets_allocator_[2];
-
-  // An array of size two, that contains the old and new versions of the hash-table
-  InternalHashTable<disk_t> state_[2];
-
-  CheckpointLocks checkpoint_locks_;
-
-  ResizeInfo resize_info_;
-
-  AtomicSystemState system_state_;
+  CheckpointLocks<key_hash_t> checkpoint_locks_;
 
   /// Checkpoint/recovery state.
   CheckpointState<file_t> checkpoint_;
-  /// Garbage collection state.
-  GcState gc_;
-  /// Grow (hash table) state.
-  GrowState grow_;
 
   /// Global count of pending I/Os, used for throttling.
-  std::atomic<uint64_t> num_pending_ios;
+  std::atomic<uint64_t> num_pending_ios_;
+
+  /// Global count of number of truncations after compaction
+  std::atomic<uint64_t> num_compaction_truncations_;
+
+  // Context of threads participating in the hybrid log compaction
+  ConcurrentCompactionThreadsContext<faster_t> compaction_context_;
+
+  /// Hlog begin address after the compaction & log trimming is finished
+  AtomicAddress next_hlog_begin_address_;
+
+  /// Number of active sessions
+  std::atomic<uint32_t> num_active_sessions_;
+
+  // Pointer to other FasterKv instance (if F2); else nullptr
+  // Required for the Epoch framework to work properly
+  other_faster_t* other_store_;
+
+  void* refresh_callback_store_;
+  RefreshCallback refresh_callback_;
 
   /// Space for two contexts per thread, stored inline.
   ThreadContext thread_contexts_[Thread::kMaxNumThreads];
+
+  /// Hlog auto-compaction
+  HlogCompactionConfig hlog_compaction_config_;
+
+  std::thread compaction_thread_;
+  std::atomic<bool> auto_compaction_active_;
+  std::atomic<bool> auto_compaction_scheduled_;
+
+  // Hard limit of log size
+  uint64_t max_hlog_size_;
+
+#ifdef STATISTICS
+ public:
+  void EnableStatsCollection() {
+    hash_index_.EnableStatsCollection();
+    if (UseReadCache()) {
+      read_cache_.EnableStatsCollection();
+    }
+    collect_stats_ = true;
+  }
+  void DisableStatsCollection() {
+    hash_index_.DisableStatsCollection();
+    if (UseReadCache()) {
+      read_cache_.DisableStatsCollection();
+    }
+    collect_stats_ = false;
+  }
+
+  void PrintStats() const {
+    // Reads
+    fprintf(stderr, "==== READS ====\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", reads_total_.load());
+    if (reads_total_.load() > 0) {
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(reads_sync_.load()) / reads_total_.load()) * 100.0);
+      fprintf(stderr, "\nTotal I/O operations\t: %lu\n", reads_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(reads_iops_.load()) / reads_total_.load());
+      pprint_per_req_stats(reads_per_req_iops_, "I/O ops");
+    }
+    // Upserts
+    fprintf(stderr, "\n==== UPSERTS ====\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", upserts_total_.load());
+    if (upserts_total_.load() > 0) {
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(upserts_sync_.load()) / upserts_total_.load()) * 100.0);
+      fprintf(stderr, "\nTotal I/O operations\t: %lu\n", upserts_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(upserts_iops_.load()) / upserts_total_.load());
+      pprint_per_req_stats(upserts_per_req_iops_, "I/O ops");
+      pprint_per_req_stats(upserts_per_req_record_invalidations_, "Record Invalidations");
+    }
+    // RMWs
+    fprintf(stderr, "\n==== RMWs ====\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", rmw_total_.load());
+    if (rmw_total_.load() > 0) {
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(rmw_sync_.load()) / rmw_total_.load()) * 100.0);
+      fprintf(stderr, "Total I/O operations\t: %lu\n", rmw_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(rmw_iops_.load()) / rmw_total_.load());
+      pprint_per_req_stats(rmw_per_req_iops_, "I/O ops");
+      pprint_per_req_stats(rmw_per_req_record_invalidations_, "Record Invalidations");
+    }
+    // Deletes
+    fprintf(stderr, "\n==== DELETES ====\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", deletes_total_.load());
+    if (deletes_total_.load() > 0) {
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(deletes_sync_.load()) / deletes_total_.load()) * 100.0);
+      fprintf(stderr, "Total I/O operations\t: %lu\n", deletes_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(deletes_iops_.load()) / deletes_total_.load());
+      pprint_per_req_stats(deletes_per_req_iops_, "I/O ops");
+      pprint_per_req_stats(deletes_per_req_record_invalidations_, "Record Invalidations");
+    }
+    // Conditional Inserts
+    fprintf(stderr, "\n=== Conditional Inserts ===\n");
+    fprintf(stderr, "Total Requests Served\t: %lu\n", ci_total_.load());
+    if (ci_total_.load() > 0) {
+      fprintf(stderr, "Sync Requests (%%)\t: %.2lf\n",
+        (static_cast<double>(ci_sync_.load()) / ci_total_.load()) * 100.0);
+      fprintf(stderr, "Total I/O operations \t: %lu\n", ci_iops_.load());
+      fprintf(stderr, "I/O Op Per Request\t: %.2lf\n",
+        static_cast<double>(ci_iops_.load()) / ci_total_.load());
+      fprintf(stderr, "Records Copied (%%)\t: %.2lf\n",
+        static_cast<double>(ci_copied_.load()) / ci_total_.load() * 100.0);
+      pprint_per_req_stats(ci_per_req_iops_, "I/O ops");
+      pprint_per_req_stats(ci_per_req_record_invalidations_, "Record Invalidations");
+    }
+    // Misc
+    fprintf(stderr, "\n=== Misc ===\n");
+    fprintf(stderr, "Refresh()\t\tTime Spent\t: %ld ms\n", refresh_func_time_spent_.load() / 1000);
+    fprintf(stderr, "HandleSpecialPhases() Time Spent\t: %ld ms\n", special_phases_time_spent_.load() / 1000);
+    fprintf(stderr, "Throttling\t\tTime Spent\t: %ld ms\n", throttling_time_spent_.load() / 1000);
+
+    // Print hash index stats
+    fprintf(stderr, "\n ########## HASH INDEX #########\n");
+    hash_index_.PrintStats();
+    fprintf(stderr, "\n ########## ---------- #########\n");
+
+    // Print read cache stats
+    if (UseReadCache()) {
+      fprintf(stderr, "\n ########## READ CACHE #########\n");
+      read_cache_->PrintStats();
+      fprintf(stderr, "\n ########## ---------- #########\n");
+    }
+  }
+
+ private:
+  void InitializeStats() {
+    for (unsigned i = 0; i < kPerReqResolution; i++) {
+      // iops
+      reads_per_req_iops_[i].store(0);
+      upserts_per_req_iops_[i].store(0);
+      rmw_per_req_iops_[i].store(0);
+      deletes_per_req_iops_[i].store(0);
+      ci_per_req_iops_[i].store(0);
+      // record invalidations
+      upserts_per_req_record_invalidations_[i].store(0);
+      rmw_per_req_record_invalidations_[i].store(0);
+      deletes_per_req_record_invalidations_[i].store(0);
+      ci_per_req_record_invalidations_[i].store(0);
+    }
+  }
+
+  void UpdatePerReqStats(pending_context_t* pending_context) {
+    if (collect_stats_) {
+      auto num_iops = std::min(pending_context->num_iops, 5U);
+      auto num_record_invalidations = std::min(pending_context->num_record_invalidations, 5U);
+      switch(pending_context->type) {
+        case OperationType::Read:
+          ++reads_per_req_iops_[num_iops];
+          break;
+        case OperationType::Upsert:
+          // possible due to cold-index reqs
+          ++upserts_per_req_iops_[num_iops];
+          ++upserts_per_req_record_invalidations_[num_record_invalidations];
+          break;
+        case OperationType::RMW:
+          ++rmw_per_req_iops_[num_iops];
+          ++rmw_per_req_record_invalidations_[num_record_invalidations];
+          break;
+        case OperationType::Delete:
+          // possible due to cold-index reqs
+          ++deletes_per_req_iops_[num_iops];
+          ++deletes_per_req_record_invalidations_[num_record_invalidations];
+          break;
+        case OperationType::ConditionalInsert:
+          ++ci_per_req_iops_[num_iops];
+          ++ci_per_req_record_invalidations_[num_record_invalidations];
+          break;
+        default:
+          assert(false);
+          break;
+      }
+    }
+  }
+
+  void pprint_per_req_stats(const std::atomic<uint64_t>* iops_arr, std::string prefix) const {
+    static const unsigned allDots = 60;
+
+    uint64_t sum = 0;
+    for (unsigned i = 0; i < kPerReqResolution; i++) {
+      sum += iops_arr[i].load();
+    }
+    if (sum == 0) return;
+
+    for (unsigned i = 0; i < kPerReqResolution; i++) {
+      auto num_iops = iops_arr[i].load();
+      fprintf(stderr, "%d%c  %s [%'10lu] {%6.2lf%%}: ", i,
+        (i != kPerReqResolution - 1) ? ' ' : '+', prefix.c_str(),
+        num_iops, static_cast<double>(num_iops) / sum * 100.0);
+      auto dots = (iops_arr[i].load() * allDots) / sum;
+      fprintf(stderr, "%s\n", std::string(dots, '*').c_str());
+    }
+  }
+
+  const double kSketchAccuracy = 0.01;
+  static constexpr unsigned kPerReqResolution = 6;
+  bool collect_stats_{ true };
+  // Reads
+  std::atomic<uint64_t> reads_total_{ 0 };
+  std::atomic<uint64_t> reads_sync_{ 0 };
+  std::atomic<uint64_t> reads_iops_{ 0 };
+  std::atomic<uint64_t> reads_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> reads_per_req_iops_[kPerReqResolution];
+  // Upserts
+  std::atomic<uint64_t> upserts_total_{ 0 };
+  std::atomic<uint64_t> upserts_sync_{ 0 };
+  std::atomic<uint64_t> upserts_iops_{ 0 };
+  std::atomic<uint64_t> upserts_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> upserts_per_req_iops_[kPerReqResolution];
+  // RMWs
+  std::atomic<uint64_t> rmw_total_{ 0 };
+  std::atomic<uint64_t> rmw_sync_{ 0 };
+  std::atomic<uint64_t> rmw_iops_{ 0 };
+  std::atomic<uint64_t> rmw_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> rmw_per_req_iops_[kPerReqResolution];
+  // Deletes
+  std::atomic<uint64_t> deletes_total_{ 0 };
+  std::atomic<uint64_t> deletes_sync_{ 0 };
+  std::atomic<uint64_t> deletes_iops_{ 0 };
+  std::atomic<uint64_t> deletes_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> deletes_per_req_iops_[kPerReqResolution];
+  // Conditional Inserts
+  std::atomic<uint64_t> ci_total_{ 0 };
+  std::atomic<uint64_t> ci_sync_{ 0 };
+  std::atomic<uint64_t> ci_iops_{ 0 };
+  std::atomic<uint64_t> ci_copied_{ 0 };
+  std::atomic<uint64_t> ci_per_req_record_invalidations_[kPerReqResolution];
+  std::atomic<uint64_t> ci_per_req_iops_[kPerReqResolution];
+  // Misc
+  std::atomic<int64_t> refresh_func_time_spent_{ 0 };
+  std::atomic<int64_t> throttling_time_spent_{ 0 };
+  std::atomic<int64_t> special_phases_time_spent_{ 0 };
+#endif
 };
 
 // Implementations.
-template <class K, class V, class D>
-inline Guid FasterKv<K, V, D>::StartSession() {
+template <class K, class V, class D, class H, class OH>
+inline Guid FasterKv<K, V, D, H, OH>::StartSession(Guid guid) {
+  hash_index_.StartSession();
   SystemState state = system_state_.load();
   if(state.phase != Phase::REST) {
     throw std::runtime_error{ "Can acquire only in REST phase!" };
   }
-  thread_ctx().Initialize(state.phase, state.version, Guid::Create(), 0);
+  if (Guid::IsNull(guid)) {
+    guid = Guid::Create();
+  }
+  thread_ctx().Initialize(state.phase, state.version, guid, 0);
+  epoch_.ProtectAndDrain();
   Refresh();
+  ++num_active_sessions_;
   return thread_ctx().guid;
 }
 
-template <class K, class V, class D>
-inline uint64_t FasterKv<K, V, D>::ContinueSession(const Guid& session_id) {
+template <class K, class V, class D, class H, class OH>
+inline uint64_t FasterKv<K, V, D, H, OH>::ContinueSession(const Guid& session_id) {
+  hash_index_.StartSession();
+
   auto iter = checkpoint_.continue_tokens.find(session_id);
   if(iter == checkpoint_.continue_tokens.end()) {
     throw std::invalid_argument{ "Unknown session ID" };
@@ -351,23 +723,47 @@ inline uint64_t FasterKv<K, V, D>::ContinueSession(const Guid& session_id) {
     throw std::runtime_error{ "Can continue only in REST phase!" };
   }
   thread_ctx().Initialize(state.phase, state.version, session_id, iter->second);
+  epoch_.ProtectAndDrain();
   Refresh();
+  ++num_active_sessions_;
   return iter->second;
 }
 
-template <class K, class V, class D>
-inline void FasterKv<K, V, D>::Refresh() {
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::Refresh(bool from_callback) {
+  #ifdef STATISTICS
+  auto start_time = std::chrono::high_resolution_clock::now();
+  #endif
+
+  if (!epoch_.IsProtected()) {
+    log_warn("[FasterKv=%p] Thread [%lu] called Refresh(), with no active session",
+              static_cast<void*>(this), Thread::id());
+  }
   epoch_.ProtectAndDrain();
+  if (from_callback) {
+    if (other_store_ && other_store_->epoch_.IsProtected()) {
+      other_store_->Refresh();
+    }
+  } else {
+    // avoid inf recursion
+    hash_index_.Refresh();
+  }
   // We check if we are in normal mode
   SystemState new_state = system_state_.load();
   if(thread_ctx().phase == Phase::REST && new_state.phase == Phase::REST) {
     return;
   }
+
+  #ifdef STATISTICS
+  std::chrono::nanoseconds duration = std::chrono::high_resolution_clock::now() - start_time;
+  refresh_func_time_spent_ += duration.count();
+  #endif
+
   HandleSpecialPhases();
 }
 
-template <class K, class V, class D>
-inline void FasterKv<K, V, D>::StopSession() {
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::StopSession() {
   // If this thread is still involved in some activity, wait until it finishes.
   while(thread_ctx().phase != Phase::REST ||
         !thread_ctx().pending_ios.empty() ||
@@ -385,182 +781,16 @@ inline void FasterKv<K, V, D>::StopSession() {
   assert(prev_thread_ctx().io_responses.empty());
 
   assert(thread_ctx().phase == Phase::REST);
+  hash_index_.StopSession();
 
   epoch_.Unprotect();
+  --num_active_sessions_;
 }
 
-template <class K, class V, class D>
-inline const AtomicHashBucketEntry* FasterKv<K, V, D>::FindEntry(KeyHash hash,
-    HashBucketEntry& expected_entry) const {
-  expected_entry = HashBucketEntry::kInvalidEntry;
-  // Truncate the hash to get a bucket page_index < state[version].size.
-  uint32_t version = resize_info_.version;
-  const HashBucket* bucket = &state_[version].bucket(hash);
-  assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-
-  while(true) {
-    // Search through the bucket looking for our key. Last entry is reserved
-    // for the overflow pointer.
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-      HashBucketEntry entry = bucket->entries[entry_idx].load();
-      if(entry.unused()) {
-        continue;
-      }
-      if(hash.tag() == entry.tag()) {
-        // Found a matching tag. (So, the input hash matches the entry on 14 tag bits +
-        // log_2(table size) address bits.)
-        if(!entry.tentative()) {
-          // If (final key, return immediately)
-          expected_entry = entry;
-          return &bucket->entries[entry_idx];
-        }
-      }
-    }
-
-    // Go to next bucket in the chain
-    HashBucketOverflowEntry entry = bucket->overflow_entry.load();
-    if(entry.unused()) {
-      // No more buckets in the chain.
-      return nullptr;
-    }
-    bucket = &overflow_buckets_allocator_[version].Get(entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-  }
-  assert(false);
-  return nullptr; // NOT REACHED
-}
-
-template <class K, class V, class D>
-inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindTentativeEntry(KeyHash hash,
-    HashBucket* bucket,
-    uint8_t version, HashBucketEntry& expected_entry) {
-  expected_entry = HashBucketEntry::kInvalidEntry;
-  AtomicHashBucketEntry* atomic_entry = nullptr;
-  // Try to find a slot that contains the right tag or that's free.
-  while(true) {
-    // Search through the bucket looking for our key. Last entry is reserved
-    // for the overflow pointer.
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-      HashBucketEntry entry = bucket->entries[entry_idx].load();
-      if(entry.unused()) {
-        if(!atomic_entry) {
-          // Found a free slot; keep track of it, and continue looking for a match.
-          atomic_entry = &bucket->entries[entry_idx];
-        }
-        continue;
-      }
-      if(hash.tag() == entry.tag() && !entry.tentative()) {
-        // Found a match. (So, the input hash matches the entry on 14 tag bits +
-        // log_2(table size) address bits.) Return it to caller.
-        expected_entry = entry;
-        return &bucket->entries[entry_idx];
-      }
-    }
-    // Go to next bucket in the chain
-    HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
-    if(overflow_entry.unused()) {
-      // No more buckets in the chain.
-      if(atomic_entry) {
-        // We found a free slot earlier (possibly inside an earlier bucket).
-        assert(expected_entry == HashBucketEntry::kInvalidEntry);
-        return atomic_entry;
-      }
-      // We didn't find any free slots, so allocate new bucket.
-      FixedPageAddress new_bucket_addr = overflow_buckets_allocator_[version].Allocate();
-      bool success;
-      do {
-        HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
-        success = bucket->overflow_entry.compare_exchange_strong(overflow_entry,
-                  new_bucket_entry);
-      } while(!success && overflow_entry.unused());
-      if(!success) {
-        // Install failed, undo allocation; use the winner's entry
-        overflow_buckets_allocator_[version].FreeAtEpoch(new_bucket_addr, 0);
-      } else {
-        // Install succeeded; we have a new bucket on the chain. Return its first slot.
-        bucket = &overflow_buckets_allocator_[version].Get(new_bucket_addr);
-        assert(expected_entry == HashBucketEntry::kInvalidEntry);
-        return &bucket->entries[0];
-      }
-    }
-    // Go to the next bucket.
-    bucket = &overflow_buckets_allocator_[version].Get(overflow_entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-  }
-  assert(false);
-  return nullptr; // NOT REACHED
-}
-
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::HasConflictingEntry(KeyHash hash, const HashBucket* bucket, uint8_t version,
-    const AtomicHashBucketEntry* atomic_entry) const {
-  uint16_t tag = atomic_entry->load().tag();
-  while(true) {
-    for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-      HashBucketEntry entry = bucket->entries[entry_idx].load();
-      if(entry != HashBucketEntry::kInvalidEntry &&
-          entry.tag() == tag &&
-          atomic_entry != &bucket->entries[entry_idx]) {
-        // Found a conflict.
-        return true;
-      }
-    }
-    // Go to next bucket in the chain
-    HashBucketOverflowEntry entry = bucket->overflow_entry.load();
-    if(entry.unused()) {
-      // Reached the end of the bucket chain; no conflicts found.
-      return false;
-    }
-    // Go to the next bucket.
-    bucket = &overflow_buckets_allocator_[version].Get(entry.address());
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-  }
-}
-
-template <class K, class V, class D>
-inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindOrCreateEntry(KeyHash hash,
-    HashBucketEntry& expected_entry) {
-  // Truncate the hash to get a bucket page_index < state[version].size.
-  const uint32_t version = resize_info_.version;
-  assert(version <= 1);
-
-  while(true) {
-    HashBucket* bucket = &state_[version].bucket(hash);
-    assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-
-    AtomicHashBucketEntry* atomic_entry = FindTentativeEntry(hash, bucket, version,
-                                          expected_entry);
-    if(expected_entry != HashBucketEntry::kInvalidEntry) {
-      // Found an existing hash bucket entry; nothing further to check.
-      return atomic_entry;
-    }
-    // We have a free slot.
-    assert(atomic_entry);
-    assert(expected_entry == HashBucketEntry::kInvalidEntry);
-    // Try to install tentative tag in free slot.
-    HashBucketEntry entry{ Address::kInvalidAddress, hash.tag(), true };
-    if(atomic_entry->compare_exchange_strong(expected_entry, entry)) {
-      // See if some other thread is also trying to install this tag.
-      if(HasConflictingEntry(hash, bucket, version, atomic_entry)) {
-        // Back off and try again.
-        atomic_entry->store(HashBucketEntry::kInvalidEntry);
-      } else {
-        // No other thread was trying to install this tag, so we can clear our entry's "tentative"
-        // bit.
-        expected_entry = HashBucketEntry{ Address::kInvalidAddress, hash.tag(), false };
-        atomic_entry->store(expected_entry);
-        return atomic_entry;
-      }
-    }
-  }
-  assert(false);
-  return nullptr; // NOT REACHED
-}
-
-template <class K, class V, class D>
+template <class K, class V, class D, class H, class OH>
 template <class RC>
-inline Status FasterKv<K, V, D>::Read(RC& context, AsyncCallback callback,
-                                      uint64_t monotonic_serial_num) {
+inline Status FasterKv<K, V, D, H, OH>::Read(RC& context, AsyncCallback callback,
+                                      uint64_t monotonic_serial_num, bool abort_if_tombstone) {
   typedef RC read_context_t;
   typedef PendingReadContext<RC> pending_read_context_t;
   static_assert(std::is_base_of<value_t, typename read_context_t::value_t>::value,
@@ -568,15 +798,33 @@ inline Status FasterKv<K, V, D>::Read(RC& context, AsyncCallback callback,
   static_assert(alignof(value_t) == alignof(typename read_context_t::value_t),
                 "alignof(value_t) != alignof(typename read_context_t::value_t)");
 
-  pending_read_context_t pending_context{ context, callback };
+  pending_read_context_t pending_context{ context, callback, abort_if_tombstone,
+                                          Address::kInvalidAddress, num_compaction_truncations_.load() };
   OperationStatus internal_status = InternalRead(pending_context);
+
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++reads_total_;
+    if (internal_status == OperationStatus::SUCCESS ||
+        internal_status == OperationStatus::NOT_FOUND ||
+        internal_status == OperationStatus::ABORTED) {
+      ++reads_sync_;
+      ++reads_per_req_iops_[0];
+    }
+  }
+  #endif
+
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
   } else if(internal_status == OperationStatus::NOT_FOUND) {
     status = Status::NotFound;
+  } else if (internal_status == OperationStatus::ABORTED) {
+    assert(abort_if_tombstone);
+    status = Status::Aborted;
   } else {
-    assert(internal_status == OperationStatus::RECORD_ON_DISK);
+    assert(internal_status == OperationStatus::RECORD_ON_DISK ||
+          internal_status == OperationStatus::INDEX_ENTRY_ON_DISK);
     bool async;
     status = HandleOperationStatus(thread_ctx(), pending_context, internal_status, async);
   }
@@ -584,9 +832,9 @@ inline Status FasterKv<K, V, D>::Read(RC& context, AsyncCallback callback,
   return status;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H, class OH>
 template <class UC>
-inline Status FasterKv<K, V, D>::Upsert(UC& context, AsyncCallback callback,
+inline Status FasterKv<K, V, D, H, OH>::Upsert(UC& context, AsyncCallback callback,
                                         uint64_t monotonic_serial_num) {
   typedef UC upsert_context_t;
   typedef PendingUpsertContext<UC> pending_upsert_context_t;
@@ -597,8 +845,18 @@ inline Status FasterKv<K, V, D>::Upsert(UC& context, AsyncCallback callback,
 
   pending_upsert_context_t pending_context{ context, callback };
   OperationStatus internal_status = InternalUpsert(pending_context);
-  Status status;
 
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++upserts_total_;
+    if (internal_status == OperationStatus::SUCCESS) {
+      ++upserts_sync_;
+      ++upserts_per_req_iops_[0];
+    }
+  }
+  #endif
+
+  Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
   } else {
@@ -609,10 +867,10 @@ inline Status FasterKv<K, V, D>::Upsert(UC& context, AsyncCallback callback,
   return status;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H, class OH>
 template <class MC>
-inline Status FasterKv<K, V, D>::Rmw(MC& context, AsyncCallback callback,
-                                     uint64_t monotonic_serial_num) {
+inline Status FasterKv<K, V, D, H, OH>::Rmw(MC& context, AsyncCallback callback,
+                                     uint64_t monotonic_serial_num, bool create_if_not_exists) {
   typedef MC rmw_context_t;
   typedef PendingRmwContext<MC> pending_rmw_context_t;
   static_assert(std::is_base_of<value_t, typename rmw_context_t::value_t>::value,
@@ -620,11 +878,27 @@ inline Status FasterKv<K, V, D>::Rmw(MC& context, AsyncCallback callback,
   static_assert(alignof(value_t) == alignof(typename rmw_context_t::value_t),
                 "alignof(value_t) != alignof(typename rmw_context_t::value_t)");
 
-  pending_rmw_context_t pending_context{ context, callback };
+  pending_rmw_context_t pending_context{ context, callback, create_if_not_exists };
   OperationStatus internal_status = InternalRmw(pending_context, false);
+
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++rmw_total_;
+    if (internal_status == OperationStatus::SUCCESS ||
+        internal_status == OperationStatus::NOT_FOUND) {
+      ++rmw_sync_;
+      ++rmw_per_req_iops_[0];
+    }
+  }
+  #endif
+
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
+  } else if (internal_status == OperationStatus::NOT_FOUND) {
+    // Can be returned iff create_if_not_exists = false
+    assert(!create_if_not_exists);
+    status = Status::NotFound;
   } else {
     bool async;
     status = HandleOperationStatus(thread_ctx(), pending_context, internal_status, async);
@@ -633,10 +907,10 @@ inline Status FasterKv<K, V, D>::Rmw(MC& context, AsyncCallback callback,
   return status;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H, class OH>
 template <class DC>
-inline Status FasterKv<K, V, D>::Delete(DC& context, AsyncCallback callback,
-                                        uint64_t monotonic_serial_num) {
+inline Status FasterKv<K, V, D, H, OH>::Delete(DC& context, AsyncCallback callback,
+                                        uint64_t monotonic_serial_num, bool force_tombstone) {
   typedef DC delete_context_t;
   typedef PendingDeleteContext<DC> pending_delete_context_t;
   static_assert(std::is_base_of<value_t, typename delete_context_t::value_t>::value,
@@ -645,7 +919,18 @@ inline Status FasterKv<K, V, D>::Delete(DC& context, AsyncCallback callback,
                 "alignof(value_t) != alignof(typename delete_context_t::value_t)");
 
   pending_delete_context_t pending_context{ context, callback };
-  OperationStatus internal_status = InternalDelete(pending_context);
+  OperationStatus internal_status = InternalDelete(pending_context, force_tombstone);
+
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++deletes_total_;
+    if (internal_status == OperationStatus::SUCCESS) {
+      ++deletes_sync_;
+      ++deletes_per_req_iops_[0];
+    }
+  }
+  #endif
+
   Status status;
   if(internal_status == OperationStatus::SUCCESS) {
     status = Status::Ok;
@@ -659,21 +944,25 @@ inline Status FasterKv<K, V, D>::Delete(DC& context, AsyncCallback callback,
   return status;
 }
 
-template <class K, class V, class D>
-inline bool FasterKv<K, V, D>::CompletePending(bool wait) {
+template <class K, class V, class D, class H, class OH>
+inline bool FasterKv<K, V, D, H, OH>::CompletePending(bool wait) {
+  bool hash_index_done;
   do {
     disk.TryComplete();
+    hash_index_done = hash_index_.CompletePending();
 
     bool done = true;
     if(thread_ctx().phase != Phase::WAIT_PENDING && thread_ctx().phase != Phase::IN_PROGRESS) {
+      CompleteIndexPendingRequests(thread_ctx());
       CompleteIoPendingRequests(thread_ctx());
     }
     Refresh();
     CompleteRetryRequests(thread_ctx());
 
-    done = (thread_ctx().pending_ios.empty() && thread_ctx().retry_requests.empty());
+    done = (thread_ctx().pending_ios.empty() && thread_ctx().retry_requests.empty() && hash_index_done);
 
     if(thread_ctx().phase != Phase::REST) {
+      CompleteIndexPendingRequests(prev_thread_ctx());
       CompleteIoPendingRequests(prev_thread_ctx());
       Refresh();
       CompleteRetryRequests(prev_thread_ctx());
@@ -686,8 +975,18 @@ inline bool FasterKv<K, V, D>::CompletePending(bool wait) {
   return false;
 }
 
-template <class K, class V, class D>
-inline void FasterKv<K, V, D>::CompleteIoPendingRequests(ExecutionContext& context) {
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::CompletePendingCompactions() {
+  while (auto_compaction_scheduled_.load()) {
+    if (epoch_.IsProtected()) {
+      CompletePending();
+    }
+    std::this_thread::yield();
+  }
+}
+
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::CompleteIoPendingRequests(ExecutionContext& context) {
   AsyncIOContext* ctxt;
   // Clear this thread's I/O response queue. (Does not clear I/Os issued by this thread that have
   // not yet completed.)
@@ -700,34 +999,214 @@ inline void FasterKv<K, V, D>::CompleteIoPendingRequests(ExecutionContext& conte
     context.pending_ios.erase(pending_io);
 
     // Issue the continue command
+    bool log_truncated = false;
     OperationStatus internal_status;
     if(pending_context->type == OperationType::Read) {
-      internal_status = InternalContinuePendingRead(context, *io_context.get());
-    } else {
-      assert(pending_context->type == OperationType::RMW);
+      internal_status = InternalContinuePendingRead(context, *io_context.get(), log_truncated);
+      assert(internal_status != OperationStatus::INDEX_ENTRY_ON_DISK); // continue reads do not access index
+    } else if (pending_context->type == OperationType::RMW) {
       internal_status = InternalContinuePendingRmw(context, *io_context.get());
+      assert(internal_status != OperationStatus::INDEX_ENTRY_ON_DISK); // RMWs not used in cold log
+    } else {
+      assert(pending_context->type == OperationType::ConditionalInsert);
+      internal_status = InternalContinuePendingConditionalInsert(context, *io_context.get());
     }
+
     Status result;
     if(internal_status == OperationStatus::SUCCESS) {
       result = Status::Ok;
     } else if(internal_status == OperationStatus::NOT_FOUND) {
       result = Status::NotFound;
+    } else if (internal_status == OperationStatus::ABORTED) {
+      assert(pending_context->type == OperationType::Read ||
+            pending_context->type == OperationType::ConditionalInsert);
+      result = Status::Aborted;
     } else {
       result = HandleOperationStatus(context, *pending_context.get(), internal_status,
                                      pending_context.async);
     }
+
+    if (log_truncated && result == Status::NotFound) {
+      // Logic for avoiding the false NOT_FOUND when performing Reads concurrent to CompactionLookup
+      async_pending_read_context_t* read_pending_context = static_cast<async_pending_read_context_t*>(
+          io_context->caller_context);
+
+      // Re-scan newly introduced log range (i.e. [expected_entry->address, tailAddress])
+      assert(!read_pending_context->expected_hlog_address.in_readcache());
+      read_pending_context->min_search_offset = read_pending_context->expected_hlog_address;
+      read_pending_context->num_compaction_truncations = num_compaction_truncations_.load();
+      // Retry request with updated info
+      result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                     pending_context.async);
+    }
+
     if(!pending_context.async) {
-      pending_context->caller_callback(pending_context->caller_context, result);
+      #ifdef STATISTICS
+      if (collect_stats_) {
+        UpdatePerReqStats(pending_context.get());
+      }
+      #endif
+      if (pending_context->caller_callback) {
+        pending_context->caller_callback(pending_context->caller_context, result);
+      }
     }
   }
 }
 
-template <class K, class V, class D>
-inline void FasterKv<K, V, D>::CompleteRetryRequests(ExecutionContext& context) {
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::CompleteIndexPendingRequests(ExecutionContext& context) {
+  AsyncIndexIOContext* ctxt;
+  // Clear this thread's index I/O response queue.
+  // NOTE: Does not clear I/Os issued by this thread that have not yet completed.
+  while(context.index_io_responses.try_pop(ctxt)) {
+    CallbackContext<AsyncIndexIOContext> index_io_context{ ctxt };
+    CallbackContext<pending_context_t> pending_context{ index_io_context->caller_context };
+    // This I/O is no longer pending, since we popped its response off the queue.
+    auto pending_io = context.pending_ios.find(index_io_context->io_id);
+    assert(pending_io != context.pending_ios.end());
+    context.pending_ios.erase(pending_io);
+
+    // Update index entry from finished cold index (on-disk) request
+    pending_context->set_index_entry(index_io_context->entry, nullptr);
+    pending_context->index_op_result = index_io_context->result;
+
+    assert(pending_context->index_op_type != IndexOperationType::None);
+
+    Status result{ Status::Corruption };
+    switch(pending_context->type) {
+      case OperationType::Read:
+        // Only Retrieve index op is possible
+        assert(pending_context->index_op_type == IndexOperationType::Retrieve);
+        assert(pending_context->index_op_result == Status::Ok ||
+                pending_context->index_op_result == Status::NotFound);
+        // Resume request with the retrieved index hash bucket
+        result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                        pending_context.async);
+        break;
+      case OperationType::Upsert:
+      case OperationType::Delete:
+        switch(pending_context->index_op_type) {
+          case IndexOperationType::Retrieve:
+            // Resume request with the retrieved index hash bucket
+            result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                           pending_context.async);
+            break;
+
+          case IndexOperationType::Update:
+            if (pending_context->index_op_result == Status::Ok) {
+              // Request was successfully completed!
+              pending_context.async = false;
+              result = Status::Ok;
+            } else { // Status::Aborted
+              assert(pending_context->index_op_result == Status::Aborted);
+              // Request was aborted: try to mark record as invalid
+              assert(index_io_context->record_address != Address::kInvalidAddress);
+              Address record_address = index_io_context->record_address;
+              if (record_address >= hlog.head_address.load()) {
+                record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));
+                record->header.invalid = true;
+              }
+              // if not marked here, it will be ignored by conditional insert during compaction
+              #ifdef STATISTICS
+              if (collect_stats_) {
+                ++pending_context->num_record_invalidations;
+              }
+              #endif
+
+              // Retry request
+              pending_context->clear_index_op();
+              result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                            pending_context.async);
+            }
+            break;
+
+          default:
+            assert(false); // not reachable
+            throw std::runtime_error{ "Not reachable!" };
+            break;
+        }
+        break;
+      case OperationType::ConditionalInsert:
+        switch(pending_context->index_op_type) {
+          case IndexOperationType::Retrieve:
+            // Resume request with retrieved index hash bucket
+            assert(pending_context->index_op_result == Status::Ok);
+            result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                          pending_context.async);
+            break;
+
+          case IndexOperationType::Update:
+            if (pending_context->index_op_result == Status::Ok) {
+              // Request was successfully completed!
+              pending_context.async = false;
+              result = Status::Ok;
+            } else {
+              assert(pending_context->index_op_result == Status::Aborted);
+              // Request was aborted: try to mark record as invalid
+              // NOTE: this record is stray: i.e., *not* part of the hash chain.
+              Address record_address = index_io_context->record_address;
+              if (record_address >= hlog.head_address.load()) {
+                record_t* record = reinterpret_cast<record_t*>(hlog.Get(record_address));
+                record->header.invalid = true;
+              }
+              // if not marked here, it will be ignored by conditional insert during compaction
+              #ifdef STATISTICS
+              if (collect_stats_) {
+                ++pending_context->num_record_invalidations;
+              }
+              #endif
+
+              // Retry request
+              pending_context->clear_index_op();
+              result = HandleOperationStatus(context, *pending_context.get(), OperationStatus::RETRY_NOW,
+                                            pending_context.async);
+            }
+            break;
+
+          default:
+            assert(false); // not reachable
+            throw std::runtime_error{ "Not reachable!" };
+        }
+        break;
+      case OperationType::RMW:
+        // Not implemented; not needed as no RMW requests are used in the cold log
+        // NOTE: If needed in the future, implementation is similar to ConditionalInsert
+        // but care should be taken wrt the race conditions related to atomic_entry.
+        assert(false);
+        break;
+      case OperationType::Recovery:
+        // Recovery process of cold-log (i.e., when using cold-index, where index requests go pending)
+        // NOTE: Recovery is performed sequentially, and any synchronization is done explicitly
+        assert(pending_context->index_op_type == IndexOperationType::Update);
+        // no concurrent updates, thus no way for op to have been aborted
+        assert(pending_context->index_op_result == Status::Ok);
+        pending_context.async = false;
+        result = Status::Ok;
+        break;
+      default:
+        // not reachable
+        assert(false);
+        break;
+    }
+
+    if(!pending_context.async) {
+      #ifdef STATISTICS
+      if (collect_stats_) {
+        UpdatePerReqStats(pending_context.get());
+      }
+      #endif
+      if (pending_context->caller_callback) {
+        pending_context->caller_callback(pending_context->caller_context, result);
+      }
+    }
+  }
+}
+
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::CompleteRetryRequests(ExecutionContext& context) {
   // If we can't complete a request, it will be pushed back onto the deque. Retry each request
   // only once.
-  size_t size = context.retry_requests.size();
-  for(size_t idx = 0; idx < size; ++idx) {
+  while (!context.retry_requests.empty()) {
     CallbackContext<pending_context_t> pending_context{ context.retry_requests.front() };
     context.retry_requests.pop_front();
     // Issue retry command
@@ -749,6 +1228,8 @@ inline void FasterKv<K, V, D>::CompleteRetryRequests(ExecutionContext& context) 
     Status result;
     if(internal_status == OperationStatus::SUCCESS) {
       result = Status::Ok;
+    } else if (internal_status == OperationStatus::NOT_FOUND) {
+      result = Status::NotFound;
     } else {
       result = HandleOperationStatus(context, *pending_context.get(), internal_status,
                                      pending_context.async);
@@ -756,33 +1237,63 @@ inline void FasterKv<K, V, D>::CompleteRetryRequests(ExecutionContext& context) 
 
     // If done, callback user code.
     if(!pending_context.async) {
-      pending_context->caller_callback(pending_context->caller_context, result);
+      #ifdef STATISTICS
+      UpdatePerReqStats(pending_context.get());
+      #endif
+      if (pending_context->caller_callback) {
+        pending_context->caller_callback(pending_context->caller_context, result);
+      }
     }
   }
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H, class OH>
 template <class C>
-inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const {
-  typedef C pending_read_context_t;
+inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRead(C& pending_context) const {
+  [[maybe_unused]] typedef C pending_read_context_t;
+  assert(pending_context.index_op_type != IndexOperationType::Update);
 
-  if(thread_ctx().phase != Phase::REST) {
+  const ExecutionContext& thread_context = thread_ctx();
+  if(thread_context.phase != Phase::REST) {
     const_cast<faster_t*>(this)->HeavyEnter();
   }
+  // Stamp request (if not stamped already)
+  pending_context.try_stamp_request(thread_context.phase, thread_context.version);
 
-  KeyHash hash = pending_context.get_key_hash();
-  HashBucketEntry entry;
-  const AtomicHashBucketEntry* atomic_entry = FindEntry(hash, entry);
-  if(!atomic_entry) {
-    // no record found
-    return OperationStatus::NOT_FOUND;
+  Status index_status;
+  if (pending_context.index_op_type == IndexOperationType::None) {
+    index_status = hash_index_.FindEntry(const_cast<ExecutionContext&>(thread_context), pending_context);
+    if (index_status == Status::Pending) {
+      return OperationStatus::INDEX_ENTRY_ON_DISK;
+    }
+  } else {
+    assert(!hash_index_.IsSync());
+    assert(pending_context.index_op_type == IndexOperationType::Retrieve);
+    // retrieve result of async index operation
+    index_status = pending_context.index_op_result;
+    pending_context.clear_index_op();
   }
 
-  Address address = entry.address();
-  Address begin_address = hlog.begin_address.load();
-  Address head_address = hlog.head_address.load();
-  Address safe_read_only_address = hlog.safe_read_only_address.load();
-  Address read_only_address = hlog.read_only_address.load();
+  if(index_status == Status::NotFound) {
+    // no record found
+    assert(!pending_context.atomic_entry);
+    return OperationStatus::NOT_FOUND;
+  }
+  assert(index_status == Status::Ok);
+
+  Address address = pending_context.entry.address();
+  if (UseReadCache()) {
+    Status rc_status = read_cache_->Read(pending_context, address);
+    if (rc_status == Status::Ok) {
+      return OperationStatus::SUCCESS;
+    }
+    assert(rc_status == Status::NotFound);
+    // address should have been modified to point to hlog
+  }
+  pending_context.expected_hlog_address = address;
+  assert(!address.in_readcache());
+
+  const Address head_address{ hlog.head_address.load() };
   uint64_t latest_record_version = 0;
 
   if(address >= head_address) {
@@ -795,13 +1306,19 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     }
   }
 
-  switch(thread_ctx().phase) {
+  if (pending_context.min_search_offset != Address::kInvalidAddress &&
+      pending_context.min_search_offset > address) {
+    // Found an record before the designated start of search range
+    return OperationStatus::NOT_FOUND;
+  }
+
+  switch(thread_context.phase) {
   case Phase::PREPARE:
     // Reading old version (v).
     if(latest_record_version > thread_ctx().version) {
       // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
       // what we've seen.
-      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, entry);
+      pending_context.go_async(address);
       return OperationStatus::CPR_SHIFT_DETECTED;
     }
     break;
@@ -809,11 +1326,13 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     break;
   }
 
-  if(address >= safe_read_only_address) {
+  if(address >= hlog.safe_read_only_address.load()) {
     // Mutable or fuzzy region
     // concurrent read
     if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone) {
-      return OperationStatus::NOT_FOUND;
+      return (pending_context.abort_if_tombstone)
+                ? OperationStatus::ABORTED
+                : OperationStatus::NOT_FOUND;
     }
     pending_context.GetAtomic(hlog.Get(address));
     return OperationStatus::SUCCESS;
@@ -821,13 +1340,15 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
     // Immutable region
     // single-thread read
     if (reinterpret_cast<const record_t*>(hlog.Get(address))->header.tombstone) {
-      return OperationStatus::NOT_FOUND;
+      return (pending_context.abort_if_tombstone)
+                ? OperationStatus::ABORTED
+                : OperationStatus::NOT_FOUND;
     }
     pending_context.Get(hlog.Get(address));
     return OperationStatus::SUCCESS;
-  } else if(address >= begin_address) {
+  } else if(address >= hlog.begin_address.load()) {
     // Record not available in-memory
-    pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, entry);
+    pending_context.go_async(address);
     return OperationStatus::RECORD_ON_DISK;
   } else {
     // No record found
@@ -835,23 +1356,50 @@ inline OperationStatus FasterKv<K, V, D>::InternalRead(C& pending_context) const
   }
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H, class OH>
 template <class C>
-inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
-  typedef C pending_upsert_context_t;
+inline OperationStatus FasterKv<K, V, D, H, OH>::InternalUpsert(C& pending_context) {
+  [[maybe_unused]] typedef C pending_upsert_context_t;
 
-  if(thread_ctx().phase != Phase::REST) {
+  ExecutionContext& thread_context = thread_ctx();
+  if(thread_context.phase != Phase::REST) {
     HeavyEnter();
   }
+  if (HlogMaxSizeReached()) {
+    CompactRecords();
+  }
 
-  KeyHash hash = pending_context.get_key_hash();
-  HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+  // Stamp request (if not stamped already)
+  pending_context.try_stamp_request(thread_context.phase, thread_context.version);
 
+  Status index_status;
+  if (pending_context.index_op_type == IndexOperationType::None) {
+    index_status = hash_index_.FindOrCreateEntry(thread_context, pending_context);
+    if (index_status == Status::Pending) {
+      return OperationStatus::INDEX_ENTRY_ON_DISK;
+    }
+  } else {
+    assert(!hash_index_.IsSync());
+    assert(pending_context.index_op_type == IndexOperationType::Retrieve);
+    // retrieve result of async index operation
+    index_status = pending_context.index_op_result;
+    pending_context.clear_index_op();
+  }
+  assert(index_status == Status::Ok);
+
+  const HashBucketEntry expected_entry{ pending_context.entry };
+  const AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
   // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
-  Address address = expected_entry.address();
-  Address head_address = hlog.head_address.load();
-  Address read_only_address = hlog.read_only_address.load();
+  Address address{ expected_entry.address() };
+
+  if (UseReadCache()) {
+    address = read_cache_->SkipAndInvalidate(pending_context);
+  }
+  const Address hlog_address{ address };
+  assert(!address.in_readcache());
+
+  const Address head_address{ hlog.head_address.load() };
+  const Address read_only_address{ hlog.read_only_address.load() };
   uint64_t latest_record_version = 0;
 
   if(address >= head_address) {
@@ -864,10 +1412,10 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
     }
   }
 
-  CheckpointLockGuard lock_guard{ checkpoint_locks_, hash };
+  CheckpointLockGuard<key_hash_t> lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
 
   // The common case
-  if(thread_ctx().phase == Phase::REST && address >= read_only_address) {
+  if(thread_context.phase == Phase::REST && address >= read_only_address) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
     if(!record->header.tombstone && pending_context.PutAtomic(record)) {
       return OperationStatus::SUCCESS;
@@ -878,18 +1426,17 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
   }
 
   // Acquire necessary locks.
-  switch(thread_ctx().phase) {
+  switch(thread_context.phase) {
   case Phase::PREPARE:
     // Working on old version (v).
     if(!lock_guard.try_lock_old()) {
-      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
+      pending_context.go_async(address);
       return OperationStatus::CPR_SHIFT_DETECTED;
     } else {
       if(latest_record_version > thread_ctx().version) {
         // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
         // what we've seen.
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address,
-                                 expected_entry);
+        pending_context.go_async(address);
         return OperationStatus::CPR_SHIFT_DETECTED;
       }
     }
@@ -899,8 +1446,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
     if(latest_record_version < thread_ctx().version) {
       // Will create new record or update existing record to new version (v+1).
       if(!lock_guard.try_lock_new()) {
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address,
-                                 expected_entry);
+        pending_context.go_async(address);
         return OperationStatus::RETRY_LATER;
       } else {
         // Update to new version (v+1) requires RCU.
@@ -912,8 +1458,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
     // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
     if(latest_record_version < thread_ctx().version) {
       if(lock_guard.old_locked()) {
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address,
-                                 expected_entry);
+        pending_context.go_async(address);
         return OperationStatus::RETRY_LATER;
       } else {
         // Update to new version (v+1) requires RCU.
@@ -933,6 +1478,17 @@ inline OperationStatus FasterKv<K, V, D>::InternalUpsert(C& pending_context) {
 
   if(address >= read_only_address) {
     // Mutable region; try to update in place.
+    // ---------------------------------------------
+    // NOTE: Cold log index cannot experience the lost-update anomaly.
+    //   Cold log only receives upserts during hot-cold compaction
+    //   During a single F2's hot-cold compaction, a record with a given key, can be updated AT MOST once!
+    //   This is guaranteed by the lookup compaction algorithm, as only a single hot-cold compaction is active at any given time.
+    //   In case of hash collisions, there should be no problem, as different threads are (up)inserting records with different keys.
+    //   Even when there is a concurrent cold-cold compaction occurring, these records are only being inserted *conditionally*.
+    //   This means that there will be inserted at the tail, ONLY IF there is *no* other record present anywhere in the cold log.
+    //   And since these records to be compacted are NOT located in the mutable region, then entering this if is impossible :)
+    //
+    assert(hash_index_.IsSync() && atomic_entry != nullptr);
     if(atomic_entry->load() != expected_entry) {
       // Some other thread may have RCUed the record before we locked it; try again.
       return OperationStatus::RETRY_NOW;
@@ -953,48 +1509,77 @@ create_record:
   uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
   Address new_address = BlockAllocate(record_size);
   record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+  assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
   new(record) record_t{
     RecordInfo{
-      static_cast<uint16_t>(thread_ctx().version), true, false, false,
-      expected_entry.address() }
+      static_cast<uint16_t>(thread_context.version), true, false, false,
+      hlog_address },
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&record->key()));
   pending_context.Put(record);
 
-  HashBucketEntry updated_entry{ new_address, hash.tag(), false };
-
-  if(atomic_entry->compare_exchange_strong(expected_entry, updated_entry)) {
+  index_status = hash_index_.TryUpdateEntry(thread_context, pending_context, new_address);
+  if (index_status == Status::Ok) {
     // Installed the new record in the hash table.
     return OperationStatus::SUCCESS;
-  } else {
+  } else if (index_status == Status::Aborted) {
+    assert(index_status == Status::Aborted);
     // Try again.
     record->header.invalid = true;
+    pending_context.clear_index_op();
+
+    #ifdef STATISTICS
+    if (collect_stats_) {
+      ++pending_context.num_record_invalidations;
+    }
+    #endif
+
     return InternalUpsert(pending_context);
+  } else {
+    assert(index_status == Status::Pending);
+    assert(!hash_index_.IsSync());
+    return OperationStatus::INDEX_ENTRY_ON_DISK;
   }
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H, class OH>
 template <class C>
-inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool retrying) {
-  typedef C pending_rmw_context_t;
+inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRmw(C& pending_context, bool retrying) {
+  [[maybe_unused]] typedef C pending_rmw_context_t;
+  assert(hash_index_.IsSync()); // cold log does not need to support RMWs requests
 
-  Phase phase = retrying ? pending_context.phase : thread_ctx().phase;
-  uint32_t version = retrying ? pending_context.version : thread_ctx().version;
+  ExecutionContext& thread_context = thread_ctx();
+  Phase phase = retrying ? pending_context.phase : thread_context.phase;
+  uint32_t version = retrying ? pending_context.version : thread_context.version;
 
   if(phase != Phase::REST) {
     HeavyEnter();
   }
+  if (HlogMaxSizeReached()) {
+    CompactRecords();
+  }
 
-  KeyHash hash = pending_context.get_key_hash();
-  HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+  // Stamp request (if not stamped already)
+  pending_context.try_stamp_request(thread_context.phase, thread_context.version);
 
-  // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
-  Address address = expected_entry.address();
-  Address begin_address = hlog.begin_address.load();
-  Address head_address = hlog.head_address.load();
-  Address read_only_address = hlog.read_only_address.load();
-  Address safe_read_only_address = hlog.safe_read_only_address.load();
+  Status index_status = hash_index_.FindOrCreateEntry(thread_context, pending_context);
+  assert(index_status == Status::Ok);
+
+  const HashBucketEntry expected_entry{ pending_context.entry };
+  const AtomicHashBucketEntry* atomic_entry{ pending_context.atomic_entry };
+
+  // (Note that address will be Address::kInvalidAddress, if the entry was created.)
+  Address address{ pending_context.entry.address() };
+
+  if (UseReadCache()) {
+    address = read_cache_->Skip(pending_context);
+  }
+  pending_context.expected_hlog_address = address;
+  assert(!address.in_readcache());
+
+  Address head_address{ hlog.head_address.load() };
+  const Address read_only_address{ hlog.read_only_address.load() };
+  const Address safe_read_only_address{ hlog.safe_read_only_address.load() };
   uint64_t latest_record_version = 0;
 
   if(address >= head_address) {
@@ -1007,7 +1592,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     }
   }
 
-  CheckpointLockGuard lock_guard{ checkpoint_locks_, hash };
+  CheckpointLockGuard<key_hash_t> lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
 
   // The common case.
   if(phase == Phase::REST && address >= read_only_address) {
@@ -1030,14 +1615,14 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
       // succeed in obtaining a second. Otherwise, another thread has acquired the new lock, so
       // a CPR shift has occurred.
       assert(!retrying);
-      pending_context.go_async(phase, version, address, expected_entry);
+      pending_context.go_async(address);
       return OperationStatus::CPR_SHIFT_DETECTED;
     } else {
       if(latest_record_version > version) {
         // CPR shift detected: we are in the "PREPARE" phase, and a mutable record has a version
         // later than what we've seen.
         assert(!retrying);
-        pending_context.go_async(phase, version, address, expected_entry);
+        pending_context.go_async(address);
         return OperationStatus::CPR_SHIFT_DETECTED;
       }
     }
@@ -1047,11 +1632,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     if(latest_record_version < version) {
       // Will create new record or update existing record to new version (v+1).
       if(!lock_guard.try_lock_new()) {
-        if(!retrying) {
-          pending_context.go_async(phase, version, address, expected_entry);
-        } else {
-          pending_context.continue_async(address, expected_entry);
-        }
+        pending_context.go_async(address);
         return OperationStatus::RETRY_LATER;
       } else {
         // Update to new version (v+1) requires RCU.
@@ -1063,11 +1644,7 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
     if(latest_record_version < version) {
       if(lock_guard.old_locked()) {
-        if(!retrying) {
-          pending_context.go_async(phase, version, address, expected_entry);
-        } else {
-          pending_context.continue_async(address, expected_entry);
-        }
+        pending_context.go_async(address);
         return OperationStatus::RETRY_LATER;
       } else {
         // Update to new version (v+1) requires RCU.
@@ -1102,29 +1679,31 @@ inline OperationStatus FasterKv<K, V, D>::InternalRmw(C& pending_context, bool r
     }
   } else if(address >= safe_read_only_address && !reinterpret_cast<record_t*>(hlog.Get(address))->header.tombstone) {
     // Fuzzy Region: Must go pending due to lost-update anomaly
-    if(!retrying) {
-      pending_context.go_async(phase, version, address, expected_entry);
-    } else {
-      pending_context.continue_async(address, expected_entry);
-    }
+    pending_context.go_async(address);
     return OperationStatus::RETRY_LATER;
   } else if(address >= head_address) {
     goto create_record;
-  } else if(address >= begin_address) {
+  } else if(address >= hlog.begin_address.load()) {
     // Need to obtain old record from disk.
-    if(!retrying) {
-      pending_context.go_async(phase, version, address, expected_entry);
-    } else {
-      pending_context.continue_async(address, expected_entry);
-    }
+    pending_context.go_async(address);
     return OperationStatus::RECORD_ON_DISK;
   } else {
+    // No record exists in the log
+    if (!pending_context.create_if_not_exists) {
+      return OperationStatus::NOT_FOUND;
+    }
     // Create a new record.
     goto create_record;
   }
 
   // Create a record and attempt RCU.
 create_record:
+  if (UseReadCache()) {
+    // invalidate read cache entry before trying to insert new entry
+    read_cache_->SkipAndInvalidate(pending_context);
+  }
+  assert(!address.in_readcache());
+
   const record_t* old_record = nullptr;
   if(address >= head_address) {
     old_record = reinterpret_cast<const record_t*>(hlog.Get(address));
@@ -1141,53 +1720,56 @@ create_record:
 
   // Allocating a block may have the side effect of advancing the head address.
   head_address = hlog.head_address.load();
-  // Allocating a block may have the side effect of advancing the thread context's version and
-  // phase.
+  // Allocating a block may have the side effect of advancing the thread context's version and phase
   if(!retrying) {
-    phase = thread_ctx().phase;
-    version = thread_ctx().version;
+    // Re-stamp request with new version/phase
+    pending_context.stamp_request(thread_context.phase, thread_context.version);
   }
 
+  assert(!pending_context.expected_hlog_address.in_readcache()); // hlog entries do *not* point to read cache
   new(new_record) record_t{
     RecordInfo{
-      static_cast<uint16_t>(version), true, false, false,
-      expected_entry.address() }
+      static_cast<uint16_t>(pending_context.version), true, false, false,
+      pending_context.expected_hlog_address },
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&new_record->key()));
 
   if(old_record == nullptr || address < hlog.begin_address.load()) {
+    if (!pending_context.create_if_not_exists) {
+      return OperationStatus::NOT_FOUND;
+    }
     pending_context.RmwInitial(new_record);
   } else if(address >= head_address) {
+    assert(old_record != nullptr);
     pending_context.RmwCopy(old_record, new_record);
   } else {
     // The block we allocated for the new record caused the head address to advance beyond
     // the old record. Need to obtain the old record from disk.
     new_record->header.invalid = true;
-    if(!retrying) {
-      pending_context.go_async(phase, version, address, expected_entry);
-    } else {
-      pending_context.continue_async(address, expected_entry);
-    }
+    pending_context.go_async(address);
     return OperationStatus::RECORD_ON_DISK;
   }
 
-  HashBucketEntry updated_entry{ new_address, hash.tag(), false };
-  if(atomic_entry->compare_exchange_strong(expected_entry, updated_entry)) {
+  index_status = hash_index_.TryUpdateEntry(thread_context, pending_context, new_address);
+  if (index_status == Status::Ok) {
     return OperationStatus::SUCCESS;
   } else {
-    // CAS failed; try again.
+    assert(index_status == Status::Aborted);
+    // Try again.
     new_record->header.invalid = true;
-    if(!retrying) {
-      pending_context.go_async(phase, version, address, expected_entry);
-    } else {
-      pending_context.continue_async(address, expected_entry);
+
+    #ifdef STATISTICS
+    if (collect_stats_) {
+      ++pending_context.num_record_invalidations;
     }
+    #endif
+
     return OperationStatus::RETRY_NOW;
   }
 }
 
-template <class K, class V, class D>
-inline OperationStatus FasterKv<K, V, D>::InternalRetryPendingRmw(
+template <class K, class V, class D, class H, class OH>
+inline OperationStatus FasterKv<K, V, D, H, OH>::InternalRetryPendingRmw(
   async_pending_rmw_context_t& pending_context) {
   OperationStatus status = InternalRmw(pending_context, true);
   if(status == OperationStatus::SUCCESS && pending_context.version != thread_ctx().version) {
@@ -1196,28 +1778,63 @@ inline OperationStatus FasterKv<K, V, D>::InternalRetryPendingRmw(
   return status;
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H, class OH>
 template<class C>
-inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context) {
-  typedef C pending_delete_context_t;
+inline OperationStatus FasterKv<K, V, D, H, OH>::InternalDelete(C& pending_context, bool force_tombstone) {
+  [[maybe_unused]] typedef C pending_delete_context_t;
+  assert(pending_context.index_op_type != IndexOperationType::Update);
 
-  if(thread_ctx().phase != Phase::REST) {
+  ExecutionContext& thread_context = thread_ctx();
+  if(thread_context.phase != Phase::REST) {
     HeavyEnter();
   }
+  // Stamp request (if not stamped already)
+  pending_context.try_stamp_request(thread_context.phase, thread_context.version);
 
-  KeyHash hash = pending_context.get_key_hash();
-  HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = const_cast<AtomicHashBucketEntry*>(FindEntry(hash, expected_entry));
-  if(!atomic_entry) {
-    // no record found
-    return OperationStatus::NOT_FOUND;
+  Address address;
+  Address hlog_address{ 0 };
+  const Address head_address{ hlog.head_address.load() };
+  const Address read_only_address{ hlog.read_only_address.load() };
+  const Address begin_address{ hlog.begin_address.load() };
+  uint64_t latest_record_version = 0;
+
+  Status index_status;
+  if (pending_context.index_op_type == IndexOperationType::None) {
+    if (!force_tombstone) {
+      index_status = hash_index_.FindEntry(thread_context, pending_context);
+    } else {
+      index_status = hash_index_.FindOrCreateEntry(thread_context, pending_context);
+    }
+    if (index_status == Status::Pending) {
+      return OperationStatus::INDEX_ENTRY_ON_DISK;
+    }
+  } else {
+    assert(!hash_index_.IsSync());
+    assert(pending_context.index_op_type == IndexOperationType::Retrieve);
+    // retrieve result of async index operation
+    index_status = pending_context.index_op_result;
+    pending_context.clear_index_op();
   }
 
-  Address address = expected_entry.address();
-  Address head_address = hlog.head_address.load();
-  Address read_only_address = hlog.read_only_address.load();
-  Address begin_address = hlog.begin_address.load();
-  uint64_t latest_record_version = 0;
+  const HashBucketEntry expected_entry{ pending_context.entry };
+  if(index_status == Status::NotFound) {
+    // no record found
+    if (!force_tombstone) {
+      assert(!pending_context.atomic_entry);
+      return OperationStatus::NOT_FOUND;
+    } else {
+      goto create_record;
+    }
+  }
+  assert(index_status == Status::Ok);
+
+  address = expected_entry.address();
+
+  if (UseReadCache()) {
+    address = read_cache_->SkipAndInvalidate(pending_context);
+  }
+  hlog_address = address;
+  assert(!address.in_readcache());
 
   if(address >= head_address) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
@@ -1227,57 +1844,58 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context) {
     }
   }
 
-  CheckpointLockGuard lock_guard{ checkpoint_locks_, hash };
+  {
+    CheckpointLockGuard<key_hash_t> lock_guard{ checkpoint_locks_, pending_context.get_key_hash() };
+    // NO optimization for most common case
 
-  // NO optimization for most common case
-
-  // Acquire necessary locks.
-  switch (thread_ctx().phase) {
-  case Phase::PREPARE:
-    // Working on old version (v).
-    if(!lock_guard.try_lock_old()) {
-      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
-      return OperationStatus::CPR_SHIFT_DETECTED;
-    } else if(latest_record_version > thread_ctx().version) {
-      // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
-      // what we've seen.
-      pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
-      return OperationStatus::CPR_SHIFT_DETECTED;
-    }
-    break;
-  case Phase::IN_PROGRESS:
-    // All other threads are in phase {PREPARE,IN_PROGRESS,WAIT_PENDING}.
-    if(latest_record_version < thread_ctx().version) {
-      // Will create new record or update existing record to new version (v+1).
-      if(!lock_guard.try_lock_new()) {
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
-        return OperationStatus::RETRY_LATER;
-      } else {
-        // Update to new version (v+1) requires RCU.
+    // Acquire necessary locks.
+    switch (thread_context.phase) {
+    case Phase::PREPARE:
+      // Working on old version (v).
+      if(!lock_guard.try_lock_old()) {
+        pending_context.go_async(address);
+        return OperationStatus::CPR_SHIFT_DETECTED;
+      } else if(latest_record_version > thread_context.version) {
+        // CPR shift detected: we are in the "PREPARE" phase, and a record has a version later than
+        // what we've seen.
+        pending_context.go_async(address);
+        return OperationStatus::CPR_SHIFT_DETECTED;
+      }
+      break;
+    case Phase::IN_PROGRESS:
+      // All other threads are in phase {PREPARE,IN_PROGRESS,WAIT_PENDING}.
+      if(latest_record_version < thread_context.version) {
+        // Will create new record or update existing record to new version (v+1).
+        if(!lock_guard.try_lock_new()) {
+          pending_context.go_async(address);
+          return OperationStatus::RETRY_LATER;
+        } else {
+          // Update to new version (v+1) requires RCU.
+          goto create_record;
+        }
+      }
+      break;
+    case Phase::WAIT_PENDING:
+      // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
+      if(latest_record_version < thread_context.version) {
+        if(lock_guard.old_locked()) {
+          pending_context.go_async(address);
+          return OperationStatus::RETRY_LATER;
+        } else {
+          // Update to new version (v+1) requires RCU.
+          goto create_record;
+        }
+      }
+      break;
+    case Phase::WAIT_FLUSH:
+      // All other threads are in phase {WAIT_PENDING,WAIT_FLUSH,PERSISTENCE_CALLBACK}.
+      if(latest_record_version < thread_context.version) {
         goto create_record;
       }
+      break;
+    default:
+      break;
     }
-    break;
-  case Phase::WAIT_PENDING:
-    // All other threads are in phase {IN_PROGRESS,WAIT_PENDING,WAIT_FLUSH}.
-    if(latest_record_version < thread_ctx().version) {
-      if(lock_guard.old_locked()) {
-        pending_context.go_async(thread_ctx().phase, thread_ctx().version, address, expected_entry);
-        return OperationStatus::RETRY_LATER;
-      } else {
-        // Update to new version (v+1) requires RCU.
-        goto create_record;
-      }
-    }
-    break;
-  case Phase::WAIT_FLUSH:
-    // All other threads are in phase {WAIT_PENDING,WAIT_FLUSH,PERSISTENCE_CALLBACK}.
-    if(latest_record_version < thread_ctx().version) {
-      goto create_record;
-    }
-    break;
-  default:
-    break;
   }
 
   // Mutable Region: Update the record in-place
@@ -1285,10 +1903,11 @@ inline OperationStatus FasterKv<K, V, D>::InternalDelete(C& pending_context) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
     // If the record is the head of the hash chain, try to update the hash chain and completely
     // elide record only if the previous address points to invalid address
-    if(expected_entry.address() == address) {
+    // NOTE: this is an optimization enabled for hot log; disabled when cold index is used.
+    if(hash_index_.IsSync() && expected_entry.address() == address) {
       Address previous_address = record->header.previous_address();
       if (previous_address < begin_address) {
-        atomic_entry->compare_exchange_strong(expected_entry, HashBucketEntry::kInvalidEntry);
+        hash_index_.TryUpdateEntry(thread_context, pending_context, HashBucketEntry::kInvalidEntry);
       }
     }
     record->header.tombstone = true;
@@ -1299,28 +1918,39 @@ create_record:
   uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
   Address new_address = BlockAllocate(record_size);
   record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+  assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
   new(record) record_t{
     RecordInfo{
-      static_cast<uint16_t>(thread_ctx().version), true, true, false,
-      expected_entry.address() },
+      static_cast<uint16_t>(thread_context.version), true, true, false,
+      hlog_address },
   };
   pending_context.write_deep_key_at(const_cast<key_t*>(&record->key()));
 
-  HashBucketEntry updated_entry{ new_address, hash.tag(), false };
-
-  if(atomic_entry->compare_exchange_strong(expected_entry, updated_entry)) {
-    // Installed the new record in the hash table.
+  index_status = hash_index_.TryUpdateEntry(thread_context, pending_context, new_address);
+  if (index_status == Status::Ok) {
     return OperationStatus::SUCCESS;
-  } else {
+  } else if (index_status == Status::Aborted) {
     // Try again.
     record->header.invalid = true;
-    return OperationStatus::RETRY_NOW;
+    pending_context.clear_index_op();
+
+    #ifdef STATISTICS
+    if (collect_stats_) {
+      ++pending_context.num_record_invalidations;
+    }
+    #endif
+
+    return InternalDelete(pending_context, force_tombstone);
+  } else {
+    assert(!hash_index_.IsSync());
+    assert(index_status == Status::Pending);
+    return OperationStatus::INDEX_ENTRY_ON_DISK;
   }
 }
 
-template <class K, class V, class D>
+template <class K, class V, class D, class H, class OH>
 template<class C>
-inline Address FasterKv<K, V, D>::TraceBackForKeyMatchCtxt(const C& ctxt, Address from_address,
+inline Address FasterKv<K, V, D, H, OH>::TraceBackForKeyMatchCtxt(const C& ctxt, Address from_address,
     Address min_offset) const {
   while(from_address >= min_offset) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(from_address));
@@ -1328,14 +1958,15 @@ inline Address FasterKv<K, V, D>::TraceBackForKeyMatchCtxt(const C& ctxt, Addres
       return from_address;
     } else {
       from_address = record->header.previous_address();
+      assert(!from_address.in_readcache());
       continue;
     }
   }
   return from_address;
 }
 
-template <class K, class V, class D>
-inline Address FasterKv<K, V, D>::TraceBackForKeyMatch(const key_t& key, Address from_address,
+template <class K, class V, class D, class H, class OH>
+inline Address FasterKv<K, V, D, H, OH>::TraceBackForKeyMatch(const key_t& key, Address from_address,
                                                        Address min_offset) const {
   while(from_address >= min_offset) {
     const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(from_address));
@@ -1343,14 +1974,15 @@ inline Address FasterKv<K, V, D>::TraceBackForKeyMatch(const key_t& key, Address
       return from_address;
     } else {
       from_address = record->header.previous_address();
+      assert(!from_address.in_readcache());
       continue;
     }
   }
   return from_address;
 }
 
-template <class K, class V, class D>
-inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
+template <class K, class V, class D, class H, class OH>
+inline Status FasterKv<K, V, D, H, OH>::HandleOperationStatus(ExecutionContext& ctx,
     pending_context_t& pending_context, OperationStatus internal_status, bool& async) {
   async = false;
   switch(internal_status) {
@@ -1377,7 +2009,13 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
     case OperationType::Delete: {
       async_pending_delete_context_t& delete_context =
         *static_cast<async_pending_delete_context_t*>(&pending_context);
-      internal_status = InternalDelete(delete_context);
+      internal_status = InternalDelete(delete_context, true);
+      break;
+    }
+    case OperationType::ConditionalInsert: {
+      async_pending_ci_context_t& conditional_insert_context =
+        *static_cast<async_pending_ci_context_t*>(&pending_context);
+      internal_status = InternalConditionalInsert(conditional_insert_context);
       break;
     }
     }
@@ -1386,6 +2024,9 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
       return Status::Ok;
     } else if(internal_status == OperationStatus::NOT_FOUND) {
       return Status::NotFound;
+    } else if (internal_status == OperationStatus::ABORTED) {
+      assert(pending_context.type == OperationType::ConditionalInsert);
+      return Status::Aborted;
     } else {
       return HandleOperationStatus(ctx, pending_context, internal_status, async);
     }
@@ -1399,7 +2040,7 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
     }
     return RetryLater(ctx, pending_context, async);
   case OperationStatus::RECORD_ON_DISK:
-    if(thread_ctx().phase == Phase::PREPARE) {
+    if(thread_ctx().phase == Phase::PREPARE && pending_context.type != OperationType::ConditionalInsert) {
       assert(pending_context.type == OperationType::Read ||
              pending_context.type == OperationType::RMW);
       // Can I be marking an operation again and again?
@@ -1408,22 +2049,39 @@ inline Status FasterKv<K, V, D>::HandleOperationStatus(ExecutionContext& ctx,
       }
     }
     return IssueAsyncIoRequest(ctx, pending_context, async);
+  case OperationStatus::INDEX_ENTRY_ON_DISK:
+    // Keep track of pending requests due to async index retrievals
+    async = true;
+    return Status::Pending;
+  case OperationStatus::ASYNC_TO_COLD_STORE:
+    // F2 only: live record (up)inserted/deleted at cold store
+    assert(pending_context.type == OperationType::ConditionalInsert);
+    async = false;
+    // callback will be called when op finishes on other store
+    pending_context.caller_callback = nullptr;
+    return Status::Pending;
   case OperationStatus::SUCCESS_UNMARK:
     checkpoint_locks_.get_lock(pending_context.get_key_hash()).unlock_old();
     return Status::Ok;
   case OperationStatus::NOT_FOUND_UNMARK:
     checkpoint_locks_.get_lock(pending_context.get_key_hash()).unlock_old();
     return Status::NotFound;
+  case OperationStatus::ABORTED_UNMARK:
+    assert(pending_context.type == OperationType::Read);
+    checkpoint_locks_.get_lock(pending_context.get_key_hash()).unlock_old();
+    return Status::Aborted;
   case OperationStatus::CPR_SHIFT_DETECTED:
     return PivotAndRetry(ctx, pending_context, async);
+
+  // not reachable
+  default:
+    assert(false);
+    return Status::Corruption;
   }
-  // not reached
-  assert(false);
-  return Status::Corruption;
 }
 
-template <class K, class V, class D>
-inline Status FasterKv<K, V, D>::PivotAndRetry(ExecutionContext& ctx,
+template <class K, class V, class D, class H, class OH>
+inline Status FasterKv<K, V, D, H, OH>::PivotAndRetry(ExecutionContext& ctx,
     pending_context_t& pending_context, bool& async) {
   // Some invariants
   assert(ctx.version == thread_ctx().version);
@@ -1431,14 +2089,14 @@ inline Status FasterKv<K, V, D>::PivotAndRetry(ExecutionContext& ctx,
   Refresh();
   // thread must have moved to IN_PROGRESS phase
   assert(thread_ctx().version == ctx.version + 1);
+  // update request phase & version
+  pending_context.stamp_request(thread_ctx().phase, thread_ctx().version);
   // retry with new contexts
-  pending_context.phase = thread_ctx().phase;
-  pending_context.version = thread_ctx().version;
   return HandleOperationStatus(thread_ctx(), pending_context, OperationStatus::RETRY_NOW, async);
 }
 
-template <class K, class V, class D>
-inline Status FasterKv<K, V, D>::RetryLater(ExecutionContext& ctx,
+template <class K, class V, class D, class H, class OH>
+inline Status FasterKv<K, V, D, H, OH>::RetryLater(ExecutionContext& ctx,
     pending_context_t& pending_context, bool& async) {
   IAsyncContext* context_copy;
   Status result = pending_context.DeepCopy(context_copy);
@@ -1452,15 +2110,8 @@ inline Status FasterKv<K, V, D>::RetryLater(ExecutionContext& ctx,
   }
 }
 
-template <class K, class V, class D>
-inline constexpr uint32_t FasterKv<K, V, D>::MinIoRequestSize() const {
-  return static_cast<uint32_t>(
-           sizeof(value_t) + pad_alignment(record_t::min_disk_key_size(),
-               alignof(value_t)));
-}
-
-template <class K, class V, class D>
-inline Status FasterKv<K, V, D>::IssueAsyncIoRequest(ExecutionContext& ctx,
+template <class K, class V, class D, class H, class OH>
+inline Status FasterKv<K, V, D, H, OH>::IssueAsyncIoRequest(ExecutionContext& ctx,
     pending_context_t& pending_context, bool& async) {
   // Issue asynchronous I/O request
   uint64_t io_id = thread_ctx().io_id++;
@@ -1473,40 +2124,93 @@ inline Status FasterKv<K, V, D>::IssueAsyncIoRequest(ExecutionContext& ctx,
   return Status::Pending;
 }
 
-template <class K, class V, class D>
-inline Address FasterKv<K, V, D>::BlockAllocate(uint32_t record_size) {
+template <class K, class V, class D, class H, class OH>
+inline Address FasterKv<K, V, D, H, OH>::BlockAllocate(uint32_t record_size) {
   uint32_t page;
   Address retval = hlog.Allocate(record_size, page);
   while(retval < hlog.read_only_address.load()) {
     Refresh();
+    if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+    if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
     // Don't overrun the hlog's tail offset.
     bool page_closed = (retval == Address::kInvalidAddress);
     while(page_closed) {
       page_closed = !hlog.NewPage(page);
       Refresh();
+      if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+      if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
     }
     retval = hlog.Allocate(record_size, page);
   }
   return retval;
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::AsyncGetFromDisk(Address address, uint32_t num_records,
-    AsyncIOCallback callback, AsyncIOContext& context) {
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::DoRefreshCallback(void* faster) {
+  faster_t* self = reinterpret_cast<faster_t*>(faster);
+  self->Refresh(true);
+}
+
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::DoThrottling() {
   if(epoch_.IsProtected()) {
-    /// Throttling. (Thread pool, unprotected threads are not throttled.)
-    while(num_pending_ios.load() > 120) {
+    /// User threads wait for user-issued requests
+    bool other_store_protected = (other_store_ != nullptr) && other_store_->epoch_.IsProtected();
+    while(num_pending_ios_.load() > kMaxPendingIOs) {
       disk.TryComplete();
+      hash_index_.CompletePending();
       std::this_thread::yield();
       epoch_.ProtectAndDrain();
+      if (other_store_protected) {
+        other_store_->epoch_.ProtectAndDrain();
+      }
     }
   }
-  ++num_pending_ios;
+}
+
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::AsyncGetFromDisk(Address address, uint32_t num_records,
+    AsyncIOCallback callback, AsyncIOContext& context) {
+  #ifdef STATISTICS
+  auto start_time = std::chrono::high_resolution_clock::now();
+  #endif
+
+  DoThrottling();
+
+  #ifdef STATISTICS
+  std::chrono::nanoseconds duration = std::chrono::high_resolution_clock::now() - start_time;
+  throttling_time_spent_ += duration.count();
+  #endif
+
+  ++num_pending_ios_;
+
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    auto* pending_context = static_cast<pending_context_t*>(context.caller_context);
+    ++pending_context->num_iops;
+    switch (pending_context->type) {
+      case OperationType::Read:
+        ++reads_iops_;
+        break;
+      case OperationType::RMW:
+        ++rmw_iops_;
+        break;
+      case OperationType::ConditionalInsert:
+        ++ci_iops_;
+        break;
+      default:
+        // not reached
+        assert(false);
+        break;
+    }
+  }
+  #endif
+
   hlog.AsyncGetFromDisk(address, num_records, callback, context);
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status result,
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status result,
     size_t bytes_transferred) {
   CallbackContext<AsyncIOContext> context{ ctxt };
   faster_t* faster = reinterpret_cast<faster_t*>(context->faster);
@@ -1514,7 +2218,7 @@ void FasterKv<K, V, D>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status res
   pending_context_t* pending_context = static_cast<pending_context_t*>(context->caller_context);
 
   /// This I/O is finished.
-  --faster->num_pending_ios;
+  --faster->num_pending_ios_;
   /// Always "goes async": context is freed by the issuing thread, when processing thread I/O
   /// responses.
   context.async = true;
@@ -1544,8 +2248,30 @@ void FasterKv<K, V, D>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status res
       context->thread_io_responses->push(context.get());
     } else {
       //keys are not same. I/O is not complete
+
+      // check for min_address in pending_context to avoid unecessary I/Os
+      Address min_search_offset = faster->hlog.begin_address.load();
+      switch (pending_context->type) {
+        case OperationType::Read: {
+          auto read_pending_context = static_cast<async_pending_read_context_t*>(pending_context);
+          if (read_pending_context->min_search_offset > min_search_offset) {
+            min_search_offset = read_pending_context->min_search_offset;
+          }
+        }
+        break;
+        case OperationType::ConditionalInsert: {
+          auto ci_pending_context = static_cast<async_pending_ci_context_t*>(pending_context);
+          if (ci_pending_context->min_search_offset > min_search_offset) {
+            min_search_offset = ci_pending_context->min_search_offset;
+          }
+        }
+        break;
+        default:
+          break;
+      }
+
       context->address = record->header.previous_address();
-      if(context->address >= faster->hlog.begin_address.load()) {
+      if(context->address >= min_search_offset) {
         faster->AsyncGetFromDisk(context->address, faster->MinIoRequestSize(),
                                  AsyncGetFromDiskCallback, *context.get());
         context.async = true;
@@ -1554,56 +2280,150 @@ void FasterKv<K, V, D>::AsyncGetFromDiskCallback(IAsyncContext* ctxt, Status res
         context->thread_io_responses->push(context.get());
       }
     }
+  } else if (result == Status::IOError) {
+    log_warn("AsyncGetFromDiskCallback: received *IOError* status from request callback");
+    pending_context->caller_callback(pending_context->caller_context, Status::IOError);
+  } else {
+    // not reached
+    assert(false);
   }
 }
 
-template <class K, class V, class D>
-OperationStatus FasterKv<K, V, D>::InternalContinuePendingRead(ExecutionContext& context,
-    AsyncIOContext& io_context) {
-  if(io_context.address >= hlog.begin_address.load()) {
-    async_pending_read_context_t* pending_context = static_cast<async_pending_read_context_t*>(
-          io_context.caller_context);
+
+template <class K, class V, class D, class H, class OH>
+OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRead(ExecutionContext& context,
+    AsyncIOContext& io_context, bool& log_truncated) {
+
+  async_pending_read_context_t* pending_context = static_cast<async_pending_read_context_t*>(
+        io_context.caller_context);
+  log_truncated = pending_context->num_compaction_truncations < num_compaction_truncations_.load();
+
+  OperationStatus op_status;
+  if (pending_context->min_search_offset != Address::kInvalidAddress &&
+      pending_context->min_search_offset > io_context.address) {
+        op_status = OperationStatus::NOT_FOUND;
+  }
+  else if (io_context.address >= hlog.begin_address.load()) {
+    // Address points to valid record
     record_t* record = reinterpret_cast<record_t*>(io_context.record.GetValidPointer());
-    if(record->header.tombstone) {
-      return (thread_ctx().version > context.version) ? OperationStatus::NOT_FOUND_UNMARK :
-             OperationStatus::NOT_FOUND;
+    if (record->header.tombstone) {
+      op_status = (pending_context->abort_if_tombstone)
+                    ? OperationStatus::ABORTED
+                    : OperationStatus::NOT_FOUND;
     }
-    pending_context->Get(record);
-    assert(!kCopyReadsToTail);
+    else {
+      pending_context->Get(record);
+
+      // Try to insert record to read cache
+      // NOTE: Insert only if record will be valid after any potential concurrent log trimming operation
+      if (UseReadCache() && io_context.address >= next_hlog_begin_address_.load()) {
+        Status rc_status = read_cache_->TryInsert(context, *pending_context, record);
+        assert(rc_status == Status::Ok || rc_status == Status::Aborted);
+      }
+
+      assert(!kCopyReadsToTail);
+      op_status = OperationStatus::SUCCESS;
+    }
+  }
+  else {
+    op_status = OperationStatus::NOT_FOUND; // Invalid address
+  }
+
+  if (op_status == OperationStatus::SUCCESS) {
     return (thread_ctx().version > context.version) ? OperationStatus::SUCCESS_UNMARK :
            OperationStatus::SUCCESS;
-  } else {
+  }
+  else if (op_status == OperationStatus::NOT_FOUND) {
     return (thread_ctx().version > context.version) ? OperationStatus::NOT_FOUND_UNMARK :
            OperationStatus::NOT_FOUND;
   }
+  else {
+    assert(op_status == OperationStatus::ABORTED);
+    return (thread_ctx().version > context.version) ? OperationStatus::ABORTED_UNMARK :
+          OperationStatus::ABORTED;
+  }
 }
 
-template <class K, class V, class D>
-OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& context,
+template <class K, class V, class D, class H, class OH>
+OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingConditionalInsert(ExecutionContext& context,
     AsyncIOContext& io_context) {
+
+  async_pending_ci_context_t* pending_context = (
+    static_cast<async_pending_ci_context_t*>(io_context.caller_context));
+
+  assert(pending_context->min_search_offset != Address::kInvalidAddress &&
+          pending_context->expected_hlog_address != Address::kInvalidAddress);
+  // assert(pending_context->min_search_offset <= pending_context->start_search_entry.address());
+
+  Address begin_address = hlog.begin_address.load();
+
+  if (pending_context->min_search_offset < begin_address) {
+    // we cannot scan the entire region because log was truncated
+    // request should be re-tried at a higher level!
+    return OperationStatus::NOT_FOUND;
+  }
+
+  if (io_context.address > pending_context->min_search_offset) {
+    // found newer version for this record -- abort insert!
+    return OperationStatus::ABORTED;
+  } else if (io_context.address < pending_context->orig_min_search_offset) {
+    // record not part of the same hash chain: i.e., invalid record; skip record
+    // NOTE: this check mainly protects from copying "invalid" records that were not marked invalid
+    // due to an index operation going pending, and the record being flushed to disk before being marked.
+    // (flush-before-marked-invalid race condition).
+    // Cross-validating that a record is part of the same hash chain is a relatively cheap way to identify
+    // those records.
+    return OperationStatus::ABORTED;
+  }
+  assert(io_context.address >= pending_context->orig_min_search_offset);
+  // Searched entire region, but did not find newer version for record
+
+  // Update search range to [prev start search addr, latest hash entry addr]
+  pending_context->min_search_offset = pending_context->expected_hlog_address;
+
+  return OperationStatus::RETRY_NOW;
+}
+
+
+template <class K, class V, class D, class H, class OH>
+OperationStatus FasterKv<K, V, D, H, OH>::InternalContinuePendingRmw(ExecutionContext& context,
+                                                              AsyncIOContext& io_context) {
+  assert(hash_index_.IsSync()); // RMWs are not supported when cold index is used
   async_pending_rmw_context_t* pending_context = static_cast<async_pending_rmw_context_t*>(
         io_context.caller_context);
+  bool create_if_not_exists = pending_context->create_if_not_exists;
 
-  // Find a hash bucket entry to store the updated value in.
-  KeyHash hash = pending_context->get_key_hash();
-  HashBucketEntry expected_entry;
-  AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+  Address expected_hlog_address = pending_context->expected_hlog_address;
+  Address begin_address = hlog.begin_address.load();
 
-  // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
-  Address address = expected_entry.address();
+  // This is an optimization for when index is in-memory (and thus index ops are sync).
   Address head_address = hlog.head_address.load();
 
-  // Make sure that atomic_entry is OK to update.
-  if(address >= head_address && address != pending_context->entry.address()) {
+  // Find a hash bucket entry to store the updated value in.
+  // (Note that address will be Address::kInvalidAddress, if the atomic_entry was created.)
+  Status status = hash_index_.FindOrCreateEntry(thread_ctx(), *pending_context);
+  assert(status == Status::Ok);
+  // Address from new hash index entry
+  Address address = pending_context->entry.address();
+
+  if (UseReadCache()) {
+    address = read_cache_->Skip(*pending_context);
+  }
+  Address hlog_address = address;
+  assert(!address.in_readcache());
+
+  // Make sure that no other record has been inserted in the meantime
+  if(address >= head_address && address != expected_hlog_address) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
     if(!pending_context->is_key_equal(record->key())) {
-      Address min_offset = std::max(pending_context->entry.address() + 1, head_address);
+      Address min_offset = std::max(expected_hlog_address + 1, head_address);
       address = TraceBackForKeyMatchCtxt(*pending_context, record->header.previous_address(), min_offset);
     }
   }
-  assert(address >= pending_context->entry.address()); // part of the same hash chain
+  // part of the same hash chain or entry deleted
+  assert(address < begin_address || address >= expected_hlog_address);
 
-  if(address > pending_context->entry.address()) {
+  if(address > expected_hlog_address) {
     // This handles two mutually exclusive cases. In both cases InternalRmw will be called immediately:
     //  1) Found a newer record in the in-memory region (i.e. address >= head_address)
     //     Calling InternalRmw will result in taking into account the newer version,
@@ -1613,24 +2433,34 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
     //     Calling InternalRmw will result in launching a new search in the hash chain, by reading
     //     the newly introduced entries in the chain, so we won't miss any potential entries with same key.
     //
-    pending_context->continue_async(address, expected_entry);
+    pending_context->go_async(address);
     return OperationStatus::RETRY_NOW;
   }
-  assert(address < hlog.begin_address.load() || address == pending_context->entry.address());
+  assert(address < begin_address || address == expected_hlog_address);
 
-  // We have to do copy-on-write/RCU and write the updated value to the tail of the log.
+  // invalidate read cache entry
+  if (UseReadCache()) {
+    read_cache_->SkipAndInvalidate(*pending_context);
+  }
+
+  // We have to do RCU and write the updated value to the tail of the log.
   Address new_address;
   record_t* new_record;
-  if(io_context.address < hlog.begin_address.load()) {
+  if(io_context.address < begin_address) {
     // The on-disk trace back failed to find a key match.
+    if (!create_if_not_exists) {
+      return OperationStatus::NOT_FOUND;
+    }
+
     uint32_t record_size = record_t::size(pending_context->key_size(), pending_context->value_size());
     new_address = BlockAllocate(record_size);
     new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));
 
+    assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
     new(new_record) record_t{
       RecordInfo{
         static_cast<uint16_t>(context.version), true, false, false,
-        expected_entry.address() },
+        hlog_address },
     };
     pending_context->write_deep_key_at(const_cast<key_t*>(&new_record->key()));
     pending_context->RmwInitial(new_record);
@@ -1643,10 +2473,11 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
     new_address = BlockAllocate(record_size);
     new_record = reinterpret_cast<record_t*>(hlog.Get(new_address));
 
+    assert(!hlog_address.in_readcache()); // hlog entries do *not* point to read cache
     new(new_record) record_t{
       RecordInfo{
         static_cast<uint16_t>(context.version), true, false, false,
-        expected_entry.address() },
+        hlog_address },
     };
     pending_context->write_deep_key_at(const_cast<key_t*>(&new_record->key()));
     if (!is_tombstone) {
@@ -1656,66 +2487,34 @@ OperationStatus FasterKv<K, V, D>::InternalContinuePendingRmw(ExecutionContext& 
     }
   }
 
-  HashBucketEntry updated_entry{ new_address, hash.tag(), false };
-  if(atomic_entry->compare_exchange_strong(expected_entry, updated_entry)) {
+  Status index_status = hash_index_.TryUpdateEntry(thread_ctx(), *pending_context, new_address);
+  if (index_status == Status::Ok) {
     assert(thread_ctx().version >= context.version);
-    return (thread_ctx().version == context.version) ? OperationStatus::SUCCESS :
-           OperationStatus::SUCCESS_UNMARK;
+    return (thread_ctx().version == context.version) ? OperationStatus::SUCCESS
+                                                     : OperationStatus::SUCCESS_UNMARK;
   } else {
+    assert(index_status == Status::Aborted);
     // CAS failed; try again.
     new_record->header.invalid = true;
-    pending_context->continue_async(address, expected_entry);
+    pending_context->go_async(address);
+
+    #ifdef STATISTICS
+    if (collect_stats_) {
+      ++pending_context->num_record_invalidations;
+    }
+    #endif
+
     return OperationStatus::RETRY_NOW;
   }
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::InitializeCheckpointLocks() {
-  uint32_t table_version = resize_info_.version;
-  uint64_t size = state_[table_version].size();
-  checkpoint_locks_.Initialize(size);
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::InitializeCheckpointLocks() {
+  checkpoint_locks_.Initialize(hash_index_.size());
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::WriteIndexMetadata() {
-  std::string filename = disk.index_checkpoint_path(checkpoint_.index_token) + "info.dat";
-  // (This code will need to be refactored into the disk_t interface, if we want to support
-  // unformatted disks.)
-  std::FILE* file = std::fopen(filename.c_str(), "wb");
-  if(!file) {
-    return Status::IOError;
-  }
-  if(std::fwrite(&checkpoint_.index_metadata, sizeof(checkpoint_.index_metadata), 1, file) != 1) {
-    std::fclose(file);
-    return Status::IOError;
-  }
-  if(std::fclose(file) != 0) {
-    return Status::IOError;
-  }
-  return Status::Ok;
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::ReadIndexMetadata(const Guid& token) {
-  std::string filename = disk.index_checkpoint_path(token) + "info.dat";
-  // (This code will need to be refactored into the disk_t interface, if we want to support
-  // unformatted disks.)
-  std::FILE* file = std::fopen(filename.c_str(), "rb");
-  if(!file) {
-    return Status::IOError;
-  }
-  if(std::fread(&checkpoint_.index_metadata, sizeof(checkpoint_.index_metadata), 1, file) != 1) {
-    std::fclose(file);
-    return Status::IOError;
-  }
-  if(std::fclose(file) != 0) {
-    return Status::IOError;
-  }
-  return Status::Ok;
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::WriteCprMetadata() {
+template <class K, class V, class D, class H, class OH>
+Status FasterKv<K, V, D, H, OH>::WriteCprMetadata() {
   std::string filename = disk.cpr_checkpoint_path(checkpoint_.hybrid_log_token) + "info.dat";
   // (This code will need to be refactored into the disk_t interface, if we want to support
   // unformatted disks.)
@@ -1733,8 +2532,8 @@ Status FasterKv<K, V, D>::WriteCprMetadata() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::ReadCprMetadata(const Guid& token) {
+template <class K, class V, class D, class H, class OH>
+Status FasterKv<K, V, D, H, OH>::ReadCprMetadata(const Guid& token) {
   std::string filename = disk.cpr_checkpoint_path(token) + "info.dat";
   // (This code will need to be refactored into the disk_t interface, if we want to support
   // unformatted disks.)
@@ -1752,8 +2551,8 @@ Status FasterKv<K, V, D>::ReadCprMetadata(const Guid& token) {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::WriteCprContext() {
+template <class K, class V, class D, class H, class OH>
+Status FasterKv<K, V, D, H, OH>::WriteCprContext() {
   std::string filename = disk.cpr_checkpoint_path(checkpoint_.hybrid_log_token);
   const Guid& guid = prev_thread_ctx().guid;
   filename += guid.ToString();
@@ -1775,8 +2574,8 @@ Status FasterKv<K, V, D>::WriteCprContext() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::ReadCprContexts(const Guid& token, const Guid* guids) {
+template <class K, class V, class D, class H, class OH>
+Status FasterKv<K, V, D, H, OH>::ReadCprContexts(const Guid& token, const Guid* guids) {
   for(size_t idx = 0; idx < Thread::kMaxNumThreads; ++idx) {
     const Guid& guid = guids[idx];
     if(guid == Guid{}) {
@@ -1809,96 +2608,8 @@ Status FasterKv<K, V, D>::ReadCprContexts(const Guid& token, const Guid* guids) 
   }
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::CheckpointFuzzyIndex() {
-  uint32_t hash_table_version = resize_info_.version;
-  // Checkpoint the main hash table.
-  file_t ht_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
-                                "ht.dat");
-  RETURN_NOT_OK(ht_file.Open(&disk.handler()));
-  RETURN_NOT_OK(state_[hash_table_version].Checkpoint(disk, std::move(ht_file),
-                checkpoint_.index_metadata.num_ht_bytes));
-  // Checkpoint the hash table's overflow buckets.
-  file_t ofb_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
-                                 "ofb.dat");
-  RETURN_NOT_OK(ofb_file.Open(&disk.handler()));
-  RETURN_NOT_OK(overflow_buckets_allocator_[hash_table_version].Checkpoint(disk,
-                std::move(ofb_file), checkpoint_.index_metadata.num_ofb_bytes));
-  checkpoint_.index_checkpoint_started = true;
-  return Status::Ok;
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::CheckpointFuzzyIndexComplete() {
-  if(!checkpoint_.index_checkpoint_started) {
-    return Status::Pending;
-  }
-  uint32_t hash_table_version = resize_info_.version;
-  Status result = state_[hash_table_version].CheckpointComplete(false);
-  if(result == Status::Pending) {
-    return Status::Pending;
-  } else if(result != Status::Ok) {
-    return result;
-  } else {
-    return overflow_buckets_allocator_[hash_table_version].CheckpointComplete(false);
-  }
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverFuzzyIndex() {
-  uint8_t hash_table_version = resize_info_.version;
-  assert(state_[hash_table_version].size() == checkpoint_.index_metadata.table_size);
-
-  // Recover the main hash table.
-  file_t ht_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
-                                "ht.dat");
-  RETURN_NOT_OK(ht_file.Open(&disk.handler()));
-  RETURN_NOT_OK(state_[hash_table_version].Recover(disk, std::move(ht_file),
-                checkpoint_.index_metadata.num_ht_bytes));
-  // Recover the hash table's overflow buckets.
-  file_t ofb_file = disk.NewFile(disk.relative_index_checkpoint_path(checkpoint_.index_token) +
-                                 "ofb.dat");
-  RETURN_NOT_OK(ofb_file.Open(&disk.handler()));
-  return overflow_buckets_allocator_[hash_table_version].Recover(disk, std::move(ofb_file),
-         checkpoint_.index_metadata.num_ofb_bytes, checkpoint_.index_metadata.ofb_count);
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverFuzzyIndexComplete(bool wait) {
-  uint8_t hash_table_version = resize_info_.version;
-  Status result = state_[hash_table_version].RecoverComplete(true);
-  if(result != Status::Ok) {
-    return result;
-  }
-  result = overflow_buckets_allocator_[hash_table_version].RecoverComplete(true);
-  if(result != Status::Ok) {
-    return result;
-  }
-
-  // Clear all tentative entries.
-  for(uint64_t bucket_idx = 0; bucket_idx < state_[hash_table_version].size(); ++bucket_idx) {
-    HashBucket* bucket = &state_[hash_table_version].bucket(bucket_idx);
-    while(true) {
-      for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-        if(bucket->entries[entry_idx].load().tentative()) {
-          bucket->entries[entry_idx].store(HashBucketEntry::kInvalidEntry);
-        }
-      }
-      // Go to next bucket in the chain
-      HashBucketOverflowEntry entry = bucket->overflow_entry.load();
-      if(entry.unused()) {
-        // No more buckets in the chain.
-        break;
-      }
-      bucket = &overflow_buckets_allocator_[hash_table_version].Get(entry.address());
-      assert(reinterpret_cast<size_t>(bucket) % Constants::kCacheLineBytes == 0);
-    }
-  }
-  return Status::Ok;
-}
-
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverHybridLog() {
+template <class K, class V, class D, class H, class OH>
+Status FasterKv<K, V, D, H, OH>::RecoverHybridLog() {
   class Context : public IAsyncContext {
    public:
     Context(hlog_t& hlog_, uint32_t page_, RecoveryStatus& recovery_status_)
@@ -1968,8 +2679,8 @@ Status FasterKv<K, V, D>::RecoverHybridLog() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverHybridLogFromSnapshotFile() {
+template <class K, class V, class D, class H, class OH>
+Status FasterKv<K, V, D, H, OH>::RecoverHybridLogFromSnapshotFile() {
   class Context : public IAsyncContext {
    public:
     Context(hlog_t& hlog_, file_t& file_, uint32_t file_start_page_, uint32_t page_,
@@ -2058,8 +2769,20 @@ Status FasterKv<K, V, D>::RecoverHybridLogFromSnapshotFile() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RecoverFromPage(Address from_address, Address to_address) {
+template <class K, class V, class D, class H, class OH>
+Status FasterKv<K, V, D, H, OH>::RecoverFromPage(Address from_address, Address to_address) {
+  typedef RecoveryContext<K, V> recovery_context_t;
+  typedef PendingRecoveryContext<recovery_context_t> pending_recovery_context_t;
+
+  auto callback = [](IAsyncContext* ctxt, Status result) {
+    CallbackContext<recovery_context_t> context{ ctxt };
+    assert(result == Status::Ok);
+    // set update flag to true
+    context->flag->store(true);
+  };
+
+  std::atomic<bool> ready;
+
   assert(from_address.page() == to_address.page());
   for(Address address = from_address; address < to_address;) {
     record_t* record = reinterpret_cast<record_t*>(hlog.Get(address));
@@ -2071,29 +2794,45 @@ Status FasterKv<K, V, D>::RecoverFromPage(Address from_address, Address to_addre
       address += record->size();
       continue;
     }
-    const key_t& key = record->key();
-    KeyHash hash = key.GetHash();
-    HashBucketEntry expected_entry;
-    AtomicHashBucketEntry* atomic_entry = FindOrCreateEntry(hash, expected_entry);
+
+    recovery_context_t recovery_context{ record, &ready };
+    pending_recovery_context_t pending_context{ recovery_context, callback };
+    Status status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
+    assert(status == Status::Ok || status == Status::Pending);
+
+    if (status == Status::Pending) {
+      while (!ready.load()) {
+        CompletePending(false);
+        std::this_thread::yield();
+      }
+    }
+
+    HashBucketEntry expected_entry{ pending_context.entry };
 
     if(record->header.checkpoint_version <= checkpoint_.log_metadata.version) {
-      HashBucketEntry new_entry{ address, hash.tag(), false };
-      atomic_entry->store(new_entry);
+      hash_index_.UpdateEntry(thread_ctx(), pending_context, address);
     } else {
       record->header.invalid = true;
       if(record->header.previous_address() < checkpoint_.index_metadata.checkpoint_start_address) {
-        HashBucketEntry new_entry{ record->header.previous_address(), hash.tag(), false };
-        atomic_entry->store(new_entry);
+        hash_index_.UpdateEntry(thread_ctx(), pending_context, record->header.previous_address());
       }
     }
+
+    if (status == Status::Pending) {
+      while (!ready.load()) {
+        CompletePending(false);
+        std::this_thread::yield();
+      }
+    }
+
     address += record->size();
   }
 
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::RestoreHybridLog() {
+template <class K, class V, class D, class H, class OH>
+Status FasterKv<K, V, D, H, OH>::RestoreHybridLog() {
   Address tail_address = checkpoint_.log_metadata.final_address;
   uint32_t end_page = tail_address.offset() > 0 ? tail_address.page() + 1 : tail_address.page();
   uint32_t capacity = hlog.buffer_size();
@@ -2123,10 +2862,10 @@ Status FasterKv<K, V, D>::RestoreHybridLog() {
   return Status::Ok;
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::HeavyEnter() {
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::HeavyEnter() {
   if(thread_ctx().phase == Phase::GC_IO_PENDING || thread_ctx().phase == Phase::GC_IN_PROGRESS) {
-    CleanHashTableBuckets();
+    hash_index_.GarbageCollect(read_cache_.get());
     return;
   }
   while(thread_ctx().phase == Phase::GROW_PREPARE) {
@@ -2136,171 +2875,14 @@ void FasterKv<K, V, D>::HeavyEnter() {
     Refresh();
   }
   if(thread_ctx().phase == Phase::GROW_IN_PROGRESS) {
-    SplitHashTableBuckets();
+    GrowIndexBlocking();
   }
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::CleanHashTableBuckets() {
-  uint64_t chunk = gc_.next_chunk++;
-  if(chunk >= gc_.num_chunks) {
-    // No chunk left to clean.
-    return false;
-  }
-  uint8_t version = resize_info_.version;
-  Address begin_address = hlog.begin_address.load();
-  uint64_t upper_bound;
-  if(chunk + 1 < gc_.num_chunks) {
-    // All chunks but the last chunk contain kGcHashTableChunkSize elements.
-    upper_bound = kGcHashTableChunkSize;
-  } else {
-    // Last chunk might contain more or fewer elements.
-    upper_bound = state_[version].size() - (chunk * kGcHashTableChunkSize);
-  }
-  for(uint64_t idx = 0; idx < upper_bound; ++idx) {
-    HashBucket* bucket = &state_[version].bucket(chunk * kGcHashTableChunkSize + idx);
-    while(true) {
-      for(uint32_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
-        AtomicHashBucketEntry& atomic_entry = bucket->entries[entry_idx];
-        HashBucketEntry expected_entry = atomic_entry.load();
-        if(!expected_entry.unused() && expected_entry.address() != Address::kInvalidAddress &&
-            expected_entry.address() < begin_address) {
-          // The record that this entry points to was truncated; try to delete the entry.
-          atomic_entry.compare_exchange_strong(expected_entry, HashBucketEntry::kInvalidEntry);
-          // If deletion failed, then some other thread must have added a new record to the entry.
-        }
-      }
-      // Go to next bucket in the chain.
-      HashBucketOverflowEntry overflow_entry = bucket->overflow_entry.load();
-      if(overflow_entry.unused()) {
-        // No more buckets in the chain.
-        break;
-      }
-      bucket = &overflow_buckets_allocator_[version].Get(overflow_entry.address());
-    }
-  }
-  // Done with this chunk--did some work.
-  return true;
-}
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::GrowIndexBlocking() {
+  hash_index_.template Grow<record_t>();
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::AddHashEntry(HashBucket*& bucket, uint32_t& next_idx, uint8_t version,
-                                     HashBucketEntry entry) {
-  if(next_idx == HashBucket::kNumEntries) {
-    // Need to allocate a new bucket, first.
-    FixedPageAddress new_bucket_addr = overflow_buckets_allocator_[version].Allocate();
-    HashBucketOverflowEntry new_bucket_entry{ new_bucket_addr };
-    bucket->overflow_entry.store(new_bucket_entry);
-    bucket = &overflow_buckets_allocator_[version].Get(new_bucket_addr);
-    next_idx = 0;
-  }
-  bucket->entries[next_idx].store(entry);
-  ++next_idx;
-}
-
-template <class K, class V, class D>
-Address FasterKv<K, V, D>::TraceBackForOtherChainStart(uint64_t old_size, uint64_t new_size,
-    Address from_address, Address min_address, uint8_t side) {
-  assert(side == 0 || side == 1);
-  // Search back as far as min_address.
-  while(from_address >= min_address) {
-    const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(from_address));
-    KeyHash hash = record->key().GetHash();
-    if((hash.idx(new_size) < old_size) != (side == 0)) {
-      // Record's key hashes to the other side.
-      return from_address;
-    }
-    from_address = record->header.previous_address();
-  }
-  return from_address;
-}
-
-template <class K, class V, class D>
-void FasterKv<K, V, D>::SplitHashTableBuckets() {
-  // This thread won't exit until all hash table buckets have been split.
-  Address head_address = hlog.head_address.load();
-  Address begin_address = hlog.begin_address.load();
-  for(uint64_t chunk = grow_.next_chunk++; chunk < grow_.num_chunks; chunk = grow_.next_chunk++) {
-    uint64_t old_size = state_[grow_.old_version].size();
-    uint64_t new_size = state_[grow_.new_version].size();
-    assert(new_size == old_size * 2);
-    // Split this chunk.
-    uint64_t upper_bound;
-    if(chunk + 1 < grow_.num_chunks) {
-      // All chunks but the last chunk contain kGrowHashTableChunkSize elements.
-      upper_bound = kGrowHashTableChunkSize;
-    } else {
-      // Last chunk might contain more or fewer elements.
-      upper_bound = old_size - (chunk * kGrowHashTableChunkSize);
-    }
-    for(uint64_t idx = 0; idx < upper_bound; ++idx) {
-
-      // Split this (chain of) bucket(s).
-      HashBucket* old_bucket = &state_[grow_.old_version].bucket(
-                                 chunk * kGrowHashTableChunkSize + idx);
-      HashBucket* new_bucket0 = &state_[grow_.new_version].bucket(
-                                  chunk * kGrowHashTableChunkSize + idx);
-      HashBucket* new_bucket1 = &state_[grow_.new_version].bucket(
-                                  old_size + chunk * kGrowHashTableChunkSize + idx);
-      uint32_t new_entry_idx0 = 0;
-      uint32_t new_entry_idx1 = 0;
-      while(true) {
-        for(uint32_t old_entry_idx = 0; old_entry_idx < HashBucket::kNumEntries; ++old_entry_idx) {
-          HashBucketEntry old_entry = old_bucket->entries[old_entry_idx].load();
-          if(old_entry.unused()) {
-            // Nothing to do.
-            continue;
-          } else if(old_entry.address() < head_address) {
-            // Can't tell which new bucket the entry should go into; put it in both.
-            AddHashEntry(new_bucket0, new_entry_idx0, grow_.new_version, old_entry);
-            AddHashEntry(new_bucket1, new_entry_idx1, grow_.new_version, old_entry);
-            continue;
-          }
-
-          const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(
-                                     old_entry.address()));
-          KeyHash hash = record->key().GetHash();
-          if(hash.idx(new_size) < old_size) {
-            // Record's key hashes to the 0 side of the new hash table.
-            AddHashEntry(new_bucket0, new_entry_idx0, grow_.new_version, old_entry);
-            Address other_address = TraceBackForOtherChainStart(old_size, new_size,
-                                    record->header.previous_address(), head_address, 0);
-            if(other_address >= begin_address) {
-              // We found a record that either is on disk or has a key that hashes to the 1 side of
-              // the new hash table.
-              AddHashEntry(new_bucket1, new_entry_idx1, grow_.new_version,
-                           HashBucketEntry{ other_address, old_entry.tag(), false });
-            }
-          } else {
-            // Record's key hashes to the 1 side of the new hash table.
-            AddHashEntry(new_bucket1, new_entry_idx1, grow_.new_version, old_entry);
-            Address other_address = TraceBackForOtherChainStart(old_size, new_size,
-                                    record->header.previous_address(), head_address, 1);
-            if(other_address >= begin_address) {
-              // We found a record that either is on disk or has a key that hashes to the 0 side of
-              // the new hash table.
-              AddHashEntry(new_bucket0, new_entry_idx0, grow_.new_version,
-                           HashBucketEntry{ other_address, old_entry.tag(), false });
-            }
-          }
-        }
-        // Go to next bucket in the chain.
-        HashBucketOverflowEntry overflow_entry = old_bucket->overflow_entry.load();
-        if(overflow_entry.unused()) {
-          // No more buckets in the chain.
-          break;
-        }
-        old_bucket = &overflow_buckets_allocator_[grow_.old_version].Get(overflow_entry.address());
-      }
-    }
-    // Done with this chunk.
-    if(--grow_.num_pending_chunks == 0) {
-      // Free the old hash table.
-      state_[grow_.old_version].Uninitialize();
-      overflow_buckets_allocator_[grow_.old_version].Uninitialize();
-      break;
-    }
-  }
   // Thread has finished growing its part of the hash table.
   thread_ctx().phase = Phase::REST;
   // Thread ack that it has finished growing the hash table.
@@ -2316,8 +2898,8 @@ void FasterKv<K, V, D>::SplitHashTableBuckets() {
   }
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) {
   SystemState next_state = current_state.GetNextState();
   if(!system_state_.compare_exchange_strong(current_state, next_state)) {
     return false;
@@ -2336,7 +2918,7 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       assert(next_state.action != Action::CheckpointHybridLog);
       // Issue async request for fuzzy checkpoint
       assert(!checkpoint_.failed);
-      if(CheckpointFuzzyIndex() != Status::Ok) {
+      if(hash_index_.Checkpoint(checkpoint_, read_cache_.get()) != Status::Ok) {
         checkpoint_.failed = true;
       }
       break;
@@ -2345,18 +2927,12 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       // case directly.
       assert(next_state.action == Action::CheckpointFull);
       // INDEX_CHKPT -> PREPARE
-      // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the ofb.
-      // (Ensures that recovery won't accidentally reallocate from the ofb.)
-      checkpoint_.index_metadata.ofb_count =
-        overflow_buckets_allocator_[resize_info_.version].count();
       // Write index meta data on disk
-      if(WriteIndexMetadata() != Status::Ok) {
+      if(hash_index_.WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
         checkpoint_.failed = true;
       }
-      if(checkpoint_.index_persistence_callback) {
-        // Notify the host that the index checkpoint has completed.
-        checkpoint_.index_persistence_callback(Status::Ok);
-      }
+      // Notify the host that the index checkpoint has completed.
+      checkpoint_.IssueIndexPersistenceCallback();
       break;
     case Phase::IN_PROGRESS: {
       assert(next_state.action != Action::CheckpointIndex);
@@ -2411,24 +2987,17 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
         // Checkpoint is done--no more work for threads to do.
         system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
       } else {
-        // Get an overestimate for the ofb's tail, after we've finished fuzzy-checkpointing the
-        // ofb. (Ensures that recovery won't accidentally reallocate from the ofb.)
-        checkpoint_.index_metadata.ofb_count =
-          overflow_buckets_allocator_[resize_info_.version].count();
         // Write index meta data on disk
-        if(WriteIndexMetadata() != Status::Ok) {
+        if(hash_index_.WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
           checkpoint_.failed = true;
         }
-        auto index_persistence_callback = checkpoint_.index_persistence_callback;
+        //auto index_persistence_callback = checkpoint_.index_persistence_callback;
+        checkpoint_.IssueIndexPersistenceCallback();
         // The checkpoint is done; we can reset the contexts now. (Have to reset contexts before
         // another checkpoint can be started.)
         checkpoint_.CheckpointDone();
         // Checkpoint is done--no more work for threads to do.
         system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
-        if(index_persistence_callback) {
-          // Notify the host that the index checkpoint has completed.
-          index_persistence_callback(Status::Ok);
-        }
       }
       break;
     default:
@@ -2446,14 +3015,12 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
     case Phase::GC_IN_PROGRESS:
       // GC_IO_PENDING -> GC_IN_PROGRESS
       // Tell the disk to truncate the log.
-      hlog.Truncate(gc_.truncate_callback);
+      hlog.Truncate(gc_state_);
       break;
     case Phase::REST:
       // GC_IN_PROGRESS -> REST
       // GC is done--no more work for threads to do.
-      if(gc_.complete_callback) {
-        gc_.complete_callback();
-      }
+      gc_state_.IssueCompleteCallback();
       system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
       break;
     default:
@@ -2470,11 +3037,11 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
       break;
     case Phase::GROW_IN_PROGRESS:
       // Swap hash table versions so that all threads will use the new version after populating it.
-      resize_info_.version = grow_.new_version;
+      hash_index_.resize_info.version = grow_state_.new_version;
       break;
     case Phase::REST:
-      if(grow_.callback) {
-        grow_.callback(state_[grow_.new_version].size());
+      if(grow_state_.callback != nullptr) {
+        grow_state_.callback(hash_index_.new_size());
       }
       system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
       break;
@@ -2492,11 +3059,8 @@ bool FasterKv<K, V, D>::GlobalMoveToNextState(SystemState current_state) {
   return true;
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::MarkAllPendingRequests() {
-  uint32_t table_version = resize_info_.version;
-  uint64_t table_size = state_[table_version].size();
-
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::MarkAllPendingRequests() {
   for(const IAsyncContext* ctxt : thread_ctx().retry_requests) {
     const pending_context_t* context = static_cast<const pending_context_t*>(ctxt);
     // We will succeed, since no other thread can currently advance the entry's version, since this
@@ -2512,8 +3076,12 @@ void FasterKv<K, V, D>::MarkAllPendingRequests() {
   }
 }
 
-template <class K, class V, class D>
-void FasterKv<K, V, D>::HandleSpecialPhases() {
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::HandleSpecialPhases() {
+  #ifdef STATISTICS
+  auto start_time = std::chrono::high_resolution_clock::now();
+  #endif
+
   SystemState final_state = system_state_.load();
   if(final_state.phase == Phase::REST) {
     // Nothing to do; just reset thread context.
@@ -2544,21 +3112,23 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
       case Phase::INDEX_CHKPT: {
         assert(current_state.action != Action::CheckpointHybridLog);
         // Both from PREP_INDEX_CHKPT -> INDEX_CHKPT and INDEX_CHKPT -> INDEX_CHKPT
-        Status result = CheckpointFuzzyIndexComplete();
-        if(result != Status::Pending && result != Status::Ok) {
-          checkpoint_.failed = true;
-        }
-        if(result != Status::Pending) {
-          if(current_state.action == Action::CheckpointIndex) {
-            // This thread is done now.
-            thread_ctx().phase = Phase::REST;
-            // Thread ack that it is done.
-            if(epoch_.FinishThreadPhase(Phase::INDEX_CHKPT)) {
+        if (checkpoint_.index_checkpoint_started) {
+          Status result = hash_index_.CheckpointComplete();
+          if(result != Status::Pending && result != Status::Ok) {
+            checkpoint_.failed = true;
+          }
+          if(result != Status::Pending) {
+            if(current_state.action == Action::CheckpointIndex) {
+              // This thread is done now.
+              thread_ctx().phase = Phase::REST;
+              // Thread ack that it is done.
+              if(epoch_.FinishThreadPhase(Phase::INDEX_CHKPT)) {
+                GlobalMoveToNextState(current_state);
+              }
+            } else {
+              // Index checkpoint is done; move on to PREPARE phase.
               GlobalMoveToNextState(current_state);
             }
-          } else {
-            // Index checkpoint is done; move on to PREPARE phase.
-            GlobalMoveToNextState(current_state);
           }
         }
         break;
@@ -2636,9 +3206,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         // Handle WAIT_FLUSH -> PERSISTENCE_CALLBACK and PERSISTENCE_CALLBACK -> PERSISTENCE_CALLBACK
         if(previous_state.phase == Phase::WAIT_FLUSH) {
           // Persistence callback
-          if(checkpoint_.hybrid_log_persistence_callback) {
-            checkpoint_.hybrid_log_persistence_callback(Status::Ok, prev_thread_ctx().serial_num);
-          }
+          checkpoint_.IssueHybridLogPersistenceCallback(prev_thread_ctx().serial_num);
           // Thread has finished checkpointing.
           thread_ctx().phase = Phase::REST;
           // Thread ack that it has finished checkpointing.
@@ -2681,7 +3249,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
       case Phase::GC_IN_PROGRESS:
         // Handle GC_IO_PENDING -> GC_IN_PROGRESS and GC_IN_PROGRESS -> GC_IN_PROGRESS.
         if(!epoch_.HasThreadFinishedPhase(Phase::GC_IN_PROGRESS)) {
-          if(!CleanHashTableBuckets()) {
+          if(!hash_index_.GarbageCollect(read_cache_.get())) {
             // No more buckets for this thread to clean; thread has finished GC.
             thread_ctx().phase = Phase::REST;
             // Thread ack that it has finished GC.
@@ -2692,7 +3260,7 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       default:
-        assert(false); // not reached
+        // do nothing
         break;
       }
       break;
@@ -2711,21 +3279,34 @@ void FasterKv<K, V, D>::HandleSpecialPhases() {
         }
         break;
       case Phase::GROW_IN_PROGRESS:
-        SplitHashTableBuckets();
+        GrowIndexBlocking();
+        break;
+      default:
+        // do nothing
         break;
       }
+      break;
+
+    case Action::None:
+    default:
+      // do nothing
       break;
     }
     thread_ctx().phase = current_state.phase;
     thread_ctx().version = current_state.version;
     previous_state = current_state;
   } while(previous_state != final_state);
+
+  #ifdef STATISTICS
+  std::chrono::nanoseconds duration = std::chrono::high_resolution_clock::now() - start_time;
+  special_phases_time_spent_ += duration.count();
+  #endif
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::Checkpoint(void(*index_persistence_callback)(Status result),
-                                   void(*hybrid_log_persistence_callback)(Status result,
-                                       uint64_t persistent_serial_num), Guid& token) {
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::Checkpoint(IndexPersistenceCallback index_persistence_callback,
+                                    HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                                    Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
   SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
   SystemState desired{ Action::CheckpointFull, Phase::REST, expected.version };
@@ -2741,13 +3322,13 @@ bool FasterKv<K, V, D>::Checkpoint(void(*index_persistence_callback)(Status resu
   disk.CreateCprCheckpointDirectory(token);
   // Obtain tail address for fuzzy index checkpoint
   if(!fold_over_snapshot) {
-    checkpoint_.InitializeCheckpoint(token, desired.version, state_[resize_info_.version].size(),
+    checkpoint_.InitializeCheckpoint(token, desired.version, hash_index_.size(),
                                      hlog.begin_address.load(),  hlog.GetTailAddress(), true,
                                      hlog.flushed_until_address.load(),
                                      index_persistence_callback,
                                      hybrid_log_persistence_callback);
   } else {
-    checkpoint_.InitializeCheckpoint(token, desired.version, state_[resize_info_.version].size(),
+    checkpoint_.InitializeCheckpoint(token, desired.version, hash_index_.size(),
                                      hlog.begin_address.load(),  hlog.GetTailAddress(), false,
                                      Address::kInvalidAddress, index_persistence_callback,
                                      hybrid_log_persistence_callback);
@@ -2759,8 +3340,48 @@ bool FasterKv<K, V, D>::Checkpoint(void(*index_persistence_callback)(Status resu
   return true;
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::CheckpointIndex(void(*index_persistence_callback)(Status result),
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::InternalCheckpoint(InternalIndexPersistenceCallback index_persistence_callback,
+                                    InternalHybridLogPersistenceCallback hybrid_log_persistence_callback,
+                                    Guid& token, void* callback_context) {
+
+  // Only one thread can initiate a checkpoint at a time.
+  SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
+  SystemState desired{ Action::CheckpointFull, Phase::REST, expected.version };
+  if(!system_state_.compare_exchange_strong(expected, desired)) {
+    // Can't start a new checkpoint while a checkpoint or recovery is already in progress.
+    return false;
+  }
+  // We are going to start a checkpoint.
+  epoch_.ResetPhaseFinished();
+  // Initialize all contexts
+  if (Guid::IsNull(token)) {
+    token = Guid::Create();
+  }
+  disk.CreateIndexCheckpointDirectory(token);
+  disk.CreateCprCheckpointDirectory(token);
+  // Obtain tail address for fuzzy index checkpoint
+  if(!fold_over_snapshot) {
+    checkpoint_.InitializeCheckpoint(token, desired.version, hash_index_.size(),
+                                     hlog.begin_address.load(),  hlog.GetTailAddress(), true,
+                                     hlog.flushed_until_address.load(),
+                                     index_persistence_callback,
+                                     hybrid_log_persistence_callback, callback_context);
+  } else {
+    checkpoint_.InitializeCheckpoint(token, desired.version, hash_index_.size(),
+                                     hlog.begin_address.load(),  hlog.GetTailAddress(), false,
+                                     Address::kInvalidAddress, index_persistence_callback,
+                                     hybrid_log_persistence_callback, callback_context);
+
+  }
+  InitializeCheckpointLocks();
+  // Let other threads know that the checkpoint has started.
+  system_state_.store(desired.GetNextState());
+  return true;
+}
+
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::CheckpointIndex(IndexPersistenceCallback index_persistence_callback,
                                         Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
   SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
@@ -2774,8 +3395,7 @@ bool FasterKv<K, V, D>::CheckpointIndex(void(*index_persistence_callback)(Status
   // Initialize all contexts
   token = Guid::Create();
   disk.CreateIndexCheckpointDirectory(token);
-  checkpoint_.InitializeIndexCheckpoint(token, desired.version,
-                                        state_[resize_info_.version].size(),
+  checkpoint_.InitializeIndexCheckpoint(token, desired.version, hash_index_.size(),
                                         hlog.begin_address.load(), hlog.GetTailAddress(),
                                         index_persistence_callback);
   // Let other threads know that the checkpoint has started.
@@ -2783,9 +3403,9 @@ bool FasterKv<K, V, D>::CheckpointIndex(void(*index_persistence_callback)(Status
   return true;
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::CheckpointHybridLog(void(*hybrid_log_persistence_callback)(Status result,
-    uint64_t persistent_serial_num), Guid& token) {
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::CheckpointHybridLog(HybridLogPersistenceCallback hybrid_log_persistence_callback,
+                                            Guid& token) {
   // Only one thread can initiate a checkpoint at a time.
   SystemState expected{ Action::None, Phase::REST, system_state_.load().version };
   SystemState desired{ Action::CheckpointHybridLog, Phase::REST, expected.version };
@@ -2812,8 +3432,8 @@ bool FasterKv<K, V, D>::CheckpointHybridLog(void(*hybrid_log_persistence_callbac
   return true;
 }
 
-template <class K, class V, class D>
-Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_log_token,
+template <class K, class V, class D, class H, class OH>
+Status FasterKv<K, V, D, H, OH>::Recover(const Guid& index_token, const Guid& hybrid_log_token,
                                   uint32_t& version,
                                   std::vector<Guid>& session_ids) {
   version = 0;
@@ -2831,7 +3451,7 @@ Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_lo
 
   do {
     // Index and log metadata.
-    BREAK_NOT_OK(ReadIndexMetadata(index_token));
+    BREAK_NOT_OK(hash_index_.ReadCheckpointMetadata(index_token, checkpoint_));
     BREAK_NOT_OK(ReadCprMetadata(hybrid_log_token));
     if(checkpoint_.index_metadata.version != checkpoint_.log_metadata.version) {
       // Index and hybrid-log checkpoints should have the same version.
@@ -2844,8 +3464,8 @@ Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_lo
 
     BREAK_NOT_OK(ReadCprContexts(hybrid_log_token, checkpoint_.log_metadata.guids));
     // The index itself (including overflow buckets).
-    BREAK_NOT_OK(RecoverFuzzyIndex());
-    BREAK_NOT_OK(RecoverFuzzyIndexComplete(true));
+    BREAK_NOT_OK(hash_index_.Recover(checkpoint_));
+    BREAK_NOT_OK(hash_index_.RecoverComplete());
     // Any changes made to the log while the index was being fuzzy-checkpointed.
     if(fold_over_snapshot) {
       BREAK_NOT_OK(RecoverHybridLog());
@@ -2867,29 +3487,62 @@ Status FasterKv<K, V, D>::Recover(const Guid& index_token, const Guid& hybrid_lo
 #undef BREAK_NOT_OK
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::ShiftBeginAddress(Address address,
-    GcState::truncate_callback_t truncate_callback,
-    GcState::complete_callback_t complete_callback) {
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::ShiftBeginAddress(Address address, GcState::truncate_callback_t truncate_callback,
+                                                GcState::complete_callback_t complete_callback) {
   SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
   if(!system_state_.compare_exchange_strong(expected,
       SystemState{ Action::GC, Phase::REST, expected.version })) {
-    // Can't start a GC while an action is already in progress.
-    return false;
+    return false; // Can't start a GC while an action is already in progress.
   }
   hlog.begin_address.store(address);
+  log_debug("ShiftBeginAddress: log truncated to %lu", address.control());
+
   // Each active thread will notify the epoch when all pending I/Os have completed.
   epoch_.ResetPhaseFinished();
-  uint64_t num_chunks = std::max(state_[resize_info_.version].size() / kGcHashTableChunkSize,
-                                 (uint64_t)1);
-  gc_.Initialize(truncate_callback, complete_callback, num_chunks);
+  // Prepare for index garbage collection
+  hash_index_.GarbageCollectSetup(hlog.begin_address.load(),
+                                  truncate_callback, complete_callback);
   // Let other threads know to complete their pending I/Os, so that the log can be truncated.
   system_state_.store(SystemState{ Action::GC, Phase::GC_IO_PENDING, expected.version });
   return true;
 }
 
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::GrowIndex(GrowState::callback_t caller_callback) {
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::InternalShiftBeginAddress(Address address,
+                                                         GcState::internal_truncate_callback_t truncate_callback,
+                                                         GcState::internal_complete_callback_t complete_callback,
+                                                         IAsyncContext* callback_context,
+                                                         bool after_compaction) {
+  SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
+  if(!system_state_.compare_exchange_strong(expected,
+      SystemState{ Action::GC, Phase::REST, expected.version })) {
+    return false; // Can't start a GC while an action is already in progress.
+  }
+  if (after_compaction) {
+    ++num_compaction_truncations_;
+  }
+  hlog.begin_address.store(address);
+  log_debug("ShiftBeginAddress: [after-compaction=%d] log truncated to %lu",
+            after_compaction, address.control());
+
+  if (after_compaction) {
+    next_hlog_begin_address_.store(Address::kInvalidAddress);
+  }
+  // Each active thread will notify the epoch when all pending I/Os have completed.
+  epoch_.ResetPhaseFinished();
+  // Prepare for index garbage collection
+  hash_index_.GarbageCollectSetup(hlog.begin_address.load(),
+                                  truncate_callback, complete_callback,
+                                  callback_context);
+  // Let other threads know to complete their pending I/Os, so that the log can be truncated.
+  system_state_.store(SystemState{ Action::GC, Phase::GC_IO_PENDING, expected.version });
+  return true;
+}
+
+
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::GrowIndex(GrowCompleteCallback caller_callback) {
   SystemState expected = SystemState{ Action::None, Phase::REST, system_state_.load().version };
   if(!system_state_.compare_exchange_strong(expected,
       SystemState{ Action::GrowIndex, Phase::REST, expected.version })) {
@@ -2897,16 +3550,10 @@ bool FasterKv<K, V, D>::GrowIndex(GrowState::callback_t caller_callback) {
     return false;
   }
   epoch_.ResetPhaseFinished();
-  uint8_t current_version = resize_info_.version;
-  assert(current_version == 0 || current_version == 1);
-  uint8_t next_version = 1 - current_version;
-  uint64_t num_chunks = std::max(state_[current_version].size() / kGrowHashTableChunkSize,
-                                 (uint64_t)1);
-  grow_.Initialize(caller_callback, current_version, num_chunks);
-  // Initialize the next version of our hash table to be twice the size of the current version.
-  state_[next_version].Initialize(state_[current_version].size() * 2, disk.log().alignment());
-  overflow_buckets_allocator_[next_version].Initialize(disk.log().alignment(), epoch_);
 
+  // Prepare index for index growing
+  hash_index_.GrowSetup(caller_callback);
+  // Switch system state to GrowIndex
   SystemState next = SystemState{ Action::GrowIndex, Phase::GROW_PREPARE, expected.version };
   system_state_.store(next);
 
@@ -2915,7 +3562,7 @@ bool FasterKv<K, V, D>::GrowIndex(GrowState::callback_t caller_callback) {
   return true;
 }
 
-// Some printing support for gtest
+// Some printing support for testing
 inline std::ostream& operator << (std::ostream& out, const Status s) {
   return out << (uint8_t)s;
 }
@@ -2928,11 +3575,719 @@ inline std::ostream& operator << (std::ostream& out, const FixedPageAddress addr
   return out << address.control();
 }
 
+/// Compacts the hybrid log between the begin address and the specified
+/// address, moving active records to the tail of log.
+///
+/// It identifies live records by looking up the in-memory hash index
+/// and by potentially going through the hash chains, rather than
+/// scanning the entire log from head to tail.
+template <class K, class V, class D, class H, class OH>
+inline bool FasterKv<K, V, D, H, OH>::CompactWithLookup(uint64_t until_address, bool shift_begin_address, int n_threads,
+                                                  bool to_other_store, bool checkpoint) {
+  Guid token;
+  return InternalCompactWithLookup(until_address, shift_begin_address, n_threads, to_other_store, checkpoint, token);
+}
+
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address, bool shift_begin_address, int n_threads,
+                                                        bool to_other_store, bool checkpoint, Guid& checkpoint_token) {
+  if (hlog.begin_address.load() > until_address) {
+    throw std::invalid_argument {"Invalid until address; should be larger than hlog.begin_address"};
+  }
+  if (until_address > hlog.safe_read_only_address.control()) {
+    throw std::invalid_argument {"Can compact only until hlog.safe_read_only_address"};
+  }
+  assert(!to_other_store || (other_store_ != nullptr));
+
+  if (!epoch_.IsProtected() || (to_other_store && !other_store_->epoch_.IsProtected())) {
+    throw std::invalid_argument {"Thread should have an active FASTER session"};
+  }
+
+  if (shift_begin_address) {
+    // used to avoid inserting soon-to-be-compacted records to Read Cache
+    next_hlog_begin_address_.store(until_address);
+  }
+
+  std::deque<std::thread> threads;
+
+  ConcurrentLogPageIterator<faster_t> iter(&hlog, &disk, &epoch_, hlog.begin_address.load(), Address(until_address));
+  compaction_context_.Initialize(&iter, n_threads-1, to_other_store);
+
+  // Spawn the threads first
+  for (int idx = 0; idx < n_threads-1; ++idx) {
+    threads.emplace_back(
+      &FasterKv<K, V, D, H, OH>::InternalCompact<faster_t>, this, idx, std::numeric_limits<uint32_t>::max());
+  }
+  InternalCompact<faster_t>(-1, std::numeric_limits<uint32_t>::max()); // participate in the compaction
+
+  // Wait for threads
+  // NOTE: since we have an active session, we *must* periodically refresh
+  //       in order to allow progress for remaining active threads
+  //       Therefore, we cannot utilize the *blocking* `thread.join`
+  int remaining = n_threads - 1;
+  while (remaining > 0 || compaction_context_.active_threads.load() > 0) {
+    for (int idx = 0; idx < n_threads-1; ++idx) {
+      if (compaction_context_.thread_finished[idx].load() && threads[idx].joinable()) {
+        threads[idx].join();
+        --remaining;
+      }
+    }
+
+    Refresh();
+    if (to_other_store) {
+      other_store_->Refresh();
+    }
+    std::this_thread::yield();
+  }
+  assert(remaining == 0 && compaction_context_.active_threads.load() == 0);
+
+
+  if (checkpoint) {
+    // index checkpoint
+    CompactionCheckpointContext cc_context;
+
+    auto index_persist_callback = [](void* ctxt, Status status) {
+      auto* context = static_cast<CompactionCheckpointContext*>(ctxt);
+
+      // callback should not have been called before (i.e., called only once!)
+      Status expected = Status::Corruption;
+      if (!context->index_persisted_status.compare_exchange_strong(expected, status)) {
+        log_warn("Unexpected index persist status: expected = %s, actual = %s",
+                 StatusStr(Status::Corruption), StatusStr(expected));
+        assert(false);
+        context->index_persisted_status.store(status);
+      }
+      // assert index checkpoint was successful
+      assert(status == Status::Ok);
+      if (status != Status::Ok) {
+        log_warn("Checkpoint: Index persist process finished with non-ok status -> %s",
+                 StatusStr(status));
+      }
+    };
+
+    auto hlog_persist_callback = [](void* ctxt, Status status, uint64_t persistent_serial_number) {
+      auto* context = static_cast<CompactionCheckpointContext*>(ctxt);
+
+      bool expected = false;
+      if (!context->hlog_threads_persisted[Thread::id()].compare_exchange_strong(expected, true)) {
+        log_warn("Expected checkpoint thread-specific entry to *not* have been set! "
+                  "Was callback called *twice* for the same thread?");
+        assert(false);
+      }
+      context->hlog_num_threads_persisted++;
+
+      // Update global checkpoint status, if error or first thread to finish
+      bool success;
+      do {
+        success = true;
+        Status global_status = context->hlog_persisted_status.load();
+        if (global_status == Status::Corruption || status != Status::Ok) {
+          success = context->hlog_persisted_status.compare_exchange_strong(global_status, status);
+        }
+      } while (!success);
+    };
+
+    // Init checkpointing
+    if (!to_other_store) {
+      Refresh();
+    } else {
+      other_store_->Refresh();
+    }
+    bool success;
+    do {
+      if (!to_other_store) {
+        success = InternalCheckpoint(index_persist_callback, hlog_persist_callback,
+                                    checkpoint_token, static_cast<void*>(&cc_context));
+      } else {
+        success = other_store_->InternalCheckpoint(index_persist_callback, hlog_persist_callback,
+                                                  checkpoint_token, static_cast<void*>(&cc_context));
+      }
+      if (!success) {
+        Refresh();
+        if (to_other_store) other_store_->Refresh();
+        std::this_thread::yield();
+      }
+    } while (!success);
+
+    // wait until checkpoint has finished
+    // NOTE: sessions cannot be started/stopped during checkpointing
+    size_t num_threads_active = num_active_sessions_.load();
+    while (cc_context.hlog_num_threads_persisted.load() < num_threads_active) {
+      CompletePending(false);
+      if (to_other_store) {
+        other_store_->CompletePending(false);
+      }
+      std::this_thread::yield();
+    }
+
+    auto index_persisted_status = cc_context.index_persisted_status.load();
+    auto hlog_persisted_status = cc_context.hlog_persisted_status.load();
+    assert(index_persisted_status != Status::Corruption && hlog_persisted_status != Status::Corruption);
+    if (index_persisted_status != Status::Ok || hlog_persisted_status != Status::Ok) {
+      log_warn("Checkpoint failed [index_persisted_status: %s, hlog_persisted_status=%s]",
+                StatusStr(index_persisted_status), StatusStr(hlog_persisted_status));
+      return false;
+    }
+
+    if (!to_other_store && shift_begin_address) {
+      // Wait until all threads move to REST phase
+      // This ensures that the imminent log truncation operation will be successful
+      auto callback = [](IAsyncContext* ctxt) {
+        auto* context = static_cast<CompactionCheckpointContext*>(ctxt);
+        bool success, expected = false;
+        success = context->ready_for_truncation.compare_exchange_strong(expected, true);
+        assert(success && expected == false);
+      };
+      epoch_.BumpCurrentEpoch(callback, &cc_context);
+
+      do {
+        Refresh();
+        std::this_thread::yield();
+      } while(!cc_context.ready_for_truncation.load());
+    }
+  }
+
+  if (shift_begin_address) {
+    // Truncate log & update hash index
+    CompactionShiftBeginAddressContext context;
+
+    auto truncate_callback = [](IAsyncContext* ctxt, uint64_t offset) {
+      auto* context = reinterpret_cast<CompactionShiftBeginAddressContext*>(ctxt);
+      bool expected = false;
+      if (!context->log_truncated.compare_exchange_strong(expected, true)) {
+        log_warn("Unexpected log_truncated value! [expected: FALSE, actual: %s]",
+                  expected ? "TRUE" : "FALSE");
+      }
+    };
+    auto complete_callback = [](IAsyncContext* ctxt) {
+      auto* context = reinterpret_cast<CompactionShiftBeginAddressContext*>(ctxt);
+      bool expected = false;
+      if (!context->gc_completed.compare_exchange_strong(expected, true)) {
+        log_warn("Unexpected gc_completed value! [expected: FALSE, actual: %s]",
+                  expected ? "TRUE" : "FALSE");
+      }
+    };
+
+    // try shift begin address
+    bool success;
+    do {
+      success = InternalShiftBeginAddress(Address(until_address), truncate_callback,
+                                          complete_callback, static_cast<IAsyncContext*>(&context), true);
+      if (!success) {
+        Refresh();
+        if (to_other_store) other_store_->Refresh();
+        std::this_thread::yield();
+      }
+    } while(!success);
+
+    // block until truncation & hash index update finishes
+    while (!context.log_truncated.load() || !context.gc_completed.load()) {
+      CompletePending(false);
+      if (to_other_store) {
+        other_store_->CompletePending(false);
+      }
+      // Participate in GCing the hash index
+      if(thread_ctx().phase != Phase::REST) {
+        HeavyEnter();
+      }
+      std::this_thread::yield();
+    }
+  }
+
+  return true;
+}
+
+
+template <class K, class V, class D, class H, class OH>
+template <class F>
+inline void FasterKv<K, V, D, H, OH>::InternalCompact(int thread_id, uint32_t max_records) {
+  static constexpr uint32_t kRefreshInterval = 64;
+  static constexpr uint32_t kCompletePendingInterval = 512;
+
+  typedef CompactionConditionalInsertContext<K, V> ci_context_t;
+  typedef std::unordered_set<uint64_t> pending_records_t;
+
+  // Callback for ConditionalInsert request
+  auto ci_callback = [](IAsyncContext* ctxt, Status result) {
+    CallbackContext<ci_context_t> context(ctxt);
+    assert(result == Status::Ok || result == Status::Aborted);
+
+    // Remove info for this record, since it has been processed
+    uint64_t address = context->record_address().control();
+    auto records_info = static_cast<pending_records_t*>(context->records_info());
+    records_info->erase(address);
+  };
+
+  ++compaction_context_.active_threads; // one more thread taking part in compaction
+  bool to_other_store = compaction_context_.to_other_store;
+
+  pending_records_t pending_records;
+
+  // used locally when iterating log
+  Address record_address;
+  record_t* record = nullptr;
+
+  // Start session for each thread that has not started one already
+  bool was_epoch_protected = epoch_.IsProtected();
+  if (!was_epoch_protected) {
+    StartSession();
+    if (to_other_store) {
+      other_store_->StartSession();
+    }
+  }
+
+  ConcurrentLogPage<key_t, value_t>* page{ nullptr };
+  uint32_t old_page = Address::kMaxPage;
+
+  size_t num_iter = 0;
+  uint32_t records_processed = 0;
+  bool pages_available = true;
+  while(true) {
+    bool finished = !pages_available || (records_processed >= max_records);
+    if (finished) {
+      goto complete_pending;
+    }
+
+    // get next record from hybrid log
+    if (page != nullptr) {
+      record = page->GetNextRecord(record_address);
+    }
+
+    if (record == nullptr || page == nullptr) {
+      if(!compaction_context_.pages_available.load()) {
+        pages_available = false;
+        continue;
+      }
+
+      // Try to get next page
+      while (pages_available) {
+        Refresh();
+        if (other_store_ && other_store_->epoch_.IsProtected()) other_store_->Refresh();
+        if (refresh_callback_store_) refresh_callback_(refresh_callback_store_);
+
+        // Try to get next page
+        page = compaction_context_.iter->GetNextPage(old_page, pages_available);
+        if (page != nullptr) {
+          old_page = page->id();
+          break;
+        }
+        std::this_thread::yield();
+      }
+      if (!pages_available) {
+        compaction_context_.pages_available.store(false);
+      }
+
+      continue;
+    }
+
+    if (record->header.tombstone && !to_other_store)  {
+      goto complete_pending; // do not compact tombstones
+    }
+
+    {
+      assert(record_address != Address::kInvalidAddress);
+
+      // add to pending records
+      assert(pending_records.find(record_address.control()) == pending_records.end());
+      pending_records.insert(record_address.control());
+
+      // Insert record if not exists already in (recordAddress, tailAddress] range
+      ++records_processed;
+      ci_context_t ci_context{ record, record_address, &pending_records };
+      Status status = ConditionalInsert(ci_context, ci_callback,
+                                        record_address, to_other_store);
+      assert(status == Status::Ok || status == Status::Aborted || status == Status::Pending);
+
+      if (status == Status::Ok || status == Status::Aborted) {
+        // clear record info, since request it has been processed
+        // (i.e. either inserted at the end, or didn't)
+        pending_records.erase(record_address.control());
+      } else if (status == Status::NotFound) {
+        throw std::runtime_error{ "not possible" };
+      }
+    }
+
+complete_pending:
+    bool try_complete_pending = \
+      (num_iter % kCompletePendingInterval == 0) ||
+      (!pending_records.empty() ) || (record == nullptr);
+    if (try_complete_pending) {
+      // Try to complete pending requests
+      CompletePending(false);
+      if (to_other_store) {
+        other_store_->CompletePending(false);
+      }
+      if (record == nullptr) {
+        std::this_thread::yield();
+      }
+    }
+    if (num_iter % kRefreshInterval == 0) {
+      // Periodically refresh epoch
+      Refresh();
+      if (to_other_store) other_store_->Refresh();
+    }
+
+    ++num_iter;
+    if (finished && pending_records.empty()) {
+      // no more records to compact && no callbacks pending
+      break;
+    }
+  }
+  assert(pending_records.empty());
+
+  if (!was_epoch_protected) {
+    // This thread was spawned *only* for compaction and should have finished all activity
+    if (to_other_store) { // hot-cold compaction
+      assert(other_store_->thread_ctx().retry_requests.empty());
+      assert(other_store_->thread_ctx().pending_ios.empty());
+      assert(other_store_->thread_ctx().io_responses.empty());
+    } else { // single log / cold-cold compaction
+      assert(thread_ctx().retry_requests.empty());
+      assert(thread_ctx().pending_ios.empty());
+      assert(thread_ctx().io_responses.empty());
+    }
+  }
+
+  // Stop session for each spawned thread
+  if (!was_epoch_protected) {
+    StopSession();
+    if (to_other_store) {
+      other_store_->StopSession();
+    }
+  }
+  if (thread_id >= 0) {
+    assert(!was_epoch_protected);
+    // Mark thread as finished
+    compaction_context_.thread_finished[thread_id].store(true);
+  }
+  --compaction_context_.active_threads;
+}
+
+
+template <class K, class V, class D, class H, class OH>
+template <class CIC>
+inline Status FasterKv<K, V, D, H, OH>::ConditionalInsert(CIC& context, AsyncCallback callback,
+                                                  Address min_search_offset, bool to_other_store) {
+  [[maybe_unused]] typedef CIC conditional_insert_context_t;
+  typedef PendingConditionalInsertContext<CIC> pending_ci_context_t;
+  static_assert(std::is_base_of<value_t, typename pending_ci_context_t::value_t>::value,
+                "value_t is not a base class of read_context_t::value_t");
+  static_assert(alignof(value_t) == alignof(typename pending_ci_context_t::value_t),
+                "alignof(value_t) != alignof(typename read_context_t::value_t)");
+
+  pending_ci_context_t pending_context{ context, callback, min_search_offset, to_other_store };
+  OperationStatus internal_status = InternalConditionalInsert(pending_context);
+
+  #ifdef STATISTICS
+  if (collect_stats_) {
+    ++ci_total_;
+    if (internal_status == OperationStatus::SUCCESS ||
+        internal_status == OperationStatus::NOT_FOUND ||
+        internal_status == OperationStatus::ABORTED ||
+        internal_status == OperationStatus::ASYNC_TO_COLD_STORE) {
+      ++ci_sync_;
+      ++ci_per_req_iops_[0];
+    }
+  }
+  #endif
+
+  Status status;
+  if(internal_status == OperationStatus::SUCCESS) {
+    // insert performed successfully
+    status = Status::Ok;
+  } else if (internal_status == OperationStatus::ABORTED) {
+    // insert aborted due to the existence of newer record
+    status = Status::Aborted;
+  } else if (internal_status == OperationStatus::NOT_FOUND) {
+    // was not able to properly search up to min_search_offset
+    status = Status::NotFound;
+  } else {
+    assert(internal_status == OperationStatus::RECORD_ON_DISK ||
+          internal_status == OperationStatus::INDEX_ENTRY_ON_DISK ||
+          internal_status == OperationStatus::ASYNC_TO_COLD_STORE);
+    bool async;
+    status = HandleOperationStatus(thread_ctx(), pending_context, internal_status, async);
+  }
+
+  return status;
+}
+
+
+template <class K, class V, class D, class H, class OH>
+template <class C>
+inline OperationStatus FasterKv<K, V, D, H, OH>::InternalConditionalInsert(C& pending_context) {
+  bool to_other_store = pending_context.to_other_store;
+
+  Address min_search_offset = pending_context.min_search_offset;
+  assert(!min_search_offset.in_readcache());
+
+  // Handle hash index GC operation
+  if(thread_ctx().phase != Phase::REST) {
+    HeavyEnter();
+  }
+  if(to_other_store && other_store_->thread_ctx().phase != Phase::REST) {
+    other_store_->HeavyEnter();
+  }
+
+  Address begin_address = hlog.begin_address.load();
+  Address head_address = hlog.head_address.load();
+
+  // Retrieve or create hash index bucket for this entry
+  Status index_status;
+  if (pending_context.index_op_type == IndexOperationType::None) {
+    index_status = hash_index_.FindOrCreateEntry(thread_ctx(), pending_context);
+    if (index_status == Status::Pending) {
+      return OperationStatus::INDEX_ENTRY_ON_DISK;
+    }
+  } else {
+    // retrieve result of async index operation
+    index_status = pending_context.index_op_result;
+    pending_context.clear_index_op();
+  }
+  assert(index_status == Status::Ok);
+
+  Address address = pending_context.entry.address();
+
+  if (UseReadCache()) {
+    // entries in readcache do not count as "active"
+    address = read_cache_->Skip(pending_context);
+  }
+  pending_context.expected_hlog_address = address;
+  assert(!address.in_readcache());
+
+  // (Note that address will be Address::kInvalidAddress, if the entry was created.)
+  if (min_search_offset == Address::kInvalidAddress) {
+    // == Only possible in F2-RMW Copy case ==
+    // no other record exists for the same key in this log
+    if (address == Address::kInvalidAddress) {
+      if (pending_context.orig_hlog_tail_address() >= begin_address) {
+        // last condition ensure that we did *not* lose any records
+        goto create_record;
+      }
+    }
+    // cannot determine where the min_search_offset should be
+    // request needs to be retried at a higher level!
+    return OperationStatus::NOT_FOUND;
+  }
+  else if (address == Address::kInvalidAddress) {
+    // == Only possible in F2-RMW Copy case ==
+    // record pointed by min_search_offset compacted to cold log
+    // it was certainly a hash-collision, because otherwise the initial
+    // hot-log RMW would have worked.
+    if (pending_context.orig_hlog_tail_address() >= begin_address) {
+      // last condition ensure that we did *not* lose any records
+      goto create_record;
+    }
+  }
+  else if (min_search_offset < begin_address) {
+    // == Only possible in F2-RMW Copy case ==
+    // result of log truncation -- cannot happen during hot-cold/cold-cold compaction
+    // request should be re-tried at a higher level!
+    return OperationStatus::NOT_FOUND;
+  }
+  assert(address != Address::kInvalidAddress && min_search_offset != Address::kInvalidAddress);
+
+  if(address >= head_address && min_search_offset != pending_context.expected_hlog_address) {
+    const record_t* record = reinterpret_cast<const record_t*>(hlog.Get(address));
+    Address search_until = std::max(min_search_offset + 1, head_address);
+    if(!pending_context.is_key_equal(record->key())) {
+      address = TraceBackForKeyMatchCtxt(pending_context, record->header.previous_address(), search_until);
+    }
+  }
+
+  if (address < min_search_offset) {
+    // == Only possible in cold-cold compaction, when using *async* cold-index ==
+    // not part of the same hash chain due to the flush-before-marked-invalid race condition
+    return OperationStatus::ABORTED;
+  }
+  assert(address >= min_search_offset); // part of the same hash chain
+
+  if(address >= head_address) {
+    // Mutable, fuzzy or immutable region [in-memory]
+    if (address > min_search_offset) {
+      // Found newer record with same key
+      return OperationStatus::ABORTED;
+    }
+    assert(address == min_search_offset);
+  }
+  else if(address >= begin_address) {
+    // Stable region [on-disk]
+    if (address > min_search_offset) {
+      // Record not available in-memory -- issue disk I/O request
+      pending_context.go_async(address);
+      return OperationStatus::RECORD_ON_DISK;
+    }
+    assert(address == min_search_offset);
+  }
+  else {
+    // Cannot reach min address because it has been truncated
+    // Request needs to be retried at a higher level!
+    assert(min_search_offset < begin_address);
+    return OperationStatus::NOT_FOUND;
+  }
+
+  // Update search range
+  pending_context.min_search_offset = pending_context.expected_hlog_address;
+
+create_record:
+  if (UseReadCache()) {
+    // Record will be moved either to the tail, or to another log
+    // Thus, make any potential read cache record invalid
+    read_cache_->SkipAndInvalidate(pending_context);
+  }
+
+  // Append entry to the log
+  if (!to_other_store) {
+    // Case: Single log compaction, or F2 RMW conditional insert
+    assert(!pending_context.is_tombstone());
+    // Create record
+    uint32_t record_size = record_t::size(pending_context.key_size(), pending_context.value_size());
+    Address new_address = BlockAllocate(record_size);
+    record_t* record = reinterpret_cast<record_t*>(hlog.Get(new_address));
+    // Copy record
+    bool success = pending_context.Insert(record, record_size);
+    assert(success);
+    // Replace record header content
+    new(record) record_t{
+      RecordInfo{
+        static_cast<uint16_t>(thread_ctx().version),
+        true, false, false, pending_context.expected_hlog_address }
+    };
+    // Try to update hash bucket address
+    index_status = hash_index_.TryUpdateEntry(thread_ctx(), pending_context, new_address);
+
+    if (index_status == Status::Ok) {
+      // Installed the new record in the hash table.
+      #ifdef STATISTICS
+      if (collect_stats_) {
+        ++ci_copied_;
+      }
+      #endif
+
+      return OperationStatus::SUCCESS;
+    } else if (index_status == Status::Pending) {
+      return OperationStatus::INDEX_ENTRY_ON_DISK;
+    } else {
+      assert(index_status == Status::Aborted);
+      // Hash-chain changed since last time -- retry!
+      record->header.invalid = true;
+
+      #ifdef STATISTICS
+      if (collect_stats_) {
+        ++pending_context.num_record_invalidations;
+      }
+      #endif
+
+      return InternalConditionalInsert(pending_context);
+    }
+  } else {
+    // Case: hot-cold compaction
+    // Upsert/Deletes on cold log should not go pending since upserts only go pending when during checkpointing
+    // ---> And no two hot-cold compactions can take place simultaneously
+    if (!pending_context.is_tombstone()) {
+      async_pending_upsert_context_t* upsert_context = pending_context.ConvertToUpsertContext();
+      OperationStatus op_status = other_store_->InternalUpsert(*upsert_context);
+      assert(op_status == OperationStatus::SUCCESS || op_status == OperationStatus::INDEX_ENTRY_ON_DISK);
+
+      #ifdef STATISTICS
+      if (other_store_->collect_stats_) {
+        // Update stats of `other_store_'
+        ++(other_store_->upserts_total_);
+        if (op_status == OperationStatus::SUCCESS) {
+          ++(other_store_->upserts_sync_);
+          ++(other_store_->upserts_per_req_iops_[0]);
+        }
+      }
+      #endif
+
+      if (op_status == OperationStatus::SUCCESS) {
+        // free upsert context(s) before returning
+        CallbackContext<async_pending_upsert_context_t> upsert_ctxt{ upsert_context };
+        if (!pending_context.from_deep_copy()) {
+          // free if ConditionalInsert did not go pending; otherwise it will be freed by CompleteIoPendingRequests
+          CallbackContext<IAsyncContext> upsert_caller_ctxt{ upsert_context->caller_context };
+        }
+
+        #ifdef STATISTICS
+        if (collect_stats_) {
+          ++ci_copied_;
+        }
+        #endif
+
+        return op_status;
+      } else {
+        return OperationStatus::ASYNC_TO_COLD_STORE;
+      }
+    } else {
+      async_pending_delete_context_t* delete_context = pending_context.ConvertToDeleteContext();
+      OperationStatus op_status = other_store_->InternalDelete(*delete_context, true);
+      assert(op_status == OperationStatus::SUCCESS || op_status == OperationStatus::INDEX_ENTRY_ON_DISK);
+
+      #ifdef STATISTICS
+      if (other_store_->collect_stats_) {
+        // Update stats of `other_store_'
+        ++(other_store_->deletes_total_);
+        if (op_status == OperationStatus::SUCCESS) {
+          ++(other_store_->deletes_sync_);
+          ++(other_store_->deletes_per_req_iops_[0]);
+        }
+      }
+      #endif
+
+      if (op_status == OperationStatus::SUCCESS) {
+        // free delete context(s) before returning
+        CallbackContext<async_pending_delete_context_t> delete_ctxt{ delete_context };
+        if (!pending_context.from_deep_copy()) {
+          // free if ConditionalInsert did not go pending; otherwise it will be freed by CompleteIoPendingRequests
+          CallbackContext<IAsyncContext> delete_caller_ctxt{ delete_context->caller_context };
+        }
+
+        #ifdef STATISTICS
+        if (collect_stats_) {
+          ++ci_copied_;
+        }
+        #endif
+
+        return op_status;
+      } else {
+        return OperationStatus::ASYNC_TO_COLD_STORE;
+      }
+    }
+  }
+}
+
+template <class K, class V, class D, class H, class OH>
+inline void FasterKv<K, V, D, H, OH>::CompactRecords() {
+  bool active_compaction = (next_hlog_begin_address_.load() != Address::kInvalidAddress);
+
+  if (active_compaction) {
+    // Help make the compaction faster by participating in this compaction
+    //log_debug("Max hlog size reached -> participating in compaction...");
+    if (compaction_context_.pages_available.load()) {
+      InternalCompact<faster_t>(-1, std::numeric_limits<uint32_t>::max());
+    }
+    //log_debug("Stopped participating in compaction!");
+  } else {
+    if (!other_store_ || other_store_->next_hlog_begin_address_.load() == Address::kInvalidAddress) {
+      //log_warn("Max hlog size reached \\w no active compactions! Are compactions scheduled properly?");
+      return;
+    }
+    // Compaction of other log (typically hot) caused this log to reach its limit
+    // Participate in compaction of other log; typically only hot log enters this part
+    //log_debug("Max hlog size of other store reached -> participating in compaction...");
+    other_store_->CompactRecords();
+    //log_debug("Stopped participating in other store compaction!");
+  }
+}
+
+
 /// When invoked, compacts the hybrid-log between the begin address and a
 /// passed in offset (`untilAddress`).
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::Compact(uint64_t untilAddress)
 {
+  typedef IndexContext<K, V> index_context_t;
+
   // First, initialize a mini FASTER that will store all live records in
   // the range [beginAddress, untilAddress).
   Address begin = hlog.begin_address.load();
@@ -2944,7 +4299,7 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
 
   if (size % pSize != 0) size += pSize - (size % pSize);
 
-  faster_t tempKv(min_table_size_, size, "");
+  faster_t tempKv(min_index_table_size_, size, "");
   tempKv.StartSession();
 
   // In the first phase of compaction, scan the hybrid-log between addresses
@@ -2952,7 +4307,7 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
   // On encountering a tombstone, we try to delete the record from the mini
   // instance of FASTER.
   int numOps = 0;
-  ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, begin,
+  LogRecordIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, begin,
                               Address(untilAddress), &disk);
   while (true) {
     auto r = iter.GetNext();
@@ -2987,14 +4342,16 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
   // Finally, scan through all records within the temporary FASTER instance,
   // inserting those that don't already exist within FASTER's mutable region.
   numOps = 0;
-  ScanIterator<faster_t> iter2(&tempKv.hlog, Buffering::DOUBLE_PAGE,
+  LogRecordIterator<faster_t> iter2(&tempKv.hlog, Buffering::DOUBLE_PAGE,
                                tempKv.hlog.begin_address.load(),
                                tempKv.hlog.GetTailAddress(), &tempKv.disk);
   while (true) {
     auto r = iter2.GetNext();
     if (r == nullptr) break;
 
-    if (!r->header.tombstone && !ContainsKeyInMemory(r->key(), upto)) {
+    index_context_t index_context{ r };
+
+    if (!r->header.tombstone && !ContainsKeyInMemory(index_context, upto)) {
       CompactionUpsert<K, V> ctxt(r);
       auto cb = [](IAsyncContext* ctxt, Status result) {
         CallbackContext<CompactionUpsert<K, V>> context(ctxt);
@@ -3030,8 +4387,8 @@ bool FasterKv<K, V, D>::Compact(uint64_t untilAddress)
 /// in the safe-read-only region of the main FASTER instance.
 ///
 /// Returns the address upto which the scan was performed.
-template <class K, class V, class D>
-Address FasterKv<K, V, D>::LogScanForValidity(Address from, faster_t* temp)
+template <class K, class V, class D, class H, class OH>
+Address FasterKv<K, V, D, H, OH>::LogScanForValidity(Address from, faster_t* temp)
 {
   // Scan upto the safe read only region of the log, deleting all encountered
   // records from the temporary instance of FASTER. Since the safe-read-only
@@ -3040,7 +4397,7 @@ Address FasterKv<K, V, D>::LogScanForValidity(Address from, faster_t* temp)
   Address sRO = hlog.safe_read_only_address.load();
   while (from < sRO) {
     int numOps = 0;
-    ScanIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, from,
+    LogRecordIterator<faster_t> iter(&hlog, Buffering::DOUBLE_PAGE, from,
                                 sRO, &disk);
     while (true) {
       auto r = iter.GetNext();
@@ -3071,25 +4428,23 @@ Address FasterKv<K, V, D>::LogScanForValidity(Address from, faster_t* temp)
 
 /// Checks if a key exists between a passed in address (`offset`) and the
 /// current tail of the hybrid log.
-template <class K, class V, class D>
-bool FasterKv<K, V, D>::ContainsKeyInMemory(key_t key, Address offset)
+template <class K, class V, class D, class H, class OH>
+bool FasterKv<K, V, D, H, OH>::ContainsKeyInMemory(IndexContext<key_t, value_t> context, Address offset)
 {
   // First, retrieve the hash table entry corresponding to this key.
-  KeyHash hash = key.GetHash();
-  HashBucketEntry _entry;
-  const AtomicHashBucketEntry* atomic_entry = FindEntry(hash, _entry);
-  if (!atomic_entry) return false;
+  Status status = hash_index_.FindEntry(thread_ctx(), context);
+  assert(status == Status::Ok || status == Status::NotFound);
+  if (!context.atomic_entry) return false;
 
-  HashBucketEntry entry = atomic_entry->load();
-  Address address = entry.address();
+  Address address = context.entry.address();
 
   if (address >= offset) {
     // Look through the in-memory portion of the log, to find the first record
     // (if any) whose key matches.
     const record_t* record =
               reinterpret_cast<const record_t*>(hlog.Get(address));
-    if(key != record->key()) {
-      address = TraceBackForKeyMatch(key, record->header.previous_address(),
+    if(context.key() != record->key()) {
+      address = TraceBackForKeyMatch(context.key(), record->header.previous_address(),
                                      offset);
     }
   }
@@ -3099,6 +4454,68 @@ bool FasterKv<K, V, D>::ContainsKeyInMemory(key_t key, Address offset)
   if (address >= offset) return true;
   return false;
 }
+
+template <class K, class V, class D, class H, class OH>
+void FasterKv<K, V, D, H, OH>::AutoCompactHlog() {
+  uint64_t hlog_size_threshold = static_cast<uint64_t>(
+    hlog_compaction_config_.hlog_size_budget * hlog_compaction_config_.trigger_pct);
+
+  max_hlog_size_ = hlog_compaction_config_.hlog_size_budget;
+
+  while (auto_compaction_active_.load()) {
+    if (Size() < hlog_size_threshold) {
+      auto_compaction_scheduled_.store(false);
+      std::this_thread::sleep_for(hlog_compaction_config_.check_interval);
+      continue;
+    }
+    auto_compaction_scheduled_.store(true);
+
+    uint64_t begin_address = hlog.begin_address.control();
+
+    /// calculate until address
+    // start with compaction percentage
+    uint64_t until_address = begin_address + static_cast<uint64_t>(Size() * hlog_compaction_config_.compact_pct);
+    // respect user-imposed limit
+    until_address = std::min(until_address, begin_address + hlog_compaction_config_.max_compacted_size);
+    // do not compact in-memory region
+    until_address = std::min(until_address, hlog.safe_head_address.control());
+    // round down address to page bounds
+    until_address = until_address - Address(until_address).offset() + Address::kMaxOffset + 1;
+    assert(until_address <= hlog.safe_read_only_address.control());
+    assert(until_address % hlog.kPageSize == 0);
+
+    // perform log compaction
+    log_info("Auto-compaction: [%lu %lu] -> [%lu %lu] {%lu}",
+             begin_address, hlog.GetTailAddress(),
+             until_address, hlog.GetTailAddress(), Size());
+    StartSession();
+    bool success = CompactWithLookup(until_address, true, hlog_compaction_config_.num_threads);
+    StopSession();
+
+    log_info("Auto-compaction: Size: %.3f GB", static_cast<double>(Size()) / (1 << 30));
+    if (!success) {
+      log_error("Hlog compaction was not successful :( -- retry!");
+    }
+  }
+  // no more auto-compactions
+  auto_compaction_scheduled_.store(false);
+}
+
+#ifdef TOML_CONFIG
+template <class K, class V, class D, class H, class OH>
+inline FasterKv<K, V, D, H, OH> FasterKv<K, V, D, H, OH>::FromConfigString(const std::string& config) {
+  return Config::FromConfigString(config, "faster");
+}
+
+template <class K, class V, class D, class H, class OH>
+inline FasterKv<K, V, D, H, OH> FasterKv<K, V, D, H, OH>::FromConfigFile(const std::string& filepath) {
+  std::ifstream t(filepath);
+  std::string config(
+    (std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+  return FasterKv<K, V, D, H, OH>::FromConfigString(config);
+}
+#endif
+
 
 }
 } // namespace FASTER::core

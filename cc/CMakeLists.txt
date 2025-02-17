@@ -1,10 +1,11 @@
-cmake_minimum_required (VERSION 3.2.2)
+cmake_minimum_required (VERSION 3.14)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 enable_testing()
 
-include(ExternalProject)
+include(FetchContent)
 project(FASTER)
 
 # The set of additional options that we can pass into cmake. We currently support
@@ -15,18 +16,18 @@ OPTION(USE_URING "Enable io_uring based IO handler" OFF)
 
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /Gm- /W3 /WX /EHsc /GS /fp:precise /permissive- /Zc:wchar_t /Zc:forScope /Zc:inline /Gd /TP")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /wd4996")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /wd4996 /std:c++20 /DTOML_CONFIG")
 
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /RTC1 /MDd")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /Oi /Gy- /MD")
 
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUG /OPT:NOICF")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /DEBUG /OPT:NOICF")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUG /OPT:NOICF /STACK:67108864")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /DEBUG /OPT:NOICF /STACK:67108864")
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -D_DEBUG")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -g")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -D_DEBUG -DTOML_CONFIG")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -g -DTOML_CONFIG")
 
     if (USE_URING)
       set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DFASTER_URING")
@@ -38,33 +39,26 @@ endif()
 set_directory_properties(PROPERTIES COMPILE_DEFINITIONS_DEBUG "_DEBUG")
 
 ##### BEGIN GOOGLE TEST INSTALLATION #####
-# Copied from https://github.com/google/googletest/tree/master/googletest#incorporating-into-an-existing-cmake-project
-# Download and unpack googletest at configure time
-configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
-execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
-  RESULT_VARIABLE result
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/googletest-download)
-if(result)
-  message(FATAL_ERROR "CMake step for googletest failed: ${result}")
-endif()
-execute_process(COMMAND ${CMAKE_COMMAND} --build .
-  RESULT_VARIABLE result
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/googletest-download )
-if(result)
-  message(FATAL_ERROR "Build step for googletest failed: ${result}")
-endif()
-
-# Prevent overriding the parent project's compiler/linker
-# settings on Windows
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG v1.14.0
+)
+set(BUILD_GMOCK OFF)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-
-# Add googletest directly to our build. This defines
-# the gtest and gtest_main targets.
-add_subdirectory(${CMAKE_BINARY_DIR}/googletest-src
-                 ${CMAKE_BINARY_DIR}/googletest-build
-                 EXCLUDE_FROM_ALL)
-
+FetchContent_MakeAvailable(googletest)
 ##### END GOOGLE TEST INSTALLATION #####
+
+#### BEGIN TOML11 INSTALLATION #####
+FetchContent_Declare(
+  toml11
+  GIT_REPOSITORY https://github.com/ToruNiina/toml11
+  GIT_TAG v4.3.0
+)
+FetchContent_MakeAvailable(toml11)
+include_directories(${toml11_SOURCE_DIR}/include)
+#### END TOML11 INSTALLATION #####
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
@@ -78,7 +72,7 @@ set (FASTER_LINK_LIBS
 )
 
 # Set the link libraries to for test compilation
-set (FASTER_TEST_LINK_LIBS ${FASTER_LINK_LIBS} gtest)
+set (FASTER_TEST_LINK_LIBS ${FASTER_LINK_LIBS} gtest_main)
 if(WIN32)
   set(FASTER_TEST_LINK_LIBS ${FASTER_TEST_LINK_LIBS} rpcrt4)
 else()
@@ -108,6 +102,7 @@ FUNCTION(ADD_FASTER_TEST TEST_NAME HEADERS)
   add_executable(${TEST_NAME} ${HEADERS} ${TEST_NAME}.cc)
 
   target_link_libraries(${TEST_NAME} ${FASTER_TEST_LINK_LIBS})
+  target_include_directories(${TEST_NAME} PRIVATE ${toml11_SOURCE_DIR})
   add_test(${TEST_NAME} ${CMAKE_BINARY_DIR}/${TEST_NAME})
 ENDFUNCTION()
 
@@ -116,6 +111,7 @@ FUNCTION(ADD_FASTER_BENCHMARK BENCHMARK_NAME)
   add_executable(${BENCHMARK_NAME} ${BENCHMARK_HEADERS} ${BENCHMARK_NAME}.cc)
 
   target_link_libraries(${BENCHMARK_NAME} ${FASTER_BENCHMARK_LINK_LIBS})
+  target_include_directories(${BENCHMARK_NAME} PRIVATE ${toml11_SOURCE_DIR})
 ENDFUNCTION()
 
 # Build each subdirectory

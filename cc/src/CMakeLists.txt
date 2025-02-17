@@ -7,14 +7,16 @@ set (FASTER_HEADERS
   core/auto_ptr.h
   core/checkpoint_locks.h
   core/checkpoint_state.h
+  core/checkpoint_state_f2.h
+  core/config.h
   core/constants.h
+  core/f2.h
   core/faster.h
   core/gc_state.h
   core/grow_state.h
   core/guid.h
-  core/hash_bucket.h
-  core/hash_table.h
   core/internal_contexts.h
+  core/internal_contexts_f2.h
   core/key_hash.h
   core/light_epoch.h
   core/lss_allocator.h
@@ -22,6 +24,8 @@ set (FASTER_HEADERS
   core/native_buffer_pool.h
   core/persistent_memory_malloc.h
   core/phase.h
+  core/read_cache.h
+  core/read_cache_utils.h
   core/record.h
   core/recovery_status.h
   core/state_transitions.h
@@ -32,6 +36,12 @@ set (FASTER_HEADERS
   device/null_disk.h
   environment/file.h
   environment/file_common.h
+  index/cold_index.h
+  index/cold_index_contexts.h
+  index/hash_bucket.h
+  index/hash_table.h
+  index/index.h
+  index/mem_index.h
 )
 
 if (MSVC)
@@ -42,7 +52,7 @@ else()
 set (FASTER_HEADERS ${FASTER_HEADERS}
   environment/file_linux.h
 )
-endif() 
+endif()
 
 set (FASTER_SOURCES
   core/address.cc

@@ -9,6 +9,8 @@
 #include <libgen.h>
 #include <stdio.h>
 #include <time.h>
+
+#include "common/log.h"
 #include "file_linux.h"
 
 namespace FASTER {
@@ -51,7 +53,7 @@ Status File::Open(int flags, FileCreateDisposition create_disposition, bool* exi
     }
   }
   if(fd_ == -1) {
-    int error = errno;
+    log_warn("I/O Error: %s", strerror(errno));
     return Status::IOError;
   }
 
@@ -68,7 +70,7 @@ Status File::Close() {
     int result = ::close(fd_);
     fd_ = -1;
     if(result == -1) {
-      int error = errno;
+      log_warn("I/O Error: %s", strerror(errno));
       return Status::IOError;
     }
   }
@@ -79,7 +81,7 @@ Status File::Close() {
 Status File::Delete() {
   int result = ::remove(filename_.c_str());
   if(result == -1) {
-    int error = errno;
+    log_warn("I/O Error: %s", strerror(errno));
     return Status::IOError;
   }
   return Status::Ok;
@@ -165,6 +167,7 @@ Status QueueFile::Write(size_t offset, uint32_t length, const uint8_t* buffer,
                         IAsyncContext& context, AsyncIOCallback callback) {
   DCHECK_ALIGNMENT(offset, length, buffer);
 #ifdef IO_STATISTICS
+  ++write_count_;
   bytes_written_ += length;
 #endif
   return ScheduleOperation(FileOperationType::Write, const_cast<uint8_t*>(buffer), offset, length,
@@ -304,7 +307,7 @@ Status UringFile::ScheduleOperation(FileOperationType operationType, uint8_t* bu
   if (res != 1) {
     return Status::IOError;
   }
-  
+
   io_context.release();
   return Status::Ok;
 }

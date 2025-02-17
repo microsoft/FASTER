@@ -104,14 +104,14 @@ jobs:
 
 - job: 'cppLinux'
   pool:
-    vmImage: ubuntu-20.04
+    vmImage: ubuntu-22.04
   displayName: 'C++ (Linux)'
 
   steps:
   - script: |
       sudo apt update
       sudo apt install -y g++ libaio-dev uuid-dev libtbb-dev
-    displayName: 'Install depdendencies'
+    displayName: 'Install dependencies'
   - script: |
       cd cc
       mkdir -p build/Debug build/Release
@@ -175,7 +175,7 @@ jobs:
       command: test
       projects: '**/*.test.csproj'
       arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed" --filter "TestCategory=Smoke"'
-      
+
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
     inputs:

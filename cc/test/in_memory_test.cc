@@ -63,9 +63,23 @@ void run_threads(size_t num_threads, Callable worker, Args... args) {
   }
 }
 
-TEST(InMemFaster, UpsertRead) {
+// <# hash index entries, placeholder>
+class InMemTestParam : public ::testing::TestWithParam<std::tuple<uint32_t, bool>> {
+};
+INSTANTIATE_TEST_CASE_P(
+  InMemTests,
+  InMemTestParam,
+  ::testing::Values(
+    std::make_tuple( 128, false),
+    std::make_tuple(2048, false)
+  )
+);
+
+
+TEST_P(InMemTestParam, UpsertRead) {
   using Key = FixedSizeKey<uint8_t>;
   using Value = SimpleAtomicValue<uint8_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -82,17 +96,17 @@ TEST(InMemFaster, UpsertRead) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = 23;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(42);
       return true;
     }
@@ -104,7 +118,7 @@ TEST(InMemFaster, UpsertRead) {
     }
 
    private:
-    Key key_;
+    key_t key_;
   };
 
   class ReadContext : public IAsyncContext {
@@ -122,15 +136,15 @@ TEST(InMemFaster, UpsertRead) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       output = value.atomic_value.load();
     }
 
@@ -141,12 +155,15 @@ TEST(InMemFaster, UpsertRead) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint8_t output;
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store { 128, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   store.StartSession();
 
@@ -199,16 +216,17 @@ TEST(InMemFaster, UpsertRead) {
 }
 
 /// The hash always returns "0," so the FASTER store devolves into a linked list.
-TEST(InMemFaster, UpsertRead_DummyHash) {
-  class DummyHash {
+TEST_P(InMemTestParam, UpsertRead_DummyHash) {
+  class DummyHashHelper {
    public:
-    inline size_t operator()(const uint16_t& key) const {
+    static inline size_t compute(const uint16_t& key) {
       return 42;
     }
   };
 
-  using Key = FixedSizeKey<uint16_t, DummyHash>;
+  using Key = FixedSizeKey<uint16_t, DummyHashHelper>;
   using Value = SimpleAtomicValue<uint16_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -225,17 +243,17 @@ TEST(InMemFaster, UpsertRead_DummyHash) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = key_.key;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(key_.key);
       return true;
     }
@@ -247,7 +265,7 @@ TEST(InMemFaster, UpsertRead_DummyHash) {
     }
 
    private:
-    Key key_;
+    key_t key_;
   };
 
   class ReadContext : public IAsyncContext {
@@ -265,15 +283,15 @@ TEST(InMemFaster, UpsertRead_DummyHash) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       output = value.atomic_value.load();
     }
 
@@ -284,12 +302,15 @@ TEST(InMemFaster, UpsertRead_DummyHash) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint16_t output;
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   store.StartSession();
 
@@ -319,7 +340,7 @@ TEST(InMemFaster, UpsertRead_DummyHash) {
   store.StopSession();
 }
 
-TEST(InMemFaster, UpsertRead_Concurrent) {
+TEST_P(InMemTestParam, UpsertRead_Concurrent) {
   using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContext;
@@ -328,8 +349,8 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
   class alignas(16) Value {
    public:
     Value()
-      : length_{ 0 }
-      , value_{ 0 } {
+      : value_{ 0 }
+      , length_{ 0 } {
     }
 
     inline static constexpr uint32_t size() {
@@ -343,6 +364,8 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
     uint8_t value_[31];
     std::atomic<uint8_t> length_;
   };
+
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class UpsertContext : public IAsyncContext {
    public:
@@ -359,18 +382,18 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.length_ = 5;
       std::memset(value.value_, 23, 5);
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       // Get the lock on the value.
       bool success;
       do {
@@ -395,7 +418,7 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
   };
 
   class ReadContext : public IAsyncContext {
@@ -413,15 +436,15 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       do {
         output_length = value.length_.load();
         ASSERT_EQ(0, reinterpret_cast<size_t>(value.value_) % 16);
@@ -437,7 +460,7 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint8_t output_length;
     uint64_t output_pt1;
@@ -447,7 +470,10 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto upsert_worker = [&store](size_t thread_idx) {
     store.StartSession();
@@ -495,7 +521,7 @@ TEST(InMemFaster, UpsertRead_Concurrent) {
   run_threads(kNumThreads, read_worker, 0x2a2a2a2a2a2a2a);
 }
 
-TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
+TEST_P(InMemTestParam, UpsertRead_ResizeValue_Concurrent) {
   using Key = FixedSizeKey<uint32_t>;
 
   class UpsertContext;
@@ -602,6 +628,8 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
     }
   };
 
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
+
   class UpsertContext : public IAsyncContext {
    public:
     typedef Key key_t;
@@ -619,20 +647,20 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline uint32_t value_size() const {
-      return sizeof(Value) + length_;
+      return sizeof(value_t) + length_;
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.gen_lock_.store(0);
-      value.size_ = sizeof(Value) + length_;
+      value.size_ = sizeof(value_t) + length_;
       value.length_ = length_;
       std::memset(value.buffer(), 88, length_);
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       bool replaced;
       while(!value.gen_lock_.try_lock(replaced) && !replaced) {
         std::this_thread::yield();
@@ -641,7 +669,7 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
         // Some other thread replaced this record.
         return false;
       }
-      if(value.size_ < sizeof(Value) + length_) {
+      if(value.size_ < sizeof(value_t) + length_) {
         // Current value is too small for in-place update.
         value.gen_lock_.unlock(true);
         return false;
@@ -660,7 +688,7 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t length_;
   };
 
@@ -681,15 +709,15 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       GenLock before, after;
       do {
         before = value.gen_lock_.load();
@@ -707,7 +735,7 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint8_t output_length;
     // Extract two bytes of output.
@@ -717,7 +745,10 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto upsert_worker = [&store](size_t thread_idx, uint32_t value_length) {
     store.StartSession();
@@ -766,9 +797,10 @@ TEST(InMemFaster, UpsertRead_ResizeValue_Concurrent) {
   run_threads(kNumThreads, read_worker, 88);
 }
 
-TEST(InMemFaster, Rmw) {
+TEST_P(InMemTestParam, Rmw) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = SimpleAtomicValue<uint32_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -787,22 +819,22 @@ TEST(InMemFaster, Rmw) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
-    inline static constexpr uint32_t value_size(const Value& old_value) {
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.value = incr_;
     }
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.value = old_value.value + incr_;
     }
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       value.atomic_value.fetch_add(incr_);
       return true;
     }
@@ -814,8 +846,8 @@ TEST(InMemFaster, Rmw) {
     }
 
    private:
+    key_t key_;
     int32_t incr_;
-    Key key_;
   };
 
   class ReadContext : public IAsyncContext {
@@ -833,15 +865,15 @@ TEST(InMemFaster, Rmw) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       output = value.atomic_value.load();
     }
 
@@ -852,12 +884,15 @@ TEST(InMemFaster, Rmw) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     int32_t output;
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   store.StartSession();
 
@@ -909,9 +944,10 @@ TEST(InMemFaster, Rmw) {
   store.StopSession();
 }
 
-TEST(InMemFaster, Rmw_Concurrent) {
+TEST_P(InMemTestParam, Rmw_Concurrent) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = SimpleAtomicValue<int64_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -930,23 +966,23 @@ TEST(InMemFaster, Rmw_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
-    inline static constexpr uint32_t value_size(const Value& old_value) {
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
 
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.value = incr_;
     }
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.value = old_value.value + incr_;
     }
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       value.atomic_value.fetch_add(incr_);
       return true;
     }
@@ -958,8 +994,8 @@ TEST(InMemFaster, Rmw_Concurrent) {
     }
 
    private:
+    key_t key_;
     int64_t incr_;
-    Key key_;
   };
 
   class ReadContext : public IAsyncContext {
@@ -977,15 +1013,15 @@ TEST(InMemFaster, Rmw_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       output = value.atomic_value.load();
     }
 
@@ -996,7 +1032,7 @@ TEST(InMemFaster, Rmw_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     int64_t output;
   };
@@ -1005,7 +1041,10 @@ TEST(InMemFaster, Rmw_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto rmw_worker = [&store](size_t thread_idx, int64_t multiplier) {
     store.StartSession();
@@ -1065,7 +1104,7 @@ TEST(InMemFaster, Rmw_Concurrent) {
   store.StopSession();
 }
 
-TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
+TEST_P(InMemTestParam, Rmw_ResizeValue_Concurrent) {
   using Key = FixedSizeKey<uint64_t>;
 
   class RmwContext;
@@ -1171,6 +1210,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
       return reinterpret_cast<int8_t*>(this + 1);
     }
   };
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -1191,32 +1231,32 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline uint32_t value_size() const {
       return sizeof(value_t) + length_;
     }
-    inline uint32_t value_size(const Value& old_value) const {
+    inline uint32_t value_size(const value_t& old_value) const {
       return sizeof(value_t) + length_;
     }
 
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.gen_lock_.store(GenLock{});
-      value.size_ = sizeof(Value) + length_;
+      value.size_ = sizeof(value_t) + length_;
       value.length_ = length_;
       std::memset(value.buffer(), incr_, length_);
     }
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.gen_lock_.store(GenLock{});
-      value.size_ = sizeof(Value) + length_;
+      value.size_ = sizeof(value_t) + length_;
       value.length_ = length_;
       std::memset(value.buffer(), incr_, length_);
       for(uint32_t idx = 0; idx < std::min(old_value.length_, length_); ++idx) {
         value.buffer()[idx] = old_value.buffer()[idx] + incr_;
       }
     }
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       bool replaced;
       while(!value.gen_lock_.try_lock(replaced) && !replaced) {
         std::this_thread::yield();
@@ -1225,7 +1265,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
         // Some other thread replaced this record.
         return false;
       }
-      if(value.size_ < sizeof(Value) + length_) {
+      if(value.size_ < sizeof(value_t) + length_) {
         // Current value is too small for in-place update.
         value.gen_lock_.unlock(true);
         return false;
@@ -1246,9 +1286,9 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
     }
 
    private:
+    key_t key_;
     int8_t incr_;
     uint32_t length_;
-    Key key_;
   };
 
   class ReadContext : public IAsyncContext {
@@ -1268,15 +1308,15 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       GenLock before, after;
       do {
         before = value.gen_lock_.load();
@@ -1294,7 +1334,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint8_t output_length;
     // Extract two bytes of output.
@@ -1305,7 +1345,10 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   auto rmw_worker = [&store](size_t thread_idx, int8_t incr, uint32_t value_length) {
     store.StartSession();
@@ -1368,7 +1411,7 @@ TEST(InMemFaster, Rmw_ResizeValue_Concurrent) {
   store.StopSession();
 }
 
-TEST(InMemFaster, Rmw_GrowString_Concurrent) {
+TEST_P(InMemTestParam, Rmw_GrowString_Concurrent) {
   using Key = FixedSizeKey<uint64_t>;
 
   class RmwContext;
@@ -1377,7 +1420,7 @@ TEST(InMemFaster, Rmw_GrowString_Concurrent) {
   class Value {
    public:
     Value()
-            : length_{ 0 } {
+      : length_{ 0 } {
     }
 
     inline uint32_t size() const {
@@ -1397,6 +1440,7 @@ TEST(InMemFaster, Rmw_GrowString_Concurrent) {
       return reinterpret_cast<char*>(this + 1);
     }
   };
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -1404,37 +1448,37 @@ TEST(InMemFaster, Rmw_GrowString_Concurrent) {
     typedef Value value_t;
 
     RmwContext(uint64_t key, char letter)
-            : key_{ key }
-            , letter_{ letter } {
+      : key_{ key }
+      , letter_{ letter } {
     }
 
     /// Copy (and deep-copy) constructor.
     RmwContext(const RmwContext& other)
-            : key_{ other.key_ }
-            , letter_{ other.letter_ } {
+      : key_{ other.key_ }
+      , letter_{ other.letter_ } {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline uint32_t value_size() const {
       return sizeof(value_t) + sizeof(char);
     }
-    inline uint32_t value_size(const Value& old_value) const {
+    inline uint32_t value_size(const value_t& old_value) const {
       return sizeof(value_t) + old_value.length_ + sizeof(char);
     }
 
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.length_ = sizeof(char);
       value.buffer()[0] = letter_;
     }
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.length_ = old_value.length_ + sizeof(char);
       std::memcpy(value.buffer(), old_value.buffer(), old_value.length_);
       value.buffer()[old_value.length_] = letter_;
     }
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       // All RMW operations use Read-Copy-Update
       return false;
     }
@@ -1446,8 +1490,8 @@ TEST(InMemFaster, Rmw_GrowString_Concurrent) {
     }
 
    private:
+    key_t key_;
     char letter_;
-    Key key_;
   };
 
   class ReadContext : public IAsyncContext {
@@ -1456,26 +1500,26 @@ TEST(InMemFaster, Rmw_GrowString_Concurrent) {
     typedef Value value_t;
 
     ReadContext(uint64_t key)
-            : key_{ key }
-            , output_length{ 0 } {
+      : key_{ key }
+      , output_length{ 0 } {
     }
 
     /// Copy (and deep-copy) constructor.
     ReadContext(const ReadContext& other)
-            : key_{ other.key_ }
-            , output_length{ 0 } {
+      : key_{ other.key_ }
+      , output_length{ 0 } {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       // There are no concurrent updates
       output_length = value.length_;
       output_letters[0] = value.buffer()[0];
@@ -1489,7 +1533,7 @@ TEST(InMemFaster, Rmw_GrowString_Concurrent) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     uint8_t output_length;
     // Extract two letters of output.
@@ -1500,7 +1544,13 @@ TEST(InMemFaster, Rmw_GrowString_Concurrent) {
   static constexpr size_t kNumRmws = 2048;
   static constexpr size_t kRange = 512;
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
+
+  ReadCacheConfig rc{ .mem_size = 256_MiB, .mutable_fraction = 0.5,
+                      .pre_allocate = false, .enabled = readcache };
+  store_t store { table_size, 1_GiB, "", 0.4, rc };
 
   auto rmw_worker = [&store](size_t _, char start_letter){
     store.StartSession();
@@ -1562,50 +1612,49 @@ TEST(InMemFaster, Rmw_GrowString_Concurrent) {
   store.StopSession();
 }
 
-TEST(InMemFaster, ConcurrentDelete) {
+TEST_P(InMemTestParam, ConcurrentDelete) {
   using KeyData = std::pair<uint64_t, uint64_t>;
-  struct HashFn {
-    inline size_t operator()(const KeyData& key) const {
+  struct HashFnHelper {
+    static inline size_t compute(const KeyData& key) {
       std::hash<uint64_t> hash_fn;
       return hash_fn(key.first);
     }
   };
 
-  using Key = FixedSizeKey<KeyData, HashFn>;
+  using Key = FixedSizeKey<KeyData, HashFnHelper>;
   using Value = SimpleAtomicValue<int64_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
-   private:
-    Key key_;
    public:
     typedef Key key_t;
     typedef Value value_t;
 
-    explicit RmwContext(const Key& key)
+    explicit RmwContext(const key_t& key)
       : key_{ key }
     {}
 
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
     inline static constexpr uint32_t value_size() {
-      return Value::size();
+      return value_t::size();
     }
 
-    inline static constexpr uint32_t value_size(const Value& old_value) {
-      return Value::size();
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
+      return value_t::size();
     }
 
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.value = 1;
     }
 
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.value = old_value.value * 2 + 1;
     }
 
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       // Not supported: so that operation would allocate a new entry for the update.
       return false;
     }
@@ -1614,25 +1663,25 @@ TEST(InMemFaster, ConcurrentDelete) {
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
+   private:
+    key_t key_;
   };
 
   class DeleteContext : public IAsyncContext {
-   private:
-    Key key_;
    public:
     typedef Key key_t;
     typedef Value value_t;
 
-    explicit DeleteContext(const Key& key)
+    explicit DeleteContext(const key_t& key)
       : key_{ key }
     {}
 
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
     inline static constexpr uint32_t value_size() {
-      return Value::size();
+      return value_t::size();
     }
 
    protected:
@@ -1640,31 +1689,31 @@ TEST(InMemFaster, ConcurrentDelete) {
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
+   private:
+    key_t key_;
   };
 
   class ReadContext : public IAsyncContext {
-   private:
-    Key key_;
    public:
     typedef Key key_t;
     typedef Value value_t;
 
     int64_t output;
 
-    explicit ReadContext(const Key& key)
+    explicit ReadContext(const key_t& key)
       : key_{ key }
     {}
 
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
 
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       output = value.atomic_value.load();
     }
 
@@ -1673,12 +1722,20 @@ TEST(InMemFaster, ConcurrentDelete) {
     Status DeepCopy_Internal(IAsyncContext*& context_copy) {
       return IAsyncContext::DeepCopy_Internal(*this, context_copy);
     }
+   private:
+    key_t key_;
   };
 
   static constexpr size_t kNumOps = 1024;
   static constexpr size_t kNumThreads = 2;
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 128, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
+
+  ReadCacheConfig rc{ .mem_size = 256_MiB, .mutable_fraction = 0.5,
+                      .pre_allocate = false, .enabled = readcache };
+  store_t store { table_size, 1_GiB, "", 0.4, rc };
 
   // Rmw.
   run_threads(kNumThreads, [&store](size_t thread_idx) {
@@ -1738,9 +1795,10 @@ TEST(InMemFaster, ConcurrentDelete) {
   });
 }
 
-TEST(InMemFaster, GrowHashTable) {
+TEST_P(InMemTestParam, GrowHashTable) {
   using Key = FixedSizeKey<uint64_t>;
   using Value = SimpleAtomicValue<int64_t>;
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
 
   class RmwContext : public IAsyncContext {
    public:
@@ -1759,23 +1817,23 @@ TEST(InMemFaster, GrowHashTable) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
-    inline static constexpr uint32_t value_size(const Value& old_value) {
+    inline static constexpr uint32_t value_size(const value_t& old_value) {
       return sizeof(value_t);
     }
 
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.value = incr_;
     }
-    inline void RmwCopy(const Value& old_value, Value& value) {
+    inline void RmwCopy(const value_t& old_value, value_t& value) {
       value.value = old_value.value + incr_;
     }
-    inline bool RmwAtomic(Value& value) {
+    inline bool RmwAtomic(value_t& value) {
       value.atomic_value.fetch_add(incr_);
       return true;
     }
@@ -1787,8 +1845,8 @@ TEST(InMemFaster, GrowHashTable) {
     }
 
    private:
+    key_t key_;
     int64_t incr_;
-    Key key_;
   };
 
   class ReadContext : public IAsyncContext {
@@ -1806,15 +1864,15 @@ TEST(InMemFaster, GrowHashTable) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       // All reads should be atomic (from the mutable tail).
       ASSERT_TRUE(false);
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       output = value.atomic_value.load();
     }
 
@@ -1825,7 +1883,7 @@ TEST(InMemFaster, GrowHashTable) {
     }
 
    private:
-    Key key_;
+    key_t key_;
    public:
     int64_t output;
   };
@@ -1834,8 +1892,15 @@ TEST(InMemFaster, GrowHashTable) {
   static constexpr size_t kNumRmws = 32768;
   static constexpr size_t kRange = 8192;
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store{ 256, 1073741824, "" };
   static std::atomic<bool> grow_done{ false };
+
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+  bool readcache = std::get<1>(args);
+
+  ReadCacheConfig rc{ .mem_size = 256_MiB, .mutable_fraction = 0.5,
+                      .pre_allocate = false, .enabled = readcache };
+  store_t store{ table_size, 1_GiB, "", 0.4, rc };
 
   auto rmw_worker = [&store](size_t thread_idx, int64_t multiplier) {
     store.StartSession();
@@ -1867,6 +1932,7 @@ TEST(InMemFaster, GrowHashTable) {
   };
 
   // Rmw, increment by 2 * idx.
+  grow_done = false;
   run_threads(kNumThreads, rmw_worker, 2);
 
   // Read.
@@ -1908,159 +1974,167 @@ TEST(InMemFaster, GrowHashTable) {
   store.StopSession();
 }
 
-TEST(InMemFaster, UpsertRead_VariableLengthKey) {
+TEST_P(InMemTestParam, UpsertRead_VariableLengthKey) {
   class Key : NonCopyable, NonMovable {
-  public:
-      static uint32_t size(uint32_t key_length) {
-        return static_cast<uint32_t>(sizeof(Key) + key_length);
-      }
+   public:
+    static uint32_t size(uint32_t key_length) {
+      return static_cast<uint32_t>(sizeof(Key) + key_length);
+    }
 
-      static void Create(Key* dst, uint32_t key_length, uint8_t* key_data) {
-        dst->key_length_ = key_length;
-        memcpy(dst->buffer(), key_data, key_length);
-      }
+    static void Create(Key* dst, uint32_t key_length, uint8_t* key_data) {
+      dst->key_length_ = key_length;
+      memcpy(dst->buffer(), key_data, key_length);
+    }
 
-      /// Methods and operators required by the (implicit) interface:
-      inline uint32_t size() const {
-        return static_cast<uint32_t>(sizeof(Key) + key_length_);
-      }
-      inline KeyHash GetHash() const {
-        return KeyHash(Utility::HashBytesUint8(buffer(), key_length_));
-      }
+    /// Methods and operators required by the (implicit) interface:
+    inline uint32_t size() const {
+      return static_cast<uint32_t>(sizeof(Key) + key_length_);
+    }
+    inline KeyHash GetHash() const {
+      return KeyHash{ FasterHashHelper<uint8_t>::compute(buffer(), key_length_) };
+    }
 
-      /// Comparison operators.
-      inline bool operator==(const Key& other) const {
-        if (this->key_length_ != other.key_length_) return false;
-        return memcmp(buffer(), other.buffer(), key_length_) == 0;
-      }
-      inline bool operator!=(const Key& other) const {
-        return !(*this == other);
-      }
+    /// Comparison operators.
+    inline bool operator==(const Key& other) const {
+      if (this->key_length_ != other.key_length_) return false;
+      return memcmp(buffer(), other.buffer(), key_length_) == 0;
+    }
+    inline bool operator!=(const Key& other) const {
+      return !(*this == other);
+    }
+    inline const uint8_t* buffer() const {
+      return reinterpret_cast<const uint8_t*>(this + 1);
+    }
+    inline uint8_t* buffer() {
+      return reinterpret_cast<uint8_t*>(this + 1);
+    }
 
-      uint32_t key_length_;
-
-      inline const uint8_t* buffer() const {
-        return reinterpret_cast<const uint8_t*>(this + 1);
-      }
-      inline uint8_t* buffer() {
-        return reinterpret_cast<uint8_t*>(this + 1);
-      }
+   public:
+    uint32_t key_length_;
   };
 
   class ShallowKey {
-  public:
-      ShallowKey(uint8_t* key_data, uint32_t key_length)
-          : key_length_(key_length), key_data_(key_data)
-      { }
+   public:
+    typedef Key key_t;
 
-      inline uint32_t size() const {
-        return Key::size(key_length_);
-      }
-      inline KeyHash GetHash() const {
-        return KeyHash(Utility::HashBytesUint8(key_data_, key_length_));
-      }
-      inline void write_deep_key_at(Key* dst) const {
-        Key::Create(dst, key_length_, key_data_);
-      }
-      /// Comparison operators.
-      inline bool operator==(const Key& other) const {
-        if (this->key_length_ != other.key_length_) return false;
-        return memcmp(key_data_, other.buffer(), key_length_) == 0;
-      }
-      inline bool operator!=(const Key& other) const {
-        return !(*this == other);
-      }
+    ShallowKey(uint8_t* key_data, uint32_t key_length)
+      : key_length_(key_length)
+      , key_data_(key_data)
+    { }
 
-      uint32_t key_length_;
-      uint8_t* key_data_;
+    inline uint32_t size() const {
+      return key_t::size(key_length_);
+    }
+    inline KeyHash GetHash() const {
+      return KeyHash{ FasterHashHelper<uint8_t>::compute(key_data_, key_length_) };
+    }
+    inline void write_deep_key_at(key_t* dst) const {
+      key_t::Create(dst, key_length_, key_data_);
+    }
+    /// Comparison operators.
+    inline bool operator==(const key_t& other) const {
+      if (this->key_length_ != other.key_length_) return false;
+      return memcmp(key_data_, other.buffer(), key_length_) == 0;
+    }
+    inline bool operator!=(const key_t& other) const {
+      return !(*this == other);
+    }
+
+    uint32_t key_length_;
+    uint8_t* key_data_;
   };
-
   using Value = SimpleAtomicValue<uint8_t>;
 
+  typedef FasterKv<Key, Value, FASTER::device::NullDisk> store_t;
+
   class UpsertContext : public IAsyncContext {
-  public:
-      typedef Key key_t;
-      typedef Value value_t;
+   public:
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
+    typedef Value value_t;
 
-      UpsertContext(uint8_t* key, uint32_t key_length)
-              : key_{ key, key_length } {
-      }
+    UpsertContext(uint8_t* key, uint32_t key_length)
+      : key_{ key, key_length } {
+    }
+    /// Copy (and deep-copy) constructor.
+    UpsertContext(const UpsertContext& other)
+      : key_{ other.key_ } {
+    }
 
-      /// Copy (and deep-copy) constructor.
-      UpsertContext(const UpsertContext& other)
-          : key_{ other.key_ } {
-      }
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const ShallowKey& key() const {
+      return key_;
+    }
+    inline static constexpr uint32_t value_size() {
+      return sizeof(value_t);
+    }
+    /// Non-atomic and atomic Put() methods.
+    inline void Put(value_t& value) {
+      value.value = 23;
+    }
+    inline bool PutAtomic(value_t& value) {
+      value.atomic_value.store(42);
+      return true;
+    }
 
-      /// The implicit and explicit interfaces require a key() accessor.
-      inline const ShallowKey& key() const {
-        return key_;
-      }
-      inline static constexpr uint32_t value_size() {
-        return sizeof(value_t);
-      }
-      /// Non-atomic and atomic Put() methods.
-      inline void Put(Value& value) {
-        value.value = 23;
-      }
-      inline bool PutAtomic(Value& value) {
-        value.atomic_value.store(42);
-        return true;
-      }
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      // In this particular test, the key content is always on the heap and always available,
+      // so we don't need to copy the key content. If the key content were on the stack,
+      // we would need to copy the key content to the heap as well
+      //
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
 
-  protected:
-      /// The explicit interface requires a DeepCopy_Internal() implementation.
-      Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-        // In this particular test, the key content is always on the heap and always available,
-        // so we don't need to copy the key content. If the key content were on the stack,
-        // we would need to copy the key content to the heap as well
-        //
-        return IAsyncContext::DeepCopy_Internal(*this, context_copy);
-      }
-
-  private:
-      ShallowKey key_;
+   private:
+    ShallowKey key_;
   };
 
   class ReadContext : public IAsyncContext {
-  public:
-      typedef Key key_t;
-      typedef Value value_t;
+   public:
+    // Typedef required for *PendingContext instances
+    // but compiler throws warnings
+    [[maybe_unused]] typedef Key key_t;
+    typedef Value value_t;
 
-      ReadContext(uint8_t* key, uint32_t key_length)
-              : key_{ key, key_length } {
-      }
+    ReadContext(uint8_t* key, uint32_t key_length)
+      : key_{ key, key_length } {
+    }
+    /// Copy (and deep-copy) constructor.
+    ReadContext(const ReadContext& other)
+      : key_{ other.key_ } {
+    }
+    /// The implicit and explicit interfaces require a key() accessor.
+    inline const ShallowKey& key() const {
+      return key_;
+    }
 
-      /// Copy (and deep-copy) constructor.
-      ReadContext(const ReadContext& other)
-              : key_{ other.key_ } {
-      }
+    inline void Get(const value_t& value) {
+      // All reads should be atomic (from the mutable tail).
+      ASSERT_TRUE(false);
+    }
+    inline void GetAtomic(const value_t& value) {
+      output = value.atomic_value.load();
+    }
 
-      /// The implicit and explicit interfaces require a key() accessor.
-      inline const ShallowKey& key() const {
-        return key_;
-      }
+   protected:
+    /// The explicit interface requires a DeepCopy_Internal() implementation.
+    Status DeepCopy_Internal(IAsyncContext*& context_copy) {
+      return IAsyncContext::DeepCopy_Internal(*this, context_copy);
+    }
 
-      inline void Get(const Value& value) {
-        // All reads should be atomic (from the mutable tail).
-        ASSERT_TRUE(false);
-      }
-      inline void GetAtomic(const Value& value) {
-        output = value.atomic_value.load();
-      }
-
-  protected:
-      /// The explicit interface requires a DeepCopy_Internal() implementation.
-      Status DeepCopy_Internal(IAsyncContext*& context_copy) {
-        return IAsyncContext::DeepCopy_Internal(*this, context_copy);
-      }
-
-  private:
-      ShallowKey key_;
-  public:
-      uint8_t output;
+   private:
+    ShallowKey key_;
+   public:
+    uint8_t output;
   };
 
-  FasterKv<Key, Value, FASTER::device::NullDisk> store { 128, 1073741824, "" };
+  auto args = GetParam();
+  uint64_t table_size = std::get<0>(args);
+
+  store_t store { table_size, 1_GiB, "", 0.4 };
 
   store.StartSession();
 
@@ -2080,6 +2154,8 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
     UpsertContext context{ key, idx };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
+
+    free(key);
   }
   // Read.
   for(uint32_t idx = 1; idx < 256; ++idx) {
@@ -2099,6 +2175,8 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
     ASSERT_EQ(Status::Ok, result);
     // All upserts should have inserts (non-atomic).
     ASSERT_EQ(23, context.output);
+
+    free(key);
   }
   // Update.
   for(uint32_t idx = 1; idx < 256; ++idx) {
@@ -2116,6 +2194,8 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
     UpsertContext context{ key, idx };
     Status result = store.Upsert(context, callback, 1);
     ASSERT_EQ(Status::Ok, result);
+
+    free(key);
   }
   // Read again.
   for(uint32_t idx = 1; idx < 256; ++idx) {
@@ -2135,6 +2215,8 @@ TEST(InMemFaster, UpsertRead_VariableLengthKey) {
     ASSERT_EQ(Status::Ok, result);
     // All upserts should have updates (atomic).
     ASSERT_EQ(42, context.output);
+
+    free(key);
   }
 
   store.StopSession();

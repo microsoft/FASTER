@@ -17,24 +17,17 @@
 #include <uuid/uuid.h>
 #endif
 
+#include "../common/log.h"
+
 namespace FASTER {
 namespace core {
 
 /// Wrapper for GUIDs, for Windows and Linux.
 class Guid {
  public:
-#ifdef _WIN32
   Guid() {
-    guid_.Data1 = 0;
-    guid_.Data2 = 0;
-    guid_.Data3 = 0;
-    std::memset(guid_.Data4, 0, 8);
+    Clear();
   }
-#else
-  Guid() {
-    uuid_clear(uuid_);
-  }
-#endif
 
  private:
 #ifdef _WIN32
@@ -71,8 +64,30 @@ class Guid {
 #else
     uuid_t uuid;
     int result = uuid_parse(const_cast<char*>(str.c_str()), uuid);
+    if (result) {
+      log_error("uuid_parse returned %d", result);
+    }
     assert(result == 0);
     return uuid;
+#endif
+  }
+
+  static bool IsNull(Guid guid) {
+#ifdef _WIN32
+    return guid == GUID_NULL;
+#else
+    return uuid_is_null(guid.uuid_);
+#endif
+  }
+
+  void Clear() {
+#ifdef _WIN32
+    guid_.Data1 = 0;
+    guid_.Data2 = 0;
+    guid_.Data3 = 0;
+    std::memset(guid_.Data4, 0, 8);
+#else
+    uuid_clear(uuid_);
 #endif
   }
 

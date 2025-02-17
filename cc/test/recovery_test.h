@@ -3,9 +3,10 @@
 
 #pragma once
 
-#include <experimental/filesystem>
+#include <filesystem>
 
 #include "test_types.h"
+#include "utils.h"
 
 using namespace FASTER;
 using FASTER::test::FixedSizeKey;
@@ -15,14 +16,30 @@ using FASTER::test::SimpleAtomicValue;
 typedef FASTER::device::FileSystemDisk<handler_t, 33554432L> disk_t;
 typedef FASTER::device::FileSystemFile<handler_t> file_t;
 
+// TODO: run this test twice (one for HotLog, one for ColdLog)
+typedef FASTER::index::HotLogHashIndexDefinition hash_index_definition_t;
+typedef hash_index_definition_t::hash_bucket_t hash_bucket_t;
+typedef hash_index_definition_t::key_hash_t key_hash_t;
+
+#ifdef _WIN32
+static std::string ROOT_PATH{ "test_recovery_store" };
+#else
+static std::string ROOT_PATH{ "test_recovery_store/" };
+#endif
+
 TEST(CLASS, MallocFixedPageSize) {
-  typedef MallocFixedPageSize<HashBucket, disk_t> alloc_t;
+  typedef MallocFixedPageSize<hash_bucket_t, disk_t> alloc_t;
+
+#ifdef _WIN32
+  CreateNewLogDir("test_ofb");
+#else
+  CreateNewLogDir("test_ofb/");
+#endif
 
   // Test copied from C#, RecoveryTest.cs.
   std::random_device rd{};
   uint32_t seed = rd();
   std::mt19937_64 rng{ seed };
-  std::experimental::filesystem::create_directories("test_ofb");
 
   size_t num_bytes_written;
 
@@ -30,7 +47,7 @@ TEST(CLASS, MallocFixedPageSize) {
   alloc_t allocator{};
   allocator.Initialize(512, epoch);
 
-  size_t num_buckets_to_add = 2 * FixedPage<HashBucket>::kPageSize + 5;
+  size_t num_buckets_to_add = 2 * FixedPage<hash_bucket_t>::kPageSize + 5;
 
   FixedPageAddress* buckets = new FixedPageAddress[num_buckets_to_add];
 
@@ -43,8 +60,8 @@ TEST(CLASS, MallocFixedPageSize) {
     //do something
     for(size_t bucket_idx = 0; bucket_idx < num_buckets_to_add; ++bucket_idx) {
       buckets[bucket_idx] = allocator.Allocate();
-      HashBucket& bucket = allocator.Get(buckets[bucket_idx]);
-      for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+      hash_bucket_t& bucket = allocator.Get(buckets[bucket_idx]);
+      for(size_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
         HashBucketEntry expected{ 0 };
         uint64_t random_num = rng();
         bool success = bucket.entries[entry_idx].compare_exchange_strong(expected, random_num);
@@ -59,7 +76,7 @@ TEST(CLASS, MallocFixedPageSize) {
     result = allocator.Checkpoint(checkpoint_disk, std::move(checkpoint_file), num_bytes_written);
     ASSERT_EQ(Status::Ok, result);
     // (All the bucket we allocated, + the null page.)
-    ASSERT_EQ((num_buckets_to_add + 1) * sizeof(HashBucket), num_bytes_written);
+    ASSERT_EQ((num_buckets_to_add + 1) * sizeof(hash_bucket_t), num_bytes_written);
     //wait until complete
     result = allocator.CheckpointComplete(true);
     ASSERT_EQ(Status::Ok, result);
@@ -84,8 +101,8 @@ TEST(CLASS, MallocFixedPageSize) {
   //verify that something
   std::mt19937_64 rng2{ seed };
   for(size_t bucket_idx = 0; bucket_idx < num_buckets_to_add; ++bucket_idx) {
-    HashBucket& bucket = allocator.Get(buckets[bucket_idx]);
-    for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+    hash_bucket_t& bucket = allocator.Get(buckets[bucket_idx]);
+    for(size_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
       uint64_t random_num = rng2();
       ASSERT_EQ(random_num, bucket.entries[entry_idx].load().control_);
     }
@@ -97,14 +114,26 @@ TEST(CLASS, MallocFixedPageSize) {
   ASSERT_EQ(FixedPageAddress{ num_buckets_to_add + 1 }, address);
 
   delete[] buckets;
+
+#ifdef _WIN32
+  RemoveDir("test_ofb");
+#else
+  RemoveDir("test_ofb/");
+#endif
 }
 
 TEST(CLASS, InternalHashTable) {
+#ifdef _WIN32
+  CreateNewLogDir("test_ht");
+#else
+  CreateNewLogDir("test_ht/");
+#endif
+
   // (Just the hash table itself--no overflow buckets.)
   std::random_device rd{};
   uint32_t seed = rd();
   std::mt19937_64 rng{ seed };
-  std::experimental::filesystem::create_directories("test_ht");
+  std::filesystem::create_directories("test_ht");
 
   constexpr uint64_t kNumBuckets = 8388608/8;
   size_t num_bytes_written;
@@ -115,12 +144,12 @@ TEST(CLASS, InternalHashTable) {
     Status result = checkpoint_file.Open(&checkpoint_disk.handler());
     ASSERT_EQ(Status::Ok, result);
 
-    InternalHashTable<disk_t> table{};
+    InternalHashTable<disk_t, hash_index_definition_t> table{};
     table.Initialize(kNumBuckets, checkpoint_file.alignment());
 
     //do something
     for(size_t bucket_idx = 0; bucket_idx < kNumBuckets; ++bucket_idx) {
-      for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+      for(size_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
         HashBucketEntry expected{ 0 };
         bool success = table.bucket(bucket_idx).entries[entry_idx].compare_exchange_strong(
                          expected, rng());
@@ -136,7 +165,7 @@ TEST(CLASS, InternalHashTable) {
     result = table.Checkpoint(checkpoint_disk, std::move(checkpoint_file), num_bytes_written);
     ASSERT_EQ(Status::Ok, result);
     // (All the bucket we allocated, + the null page.)
-    ASSERT_EQ(kNumBuckets * sizeof(HashBucket), num_bytes_written);
+    ASSERT_EQ(kNumBuckets * sizeof(hash_bucket_t), num_bytes_written);
     //wait until complete
     result = table.CheckpointComplete(true);
     ASSERT_EQ(Status::Ok, result);
@@ -148,7 +177,7 @@ TEST(CLASS, InternalHashTable) {
   Status result = recover_file.Open(&recover_disk.handler());
   ASSERT_EQ(Status::Ok, result);
 
-  InternalHashTable<disk_t> recover_table{};
+  InternalHashTable<disk_t, hash_index_definition_t> recover_table{};
   //issue call to recover
   result = recover_table.Recover(recover_disk, std::move(recover_file), num_bytes_written);
   ASSERT_EQ(Status::Ok, result);
@@ -159,13 +188,19 @@ TEST(CLASS, InternalHashTable) {
   //verify that something
   std::mt19937_64 rng2{ seed };
   for(size_t bucket_idx = 0; bucket_idx < kNumBuckets; ++bucket_idx) {
-    for(size_t entry_idx = 0; entry_idx < HashBucket::kNumEntries; ++entry_idx) {
+    for(size_t entry_idx = 0; entry_idx < hash_bucket_t::kNumEntries; ++entry_idx) {
       uint64_t random_num = rng2();
       ASSERT_EQ(random_num, recover_table.bucket(bucket_idx).entries[entry_idx].load().control_);
     }
     uint64_t random_num = rng2();
     ASSERT_EQ(random_num, recover_table.bucket(bucket_idx).overflow_entry.load().control_);
   }
+
+#ifdef _WIN32
+  RemoveDir("test_ht");
+#else
+  RemoveDir("test_ht/");
+#endif
 }
 
 TEST(CLASS, Serial) {
@@ -242,7 +277,7 @@ TEST(CLASS, Serial) {
     typedef Key key_t;
     typedef Value1 value_t;
 
-    UpsertContext1(const Key& key, uint32_t val)
+    UpsertContext1(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -254,18 +289,18 @@ TEST(CLASS, Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value1& value) {
+    inline void Put(value_t& value) {
       value.size_ = sizeof(value);
       value.val1_ = val_;
     }
-    inline bool PutAtomic(Value1& value) {
+    inline bool PutAtomic(value_t& value) {
       EXPECT_EQ(value.size_, sizeof(value));
       value.atomic_val1_.store(val_);
       return true;
@@ -278,7 +313,7 @@ TEST(CLASS, Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -287,7 +322,7 @@ TEST(CLASS, Serial) {
     typedef Key key_t;
     typedef Value2 value_t;
 
-    UpsertContext2(const Key& key, uint16_t val)
+    UpsertContext2(const key_t& key, uint16_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -299,18 +334,18 @@ TEST(CLASS, Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value2& value) {
+    inline void Put(value_t& value) {
       value.size_ = sizeof(value);
       value.val2_ = val_;
     }
-    inline bool PutAtomic(Value2& value) {
+    inline bool PutAtomic(value_t& value) {
       EXPECT_EQ(value.size_, sizeof(value));
       value.atomic_val2_.store(val_);
       return true;
@@ -323,7 +358,7 @@ TEST(CLASS, Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint16_t val_;
   };
 
@@ -332,7 +367,7 @@ TEST(CLASS, Serial) {
     typedef Key key_t;
     typedef Value1 value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -346,14 +381,14 @@ TEST(CLASS, Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value1& value) {
+    inline void Get(const value_t& value) {
       val_ = value.val1_;
     }
-    inline void GetAtomic(const Value1& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_val1_.load();
     }
 
@@ -368,7 +403,7 @@ TEST(CLASS, Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -379,7 +414,7 @@ TEST(CLASS, Serial) {
     typedef Key key_t;
     typedef Value2 value_t;
 
-    ReadContext2(Key key, uint16_t expected_)
+    ReadContext2(key_t key, uint16_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -393,14 +428,14 @@ TEST(CLASS, Serial) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value2& value) {
+    inline void Get(const value_t& value) {
       val_ = value.val2_;
     }
-    inline void GetAtomic(const Value2& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_val2_.load();
     }
 
@@ -415,7 +450,7 @@ TEST(CLASS, Serial) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint16_t val_;
    public:
     const uint16_t expected;
@@ -426,7 +461,8 @@ TEST(CLASS, Serial) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr size_t kNumRecords = 600000;
 
@@ -436,7 +472,7 @@ TEST(CLASS, Serial) {
   {
     // Populate and checkpoint the store.
     // 6 pages!
-    FasterKv<Key, Value1, disk_t> store{ 524288, 201326592, "storage", 0.4 };
+    FasterKv<Key, Value1, disk_t> store{ 524288, 201326592, log_fp, 0.4 };
 
     session_id = store.StartSession();
 
@@ -528,7 +564,7 @@ TEST(CLASS, Serial) {
   }
 
   // Test recovery.
-  FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, "storage", 0.4 };
+  FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> session_ids;
@@ -676,7 +712,7 @@ TEST(CLASS, Serial_VariableLengthKey) {
       return reinterpret_cast<const uint32_t*>(this + 1);
     }
     inline KeyHash GetHash() const {
-      return KeyHash{ Utility::HashBytes(
+      return KeyHash{ FasterHashHelper<uint16_t>::compute(
                         reinterpret_cast<const uint16_t*>(buffer()), len_ * 2) };
     }
 
@@ -756,18 +792,18 @@ TEST(CLASS, Serial_VariableLengthKey) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return *key_.get();
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value1& value) {
+    inline void Put(value_t& value) {
       value.size_ = sizeof(value);
       value.val1_ = val_;
     }
-    inline bool PutAtomic(Value1& value) {
+    inline bool PutAtomic(value_t& value) {
       EXPECT_EQ(value.size_, sizeof(value));
       value.atomic_val1_.store(val_);
       return true;
@@ -803,18 +839,18 @@ TEST(CLASS, Serial_VariableLengthKey) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return *key_.get();
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value2& value) {
+    inline void Put(value_t& value) {
       value.size_ = sizeof(value);
       value.val2_ = val_;
     }
-    inline bool PutAtomic(Value2& value) {
+    inline bool PutAtomic(value_t& value) {
       EXPECT_EQ(value.size_, sizeof(value));
       value.atomic_val2_.store(val_);
       return true;
@@ -852,14 +888,14 @@ TEST(CLASS, Serial_VariableLengthKey) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return *key_.get();
     }
 
-    inline void Get(const Value1& value) {
+    inline void Get(const value_t& value) {
       val_ = value.val1_;
     }
-    inline void GetAtomic(const Value1& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_val1_.load();
     }
 
@@ -901,14 +937,14 @@ TEST(CLASS, Serial_VariableLengthKey) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return *key_.get();
     }
 
-    inline void Get(const Value2& value) {
+    inline void Get(const value_t& value) {
       val_ = value.val2_;
     }
-    inline void GetAtomic(const Value2& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_val2_.load();
     }
 
@@ -934,7 +970,8 @@ TEST(CLASS, Serial_VariableLengthKey) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr size_t kNumRecords = 600000;
 
@@ -944,7 +981,7 @@ TEST(CLASS, Serial_VariableLengthKey) {
   {
     // Populate and checkpoint the store.
     // 6 pages!
-    FasterKv<Key, Value1, disk_t> store{ 524288, 201326592, "storage", 0.4 };
+    FasterKv<Key, Value1, disk_t> store{ 524288, 201326592, log_fp, 0.4 };
 
     session_id = store.StartSession();
 
@@ -1036,7 +1073,7 @@ TEST(CLASS, Serial_VariableLengthKey) {
   }
 
   // Test recovery.
-  FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, "storage", 0.4 };
+  FasterKv<Key, Value1, disk_t> new_store{ 524288, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> session_ids;
@@ -1165,7 +1202,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint32_t val)
+    UpsertContext(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -1177,17 +1214,17 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(val_);
       return true;
     }
@@ -1199,7 +1236,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -1208,14 +1245,12 @@ TEST(CLASS, Concurrent_Insert_Small) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
-
   static constexpr uint32_t kNumRecords = 500000;
   static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -1242,7 +1277,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -1256,14 +1291,14 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -1278,17 +1313,20 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
   };
 
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
+
   {
     // Populate and checkpoint the store.
 
     // 6 pages!
-    store_t store{ 8192, 201326592, "storage", 0.4 };
+    store_t store{ 8192, 201326592, log_fp, 0.4 };
 
     auto upsert_checkpoint_worker = [](store_t* store, uint32_t thread_id) {
       assert(thread_id == 0);
@@ -1381,7 +1419,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
   }
 
   // Test recovery.
-  store_t new_store{ 8192, 201326592, "storage", 0.4 };
+  store_t new_store{ 8192, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -1397,7 +1435,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -1415,14 +1453,14 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -1437,7 +1475,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -1450,7 +1488,7 @@ TEST(CLASS, Concurrent_Insert_Small) {
     ASSERT_EQ(1, serial_num);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1496,12 +1534,12 @@ TEST(CLASS, Concurrent_Insert_Small) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -1531,7 +1569,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint32_t val)
+    UpsertContext(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -1543,17 +1581,17 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(val_);
       return true;
     }
@@ -1565,7 +1603,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -1574,14 +1612,16 @@ TEST(CLASS, Concurrent_Insert_Large) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
+
 
   static constexpr uint32_t kNumRecords = 1000000;
   static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -1608,7 +1648,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -1622,14 +1662,14 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -1644,7 +1684,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -1654,7 +1694,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     // Populate and checkpoint the store.
 
     // 6 pages!
-    store_t store{ 524288, 201326592, "storage", 0.4 };
+    store_t store{ 524288, 201326592, log_fp, 0.4 };
 
     auto upsert_checkpoint_worker = [](store_t* store, uint32_t thread_id) {
       assert(thread_id == 0);
@@ -1745,7 +1785,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
   }
 
   // Test recovery.
-  store_t new_store{ 524288, 201326592, "storage", 0.4 };
+  store_t new_store{ 524288, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -1761,7 +1801,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -1779,14 +1819,14 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -1801,7 +1841,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -1814,7 +1854,7 @@ TEST(CLASS, Concurrent_Insert_Large) {
     ASSERT_EQ(1, serial_num);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -1860,12 +1900,12 @@ TEST(CLASS, Concurrent_Insert_Large) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -1895,7 +1935,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint32_t val)
+    UpsertContext(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -1907,17 +1947,17 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(val_);
       return true;
     }
@@ -1929,7 +1969,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -1938,14 +1978,15 @@ TEST(CLASS, Concurrent_Update_Small) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr uint32_t kNumRecords = 200000;
   static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -1972,7 +2013,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -1986,14 +2027,14 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2008,7 +2049,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2016,7 +2057,7 @@ TEST(CLASS, Concurrent_Update_Small) {
 
   {
     // 6 pages!
-    store_t store{ 8192, 201326592, "storage", 0.4 };
+    store_t store{ 8192, 201326592, log_fp, 0.4 };
 
     // Populate the store.
     store.StartSession();
@@ -2121,7 +2162,7 @@ TEST(CLASS, Concurrent_Update_Small) {
   }
 
   // Test recovery.
-  store_t new_store{ 8192, 201326592, "storage", 0.4 };
+  store_t new_store{ 8192, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -2137,7 +2178,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -2155,14 +2196,14 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2177,7 +2218,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2190,7 +2231,7 @@ TEST(CLASS, Concurrent_Update_Small) {
     ASSERT_GE(serial_num, 1);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -2201,7 +2242,6 @@ TEST(CLASS, Concurrent_Update_Small) {
         ASSERT_TRUE(context->found[context->idx].compare_exchange_strong(expected, true));
       } else {
         ASSERT_EQ(999, context->val());
-        bool expected = false;
         ASSERT_FALSE(context->found[context->idx].load());
       }
     };
@@ -2217,7 +2257,6 @@ TEST(CLASS, Concurrent_Update_Small) {
           ASSERT_TRUE(found.get()[context.idx].compare_exchange_strong(expected, true));
         } else {
           ASSERT_EQ(999, context.val());
-          bool expected = false;
           ASSERT_FALSE(found.get()[context.idx].load());
         }
       } else {
@@ -2237,12 +2276,12 @@ TEST(CLASS, Concurrent_Update_Small) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -2272,7 +2311,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    UpsertContext(const Key& key, uint32_t val)
+    UpsertContext(const key_t& key, uint32_t val)
       : key_{ key }
       , val_{ val } {
     }
@@ -2284,17 +2323,17 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void Put(Value& value) {
+    inline void Put(value_t& value) {
       value.value = val_;
     }
-    inline bool PutAtomic(Value& value) {
+    inline bool PutAtomic(value_t& value) {
       value.atomic_value.store(val_);
       return true;
     }
@@ -2306,7 +2345,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
   };
 
@@ -2315,14 +2354,15 @@ TEST(CLASS, Concurrent_Update_Large) {
     ASSERT_TRUE(false);
   };
 
-  std::experimental::filesystem::create_directories("storage");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr uint32_t kNumRecords = 1000000;
   static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid index_token;
   static Guid hybrid_log_token;
 
@@ -2357,7 +2397,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -2371,14 +2411,14 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2393,7 +2433,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2401,7 +2441,7 @@ TEST(CLASS, Concurrent_Update_Large) {
 
   {
     // 6 pages!
-    store_t store{ 524288, 201326592, "storage", 0.4 };
+    store_t store{ 524288, 201326592, log_fp, 0.4 };
 
     // Populate the store.
     store.StartSession();
@@ -2521,7 +2561,7 @@ TEST(CLASS, Concurrent_Update_Large) {
   }
 
   // Test recovery.
-  store_t new_store{ 524288, 201326592, "storage", 0.4 };
+  store_t new_store{ 524288, 201326592, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -2537,7 +2577,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -2555,14 +2595,14 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2577,7 +2617,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2590,7 +2630,7 @@ TEST(CLASS, Concurrent_Update_Large) {
     ASSERT_GE(serial_num, 1);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -2601,7 +2641,6 @@ TEST(CLASS, Concurrent_Update_Large) {
         ASSERT_TRUE(context->found[context->idx].compare_exchange_strong(expected, true));
       } else {
         ASSERT_EQ(999, context->val());
-        bool expected = false;
         ASSERT_FALSE(context->found[context->idx].load());
       }
     };
@@ -2617,7 +2656,6 @@ TEST(CLASS, Concurrent_Update_Large) {
           ASSERT_TRUE(found.get()[context.idx].compare_exchange_strong(expected, true));
         } else {
           ASSERT_EQ(999, context.val());
-          bool expected = false;
           ASSERT_FALSE(found.get()[context.idx].load());
         }
       } else {
@@ -2637,12 +2675,12 @@ TEST(CLASS, Concurrent_Update_Large) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -2672,7 +2710,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(const Key& key, uint32_t delta)
+    RmwContext(const key_t& key, uint32_t delta)
       : key_{ key }
       , delta_{ delta } {
     }
@@ -2684,7 +2722,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
@@ -2694,7 +2732,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.value = key_.key;
     }
     inline void RmwCopy(const value_t& old_value, value_t& value) {
@@ -2711,18 +2749,19 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t delta_;
   };
 
-  std::experimental::filesystem::create_directories("storage");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr uint32_t kNumRecords = 200000;
   static constexpr uint32_t kNumThreads = 2;
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -2749,7 +2788,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -2763,14 +2802,14 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2785,7 +2824,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2793,7 +2832,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
 
   {
     // 6 pages!
-    store_t store{ 8192, 402653184, "storage", 0.4 };
+    store_t store{ 8192, 402653184, log_fp, 0.4 };
 
     // Populate the store.
     store.StartSession();
@@ -2909,7 +2948,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
   }
 
   // Test recovery.
-  store_t new_store{ 8192, 402653184, "storage", 0.4 };
+  store_t new_store{ 8192, 402653184, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -2925,7 +2964,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -2943,14 +2982,14 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -2965,7 +3004,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -2978,7 +3017,7 @@ TEST(CLASS, Concurrent_Rmw_Small) {
     ASSERT_GE(serial_num, 1);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -2989,7 +3028,6 @@ TEST(CLASS, Concurrent_Rmw_Small) {
         ASSERT_TRUE(context->found[context->idx].compare_exchange_strong(expected, true));
       } else {
         ASSERT_EQ(context->expected - 230, context->val());
-        bool expected = false;
         ASSERT_FALSE(context->found[context->idx].load());
       }
     };
@@ -3005,7 +3043,6 @@ TEST(CLASS, Concurrent_Rmw_Small) {
           ASSERT_TRUE(found.get()[context.idx].compare_exchange_strong(expected, true));
         } else {
           ASSERT_EQ(idx, context.val());
-          bool expected = false;
           ASSERT_FALSE(found.get()[context.idx].load());
         }
       } else {
@@ -3025,12 +3062,12 @@ TEST(CLASS, Concurrent_Rmw_Small) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
@@ -3060,7 +3097,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    RmwContext(const Key& key, uint32_t delta)
+    RmwContext(const key_t& key, uint32_t delta)
       : key_{ key }
       , delta_{ delta } {
     }
@@ -3072,7 +3109,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
     inline static constexpr uint32_t value_size() {
@@ -3082,7 +3119,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
       return sizeof(value_t);
     }
     /// Non-atomic and atomic Put() methods.
-    inline void RmwInitial(Value& value) {
+    inline void RmwInitial(value_t& value) {
       value.value = key_.key;
     }
     inline void RmwCopy(const value_t& old_value, value_t& value) {
@@ -3099,11 +3136,12 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t delta_;
   };
 
-  std::experimental::filesystem::create_directories("storage");
+  std::string log_fp;
+  CreateNewLogDir(ROOT_PATH, log_fp);
 
   static constexpr uint32_t kNumRecords = 1000000;
   static constexpr uint32_t kNumThreads = 2;
@@ -3111,7 +3149,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
   static constexpr uint32_t kNumRecordsPerThread = kNumRecords / kNumThreads;
 
   static Guid session_ids[kNumThreads];
-  std::memset(session_ids, 0, sizeof(session_ids));
+  std::memset(reinterpret_cast<void*>(session_ids), 0, sizeof(session_ids));
   static Guid token;
 
   static std::atomic<uint32_t> num_threads_persistent;
@@ -3138,7 +3176,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext1(Key key, uint32_t expected_)
+    ReadContext1(key_t key, uint32_t expected_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ } {
@@ -3152,14 +3190,14 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -3174,7 +3212,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -3182,7 +3220,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
 
   {
     // 6 pages!
-    store_t store{ 524288, 402653184, "storage", 0.4 };
+    store_t store{ 524288, 402653184, log_fp, 0.4 };
 
     // Populate the store.
     auto populate_worker0 = [](store_t* store, uint32_t thread_id) {
@@ -3325,7 +3363,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
   }
 
   // Test recovery.
-  store_t new_store{ 524288 * 2, 402653184, "storage", 0.4 };
+  store_t new_store{ 524288 * 2, 402653184, log_fp, 0.4 };
 
   uint32_t version;
   std::vector<Guid> recovered_session_ids;
@@ -3341,7 +3379,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     typedef Key key_t;
     typedef Value value_t;
 
-    ReadContext2(Key key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
+    ReadContext2(key_t key, uint32_t expected_, uint32_t idx_, std::atomic<bool>* found_)
       : key_{ key }
       , val_{ 0 }
       , expected{ expected_ }
@@ -3359,14 +3397,14 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
     /// The implicit and explicit interfaces require a key() accessor.
-    inline const Key& key() const {
+    inline const key_t& key() const {
       return key_;
     }
 
-    inline void Get(const Value& value) {
+    inline void Get(const value_t& value) {
       val_ = value.value;
     }
-    inline void GetAtomic(const Value& value) {
+    inline void GetAtomic(const value_t& value) {
       val_ = value.atomic_value.load();
     }
 
@@ -3381,7 +3419,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     }
 
    private:
-    Key key_;
+    key_t key_;
     uint32_t val_;
    public:
     const uint32_t expected;
@@ -3394,7 +3432,7 @@ TEST(CLASS, Concurrent_Rmw_Large) {
     ASSERT_GE(serial_num, 1);
 
     std::unique_ptr<std::atomic<bool>> found{ new std::atomic<bool>[kNumRecordsPerThread] };
-    std::memset(found.get(), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
+    std::memset(reinterpret_cast<void*>(found.get()), 0, sizeof(found.get()[0]) * kNumRecordsPerThread);
 
     // verify records
     auto callback = [](IAsyncContext* ctxt, Status result) {
@@ -3405,7 +3443,6 @@ TEST(CLASS, Concurrent_Rmw_Large) {
         ASSERT_TRUE(context->found[context->idx].compare_exchange_strong(expected, true));
       } else {
         ASSERT_EQ(context->expected - 230, context->val());
-        bool expected = false;
         ASSERT_FALSE(context->found[context->idx].load());
       }
     };
@@ -3421,7 +3458,6 @@ TEST(CLASS, Concurrent_Rmw_Large) {
           ASSERT_TRUE(found.get()[context.idx].compare_exchange_strong(expected, true));
         } else {
           ASSERT_EQ(idx, context.val());
-          bool expected = false;
           ASSERT_FALSE(found.get()[context.idx].load());
         }
       } else {
@@ -3441,12 +3477,12 @@ TEST(CLASS, Concurrent_Rmw_Large) {
         // Consistent-point recovery implies that after one record isn't found, all subsequent
         // records will not be found.
         Key key{ kNumRecordsPerThread* thread_id + idx };
-        KeyHash hash = key.GetHash();
+        key_hash_t hash = key.GetHash();
         std::string error;
         error += "key = ";
         error += std::to_string(kNumRecordsPerThread* thread_id + idx);
         error += ", idx = ";
-        error += std::to_string(hash.idx(8192));
+        error += std::to_string(hash.hash_table_index(8192));
         error += ", tag = ";
         error += std::to_string(hash.tag());
         ASSERT_TRUE(found_all) << error;
