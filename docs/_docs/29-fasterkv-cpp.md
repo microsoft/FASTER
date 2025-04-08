@@ -2,7 +2,7 @@
 title: "FasterKV C++ Port"
 permalink: /docs/fasterkv-cpp/
 excerpt: "FasterKV C++ Port"
-last_modified_at: 2020-11-07
+last_modified_at: 2025-04-08
 toc: true
 ---
 
@@ -23,10 +23,10 @@ cmake .. -G "<MSVC compiler>"
 ```
 
 To see a list of supported MSVC compiler versions, just run "cmake -G". As of
-this writing, we're using Visual Studio 2019, so you would execute:
+this writing, we're using Visual Studio 2022, so you would execute:
 
 ```sh
-cmake .. -G "Visual Studio 16 2019"
+cmake .. -G "Visual Studio 17 2022"
 ```
 
 That will create build scripts inside your new "build" directory, including
