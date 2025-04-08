@@ -30,6 +30,7 @@ class Address {
   /// --of which 48 bits are used for the address. (The remaining 16 bits are used by the hash
   /// table, for control bits and the tag.)
   static constexpr uint64_t kAddressBits = 48;
+  static constexpr uint64_t kReadCacheMask = ((uint64_t)1 << (kAddressBits - 1));
   static constexpr uint64_t kMaxAddress = ((uint64_t)1 << kAddressBits) - 1;
   /// --of which 25 bits are used for offsets into a page, of size 2^25 = 32 MB.
   static constexpr uint64_t kOffsetBits = 25;
@@ -44,9 +45,9 @@ class Address {
     : control_{ 0 } {
   }
   Address(uint32_t page, uint32_t offset)
-    : reserved_{ 0 }
+    : offset_{ offset }
     , page_{ page }
-    , offset_{ offset } {
+    , reserved_{ 0 } {
   }
   /// Copy constructor.
   Address(const Address& other)
@@ -110,19 +111,33 @@ class Address {
   inline uint32_t offset() const {
     return static_cast<uint32_t>(offset_);
   }
+  inline bool in_readcache() const {
+    return (control_ & kReadCacheMask) != 0;
+  }
+  inline Address readcache_address() const {
+    assert(rc_.readcache_ == 1);
+    return Address{ static_cast<uint32_t>(rc_.page_), static_cast<uint32_t>(rc_.offset_) };
+  }
   inline uint64_t control() const {
     return control_;
   }
 
  private:
   union {
-      struct {
-        uint64_t offset_ : kOffsetBits;         // 25 bits
-        uint64_t page_ : kPageBits;  // 23 bits
-        uint64_t reserved_ : 64 - kAddressBits; // 16 bits
-      };
-      uint64_t control_;
+    struct {
+      uint64_t offset_    : kOffsetBits;              // 25 bits
+      uint64_t page_      : kPageBits;                // 23 bits
+      uint64_t reserved_  : 64 - kAddressBits;        // 15 bits
     };
+    struct {
+      uint64_t offset_    : kOffsetBits;              // 25 bits
+      uint64_t page_      : kPageBits - 1;            // 22 bits
+      uint64_t readcache_ : 1;                        //  1 bit
+      uint64_t reserved_  : 64 - kAddressBits;        // 15 bits
+    } rc_;
+
+    uint64_t control_;
+  };
 };
 static_assert(sizeof(Address) == 8, "sizeof(Address) != 8");
 

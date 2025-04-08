@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -21,7 +22,7 @@ int main(int argc, char* argv[]) {
   std::ofstream to_file{ to_filename };
 
   const std::string prefix{ "usertable user" };
-  
+
   while (!from_file.eof()) {
     char buffer[256];
     from_file.clear();

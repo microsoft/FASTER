@@ -257,9 +257,9 @@ class MallocFixedPageSize {
 
   MallocFixedPageSize()
     : alignment_{ UINT64_MAX }
+    , page_array_{ nullptr }
     , count_{ 0 }
     , epoch_{ nullptr }
-    , page_array_{ nullptr }
     , disk_{ nullptr }
     , pending_checkpoint_writes_{ 0 }
     , pending_recover_reads_{ 0 }
@@ -323,6 +323,10 @@ class MallocFixedPageSize {
 
   /// Checkpointing and recovery.
   Status Checkpoint(disk_t& disk, file_t&& file, uint64_t& size);
+
+  template <class RC>
+  Status Checkpoint(disk_t& disk, file_t&& file, uint64_t& size, const RC* read_cache);
+
   Status CheckpointComplete(bool wait);
 
   Status Recover(disk_t& disk, file_t&& file, uint64_t file_size, FixedPageAddress count);
@@ -344,12 +348,17 @@ class MallocFixedPageSize {
   class AsyncIoContext : public IAsyncContext {
    public:
     AsyncIoContext(alloc_t* allocator_)
-      : allocator{ allocator_ } {
+      : allocator{ allocator_ }
+      , page_copy{ nullptr } {
     }
-
+    AsyncIoContext(alloc_t* allocator_, page_t* page_copy_)
+      : allocator{ allocator_ }
+      , page_copy{ page_copy_ } {
+    }
     /// The deep-copy constructor
     AsyncIoContext(AsyncIoContext& other)
-      : allocator{ other.allocator } {
+      : allocator{ other.allocator }
+      , page_copy{ other.page_copy } {
     }
 
    protected:
@@ -359,6 +368,7 @@ class MallocFixedPageSize {
 
    public:
     alloc_t* allocator;
+    page_t* page_copy;
   };
 
   array_t* ExpandArray(array_t* expected, uint64_t new_size);
@@ -393,6 +403,7 @@ Status MallocFixedPageSize<T, F>::Checkpoint(disk_t& disk, file_t&& file, uint64
 
   auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
     CallbackContext<AsyncIoContext> context{ ctxt };
+    assert(!context->page_copy);
     if(result != Status::Ok) {
       context->allocator->checkpoint_failed_ = true;
     }
@@ -421,6 +432,61 @@ Status MallocFixedPageSize<T, F>::Checkpoint(disk_t& disk, file_t&& file, uint64
     AsyncIoContext context{ this };
     RETURN_NOT_OK(file_.WriteAsync(page_array->Get(idx), idx * kWriteSize, kWriteSize, callback,
                                    context));
+  }
+  size = count.control_ * sizeof(item_t);
+  return Status::Ok;
+}
+
+template <typename T, class F>
+template <class RC>
+Status MallocFixedPageSize<T, F>::Checkpoint(disk_t& disk, file_t&& file,
+                                                  uint64_t& size, const RC* read_cache) {
+  constexpr uint32_t kWriteSize = page_t::kPageSize * sizeof(item_t);
+
+  if (!read_cache) {
+    return Checkpoint(disk, std::move(file), size);
+  }
+
+  auto callback = [](IAsyncContext* ctxt, Status result, size_t bytes_transferred) {
+    CallbackContext<AsyncIoContext> context{ ctxt };
+    if (context->page_copy != nullptr) {
+      aligned_free(context->page_copy);
+    }
+
+    if(result != Status::Ok) {
+      context->allocator->checkpoint_failed_ = true;
+    }
+    if(--context->allocator->pending_checkpoint_writes_ == 0) {
+      result = context->allocator->file_.Close();
+      if(result != Status::Ok) {
+        context->allocator->checkpoint_failed_ = true;
+      }
+      context->allocator->checkpoint_pending_ = false;
+    }
+  };
+
+  disk_ = &disk;
+  file_ = std::move(file);
+  size = 0;
+  checkpoint_failed_ = false;
+  array_t* page_array = page_array_.load();
+  FixedPageAddress count = count_.load();
+
+  uint64_t num_levels = count.page() + (count.offset() > 0 ? 1 : 0);
+  assert(!checkpoint_pending_);
+  assert(pending_checkpoint_writes_ == 0);
+  checkpoint_pending_ = true;
+  pending_checkpoint_writes_ = num_levels;
+  for(uint64_t idx = 0; idx < num_levels; ++idx) {
+    page_t* page_copy = static_cast<page_t*>(aligned_alloc(alignment_, sizeof(page_t)));
+    memcpy(reinterpret_cast<void*>(page_copy), page_array->Get(idx), kWriteSize);
+    for (uint64_t _idx = 0; _idx < page_t::kPageSize; _idx++) {
+      read_cache->SkipBucket(&(page_copy->element(static_cast<uint32_t>(_idx))));
+    }
+
+    AsyncIoContext context{ this, page_copy };
+    RETURN_NOT_OK(file_.WriteAsync(page_copy, idx * kWriteSize,
+                                  kWriteSize, callback, context));
   }
   size = count.control_ * sizeof(item_t);
   return Status::Ok;

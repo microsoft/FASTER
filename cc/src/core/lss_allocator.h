@@ -100,7 +100,7 @@ static_assert(kSegmentSize < UINT16_MAX / 2, "kSegmentSize too large for offset 
 
 /// Allocation takes place inside segments. When a segment is no longer needed, we add it to the
 /// garbage list.
-class SegmentAllocator {
+class alignas(64) SegmentAllocator {
  public:
   /// Offset from the head of the class to the head of its buffer_ field.
 #ifdef _DEBUG

@@ -4,7 +4,9 @@
 #pragma once
 
 #include <atomic>
+#include <cassert>
 #include <cstdint>
+#include <cstring>
 
 namespace FASTER {
 namespace core {
@@ -28,7 +30,8 @@ class RecoveryStatus {
     assert(end_page >= start_page);
     uint32_t buffer_size = end_page - start_page;
     page_status_ = new std::atomic<PageRecoveryStatus>[buffer_size];
-    std::memset(page_status_, 0, sizeof(std::atomic<PageRecoveryStatus>) * buffer_size);
+    std::memset(reinterpret_cast<void*>(page_status_), 0,
+                sizeof(std::atomic<PageRecoveryStatus>) * buffer_size);
   }
 
   ~RecoveryStatus() {

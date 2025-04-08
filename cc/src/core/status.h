@@ -16,6 +16,13 @@ enum class Status : uint8_t {
   Corruption = 5,
   Aborted = 6,
 };
+inline const char* StatusStr(Status s) {
+  static const char* STATUS_STR[] = {
+    "Ok", "Pending", "NotFound", "OutOfMemory",
+    "IOError", "Corruption", "Aborted",
+  };
+  return STATUS_STR[static_cast<uint8_t>(s)];
+}
 
 enum class InternalStatus : uint8_t {
   Ok,

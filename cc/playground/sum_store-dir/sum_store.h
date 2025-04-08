@@ -14,6 +14,8 @@ using namespace FASTER::core;
 
 namespace sum_store {
 
+typedef FasterHashHelper<uint64_t> HashFn;
+
 // Sum store's key type.
 class AdId {
  public:
@@ -25,7 +27,7 @@ class AdId {
     return static_cast<uint32_t>(sizeof(AdId));
   }
   inline KeyHash GetHash() const {
-    return KeyHash{ Utility::GetHashCode(key_) };
+    return KeyHash{ HashFn::compute(key_) };
   }
 
   /// Comparison operators.

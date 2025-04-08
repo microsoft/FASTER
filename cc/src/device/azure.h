@@ -397,7 +397,7 @@ class BlobFile {
     // was most likely migrated to this machine, and will have to be read
     // from a different container on blob storage.
     auto id = this->id;
-    if ((source >> lBits) != 0) { 
+    if ((source >> lBits) != 0) {
       id = std::to_string(source >> lBits);
       source = source & Address::kMaxAddress;
     }
