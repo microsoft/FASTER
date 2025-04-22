@@ -126,6 +126,8 @@ class Value {
     uint64_t value_;
     std::atomic<uint64_t> atomic_value_;
   };
+  // PERF: Uncomment to test larger values (992 + 8 = 1000 bytes)
+  // uint8_t big_value_[992];
 };
 
 /// Class passed to store_t::Read().
@@ -260,7 +262,9 @@ class RmwContext : public IAsyncContext {
 
 /// Key-value store, specialized to our key and value types.
 #ifdef _WIN32
-typedef FASTER::environment::ThreadPoolIoHandler handler_t;
+// PERF: Uncomment one of the two below to choose IO handler
+typedef FASTER::environment::QueueIoHandler handler_t;
+// typedef FASTER::environment::ThreadPoolIoHandler handler_t;
 #else
 typedef FASTER::environment::QueueIoHandler handler_t;
 #endif
@@ -659,6 +663,9 @@ void run_benchmark(S* store, size_t num_threads) {
          num_checkpoints.load(),
          ((double)total_reads_done_ + (double)total_writes_done_) / ((double)total_duration_ /
              kNanosPerSecond));
+  printf("# %.2f\n",
+      ((double)num_threads * ((double)total_reads_done_ + (double)total_writes_done_)) / ((double)total_duration_ /
+          kNanosPerSecond));
 }
 
 template<class S>

@@ -27,9 +27,12 @@ int main(int argc, char* argv[]) {
 
   load_files(load_filename, run_filename);
 
-  // FASTER store has a hash table with approx. kInitCount / 2 entries and a log of size 16 GB
-  size_t init_size = next_power_of_two(kInitCount / 2);
-  store_t store{ init_size, 17179869184, "storage" };
+  // FASTER store has a hash table with approx. kInitCount / 4 entries
+  size_t init_size = next_power_of_two(kInitCount / 4);
+
+  // PERF: Uncomment one of the two below for in-memory versus larger-than-memory benchmark
+  store_t store{ init_size, 17179869184, "E:\\storage" }; // data served from memory, log of size 16 GB
+  // store_t store{ init_size, 1048576 * 192ULL, "E:\\storage", 0.4 }; // data served from disk, log size of 192MB
 
   run(&store, workload, num_threads);
 

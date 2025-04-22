@@ -11,7 +11,8 @@
 namespace FASTER {
 namespace environment {
 
-constexpr static unsigned kMaxIoEvents = 128;
+// PERF: Increase max IO events to 240 for > 16 application threads
+constexpr static unsigned kMaxIoEvents = 120;
 
 enum class FileCreateDisposition : uint8_t {
   /// Creates the file if it does not exist; truncates it if it does.
