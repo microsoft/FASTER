@@ -1,9 +1,10 @@
-cmake_minimum_required (VERSION 3.2.2)
+cmake_minimum_required (VERSION 3.14)
 
 set(CMAKE_CXX_STANDARD 14)
 
 enable_testing()
 
+include(FetchContent)
 include(ExternalProject)
 project(FASTER)
 
@@ -38,32 +39,15 @@ endif()
 set_directory_properties(PROPERTIES COMPILE_DEFINITIONS_DEBUG "_DEBUG")
 
 ##### BEGIN GOOGLE TEST INSTALLATION #####
-# Copied from https://github.com/google/googletest/tree/master/googletest#incorporating-into-an-existing-cmake-project
-# Download and unpack googletest at configure time
-configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
-execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
-  RESULT_VARIABLE result
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/googletest-download)
-if(result)
-  message(FATAL_ERROR "CMake step for googletest failed: ${result}")
-endif()
-execute_process(COMMAND ${CMAKE_COMMAND} --build .
-  RESULT_VARIABLE result
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/googletest-download )
-if(result)
-  message(FATAL_ERROR "Build step for googletest failed: ${result}")
-endif()
-
-# Prevent overriding the parent project's compiler/linker
-# settings on Windows
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG v1.14.0
+)
+set(BUILD_GMOCK OFF)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-
-# Add googletest directly to our build. This defines
-# the gtest and gtest_main targets.
-add_subdirectory(${CMAKE_BINARY_DIR}/googletest-src
-                 ${CMAKE_BINARY_DIR}/googletest-build
-                 EXCLUDE_FROM_ALL)
-
+FetchContent_MakeAvailable(googletest)
 ##### END GOOGLE TEST INSTALLATION #####
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
