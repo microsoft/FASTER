@@ -137,8 +137,8 @@ class LightEpoch {
 
   LightEpoch()
     : table_{ nullptr }
-    , drain_count_{ 0 }
-    , drain_list_{} {
+    , drain_list_{}
+    , drain_count_{ 0 } {
     Initialize();
   }
 

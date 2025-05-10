@@ -15,6 +15,7 @@
 #include <liburing.h>
 #endif
 
+#include "../common/log.h"
 #include "../core/async.h"
 #include "../core/status.h"
 #include "file_common.h"
@@ -33,6 +34,7 @@ class File {
     , filename_{}
     , owner_{ false }
 #ifdef IO_STATISTICS
+    , write_count_{ 0 }
     , bytes_written_ { 0 }
     , read_count_{ 0 }
     , bytes_read_{ 0 }
@@ -46,6 +48,7 @@ class File {
     , filename_{ filename }
     , owner_{ false }
 #ifdef IO_STATISTICS
+    , write_count_{ 0 }
     , bytes_written_ { 0 }
     , read_count_{ 0 }
     , bytes_read_{ 0 }
@@ -56,6 +59,9 @@ class File {
   ~File() {
     if(owner_) {
       core::Status s = Close();
+      if (s != core::Status::Ok) {
+        log_warn("Closing file returned status: %s", StatusStr(s));
+      }
     }
   }
 
@@ -69,6 +75,7 @@ class File {
     , filename_{ std::move(other.filename_) }
     , owner_{ other.owner_ }
 #ifdef IO_STATISTICS
+    , write_count_{ other.write_count_ }
     , bytes_written_ { other.bytes_written_ }
     , read_count_{ other.read_count_ }
     , bytes_read_{ other.bytes_read_ }
@@ -84,6 +91,7 @@ class File {
     filename_ = std::move(other.filename_);
     owner_ = other.owner_;
 #ifdef IO_STATISTICS
+    write_count_ = other.write_count_;
     bytes_written_ = other.bytes_written_;
     read_count_ = other.read_count_;
     bytes_read_ = other.bytes_read_;
@@ -114,6 +122,9 @@ class File {
   }
 
 #ifdef IO_STATISTICS
+  uint64_t write_count() const {
+    return write_count_.load();
+  }
   uint64_t bytes_written() const {
     return bytes_written_.load();
   }
@@ -139,6 +150,7 @@ class File {
 
 #ifdef IO_STATISTICS
  protected:
+  std::atomic<uint64_t> write_count_;
   std::atomic<uint64_t> bytes_written_;
   std::atomic<uint64_t> read_count_;
   std::atomic<uint64_t> bytes_read_;
@@ -153,16 +165,16 @@ class QueueIoHandler {
  public:
   typedef QueueFile async_file_t;
 
- private:
-  constexpr static int kMaxEvents = 128;
-
  public:
   QueueIoHandler()
     : io_object_{ 0 } {
   }
   QueueIoHandler(size_t max_threads)
     : io_object_{ 0 } {
-    int result = ::io_setup(kMaxEvents, &io_object_);
+    int result = ::io_setup(kMaxIoEvents, &io_object_);
+    if (result < 0) {
+      log_warn("libaio: io_setup returned %d: %s", result, strerror(errno));
+    }
     assert(result >= 0);
   }
 

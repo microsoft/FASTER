@@ -11,6 +11,8 @@
 namespace FASTER {
 namespace environment {
 
+constexpr static unsigned kMaxIoEvents = 128;
+
 enum class FileCreateDisposition : uint8_t {
   /// Creates the file if it does not exist; truncates it if it does.
   CreateOrTruncate,

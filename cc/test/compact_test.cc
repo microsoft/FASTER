@@ -134,7 +134,7 @@ TEST(Compact, AllLive) {
 
   store.StartSession();
 
-  int numRecords = 256;
+  size_t numRecords = 256;
   for (size_t idx = 0; idx < numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
@@ -169,7 +169,7 @@ TEST(Compact, HalfLive) {
 
   store.StartSession();
 
-  int numRecords = 256;
+  size_t numRecords = 256;
   for (size_t idx = 0; idx < numRecords; ++idx) {
     auto callback = [](IAsyncContext* ctxt, Status result) {
       ASSERT_TRUE(false);
@@ -202,7 +202,9 @@ TEST(Compact, HalfLive) {
     Status result = store.Read(context, callback, 1);
     Status expect = idx % 2 == 0 ? Status::Ok : Status::NotFound;
     ASSERT_EQ(expect, result);
-    if (idx % 2 == 0) ASSERT_EQ(idx, context.output);
+    if (idx % 2 == 0) {
+      ASSERT_EQ(idx, context.output);
+    }
   }
 
   store.StopSession();

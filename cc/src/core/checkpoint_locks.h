@@ -87,7 +87,10 @@ class AtomicCheckpointLock {
 };
 static_assert(sizeof(AtomicCheckpointLock) == 8, "sizeof(AtomicCheckpointLock) != 8");
 
+template <class KH>
 class CheckpointLocks {
+  typedef KH key_hash_t;
+
  public:
   CheckpointLocks()
     : size_{ 0 }
@@ -109,7 +112,7 @@ class CheckpointLocks {
     size_ = size;
     locks_ = reinterpret_cast<AtomicCheckpointLock*>(aligned_alloc(Constants::kCacheLineBytes,
              size_ * sizeof(AtomicCheckpointLock)));
-    std::memset(locks_, 0, size_ * sizeof(AtomicCheckpointLock));
+    std::memset(reinterpret_cast<void*>(locks_), 0, size_ * sizeof(AtomicCheckpointLock));
   }
 
   void Free() {
@@ -130,7 +133,9 @@ class CheckpointLocks {
   }
 
   inline AtomicCheckpointLock& get_lock(KeyHash hash) {
-    return locks_[hash.idx(size_)];
+    key_hash_t hash_{ hash };
+    size_t index = hash_.hash_table_index(size_);
+    return locks_[index];
   }
 
  private:
@@ -138,9 +143,12 @@ class CheckpointLocks {
   AtomicCheckpointLock* locks_;
 };
 
+template <class KH>
 class CheckpointLockGuard {
+  typedef KH key_hash_t;
+
  public:
-  CheckpointLockGuard(CheckpointLocks& locks, KeyHash hash)
+  CheckpointLockGuard(CheckpointLocks<KH>& locks, KeyHash hash)
     : lock_{ nullptr }
     , locked_old_{ false }
     , locked_new_{ false } {

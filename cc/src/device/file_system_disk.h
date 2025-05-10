@@ -4,7 +4,7 @@
 #pragma once
 
 #include <cstdint>
-#include <experimental/filesystem>
+#include <filesystem>
 #include <mutex>
 #include <string>
 
@@ -62,11 +62,9 @@ class FileSystemFile {
   core::Status Delete() {
     return file_.Delete();
   }
-  void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
+  void Truncate(uint64_t new_begin_offset, const core::GcState& gc_state) {
     // Truncation is a no-op.
-    if(callback) {
-      callback(new_begin_offset);
-    }
+    gc_state.IssueTruncateCallback(new_begin_offset);
   }
 
   core::Status ReadAsync(uint64_t source, void* dest, uint32_t length,
@@ -118,7 +116,7 @@ private:
     std::mutex* m_mutex;
     bool m_released;
 };
- 
+
 /// Manages a bundle of segment files.
 template <class H>
 class FileSystemSegmentBundle {
@@ -132,14 +130,17 @@ class FileSystemSegmentBundle {
                           uint64_t begin_segment_, uint64_t end_segment_)
     : filename_{ filename }
     , file_options_{ file_options }
+    , owner_{ true }
     , begin_segment{ begin_segment_ }
-    , end_segment{ end_segment_ }
-    , owner_{ true } {
+    , end_segment{ end_segment_ } {
     for(uint64_t idx = begin_segment; idx < end_segment; ++idx) {
       new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
       assert(result == core::Status::Ok);
+      if (result != core::Status::Ok) {
+        throw std::runtime_error{ std::string("Cannot open file: ") + filename };
+      }
     }
   }
 
@@ -147,9 +148,9 @@ class FileSystemSegmentBundle {
                           bundle_t& other)
     : filename_{ std::move(other.filename_) }
     , file_options_{ other.file_options_ }
+    , owner_{ true }
     , begin_segment{ begin_segment_ }
-    , end_segment{ end_segment_ }
-    , owner_{ true } {
+    , end_segment{ end_segment_ } {
     assert(end_segment >= other.end_segment);
 
     uint64_t begin_new = begin_segment;
@@ -157,7 +158,7 @@ class FileSystemSegmentBundle {
     uint64_t end_copy = std::min(end_segment, other.end_segment);
     uint64_t end_new = end_segment;
 
-    for(uint64_t idx = begin_segment; idx < begin_copy; ++idx) {
+    for(uint64_t idx = begin_new; idx < begin_copy; ++idx) {
       new(files() + (idx - begin_segment)) file_t{ filename_ + std::to_string(idx),
           file_options_ };
       core::Status result = file(idx).Open(handler);
@@ -226,13 +227,14 @@ class FileSystemSegmentBundle {
     return sizeof(bundle_t) + num_segments * sizeof(file_t);
   }
 
- public:
-  const uint64_t begin_segment;
-  const uint64_t end_segment;
  private:
   std::string filename_;
   environment::FileOptions file_options_;
   bool owner_;
+
+ public:
+  const uint64_t begin_segment;
+  const uint64_t end_segment;
 };
 
 template <class H, uint64_t S>
@@ -273,10 +275,10 @@ class FileSystemSegmentedFile {
   core::Status Delete() {
     return (files_) ? files_->Delete() : core::Status::Ok;
   }
-  void Truncate(uint64_t new_begin_offset, core::GcState::truncate_callback_t callback) {
+  void Truncate(uint64_t new_begin_offset, const core::GcState& gc_state) {
     uint64_t new_begin_segment = new_begin_offset / kSegmentSize;
     begin_segment_ = new_begin_segment;
-    TruncateSegments(new_begin_segment, callback);
+    TruncateSegments(new_begin_segment, gc_state);
   }
 
   core::Status ReadAsync(uint64_t source, void* dest, uint32_t length, core::AsyncIOCallback callback,
@@ -384,20 +386,20 @@ class FileSystemSegmentedFile {
     return core::Status::Ok;
   }
 
-  void TruncateSegments(uint64_t new_begin_segment, core::GcState::truncate_callback_t caller_callback) {
+  void TruncateSegments(uint64_t new_begin_segment, const core::GcState& gc_state) {
     class Context : public core::IAsyncContext {
      public:
       Context(bundle_t* files_, uint64_t new_begin_segment_,
-              core::GcState::truncate_callback_t caller_callback_)
+              const core::GcState* gc_state_)
         : files{ files_ }
         , new_begin_segment{ new_begin_segment_ }
-        , caller_callback{ caller_callback_ } {
+        , gc_state{ gc_state_ } {
       }
       /// The deep-copy constructor.
       Context(const Context& other)
         : files{ other.files }
         , new_begin_segment{ other.new_begin_segment }
-        , caller_callback{ other.caller_callback } {
+        , gc_state{ other.gc_state } {
       }
      protected:
       core::Status DeepCopy_Internal(core::IAsyncContext*& context_copy) final {
@@ -406,7 +408,7 @@ class FileSystemSegmentedFile {
      public:
       bundle_t* files;
       uint64_t new_begin_segment;
-      core::GcState::truncate_callback_t caller_callback;
+      const core::GcState* gc_state;
     };
 
     auto callback = [](core::IAsyncContext* ctxt) {
@@ -417,9 +419,7 @@ class FileSystemSegmentedFile {
         file.Delete();
       }
       std::free(context->files);
-      if(context->caller_callback) {
-        context->caller_callback(context->new_begin_segment * kSegmentSize);
-      }
+      context->gc_state->IssueTruncateCallback(context->new_begin_segment * kSegmentSize);
     };
 
     // Only one thread can modify the list of files at a given time.
@@ -428,9 +428,7 @@ class FileSystemSegmentedFile {
     assert(files);
     if(files->begin_segment >= new_begin_segment) {
       // Segments have already been truncated.
-      if(caller_callback) {
-        caller_callback(files->begin_segment * kSegmentSize);
-      }
+      gc_state.IssueTruncateCallback(files->begin_segment * kSegmentSize);
       return;
     }
 
@@ -440,7 +438,7 @@ class FileSystemSegmentedFile {
         *files };
     files_.store(new_files);
     // Delete the old list only after all threads have finished looking at it.
-    Context context{ files, new_begin_segment, caller_callback };
+    Context context{ files, new_begin_segment, &gc_state };
     core::IAsyncContext* context_copy;
     core::Status result = context.DeepCopy(context_copy);
     assert(result == core::Status::Ok);
@@ -468,24 +466,18 @@ class FileSystemDisk {
   typedef FileSystemFile<handler_t> file_t;
   typedef FileSystemSegmentedFile<handler_t, S> log_file_t;
 
- private:
-  static std::string NormalizePath(std::string root_path) {
-    if(root_path.empty() || root_path.back() != FASTER::environment::kPathSeparator[0]) {
-      root_path += FASTER::environment::kPathSeparator;
-    }
-    return root_path;
-  }
-
- public:
-  FileSystemDisk(const std::string& root_path, core::LightEpoch& epoch,
+  FileSystemDisk(const std::string& rootpath, core::LightEpoch& epoch,
                  const std::string& config = "",
                  bool enablePrivileges = false, bool unbuffered = true,
                  bool delete_on_close = false)
-    : root_path_{ NormalizePath(root_path) }
+    : root_path{ FASTER::environment::NormalizeAndCreatePath(rootpath) }
     , handler_{ 16 /*max threads*/ }
     , default_file_options_{ unbuffered, delete_on_close }
-    , log_{ root_path_ + "log.log", default_file_options_, &epoch} {
+    , log_{ root_path + "log.log", default_file_options_, &epoch} {
     core::Status result = log_.Open(&handler_);
+    if (result != core::Status::Ok) {
+      log_warn("Log open() returned status: %s", core::StatusStr(result));
+    }
     assert(result == core::Status::Ok);
   }
 
@@ -509,7 +501,7 @@ class FileSystemDisk {
     return retval;
   }
   std::string index_checkpoint_path(const core::Guid& token) const {
-    return root_path_ + relative_index_checkpoint_path(token);
+    return root_path + relative_index_checkpoint_path(token);
   }
 
   std::string relative_cpr_checkpoint_path(const core::Guid& token) const {
@@ -520,33 +512,33 @@ class FileSystemDisk {
     return retval;
   }
   std::string cpr_checkpoint_path(const core::Guid& token) const {
-    return root_path_ + relative_cpr_checkpoint_path(token);
+    return root_path + relative_cpr_checkpoint_path(token);
   }
 
   void CreateIndexCheckpointDirectory(const core::Guid& token) {
     std::string index_dir = index_checkpoint_path(token);
-    std::experimental::filesystem::path path{ index_dir };
+    std::filesystem::path path{ index_dir };
     try {
-      std::experimental::filesystem::remove_all(path);
-    } catch(std::experimental::filesystem::filesystem_error&) {
+      std::filesystem::remove_all(path);
+    } catch(std::filesystem::filesystem_error&) {
       // Ignore; throws when path doesn't exist yet.
     }
-    std::experimental::filesystem::create_directories(path);
+    std::filesystem::create_directories(path);
   }
 
   void CreateCprCheckpointDirectory(const core::Guid& token) {
     std::string cpr_dir = cpr_checkpoint_path(token);
-    std::experimental::filesystem::path path{ cpr_dir };
+    std::filesystem::path path{ cpr_dir };
     try {
-      std::experimental::filesystem::remove_all(path);
-    } catch(std::experimental::filesystem::filesystem_error&) {
+      std::filesystem::remove_all(path);
+    } catch(std::filesystem::filesystem_error&) {
       // Ignore; throws when path doesn't exist yet.
     }
-    std::experimental::filesystem::create_directories(path);
+    std::filesystem::create_directories(path);
   }
 
   file_t NewFile(const std::string& relative_path) {
-    return file_t{ root_path_ + relative_path, default_file_options_ };
+    return file_t{ root_path + relative_path, default_file_options_ };
   }
 
   /// Implementation-specific accessor.
@@ -558,8 +550,10 @@ class FileSystemDisk {
     return handler_.TryComplete();
   }
 
+ public:
+  std::string root_path;
+
  private:
-  std::string root_path_;
   handler_t handler_;
 
   environment::FileOptions default_file_options_;
