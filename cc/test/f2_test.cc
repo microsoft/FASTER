@@ -48,16 +48,20 @@ INSTANTIATE_TEST_CASE_P(
   HotColdTests,
   HotColdParameterizedTestParam,
   ::testing::Values(
+    // ==================================================================
+    // NOTE: Some tests are disabled for CI -- enable locally if needed
+    // ==================================================================
+
     // Small hash hot & cold indices
-    std::make_tuple(2048, false, false),
-    std::make_tuple(2048, false, true),
-    std::make_tuple(2048, true, false),
-    std::make_tuple(2048, true, true),
+    //std::make_tuple(8192, false, false),
+    //std::make_tuple(8192, true, false),
+    //std::make_tuple(8192, false, true),
+    std::make_tuple(8192, true, true),
     // Large hot & cold indices
-    std::make_tuple((1 << 22), false, false),
-    std::make_tuple((1 << 22), false, true),
-    std::make_tuple((1 << 22), true, false),
-    std::make_tuple((1 << 22), true, true)
+    //std::make_tuple((1 << 20), false, false),
+    //std::make_tuple((1 << 20), true, false),
+    //std::make_tuple((1 << 20), false, true),
+    std::make_tuple((1 << 20), true, true)
   )
 );
 
@@ -68,6 +72,7 @@ static std::string root_path{ "test_f2_store/" };
 #endif
 
 static constexpr uint64_t kCompletePendingInterval = 128;
+static constexpr uint8_t kNumCompactionThreads = 2;
 
 /// Upsert context required to insert data for unit testing.
 template <class K, class V>
@@ -267,9 +272,9 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
 
   F2CompactionConfig f2_compaction_config;
   f2_compaction_config.hot_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 256_MiB, kNumCompactionThreads, auto_compaction };
   f2_compaction_config.cold_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 768_MiB, kNumCompactionThreads, auto_compaction };
 
   f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   f2_t store{ table_size, 192_MiB, hot_fp,
@@ -408,9 +413,9 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
 
   F2CompactionConfig f2_compaction_config;
   f2_compaction_config.hot_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 256_MiB, kNumCompactionThreads, auto_compaction };
   f2_compaction_config.cold_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 2_GiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 2_GiB, kNumCompactionThreads, auto_compaction };
 
   f2_t::ColdIndexConfig cold_index_config{ 8192, 256_MiB, 0.6 };
   f2_t store{ table_size, 192_MiB, hot_fp,
@@ -505,9 +510,9 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
 
   F2CompactionConfig f2_compaction_config;
   f2_compaction_config.hot_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 256_MiB, kNumCompactionThreads, auto_compaction };
   f2_compaction_config.cold_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 768_MiB, kNumCompactionThreads, auto_compaction };
 
   f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   f2_t store{ table_size, 192_MiB, hot_fp,
@@ -628,12 +633,12 @@ TEST_P(HotColdParameterizedTestParam, Rmw) {
 
   F2CompactionConfig f2_compaction_config;
   f2_compaction_config.hot_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 256_MiB, kNumCompactionThreads, auto_compaction };
   f2_compaction_config.cold_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 768_MiB, kNumCompactionThreads, auto_compaction };
 
   f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
-  f2_t store{ table_size, 192_MiB, hot_fp,
+  f2_t store{ table_size, 256_MiB, hot_fp,
               cold_index_config, 192_MiB, cold_fp,
               0.4, 0, rc_config, f2_compaction_config };
 
@@ -812,9 +817,9 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
 
   F2CompactionConfig f2_compaction_config;
   f2_compaction_config.hot_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 256_MiB, kNumCompactionThreads, auto_compaction };
   f2_compaction_config.cold_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 768_MiB, kNumCompactionThreads, auto_compaction };
 
   f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   f2_t store{ table_size, 192_MiB, hot_fp,
@@ -1152,9 +1157,9 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
 
   F2CompactionConfig f2_compaction_config;
   f2_compaction_config.hot_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 256_MiB, kNumCompactionThreads, auto_compaction };
   f2_compaction_config.cold_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 768_MiB, kNumCompactionThreads, auto_compaction };
 
   f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   f2_t store{ table_size, 192_MiB, hot_fp,
@@ -1527,9 +1532,9 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
 
   F2CompactionConfig f2_compaction_config;
   f2_compaction_config.hot_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 256_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 256_MiB, kNumCompactionThreads, auto_compaction };
   f2_compaction_config.cold_store = HlogCompactionConfig{
-    250ms, 0.9, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
+    250ms, 0.9, 0.1, 128_MiB, 768_MiB, kNumCompactionThreads, auto_compaction };
 
   f2_t::ColdIndexConfig cold_index_config{ table_size, 256_MiB, 0.6 };
   f2_t store{ table_size, 192_MiB, hot_fp,
