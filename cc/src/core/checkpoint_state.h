@@ -203,32 +203,40 @@ class CheckpointState {
   }
 
  public:
-  void IssueIndexPersistenceCallback() {
-    if (!index_persistence_callback) {
-      return; // no callback was provided
-    }
-    // TODO: status was always Status::Ok on original FASTER code -- normally should check if failed is true
-    if (callback_context) {
-      const auto& callback = reinterpret_cast<InternalIndexPersistenceCallback>(index_persistence_callback);
-      callback(callback_context, Status::Ok);
-    } else {
-      const auto& callback = reinterpret_cast<IndexPersistenceCallback>(index_persistence_callback);
-      callback(Status::Ok);
-    }
+  auto GetIndexPersistenceCallback() {
+    return [cb = this->index_persistence_callback, ctxt = this->callback_context]() {
+      if (!cb) {
+        return; // no callback was provided
+      }
+
+      // TODO: Status was always set to Status::Ok on the original FASTER code.
+      //       Ideally, we should check if `failed` member is true
+      if (ctxt) {
+        const auto& callback = reinterpret_cast<InternalIndexPersistenceCallback>(cb);
+        callback(ctxt, Status::Ok);
+      } else {
+        const auto& callback = reinterpret_cast<IndexPersistenceCallback>(cb);
+        callback(Status::Ok);
+      }
+    };
   }
 
-  void IssueHybridLogPersistenceCallback(uint64_t serial_num) {
-    if (!hybrid_log_persistence_callback) {
-      return; // no callback was provided
-    }
-    // TODO: status was always Status::Ok on original FASTER code -- normally should check if failed is true
-    if (callback_context) {
-      const auto& callback = reinterpret_cast<InternalHybridLogPersistenceCallback>(hybrid_log_persistence_callback);
-      callback(callback_context, Status::Ok, serial_num);
-    } else {
-      const auto& callback = reinterpret_cast<HybridLogPersistenceCallback>(hybrid_log_persistence_callback);
-      callback(Status::Ok, serial_num);
-    }
+  auto GetHybridLogPersistenceCallback() {
+    return [cb = this->hybrid_log_persistence_callback, ctxt = this->callback_context](uint64_t serial_num) {
+      if (!cb) {
+        return; // no callback was provided
+      }
+
+      // TODO: Status was always set to Status::Ok on the original FASTER code.
+      //       Ideally, we should check if `failed` member is true
+      if (ctxt) {
+        const auto& callback = reinterpret_cast<InternalHybridLogPersistenceCallback>(cb);
+        callback(ctxt, Status::Ok, serial_num);
+      } else {
+        const auto& callback = reinterpret_cast<HybridLogPersistenceCallback>(cb);
+        callback(Status::Ok, serial_num);
+      }
+    };
   }
 
   void CheckpointDone() {

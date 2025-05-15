@@ -8,7 +8,7 @@ jobs:
   pool:
     vmImage: windows-2022
   displayName: 'C# (Windows)'
-  timeoutInMinutes: 150 
+  timeoutInMinutes: 150
 
   strategy:
     maxParallel: 2
@@ -62,7 +62,7 @@ jobs:
       command: test
       projects: '**/*.test.csproj'
       arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed"'
-      
+
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
     inputs:
@@ -74,6 +74,7 @@ jobs:
   pool:
     vmImage: windows-2022
   displayName: 'C++ (Windows)'
+  timeoutInMinutes: 90
 
   strategy:
     maxParallel: 2
@@ -98,7 +99,7 @@ jobs:
       solution: 'cc/build/FASTER.sln'
       msbuildArguments: '/m /p:Configuration=$(buildConfiguration) /p:Platform=$(buildPlatform)'
 
-  - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration) -R "in_memory"'
+  - script: 'ctest -j 1 --interactive-debug-mode 0 --output-on-failure -C $(buildConfiguration)'
     workingDirectory: 'cc/build'
     displayName: 'Run Ctest'
 
@@ -106,6 +107,7 @@ jobs:
   pool:
     vmImage: ubuntu-22.04
   displayName: 'C++ (Linux)'
+  timeoutInMinutes: 75
 
   steps:
   - script: |
@@ -117,10 +119,10 @@ jobs:
       mkdir -p build/Debug build/Release
       cd build/Debug
       cmake -DCMAKE_BUILD_TYPE=Debug ../..
-      make -j
+      make -j2
       cd ../../build/Release
       cmake -DCMAKE_BUILD_TYPE=Release ../..
-      make -j
+      make -j2
     displayName: 'Compile'
   - script: |
       ulimit -s 65536
@@ -130,7 +132,7 @@ jobs:
 
 - job: 'csharpLinux'
   pool:
-    vmImage: ubuntu-20.04
+    vmImage: ubuntu-22.04
   displayName: 'C# (Linux)'
 
   strategy:
@@ -175,7 +177,7 @@ jobs:
       command: test
       projects: '**/*.test.csproj'
       arguments: '--configuration $(buildConfiguration) -l "console;verbosity=detailed" --filter "TestCategory=Smoke"'
-      
+
   - task: PublishTestResults@2
     displayName: 'Publish Test Results'
     inputs:

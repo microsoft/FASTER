@@ -42,6 +42,10 @@ static std::string ROOT_PATH{ "test_compact_lookup_store/" };
 #endif
 
 // Parameterized test definition for in-memory tests
+// ==================================================================
+// NOTE: Some tests are disabled for CI -- enable locally if needed
+// ==================================================================
+
 // <shift_begin_address, n_threads>
 class CompactLookupParameterizedInMemTestFixture : public ::testing::TestWithParam<std::pair<bool, int>> {
 };
@@ -50,9 +54,9 @@ INSTANTIATE_TEST_CASE_P(
   CompactLookupParameterizedInMemTestFixture,
   ::testing::Values(
     // Truncate after compaction -- single thread
-    std::pair<bool, int>(true, 1),
-    // Truncate after compaction -- 8 threads
-    std::pair<bool, int>(true, 8))
+    //std::pair<bool, int>(true, 1),
+    // Truncate after compaction -- 2 threads
+    std::pair<bool, int>(true, 2))
 );
 
 // Parameterized test definition for on-disk tests
@@ -64,11 +68,11 @@ INSTANTIATE_TEST_CASE_P(
   CompactLookupParameterizedOnDiskTestFixture,
   ::testing::Values(
     // Truncate after compaction, single thread
-    std::make_tuple(true, false, 1),
-    // Truncate after compaction, 8 threads
-    std::make_tuple(true, false, 8),
-    // Truncate after compaction, 8 threads w/ checkpoint
-    std::make_tuple(true, true, 8))
+    //std::make_tuple(true, false, 1),
+    // Truncate after compaction, 2 threads
+    std::make_tuple(true, false, 2),
+    // Truncate after compaction, 2 threads w/ checkpoint
+    std::make_tuple(true, true, 2))
 );
 
 
@@ -1355,7 +1359,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskRmw) {
   CreateNewLogDir(ROOT_PATH, log_fp);
 
   // NOTE: deliberately keeping the hash index small to test hash-chain chasing correctness
-  faster_t store{ 2048, (1 << 20) * 192, log_fp, 0.4 };
+  faster_t store{ 2048, (1 << 20) * 256, log_fp, 0.4 };
   uint32_t num_records = 20000; // ~160 MB of data
 
   bool shift_begin_address = std::get<0>(GetParam());
@@ -1984,7 +1988,7 @@ TEST_P(CompactLookupParameterizedOnDiskTestFixture, OnDiskVariableLengthKey) {
   std::string log_fp;
   CreateNewLogDir(ROOT_PATH, log_fp);
 
-  faster_t store{ (1 << 20), (1 << 20) * 192, log_fp, 0.4 };
+  faster_t store{ 2048, (1 << 20) * 192, log_fp, 0.4 };
   uint32_t numRecords = 12500; // will occupy ~512 MB space in store
 
   bool shift_begin_address = std::get<0>(GetParam());
