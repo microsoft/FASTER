@@ -741,15 +741,26 @@ inline bool F2Kv<K, V, D, HHI, CHI>::CompactLog(S& store, StoreType store_type, 
                                                 bool shift_begin_address, int n_threads, bool checkpoint) {
   const bool is_hot_store = (store_type == StoreType::HOT);
 
-  uint64_t tail_address = store.hlog.GetTailAddress().control();
+  uint64_t begin_address{ store.hlog.begin_address.control() };
+  uint64_t tail_address{ store.hlog.GetTailAddress().control() };
+  uint64_t safe_read_only_address{ store.hlog.safe_read_only_address.control() };
+
   log_debug("Compact %s: {%.2lf GB} {Goal %.2lf GB} [%lu %lu] -> [%lu %lu]",
             is_hot_store ? "HOT" : "COLD",
             static_cast<double>(store.Size()) / (1 << 30),
             static_cast<double>(tail_address - until_address) / (1 << 30),
             store.hlog.begin_address.control(), tail_address,
             until_address, tail_address);
-  if (until_address > store.hlog.safe_read_only_address.control()) {
-    throw std::invalid_argument{ "Can only compact until safe read-only region" };
+
+  if (until_address <= begin_address) {
+    log_warn("Skipping log compaction due to: until_address <= begin_address. "
+             "until_address should be larger than hlog.begin_address");
+    return false;
+  }
+  if (until_address > safe_read_only_address) {
+    log_warn("Skipping log compaction due to: until_address > safe_read_only_address. "
+             "Can only compact until safe read-only region");
+    return false;
   }
 
   StoreCheckpointStatus status;
