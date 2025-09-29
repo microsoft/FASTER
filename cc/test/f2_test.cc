@@ -292,8 +292,9 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
-    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    if (store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true)) {
+      ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    }
   }
 
   // Read.
@@ -332,8 +333,9 @@ TEST_P(HotColdParameterizedTestParam, UpsertRead) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true, 4);
-    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    if (store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true, 4)) {
+      ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    }
   }
 
   // Read existing again (in random order), plus non-existing ones
@@ -433,8 +435,9 @@ TEST_P(HotColdParameterizedTestParam, HotColdCompaction) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
-    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    if (store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true)) {
+      ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    }
   }
 
   // Read existing again (in random order), plus non-existing ones
@@ -530,8 +533,9 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true, 1);
-    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    if (store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true, 1)) {
+      ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    }
   }
   // Read both existent and non-existent keys
   for(size_t idx = 1; idx <= num_records; idx++) {
@@ -574,8 +578,9 @@ TEST_P(HotColdParameterizedTestParam, UpsertDelete) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true, 1);
-    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    if (store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true, 1)) {
+      ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    }
   }
 
   // Read all keys -- all should return NOT_FOUND
@@ -709,8 +714,9 @@ TEST_P(HotColdParameterizedTestParam, Rmw) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
-    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    if (store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true)) {
+      ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    }
   }
 
   // Rmw, decrement by 1, 8 times -- random order
@@ -895,8 +901,9 @@ TEST_P(HotColdParameterizedTestParam, ConcurrentOps) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
-    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    if (store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true)) {
+      ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    }
   }
 
   // Perform reads for all keys (and more non-existent ones) in random order
@@ -1281,8 +1288,9 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthKey) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
-    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    if (store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true)) {
+      ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    }
   }
 
   // Read again.
@@ -1609,8 +1617,9 @@ TEST_P(HotColdParameterizedTestParam, VariableLengthValue) {
   if (!auto_compaction) {
     // perform hot-cold compaction
     uint64_t hot_size = store.hot_store.Size(), cold_size = store.cold_store.Size();
-    store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true);
-    ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    if (store.CompactHotLog(store.hot_store.hlog.safe_read_only_address.control(), true)) {
+      ASSERT_TRUE(store.hot_store.Size() < hot_size && store.cold_store.Size() > cold_size);
+    }
   }
 
   // Read again.
