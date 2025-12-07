@@ -35,6 +35,7 @@ namespace FASTER.core
         {
         }
 
+#if NETSTANDARD2_0_OR_GREATER
         /// <summary>
         /// Throw FASTER exception
         /// </summary>
@@ -43,6 +44,7 @@ namespace FASTER.core
         public FasterException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
+#endif
     }
 
     /// <summary>
