@@ -52,9 +52,18 @@ namespace FASTER.core
         
         /// <inheritdoc />
         public Guid Token(FileDescriptor fileDescriptor) => Guid.Parse(new DirectoryInfo(fileDescriptor.directoryName).Name);
+#if NET10_0_OR_GREATER
         /// <inheritdoc />
         public long CommitNumber(FileDescriptor fileDescriptor) => long.Parse(fileDescriptor.fileName.Split('.').Reverse().Take(2).Last());
-
+#else
+        /// <inheritdoc />
+        public long CommitNumber(FileDescriptor fileDescriptor)
+        {
+            var span = fileDescriptor.fileName.Split('.');
+            span.Reverse();
+            return long.Parse(span.Take(2).Last());
+        }
+#endif
         /// <inheritdoc />
         public string IndexCheckpointBasePath() => "index-checkpoints";
         /// <inheritdoc />
