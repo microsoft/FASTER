@@ -1,7 +1,16 @@
 // JavaScript source code
 
-function writeToScreen(message) {
-    output.insertAdjacentHTML("afterbegin", "<p>" + message + "</p>");
+function writeToScreen(message, className) {
+    var output = document.getElementById("output");
+    var p = document.createElement("p");
+    var span = document.createElement("span");
+    if (className) {
+        span.className = className;
+    }
+    // Insert server-supplied data as text, never as HTML, to prevent DOM-based XSS.
+    span.textContent = message;
+    p.appendChild(span);
+    output.insertAdjacentElement("afterbegin", p);
 }
 
 class FASTERFunctions extends CallbackFunctionsBase {
@@ -13,13 +22,13 @@ class FASTERFunctions extends CallbackFunctionsBase {
     ReadCompletionCallback(keyBytes, outputBytes, status) {
         if (status == Status.Found) {
             var output = deserialize(outputBytes, 0, outputBytes.length);
-            writeToScreen("<span> value: " + output + " </span>");
+            writeToScreen(" value: " + output + " ");
         }
     }
 
     UpsertCompletionCallback(keyBytes, valueBytes, status) {
         if (status == Status.Found) {
-            writeToScreen("<span> PUT OK </span>");
+            writeToScreen(" PUT OK ");
         }
     }
 
@@ -32,7 +41,7 @@ class FASTERFunctions extends CallbackFunctionsBase {
         if (status == Status.Found) {
             var key = deserialize(keyBytes, 0, keyBytes.length);
             var output = deserialize(outputBytes, 0, outputBytes.length);
-            writeToScreen("<span> subscribed key: " + key + " value: " + output + " </span>");
+            writeToScreen(" subscribed key: " + key + " value: " + output + " ");
         }
     }
 
@@ -41,7 +50,7 @@ class FASTERFunctions extends CallbackFunctionsBase {
         if (status == Status.Found) {
             var key = deserialize(keyBytes, 0, keyBytes.length);
             var value = deserialize(valueBytes, 0, valueBytes.length);
-            writeToScreen("<span> subscribed key: " + key + " value: " + value + " </span>");
+            writeToScreen(" subscribed key: " + key + " value: " + value + " ");
         }
     }
 }

@@ -197,7 +197,8 @@ Status InternalHashTable<D, HID>::Checkpoint(disk_t& disk, file_t&& file, uint64
   pending_checkpoint_writes_ = Constants::kNumMergeChunks;
   for(uint32_t idx = 0; idx < Constants::kNumMergeChunks; ++idx) {
     AsyncIoContext context{ this };
-    RETURN_NOT_OK(file_.WriteAsync(&bucket(idx * chunk_size), idx * write_size, write_size,
+    RETURN_NOT_OK(file_.WriteAsync(&bucket(static_cast<uint64_t>(idx) * chunk_size),
+                                  static_cast<uint64_t>(idx) * write_size, write_size,
                                   callback, context));
   }
   checkpoint_size = size_ * sizeof(hash_bucket_t);
@@ -241,18 +242,19 @@ Status InternalHashTable<D, HID>::Checkpoint(disk_t& disk, file_t&& file, uint64
   for(uint32_t idx = 0; idx < Constants::kNumMergeChunks; ++idx) {
     if (!read_cache) {
       AsyncIoContext context{ this };
-      RETURN_NOT_OK(file_.WriteAsync(&bucket(idx * chunk_size), idx * write_size, write_size,
+      RETURN_NOT_OK(file_.WriteAsync(&bucket(static_cast<uint64_t>(idx) * chunk_size),
+                                    static_cast<uint64_t>(idx) * write_size, write_size,
                                     callback, context));
     } else {
       hash_bucket_t* buckets_chunk = reinterpret_cast<hash_bucket_t*>(core::aligned_alloc(
                                         file_.alignment(), chunk_size * sizeof(hash_bucket_t)));
-      memcpy(reinterpret_cast<void*>(buckets_chunk), &bucket(idx * chunk_size), write_size);
+      memcpy(reinterpret_cast<void*>(buckets_chunk), &bucket(static_cast<uint64_t>(idx) * chunk_size), write_size);
       for (uint32_t chunk = 0; chunk < chunk_size; chunk++) {
         read_cache->SkipBucket(&buckets_chunk[chunk]);
       }
 
       AsyncIoContext context{ this, buckets_chunk };
-      RETURN_NOT_OK(file_.WriteAsync(buckets_chunk, idx * write_size, write_size,
+      RETURN_NOT_OK(file_.WriteAsync(buckets_chunk, static_cast<uint64_t>(idx) * write_size, write_size,
                                     callback, context));
     }
   }
@@ -310,7 +312,8 @@ Status InternalHashTable<D, HID>::Recover(disk_t& disk, file_t&& file, uint64_t 
   pending_recover_reads_ = Constants::kNumMergeChunks;
   for(uint32_t idx = 0; idx < Constants::kNumMergeChunks; ++idx) {
     AsyncIoContext context{ this };
-    RETURN_NOT_OK(file_.ReadAsync(idx * read_size, &bucket(idx * chunk_size), read_size,
+    RETURN_NOT_OK(file_.ReadAsync(static_cast<uint64_t>(idx) * read_size,
+                                  &bucket(static_cast<uint64_t>(idx) * chunk_size), read_size,
                                   callback, context));
   }
   return Status::Ok;

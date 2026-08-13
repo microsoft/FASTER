@@ -3,8 +3,10 @@
 </p>
   
 [![NuGet](https://img.shields.io/nuget/v/Microsoft.FASTER.Core.svg)](https://www.nuget.org/packages/Microsoft.FASTER.Core/)
-[![Build Status](https://dev.azure.com/ms/FASTER/_apis/build/status/Microsoft.FASTER?branchName=main)](https://dev.azure.com/ms/FASTER/_build/latest?definitionId=8&branchName=main)
-[![Gitter](https://badges.gitter.im/Microsoft/FASTER.svg)](https://gitter.im/Microsoft/FASTER?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+
+> [!IMPORTANT]
+> **This repository is no longer actively maintained.**
+> We encourage users to look at [**Garnet**](https://github.com/microsoft/garnet) — this project evolves FASTER into a full-fledged remote cache-store with strong performance (throughput and latency), scalability, storage, recovery, and more. Garnet's storage engine, [**Tsavorite**](https://github.com/microsoft/garnet/tree/main/libs/storage/Tsavorite), is a highly optimized and evolved fork of FASTER.
 
 # Introduction
 

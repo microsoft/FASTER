@@ -95,6 +95,12 @@ namespace FASTER.server
             // MSB is 1 to indicate binary protocol
             var size = -(*(int*)(buf + readHead));
 
+            // Reject malformed/malicious size fields. A valid binary message always has its
+            // MSB set on the wire, so the decoded size is strictly positive. A non-positive
+            // size (e.g. an attacker clearing the MSB on a follow-up message) would otherwise
+            // drive readHead backward/negative and cause out-of-bounds access downstream.
+            if (size <= 0) return false;
+
             // Not all of the message has arrived
             if (bytesAvailable < size + sizeof(int)) return false;
             offset = readHead + sizeof(int);

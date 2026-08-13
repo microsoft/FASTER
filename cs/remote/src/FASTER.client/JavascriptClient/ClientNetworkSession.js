@@ -25,7 +25,7 @@
         };
 
         this.websocket.onerror = function (e) {
-            writeToScreen("<span class=error>ERROR:</span> " + e.data);
+            writeToScreen("ERROR: " + e.data, "error");
         };
     }
 }

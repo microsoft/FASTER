@@ -223,6 +223,12 @@ namespace FASTER.server
 
             var readHead = connArgs.session.TryConsumeMessages(connArgs.recvBufferPtr, connArgs.bytesRead);
 
+            // Defensive bounds check: a well-behaved session returns readHead in [0, bytesRead].
+            // The unsigned comparison also catches a negative readHead (which would wrap to a
+            // large value), preventing out-of-bounds pointer arithmetic in the MemoryCopy below.
+            if ((uint)readHead > (uint)connArgs.bytesRead)
+                readHead = connArgs.bytesRead;
+
             // The bytes left in the current buffer not consumed by previous operations
             var bytesLeft = connArgs.bytesRead - readHead;
             if (bytesLeft != connArgs.bytesRead)
