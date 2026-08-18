@@ -1,0 +1,25 @@
+# Dependabot configuration for NuGet version updates.
+#
+# Dependabot security updates (enabled at the repository level) only bump a
+# vulnerable package to the minimum patched version *within its current major
+# line*. That is how this repo ended up pinned to an end-of-life MessagePack 2.x
+# release. The weekly version updates below additionally surface newer major
+# releases, which is what moves dependencies off end-of-life lines (e.g.
+# MessagePack 2.x -> 3.x) before they turn into security alerts.
+#
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    # Scan every directory in the repo for project/solution manifests.
+    directories:
+      - "/**/*"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Group all NuGet bumps into a single PR per run to keep noise low on this
+    # lightly-maintained repository.
+    groups:
+      nuget:
+        patterns:
+          - "*"
