@@ -55,6 +55,33 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref Key ReadKeyByRef(ref byte* src, byte* srcEnd)
+        {
+            if (srcEnd - src < Unsafe.SizeOf<Key>())
+                throw new FormatException("Truncated key in payload");
+            return ref ReadKeyByRef(ref src);
+        }
+
+        /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref Value ReadValueByRef(ref byte* src, byte* srcEnd)
+        {
+            if (srcEnd - src < Unsafe.SizeOf<Value>())
+                throw new FormatException("Truncated value in payload");
+            return ref ReadValueByRef(ref src);
+        }
+
+        /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref Input ReadInputByRef(ref byte* src, byte* srcEnd)
+        {
+            if (srcEnd - src < Unsafe.SizeOf<Input>())
+                throw new FormatException("Truncated input in payload");
+            return ref ReadInputByRef(ref src);
+        }
+
+        /// <inheritdoc />
         public bool Write(ref Key k, ref byte* dst, int length)
         {
             if (length < Unsafe.SizeOf<Key>()) return false;

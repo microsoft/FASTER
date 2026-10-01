@@ -135,6 +135,12 @@ namespace FASTER.server
             {
                 DisposeConnectionSession(e);
             }
+            // Malformed request from the client: close the offending connection rather than letting the
+            // exception escape to the socket engine's event loop, which would terminate the process.
+            catch (FormatException)
+            {
+                DisposeConnectionSession(e);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

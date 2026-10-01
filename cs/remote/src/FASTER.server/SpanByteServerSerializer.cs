@@ -13,6 +13,12 @@ namespace FASTER.server
     /// </summary>
     public unsafe sealed class SpanByteServerSerializer : IServerSerializer<SpanByte, SpanByte, SpanByte, SpanByteAndMemory>
     {
+        // Bit 31 of the serialized length word marks an *unserialized* SpanByte, whose payload field is a
+        // raw pointer rather than inline data. Bit 30 marks the presence of an 8-byte metadata header.
+        const int kUnserializedBitMask = unchecked((int)0x80000000);
+        const int kExtraMetadataBitMask = 0x40000000;
+        const int kHeaderMask = unchecked((int)0xC0000000);
+
         readonly int keyLength;
         readonly int valueLength;
 
@@ -29,6 +35,47 @@ namespace FASTER.server
             keyLength = maxKeyLength;
             valueLength = maxValueLength;
         }
+
+        /// <summary>
+        /// Read a serialized SpanByte at <paramref name="src"/>, verifying that it is well-formed and lies
+        /// entirely within [src, srcEnd), then advance <paramref name="src"/> past it.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static ref SpanByte ReadByRef(ref byte* src, byte* srcEnd)
+        {
+            if (srcEnd - src < sizeof(int))
+                throw new FormatException("Truncated SpanByte header in payload");
+
+            var header = *(int*)src;
+
+            // An unserialized SpanByte interprets the following bytes as a pointer, so it must never be
+            // accepted from a payload. Serialized SpanBytes always have this bit cleared on the wire.
+            if ((header & kUnserializedBitMask) != 0)
+                throw new FormatException("Unserialized SpanByte is not valid in payload");
+
+            int length = header & ~kHeaderMask;
+            int metadataSize = (header & kExtraMetadataBitMask) >> (30 - 3);
+
+            // The payload must hold the metadata header (if any), and the whole element must be in bounds.
+            if (length < metadataSize || length > srcEnd - src - sizeof(int))
+                throw new FormatException("SpanByte length exceeds payload");
+
+            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
+            src += sizeof(int) + length;
+            return ref ret;
+        }
+
+        /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref SpanByte ReadKeyByRef(ref byte* src, byte* srcEnd) => ref ReadByRef(ref src, srcEnd);
+
+        /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref SpanByte ReadValueByRef(ref byte* src, byte* srcEnd) => ref ReadByRef(ref src, srcEnd);
+
+        /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref SpanByte ReadInputByRef(ref byte* src, byte* srcEnd) => ref ReadByRef(ref src, srcEnd);
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
