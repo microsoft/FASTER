@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
@@ -33,12 +33,7 @@ namespace FASTER.remote.test
         [TearDown]
         public void TearDown() => server.Dispose();
 
-        static Socket Connect()
-        {
-            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true, ReceiveTimeout = 10000 };
-            socket.Connect(TestUtils.Address, TestUtils.Port);
-            return socket;
-        }
+        static Socket Connect() => RawSocket.Connect();
 
         /// <summary>
         /// Wrap a batch in the binary framing: a negated size field followed by a batch header.
@@ -74,6 +69,15 @@ namespace FASTER.remote.test
             return element.ToArray();
         }
 
+        /// <summary>A SpanByte with the given length header, followed by the given payload bytes.</summary>
+        static byte[] SpanByteElement(int lengthHeader, byte[] payload)
+        {
+            var element = new List<byte>();
+            element.AddRange(BitConverter.GetBytes(lengthHeader));
+            element.AddRange(payload);
+            return element.ToArray();
+        }
+
         /// <summary>A well-formed, self-consistent SpanByte.</summary>
         static byte[] SpanByteElement(int payloadBytes) => SpanByteElement(payloadBytes, payloadBytes);
 
@@ -99,26 +103,7 @@ namespace FASTER.remote.test
             AssertServerIsHealthy();
         }
 
-        /// <summary>
-        /// Drain any replies and require the server to end the connection, either cleanly or by reset.
-        /// </summary>
-        static void AssertConnectionClosed(Socket socket)
-        {
-            var buffer = new byte[4096];
-            var deadline = DateTime.UtcNow.AddSeconds(30);
-            while (DateTime.UtcNow < deadline)
-            {
-                try
-                {
-                    if (socket.Receive(buffer) == 0) return;
-                }
-                catch (SocketException e) when (e.SocketErrorCode != SocketError.TimedOut)
-                {
-                    return;
-                }
-            }
-            Assert.Fail("Server did not close the connection that sent a malformed request");
-        }
+        static void AssertConnectionClosed(Socket socket) => RawSocket.AssertConnectionClosed(socket);
 
         /// <summary>A well-formed client round trip must still succeed after the malformed request.</summary>
         static void AssertServerIsHealthy()
@@ -227,10 +212,10 @@ namespace FASTER.remote.test
             "Sec-WebSocket-Version: 13\r\n\r\n");
 
         /// <summary>Build a masked client frame, optionally overriding the advertised payload length.</summary>
-        static byte[] WebSocketFrame(byte[] payload, ulong? advertisedLength = null, byte opcode = 0x2)
+        static byte[] WebSocketFrame(byte[] payload, ulong? advertisedLength = null, byte opcode = 0x2, bool fin = true)
         {
             var length = advertisedLength ?? (ulong)payload.Length;
-            var frame = new List<byte> { (byte)(0x80 | opcode) };
+            var frame = new List<byte> { (byte)((fin ? 0x80 : 0x00) | opcode) };
 
             if (advertisedLength == null && length < 126)
                 frame.Add((byte)(0x80 | length));
@@ -330,19 +315,189 @@ namespace FASTER.remote.test
             AssertWebSocketFrameRejected(WebSocketFrame(payload.ToArray()));
         }
 
-        /// <summary>A partial frame must leave the server waiting for more data, not reading past it.</summary>
+        /// <summary>A websocket batch: a size field, a batch header, then messages with no serial numbers.</summary>
+        static byte[] WebSocketBatch(int numMessages, byte[] messages)
+        {
+            var payload = new List<byte>();
+            payload.AddRange(BitConverter.GetBytes(0));      // size
+            payload.AddRange(BitConverter.GetBytes(0));      // seqNo
+            payload.AddRange(BitConverter.GetBytes(numMessages));
+            payload.AddRange(messages);
+            return payload.ToArray();
+        }
+
+        static byte[] WebSocketMessage(MessageType type, params byte[][] elements)
+        {
+            var message = new List<byte> { (byte)type };
+            foreach (var element in elements)
+                message.AddRange(element);
+            return message.ToArray();
+        }
+
+        /// <summary>
+        /// A partial frame must be buffered until the remainder arrives, and must then be processed
+        /// normally on the same connection.
+        /// </summary>
         [Test]
         public void WebSocketPartialFrameIsBuffered()
         {
             using (var socket = ConnectWebSocket())
             {
-                // Announce a 200-byte payload but send only the first 20 bytes of the frame
-                var frame = WebSocketFrame(new byte[200]);
-                socket.Send(frame, 0, 20, SocketFlags.None);
-                Thread.Sleep(200);
+                var frame = WebSocketFrame(WebSocketBatch(1,
+                    WebSocketMessage(MessageType.Upsert, SpanByteElement(8), SpanByteElement(8))));
+
+                socket.Send(frame, 0, 10, SocketFlags.None);
+                Assert.IsFalse(socket.Poll(500_000, SelectMode.SelectRead),
+                    "Server replied to, or closed, a connection whose frame had not fully arrived");
+
+                socket.Send(frame, 10, frame.Length - 10, SocketFlags.None);
+                Assert.Greater(socket.Receive(new byte[256]), 0);
             }
 
             AssertServerIsHealthy();
+        }
+
+        /// <summary>The reserved bits are only meaningful with a negotiated extension, and we negotiate none.</summary>
+        [Test]
+        public void WebSocketReservedBitsAreRejected()
+        {
+            // Otherwise valid, so that only the reserved bit can account for the rejection
+            var frame = WebSocketFrame(WebSocketBatch(1,
+                WebSocketMessage(MessageType.Upsert, SpanByteElement(8), SpanByteElement(8))));
+            frame[0] |= 0b01000000;
+            AssertWebSocketFrameRejected(frame);
+        }
+
+        /// <summary>
+        /// Empty fragments contribute nothing to the decoded message size, so only a cap on the number of
+        /// fragments bounds how much a single message may buffer.
+        /// </summary>
+        [Test]
+        public void WebSocketTooManyFragmentsIsRejected()
+        {
+            var frames = new List<byte>();
+            frames.AddRange(WebSocketFrame(Array.Empty<byte>(), fin: false));
+            for (var i = 0; i < 1024; i++)
+                frames.AddRange(WebSocketFrame(Array.Empty<byte>(), opcode: 0x0, fin: false));
+            AssertWebSocketFrameRejected(frames.ToArray());
+        }
+
+        /// <summary>Subscriptions are disabled here, which is a protocol error rather than a null dereference.</summary>
+        [Test]
+        public void WebSocketSubscribeWithPubSubDisabledIsRejected()
+            => AssertWebSocketFrameRejected(WebSocketFrame(WebSocketBatch(1,
+                WebSocketMessage(MessageType.SubscribeKV, SpanByteElement(8), SpanByteElement(8)))));
+
+        /// <summary>The same request on the binary protocol must likewise close only this connection.</summary>
+        [Test]
+        public void SubscribeWithPubSubDisabledIsRejected()
+            => AssertRejected(BinaryBatch(1, Message(MessageType.SubscribeKV, SpanByteElement(8), SpanByteElement(8))));
+
+        /// <summary>
+        /// An upgrade request is buffered until its terminator arrives, so one that never terminates must
+        /// be cut off rather than allowed to grow the receive buffer without bound.
+        /// </summary>
+        [Test]
+        public void OversizedHttpUpgradeIsRejected()
+        {
+            using (var socket = Connect())
+            {
+                var filler = Encoding.UTF8.GetBytes(new string('x', 4096) + "\r\n");
+                try
+                {
+                    socket.Send(Encoding.UTF8.GetBytes("GET / HTTP/1.1\r\nHost: localhost\r\n"));
+                    for (var i = 0; i < 32; i++)
+                        socket.Send(filler);
+                }
+                catch (SocketException)
+                {
+                    // Server closed the connection partway through, which is the behavior under test
+                }
+
+                AssertConnectionClosed(socket);
+            }
+
+            AssertServerIsHealthy();
+        }
+
+        /// <summary>
+        /// A value carrying an eight-byte metadata header must be returned in full. Serializing only the
+        /// payload left the metadata-sized tail of the reply holding whatever the response buffer last held.
+        /// </summary>
+        [Test]
+        public void ValueMetadataIsNotPaddedWithResponseBufferContents()
+        {
+            const int metadataBit = 0x40000000;
+
+            var filler = new byte[32];
+            for (var i = 0; i < filler.Length; i++) filler[i] = 0xAA;
+
+            var withMetadata = new byte[16];
+            for (var i = 0; i < 8; i++) withMetadata[i] = 0x11;        // metadata, read as a positive long
+            for (var i = 8; i < 16; i++) withMetadata[i] = 0x22;       // payload
+
+            using var socket = Connect();
+
+            // Leave the filler in the response buffer, then read the metadata-bearing value back into it
+            RoundTrip(socket, SpanByteElement(4, BitConverter.GetBytes(1)), SpanByteElement(32, filler));
+            var output = RoundTrip(socket, SpanByteElement(4, BitConverter.GetBytes(2)), SpanByteElement(metadataBit | 16, withMetadata));
+
+            CollectionAssert.AreEqual(withMetadata, output);
+        }
+
+        /// <summary>
+        /// A value too large for the response buffer is redirected to the heap, leaving nothing at the
+        /// output cursor. Advancing the cursor by whatever the recycled buffer still held served the
+        /// previous reply's bytes as this one's output and could run the cursor past the buffer.
+        /// </summary>
+        [Test]
+        public void OversizedReadOutputIsRejected()
+        {
+            var small = new byte[4000];
+            for (var i = 0; i < small.Length; i++) small[i] = 0xCD;
+
+            var large = new byte[160_000];
+
+            using (var socket = Connect())
+            {
+                // Leave a large output length in the pooled response buffers
+                var smallKey = SpanByteElement(4, BitConverter.GetBytes(1));
+                socket.Send(BinaryBatch(1, Message(MessageType.Upsert, smallKey, SpanByteElement(small.Length, small))));
+                RawSocket.ReceiveBinaryBatch(socket);
+                for (var i = 0; i < 4; i++)
+                {
+                    socket.Send(BinaryBatch(1, Message(MessageType.Read, smallKey, SpanByteElement(0))));
+                    RawSocket.ReceiveBinaryBatch(socket);
+                }
+
+                var largeKey = SpanByteElement(4, BitConverter.GetBytes(2));
+                socket.Send(BinaryBatch(1, Message(MessageType.Upsert, largeKey, SpanByteElement(large.Length, large))));
+                RawSocket.ReceiveBinaryBatch(socket);
+
+                socket.Send(BinaryBatch(1, Message(MessageType.Read, largeKey, SpanByteElement(0))));
+                AssertConnectionClosed(socket);
+            }
+
+            AssertServerIsHealthy();
+        }
+
+        /// <summary>Upsert the pair, then read the key back, returning the serialized output of the read.</summary>
+        static byte[] RoundTrip(Socket socket, byte[] key, byte[] value)
+        {
+            socket.Send(BinaryBatch(1, Message(MessageType.Upsert, key, value)));
+            RawSocket.ReceiveBinaryBatch(socket);
+
+            socket.Send(BinaryBatch(1, Message(MessageType.Read, key, SpanByteElement(0))));
+            var reply = RawSocket.ReceiveBinaryBatch(socket);
+
+            // [BatchHeader][message type][status][output length][output]
+            var outputStart = BatchHeader.Size + 2 + sizeof(int);
+            var outputLength = BitConverter.ToInt32(reply, BatchHeader.Size + 2);
+            Assert.AreEqual(reply.Length, outputStart + outputLength, "Reply length did not match its output length");
+
+            var output = new byte[outputLength];
+            Array.Copy(reply, outputStart, output, 0, outputLength);
+            return output;
         }
     }
 }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -126,6 +125,13 @@ namespace FASTER.server
         const int MaxMessageSize = 1 << 26;
 
         /// <summary>
+        /// Upper bound on the number of frames making up a single message, and on the size of the HTTP
+        /// upgrade request. Both bound the amount of data buffered before anything is consumed.
+        /// </summary>
+        const int MaxFrameCount = 1024;
+        const int MaxHttpHeaderSize = 1 << 16;
+
+        /// <summary>
         /// Parse the websocket frames making up one message, starting at <paramref name="offset"/>. Every
         /// frame header and payload length is validated against the bytes actually received, so that a
         /// malformed or oversized length can neither be read past the end of the receive buffer nor be
@@ -146,7 +152,13 @@ namespace FASTER.server
                 // Every frame header is at least two bytes
                 if (length - nextOffset < 2) return false;
 
+                if (frames.Count >= MaxFrameCount)
+                    throw new FormatException("Websocket message has too many fragments");
+
                 fin = (buf[nextOffset] & 0b10000000) != 0;
+                // The reserved bits must be zero unless a negotiated extension defines them; we negotiate none
+                if ((buf[nextOffset] & 0b01110000) != 0)
+                    throw new FormatException("Websocket frame sets reserved bits");
                 int frameOpcode = buf[nextOffset] & 0b00001111;
                 // "All frames sent from client to server have this [mask] bit set to 1"
                 bool masked = (buf[nextOffset + 1] & 0b10000000) != 0;
@@ -280,6 +292,8 @@ namespace FASTER.server
                 if (!s.Contains("\r\n\r\n"))
                 {
                     networkSender.ReturnResponseObject();
+                    if (length - offset > MaxHttpHeaderSize)
+                        throw new FormatException("Websocket upgrade request exceeds the maximum supported header size");
                     return false;
                 }
 
@@ -362,7 +376,6 @@ namespace FASTER.server
             dcurr += BatchHeader.Size;
             start = 0;
             msgnum = 0;
-
             fixed (byte* ptr1 = &decoded[4])
             {
                 var src = ptr1;
@@ -402,21 +415,21 @@ namespace FASTER.server
 
                             long ctx = ((long)message << 32) | (long)pendingSeqNo;
                             status = session.Read(ref serializer.ReadKeyByRef(ref src, end), ref serializer.ReadInputByRef(ref src, end),
-                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, 0);
+                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr) - 2), ctx, 0);
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
                             if (status.IsPending)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                            else if (status.Found)
-                                serializer.SkipOutput(ref dcurr);
+                            else if (status.Found && !serializer.SkipOutput(ref dcurr, (int)(dend - dcurr)))
+                                throw new FormatException("Read output does not fit in the response buffer");
 
                             break;
 
                         case MessageType.RMW:
                         case MessageType.RMWAsync:
-                            if ((int)(dend - dcurr) < 2)
+                            if ((int)(dend - dcurr) < 6)
                                 SendAndReset(ref d, ref dend);
 
                             keyPtr = src;
@@ -450,7 +463,8 @@ namespace FASTER.server
                             break;
 
                         case MessageType.SubscribeKV:
-                            Debug.Assert(subscribeKVBroker != null);
+                            if (subscribeKVBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
@@ -472,7 +486,8 @@ namespace FASTER.server
                             break;
 
                         case MessageType.PSubscribeKV:
-                            Debug.Assert(subscribeKVBroker != null);
+                            if (subscribeKVBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
@@ -494,7 +509,8 @@ namespace FASTER.server
                             break;
 
                         case MessageType.Publish:
-                            Debug.Assert(subscribeBroker != null);
+                            if (subscribeBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
@@ -514,7 +530,8 @@ namespace FASTER.server
                             break;
 
                         case MessageType.Subscribe:
-                            Debug.Assert(subscribeBroker != null);
+                            if (subscribeBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
@@ -530,7 +547,8 @@ namespace FASTER.server
                             break;
 
                         case MessageType.PSubscribe:
-                            Debug.Assert(subscribeBroker != null);
+                            if (subscribeBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
@@ -608,9 +626,15 @@ namespace FASTER.server
             else
                 outputDcurr = dcurr + 6;
 
+            if (outputDcurr > dend)
+            {
+                networkSender.ReturnResponseObject();
+                return;
+            }
+
             Status status = Status.CreateFound();
             if (valPtr == null)
-                status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
+                status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - outputDcurr)), ctx, 0);
 
             if (!status.IsPending)
             {
@@ -618,15 +642,22 @@ namespace FASTER.server
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                 Write(sid, ref dcurr, (int)(dend - dcurr));
+                bool written = true;
                 if (prefix)
-                    serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
-                if (valPtr != null)
+                    written = serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
+                if (written && valPtr != null)
                 {
                     ref Value value = ref serializer.ReadValueByRef(ref valPtr);
-                    serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
+                    written = serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
                 }
-                else if (status.Found)
-                    serializer.SkipOutput(ref dcurr);
+                else if (written && status.Found)
+                    written = serializer.SkipOutput(ref dcurr, (int)(dend - dcurr));
+
+                if (!written)
+                {
+                    networkSender.ReturnResponseObject();
+                    return;
+                }
             }
             else
             {
@@ -684,6 +715,7 @@ namespace FASTER.server
             dcurr = d;
             dcurr += 10;
             dcurr += sizeof(int); // reserve space for size
+            dcurr += BatchHeader.Size;
             start = msgnum;
         }
 

@@ -171,15 +171,15 @@ namespace FASTER.server
 
                         long ctx = ((long)message << 32) | (long)pendingSeqNo;
                         status = session.Read(ref serializer.ReadKeyByRef(ref src, end), ref serializer.ReadInputByRef(ref src, end),
-                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
+                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr) - 2), ctx, serialNum);
 
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
 
                         if (status.IsPending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                        else if (status.Found)
-                            serializer.SkipOutput(ref dcurr);
+                        else if (status.Found && !serializer.SkipOutput(ref dcurr, (int)(dend - dcurr)))
+                            throw new FormatException("Read output does not fit in the response buffer");
                         break;
 
                     case MessageType.RMW:
@@ -191,14 +191,14 @@ namespace FASTER.server
 
                         ctx = ((long)message << 32) | (long)pendingSeqNo;
                         status = session.RMW(ref serializer.ReadKeyByRef(ref src, end), ref serializer.ReadInputByRef(ref src, end),
-                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
+                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr) - 2), ctx, serialNum);
 
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
                         if (status.IsPending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                        else if (status.IsCompletedSuccessfully)
-                            serializer.SkipOutput(ref dcurr);
+                        else if (status.IsCompletedSuccessfully && !serializer.SkipOutput(ref dcurr, (int)(dend - dcurr)))
+                            throw new FormatException("RMW output does not fit in the response buffer");
 
                         subscribeKVBroker?.Publish(keyPtr);
                         break;
@@ -279,9 +279,15 @@ namespace FASTER.server
             else
                 outputDcurr = dcurr + 6;
 
+            if (outputDcurr > dend)
+            {
+                networkSender.ReturnResponseObject();
+                return;
+            }
+
             Status status = Status.CreateFound();
             if (valPtr == null)
-                status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
+                status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - outputDcurr)), ctx, 0);
 
             if (!status.IsPending)
             {
@@ -289,15 +295,22 @@ namespace FASTER.server
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                 Write(sid, ref dcurr, (int)(dend - dcurr));
+                bool written = true;
                 if (prefix)
-                    serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
-                if (valPtr != null)
+                    written = serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
+                if (written && valPtr != null)
                 {
                     ref Value value = ref serializer.ReadValueByRef(ref valPtr);
-                    serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
+                    written = serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
                 }
-                else if (status.Found)
-                    serializer.SkipOutput(ref dcurr);
+                else if (written && status.Found)
+                    written = serializer.SkipOutput(ref dcurr, (int)(dend - dcurr));
+
+                if (!written)
+                {
+                    networkSender.ReturnResponseObject();
+                    return;
+                }
             }
             else
             {
@@ -338,7 +351,7 @@ namespace FASTER.server
             networkSender.GetResponseObject();
             d = networkSender.GetResponseObjectHead();
             dend = networkSender.GetResponseObjectTail();            
-            dcurr = d + sizeof(int);
+            dcurr = d + sizeof(int) + BatchHeader.Size;
             start = msgnum;
         }
 

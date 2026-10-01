@@ -109,9 +109,12 @@ namespace FASTER.common
         ref Output AsRefOutput(byte* src, int length);
 
         /// <summary>
-        /// Skip output (increment address)
+        /// Advance past the output previously obtained from <see cref="AsRefOutput"/>, materializing it at
+        /// <paramref name="src"/> if the operation did not write it there directly.
         /// </summary>
         /// <param name="src">Memory location</param>
-        void SkipOutput(ref byte* src);
+        /// <param name="length">Space (bytes) available at <paramref name="src"/></param>
+        /// <returns>True if the output was consumed, false if it does not fit in the available space</returns>
+        bool SkipOutput(ref byte* src, int length);
     }
 }

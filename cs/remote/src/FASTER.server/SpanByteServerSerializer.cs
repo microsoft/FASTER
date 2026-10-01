@@ -107,7 +107,8 @@ namespace FASTER.server
         /// <inheritdoc />
         public bool Write(ref SpanByte k, ref byte* dst, int length)
         {
-            if (k.Length > length) return false;
+            // The element is written as a four-byte length followed by the payload
+            if (k.Length < 0 || length < sizeof(int) || k.Length > length - sizeof(int)) return false;
 
             *(int*)dst = k.Length;
             dst += sizeof(int);
@@ -121,13 +122,15 @@ namespace FASTER.server
         /// <inheritdoc />
         public bool Write(ref SpanByteAndMemory k, ref byte* dst, int length)
         {
-            if (k.Length > length) return false;
+            if (k.Length < 0 || k.Length > length) return false;
 
-            var dest = new SpanByte(length, (IntPtr)dst);
+            var dest = new Span<byte>(dst, k.Length);
             if (k.IsSpanByte)
-                k.SpanByte.CopyTo(ref dest);
+                k.SpanByte.AsSpan().Slice(0, k.Length).CopyTo(dest);
             else
-                k.Memory.Memory.Span.CopyTo(dest.AsSpan());
+                // The rented buffer is at least k.Length bytes, and may be larger; copy only the payload
+                k.Memory.Memory.Span.Slice(0, k.Length).CopyTo(dest);
+            dst += k.Length;
             return true;
         }
 
@@ -139,7 +142,19 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public void SkipOutput(ref byte* src) => src += (*(int*)src) + sizeof(int);
+        public bool SkipOutput(ref byte* src, int length)
+        {
+            // If the output did not fit in the response buffer it was redirected to the heap, leaving
+            // stale bytes at src; copy it in instead of advancing over whatever happens to be there.
+            if (!output.IsSpanByte)
+                return Write(ref output, ref src, length);
+
+            if (length < sizeof(int)) return false;
+            int payloadLength = *(int*)src;
+            if (payloadLength < 0 || payloadLength > length - sizeof(int)) return false;
+            src += sizeof(int) + payloadLength;
+            return true;
+        }
 
         /// <inheritdoc />
         public int GetLength(ref SpanByteAndMemory o) => o.Length;

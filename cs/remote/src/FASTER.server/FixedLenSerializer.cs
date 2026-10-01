@@ -115,9 +115,11 @@ namespace FASTER.server
         }
 
         /// <inheritdoc />
-        public void SkipOutput(ref byte* src)
+        public bool SkipOutput(ref byte* src, int length)
         {
+            if (length < Unsafe.SizeOf<Output>()) return false;
             src += Unsafe.SizeOf<Output>();
+            return true;
         }
 
         /// <inheritdoc />

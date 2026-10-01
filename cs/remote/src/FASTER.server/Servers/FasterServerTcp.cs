@@ -20,6 +20,12 @@ namespace FASTER.server
         readonly Socket servSocket;
 
         /// <summary>
+        /// Ceiling on the per-connection receive buffer, large enough to hold any message the sessions
+        /// accept and small enough to keep the growth arithmetic free of overflow.
+        /// </summary>
+        const int MaxNetworkBufferSize = 1 << 27;
+
+        /// <summary>
         /// Constructor for server
         /// </summary>
         /// <param name="address"></param>
@@ -51,14 +57,19 @@ namespace FASTER.server
         private unsafe void DisposeConnectionSession(SocketAsyncEventArgs e)
         {
             var connArgs = (ConnectionArgs)e.UserToken;
-            connArgs.socket.Dispose();
+            if (connArgs == null) return;
+            e.UserToken = null;
+
+            try { connArgs.socket.Dispose(); } catch (Exception) { }
+            // Draining pending operations can surface further errors on the (now closed) socket. Teardown
+            // has to complete regardless, or those would escape to the socket engine's event loop.
+            try { DisposeSession(connArgs.session); } catch (Exception) { }
+
 #if !NET5_0_OR_GREATER
             if (connArgs.recvHandle.IsAllocated)
                 connArgs.recvHandle.Free();
 #endif
-            e.UserToken = null;
-            e.Dispose();            
-            DisposeSession(connArgs.session);
+            e.Dispose();
         }
 
         /// <summary>
@@ -130,14 +141,10 @@ namespace FASTER.server
                     if (!HandleReceiveCompletion(e)) break;
                 } while (!connArgs.socket.ReceiveAsync(e));
             }
-            // socket disposed
-            catch (ObjectDisposedException)
-            {
-                DisposeConnectionSession(e);
-            }
-            // Malformed request from the client: close the offending connection rather than letting the
-            // exception escape to the socket engine's event loop, which would terminate the process.
-            catch (FormatException)
+            // Anything the connection throws (malformed request, disposed socket, backend size limits)
+            // must close only that connection: letting it escape here would reach the socket engine's
+            // event loop, which terminates the process.
+            catch (Exception)
             {
                 DisposeConnectionSession(e);
             }
@@ -153,6 +160,8 @@ namespace FASTER.server
                 return false;
             }
 
+            connArgs.bytesRead += e.BytesTransferred;
+
             if (connArgs.session == null)
             {
                 return CreateSession(e);
@@ -162,15 +171,14 @@ namespace FASTER.server
 
             return true;
         }
-
         private unsafe bool CreateSession(SocketAsyncEventArgs e)
         {
             var connArgs = (ConnectionArgs)e.UserToken;
 
             // We need at least 4 bytes to determine session            
-            if (e.BytesTransferred < 4)
+            if (connArgs.bytesRead < 4)
             {                
-                e.SetBuffer(e.BytesTransferred, e.Buffer.Length - e.BytesTransferred);
+                e.SetBuffer(connArgs.bytesRead, e.Buffer.Length - connArgs.bytesRead);
                 return true;
             }
 
@@ -180,9 +188,9 @@ namespace FASTER.server
             // This results in a fourth byte value (little endian) > 127, denoting a non-ASCII wire format.
             if (e.Buffer[3] > 127)
             {
-                if (e.BytesTransferred < 4 + BatchHeader.Size)
+                if (connArgs.bytesRead < 4 + BatchHeader.Size)
                 {
-                    e.SetBuffer(e.BytesTransferred, e.Buffer.Length - e.BytesTransferred);
+                    e.SetBuffer(connArgs.bytesRead, e.Buffer.Length - connArgs.bytesRead);
                     return true;
                 }
                 fixed (void* bh = &e.Buffer[4])
@@ -225,7 +233,6 @@ namespace FASTER.server
         private static unsafe void ProcessRequest(SocketAsyncEventArgs e)
         {
             var connArgs = (ConnectionArgs)e.UserToken;
-            connArgs.bytesRead += e.BytesTransferred;
 
             var readHead = connArgs.session.TryConsumeMessages(connArgs.recvBufferPtr, connArgs.bytesRead);
 
@@ -247,12 +254,17 @@ namespace FASTER.server
 
             if (connArgs.bytesRead == e.Buffer.Length)
             {
-                // Need to grow input buffer
+                // Need to grow input buffer. Bound the growth: without a ceiling a client that never
+                // completes a message can drive the doubling until the size computation overflows.
+                if (e.Buffer.Length >= MaxNetworkBufferSize)
+                    throw new FormatException("Request exceeds the maximum supported buffer size");
+
+                var newSize = Math.Min(e.Buffer.Length * 2, MaxNetworkBufferSize);
 #if NET5_0_OR_GREATER
-                var newBuffer = GC.AllocateArray<byte>(e.Buffer.Length * 2, true);
+                var newBuffer = GC.AllocateArray<byte>(newSize, true);
 #else
                 connArgs.recvHandle.Free();
-                var newBuffer = new byte[e.Buffer.Length * 2];
+                var newBuffer = new byte[newSize];
                 connArgs.recvHandle = GCHandle.Alloc(newBuffer, GCHandleType.Pinned);
 #endif
                 connArgs.recvBufferPtr = (byte*)Unsafe.AsPointer(ref newBuffer[0]);
