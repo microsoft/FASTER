@@ -168,6 +168,8 @@ namespace FASTER.server
                 if (!masked)
                     throw new FormatException("Unmasked websocket frame received from client");
 
+                // RFC 6455 5.2: a 7-bit length of 126 or 127 is a sentinel meaning the real length
+                // follows as a 16- or 64-bit unsigned integer, in network byte order
                 if (msglen == 126)
                 {
                     if (length - nextOffset < sizeof(ushort)) return false;
@@ -180,6 +182,8 @@ namespace FASTER.server
                     ulong extended = 0;
                     for (int i = 0; i < sizeof(ulong); i++)
                         extended = (extended << 8) | buf[nextOffset + i];
+                    // Accumulated as a ulong and bounded before narrowing: the wire allows lengths far
+                    // beyond what an int, or this server, can represent
                     if (extended > MaxMessageSize)
                         throw new FormatException($"Websocket payload length ({extended}) exceeds the maximum supported message size");
                     msglen = (long)extended;
@@ -218,6 +222,12 @@ namespace FASTER.server
             return true;
         }
 
+        /// <summary>
+        /// Write the websocket frame header for a payload that has already been laid out at a fixed
+        /// ten-byte offset (the largest header this server emits). The header is variable length, so
+        /// <paramref name="d"/> is first advanced to leave the header ending exactly where the payload
+        /// begins: eight bytes for the two-byte form, six for the four-byte form, none for the ten-byte form.
+        /// </summary>
         private static unsafe void CreateSendPacketHeader(ref byte* d, int payloadLen)
         {
             if (payloadLen < 126)
@@ -230,8 +240,10 @@ namespace FASTER.server
             }
             byte* dcurr = d;
 
-            *dcurr = 0b10000010;
+            *dcurr = 0b10000010; // FIN, no reserved bits, binary opcode
             dcurr++;
+            // Mirrors the read path: lengths below 126 are inline, otherwise 126 or 127 introduces a
+            // 16- or 64-bit length in network byte order. The mask bit stays clear; servers never mask.
             if (payloadLen < 126)
             {
                 *dcurr = (byte)(payloadLen & 0b01111111);
