@@ -47,7 +47,7 @@ namespace FASTER.server
                     var span = dst.SpanByte.AsSpan();
                     fixed (byte* ptr = span)
                         *(int*)ptr = src.Length;
-                    src.AsReadOnlySpan().CopyTo(span.Slice(sizeof(int)));
+                    src.AsReadOnlySpanWithMetadata().CopyTo(span.Slice(sizeof(int)));
                     return true;
                 }
                 dst.ConvertToHeap();
@@ -58,7 +58,7 @@ namespace FASTER.server
             dst.Length = src.TotalSize;
             fixed (byte* ptr = dst.Memory.Memory.Span)
                 *(int*)ptr = src.Length;
-            src.AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
+            src.AsReadOnlySpanWithMetadata().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
             return true;
         }
     }

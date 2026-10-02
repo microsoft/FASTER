@@ -16,6 +16,12 @@ namespace FASTER.server
         readonly HeaderReaderWriter hrw;
         int readHead;
 
+        /// <summary>
+        /// Upper bound on the size of a single binary message. Rejecting anything larger keeps the size
+        /// arithmetic below free of overflow and bounds the amount of data buffered for one message.
+        /// </summary>
+        const int MaxMessageSize = 1 << 26;
+
         int seqNo, pendingSeqNo, msgnum, start;
         byte* dcurr;
 
@@ -46,7 +52,7 @@ namespace FASTER.server
             this.bytesRead = bytesRead;
             readHead = 0;
             while (TryReadMessages(req_buf, out var offset))
-                ProcessBatch(req_buf, offset);
+                ProcessBatch(req_buf, offset, req_buf + readHead);
             return readHead;
         }
 
@@ -92,25 +98,27 @@ namespace FASTER.server
             // Need to at least have read off of size field on the message
             if (bytesAvailable < sizeof(int)) return false;
 
-            // MSB is 1 to indicate binary protocol
-            var size = -(*(int*)(buf + readHead));
+            // The size field is sent negated, so its MSB is 1 to indicate the binary protocol. Negate in
+            // 64-bit space: negating int.MinValue in 32-bit space wraps back to a negative value.
+            long size = -(long)(*(int*)(buf + readHead));
 
-            // Reject malformed/malicious size fields. A valid binary message always has its
-            // MSB set on the wire, so the decoded size is strictly positive. A non-positive
-            // size (e.g. an attacker clearing the MSB on a follow-up message) would otherwise
-            // drive readHead backward/negative and cause out-of-bounds access downstream.
-            if (size <= 0) return false;
+            // Reject malformed/malicious size fields. A valid binary message always has its MSB set on
+            // the wire, so the decoded size is strictly positive and bounded. Any other value (e.g. an
+            // attacker clearing the MSB, or sending int.MinValue) would otherwise drive readHead
+            // backward/negative and cause out-of-bounds access downstream.
+            if (size <= 0 || size > MaxMessageSize)
+                throw new FormatException($"Invalid message size ({size}) in binary request");
 
             // Not all of the message has arrived
             if (bytesAvailable < size + sizeof(int)) return false;
             offset = readHead + sizeof(int);
 
             // Consume this message and the header
-            readHead += size + sizeof(int);
+            readHead += (int)size + sizeof(int);
             return true;
         }
 
-        private unsafe void ProcessBatch(byte* buf, int offset)
+        private unsafe void ProcessBatch(byte* buf, int offset, byte* end)
         {
             networkSender.GetResponseObject();
 
@@ -122,6 +130,8 @@ namespace FASTER.server
             int origPendingSeqNo = pendingSeqNo;
 
             var src = b;
+            if (end - src < BatchHeader.Size)
+                throw new FormatException("Truncated batch header in binary request");
             ref var header = ref Unsafe.AsRef<BatchHeader>(src);
             var num = header.NumMessages;
             src += BatchHeader.Size;
@@ -133,6 +143,9 @@ namespace FASTER.server
 
             for (msgnum = 0; msgnum < num; msgnum++)
             {
+                // Every message starts with a one-byte type followed by an eight-byte serial number
+                if (end - src < 1 + sizeof(long))
+                    throw new FormatException("Truncated message header in binary request");
                 var message = (MessageType)(*src++);
                 var serialNum = hrw.ReadSerialNum(ref src);
                 switch (message)
@@ -143,7 +156,7 @@ namespace FASTER.server
                             SendAndReset(ref d, ref dend);
 
                         var keyPtr = src;
-                        status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src), serialNo: serialNum);
+                        status = session.Upsert(ref serializer.ReadKeyByRef(ref src, end), ref serializer.ReadValueByRef(ref src, end), serialNo: serialNum);
 
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -157,16 +170,16 @@ namespace FASTER.server
                             SendAndReset(ref d, ref dend);
 
                         long ctx = ((long)message << 32) | (long)pendingSeqNo;
-                        status = session.Read(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
-                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
+                        status = session.Read(ref serializer.ReadKeyByRef(ref src, end), ref serializer.ReadInputByRef(ref src, end),
+                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr) - 2), ctx, serialNum);
 
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
 
                         if (status.IsPending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                        else if (status.Found)
-                            serializer.SkipOutput(ref dcurr);
+                        else if (status.Found && !serializer.SkipOutput(ref dcurr, (int)(dend - dcurr)))
+                            throw new FormatException("Read output does not fit in the response buffer");
                         break;
 
                     case MessageType.RMW:
@@ -177,15 +190,15 @@ namespace FASTER.server
                         keyPtr = src;
 
                         ctx = ((long)message << 32) | (long)pendingSeqNo;
-                        status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
-                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, serialNum);
+                        status = session.RMW(ref serializer.ReadKeyByRef(ref src, end), ref serializer.ReadInputByRef(ref src, end),
+                            ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr) - 2), ctx, serialNum);
 
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
                         if (status.IsPending)
                             Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                        else if (status.IsCompletedSuccessfully)
-                            serializer.SkipOutput(ref dcurr);
+                        else if (status.IsCompletedSuccessfully && !serializer.SkipOutput(ref dcurr, (int)(dend - dcurr)))
+                            throw new FormatException("RMW output does not fit in the response buffer");
 
                         subscribeKVBroker?.Publish(keyPtr);
                         break;
@@ -196,7 +209,7 @@ namespace FASTER.server
                             SendAndReset(ref d, ref dend);
 
                         keyPtr = src;
-                        status = session.Delete(ref serializer.ReadKeyByRef(ref src), serialNo: serialNum);
+                        status = session.Delete(ref serializer.ReadKeyByRef(ref src, end), serialNo: serialNum);
 
                         hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                         Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -205,7 +218,8 @@ namespace FASTER.server
                         break;
 
                     default:
-                        if (!HandlePubSub(message, ref src, ref d, ref dend)) throw new NotImplementedException();
+                        if (!HandlePubSub(message, ref src, end, ref d, ref dend))
+                            throw new FormatException($"Unsupported message type ({message}) in binary request");
                         break;
                 }
             }
@@ -265,9 +279,15 @@ namespace FASTER.server
             else
                 outputDcurr = dcurr + 6;
 
+            if (outputDcurr > dend)
+            {
+                networkSender.ReturnResponseObject();
+                return;
+            }
+
             Status status = Status.CreateFound();
             if (valPtr == null)
-                status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
+                status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - outputDcurr)), ctx, 0);
 
             if (!status.IsPending)
             {
@@ -275,15 +295,22 @@ namespace FASTER.server
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                 Write(sid, ref dcurr, (int)(dend - dcurr));
+                bool written = true;
                 if (prefix)
-                    serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
-                if (valPtr != null)
+                    written = serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
+                if (written && valPtr != null)
                 {
                     ref Value value = ref serializer.ReadValueByRef(ref valPtr);
-                    serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
+                    written = serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
                 }
-                else if (status.Found)
-                    serializer.SkipOutput(ref dcurr);
+                else if (written && status.Found)
+                    written = serializer.SkipOutput(ref dcurr, (int)(dend - dcurr));
+
+                if (!written)
+                {
+                    networkSender.ReturnResponseObject();
+                    return;
+                }
             }
             else
             {
@@ -324,7 +351,7 @@ namespace FASTER.server
             networkSender.GetResponseObject();
             d = networkSender.GetResponseObjectHead();
             dend = networkSender.GetResponseObjectTail();            
-            dcurr = d + sizeof(int);
+            dcurr = d + sizeof(int) + BatchHeader.Size;
             start = msgnum;
         }
 
@@ -340,7 +367,7 @@ namespace FASTER.server
             networkSender.SendResponse(0, payloadSize);
         }
 
-        private bool HandlePubSub(MessageType message, ref byte* src, ref byte* d, ref byte* dend)
+        private bool HandlePubSub(MessageType message, ref byte* src, byte* end, ref byte* d, ref byte* dend)
         {
             switch (message)
             {
@@ -351,10 +378,10 @@ namespace FASTER.server
                         SendAndReset(ref d, ref dend);
 
                     var keyStart = src;
-                    serializer.ReadKeyByRef(ref src);
+                    serializer.ReadKeyByRef(ref src, end);
 
                     var inputStart = src;
-                    serializer.ReadInputByRef(ref src);
+                    serializer.ReadInputByRef(ref src, end);
 
                     int sid = subscribeKVBroker.Subscribe(ref keyStart, ref inputStart, this);
                     Status status = Status.CreatePending();
@@ -373,10 +400,10 @@ namespace FASTER.server
                         break;
 
                     keyStart = src;
-                    serializer.ReadKeyByRef(ref src);
+                    serializer.ReadKeyByRef(ref src, end);
 
                     inputStart = src;
-                    serializer.ReadInputByRef(ref src);
+                    serializer.ReadInputByRef(ref src, end);
 
                     sid = subscribeKVBroker.PSubscribe(ref keyStart, ref inputStart, this);
                     status = Status.CreatePending();
@@ -392,9 +419,9 @@ namespace FASTER.server
                         SendAndReset(ref d, ref dend);
 
                     var keyPtr = src;
-                    ref Key key = ref serializer.ReadKeyByRef(ref src);
+                    ref Key key = ref serializer.ReadKeyByRef(ref src, end);
                     byte* valPtr = src;
-                    ref Value val = ref serializer.ReadValueByRef(ref src);
+                    ref Value val = ref serializer.ReadValueByRef(ref src, end);
                     int valueLength = (int)(src - valPtr);
 
                     status = Status.CreateFound();
@@ -412,7 +439,7 @@ namespace FASTER.server
                         SendAndReset(ref d, ref dend);
 
                     keyStart = src;
-                    serializer.ReadKeyByRef(ref src);
+                    serializer.ReadKeyByRef(ref src, end);
 
                     sid = subscribeBroker.Subscribe(ref keyStart, this);
                     status = Status.CreatePending();
@@ -428,7 +455,7 @@ namespace FASTER.server
                         SendAndReset(ref d, ref dend);
 
                     keyStart = src;
-                    serializer.ReadKeyByRef(ref src);
+                    serializer.ReadKeyByRef(ref src, end);
 
                     sid = subscribeBroker.PSubscribe(ref keyStart, this);
                     status = Status.CreatePending();
@@ -447,6 +474,7 @@ namespace FASTER.server
         {
             subscribeBroker?.RemoveSubscription(this);
             subscribeKVBroker?.RemoveSubscription(this);
+            base.Dispose();
         }
     }
 }

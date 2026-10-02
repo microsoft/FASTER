@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -25,7 +24,6 @@ namespace FASTER.server
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         readonly HeaderReaderWriter hrw;
-        byte* recvBufferPtr;
         int readHead;
 
         int pendingSeqNo, msgnum, start;
@@ -57,7 +55,6 @@ namespace FASTER.server
         {
             this.bytesRead = bytesRead;
             readHead = 0;
-            recvBufferPtr = req_buf;
             while (TryReadMessages(out var offset))
             {
                 if (!ProcessBatch(req_buf, bytesRead, offset)) break;
@@ -114,6 +111,123 @@ namespace FASTER.server
             return true;
         }
 
+        const int OpcodeContinuation = 0x0;
+        const int OpcodeText = 0x1;
+        const int OpcodeBinary = 0x2;
+        const int OpcodeClose = 0x8;
+        const int OpcodePing = 0x9;
+        const int OpcodePong = 0xA;
+
+        /// <summary>
+        /// Upper bound on the total size of a single (possibly fragmented) websocket message. Larger
+        /// lengths are rejected outright, rather than being used to size an allocation.
+        /// </summary>
+        const int MaxMessageSize = 1 << 26;
+
+        /// <summary>
+        /// Upper bound on the number of frames making up a single message, and on the size of the HTTP
+        /// upgrade request. Both bound the amount of data buffered before anything is consumed.
+        /// </summary>
+        const int MaxFrameCount = 1024;
+        const int MaxHttpHeaderSize = 1 << 16;
+
+        /// <summary>
+        /// Parse the websocket frames making up one message, starting at <paramref name="offset"/>. Every
+        /// frame header and payload length is validated against the bytes actually received, so that a
+        /// malformed or oversized length can neither be read past the end of the receive buffer nor be
+        /// narrowed into an out-of-range allocation.
+        /// </summary>
+        /// <returns>False if the message has not fully arrived yet, in which case the caller must wait for more data</returns>
+        /// <exception cref="FormatException">The data received violates the websocket framing rules</exception>
+        private bool TryParseFrames(byte* buf, int length, int offset, List<Decoder> frames, out int totalMsgLen, out int nextOffset, out int opcode)
+        {
+            totalMsgLen = 0;
+            nextOffset = offset;
+            opcode = OpcodeContinuation;
+
+            bool fin = false, first = true;
+
+            while (!fin)
+            {
+                // Every frame header is at least two bytes
+                if (length - nextOffset < 2) return false;
+
+                if (frames.Count >= MaxFrameCount)
+                    throw new FormatException("Websocket message has too many fragments");
+
+                fin = (buf[nextOffset] & 0b10000000) != 0;
+                // The reserved bits must be zero unless a negotiated extension defines them; we negotiate none
+                if ((buf[nextOffset] & 0b01110000) != 0)
+                    throw new FormatException("Websocket frame sets reserved bits");
+                int frameOpcode = buf[nextOffset] & 0b00001111;
+                // "All frames sent from client to server have this [mask] bit set to 1"
+                bool masked = (buf[nextOffset + 1] & 0b10000000) != 0;
+                long msglen = buf[nextOffset + 1] & 0b01111111;
+                nextOffset += 2;
+
+                if (!masked)
+                    throw new FormatException("Unmasked websocket frame received from client");
+
+                // RFC 6455 5.2: a 7-bit length of 126 or 127 is a sentinel meaning the real length
+                // follows as a 16- or 64-bit unsigned integer, in network byte order
+                if (msglen == 126)
+                {
+                    if (length - nextOffset < sizeof(ushort)) return false;
+                    msglen = ((long)buf[nextOffset] << 8) | buf[nextOffset + 1];
+                    nextOffset += sizeof(ushort);
+                }
+                else if (msglen == 127)
+                {
+                    if (length - nextOffset < sizeof(ulong)) return false;
+                    ulong extended = 0;
+                    for (int i = 0; i < sizeof(ulong); i++)
+                        extended = (extended << 8) | buf[nextOffset + i];
+                    // Accumulated as a ulong and bounded before narrowing: the wire allows lengths far
+                    // beyond what an int, or this server, can represent
+                    if (extended > MaxMessageSize)
+                        throw new FormatException($"Websocket payload length ({extended}) exceeds the maximum supported message size");
+                    msglen = (long)extended;
+                    nextOffset += sizeof(ulong);
+                }
+
+                if (frameOpcode >= OpcodeClose)
+                {
+                    // Control frames cannot be fragmented, carry at most 125 bytes, and we do not
+                    // support them interleaved into a fragmented message
+                    if (!fin || msglen > 125 || !first)
+                        throw new FormatException("Malformed websocket control frame");
+                }
+                else if (first)
+                {
+                    if (frameOpcode != OpcodeText && frameOpcode != OpcodeBinary)
+                        throw new FormatException($"Unsupported websocket opcode ({frameOpcode})");
+                }
+                else if (frameOpcode != OpcodeContinuation)
+                    throw new FormatException("Expected websocket continuation frame");
+
+                if (first) opcode = frameOpcode;
+                first = false;
+
+                totalMsgLen += (int)msglen;
+                if (totalMsgLen > MaxMessageSize)
+                    throw new FormatException("Websocket message exceeds the maximum supported message size");
+
+                // Four bytes of masking key, followed by the payload
+                if (length - nextOffset < sizeof(int) || length - nextOffset - sizeof(int) < msglen) return false;
+
+                frames.Add(new Decoder { msgLen = (int)msglen, maskStart = nextOffset, dataStart = nextOffset + sizeof(int) });
+                nextOffset += sizeof(int) + (int)msglen;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Write the websocket frame header for a payload that has already been laid out at a fixed
+        /// ten-byte offset (the largest header this server emits). The header is variable length, so
+        /// <paramref name="d"/> is first advanced to leave the header ending exactly where the payload
+        /// begins: eight bytes for the two-byte form, six for the four-byte form, none for the ten-byte form.
+        /// </summary>
         private static unsafe void CreateSendPacketHeader(ref byte* d, int payloadLen)
         {
             if (payloadLen < 126)
@@ -126,8 +240,10 @@ namespace FASTER.server
             }
             byte* dcurr = d;
 
-            *dcurr = 0b10000010;
+            *dcurr = 0b10000010; // FIN, no reserved bits, binary opcode
             dcurr++;
+            // Mirrors the read path: lengths below 126 are inline, otherwise 126 or 127 introduces a
+            // 16- or 64-bit length in network byte order. The mask bit stays clear; servers never mask.
             if (payloadLen < 126)
             {
                 *dcurr = (byte)(payloadLen & 0b01111111);
@@ -167,20 +283,14 @@ namespace FASTER.server
         {
             bool completeWSCommand = true;
             networkSender.GetResponseObject();
-            
-            byte* b = buf + offset;
+
             byte* d = networkSender.GetResponseObjectHead();
             var dend = networkSender.GetResponseObjectTail();
             dcurr = d; // reserve space for size
-            var bytesAvailable = bytesRead - readHead;
-            var _origReadHead = readHead;
-            int msglen = 0;
-            byte[] decoded = Array.Empty<byte>();
-            var ptr = recvBufferPtr + readHead;
-            var totalMsgLen = 0;
+            byte[] decoded;
             List<Decoder> decoderInfoList = new();
 
-            if (buf[offset] == 71 && buf[offset + 1] == 69 && buf[offset + 2] == 84)
+            if (length - offset >= 3 && buf[offset] == 71 && buf[offset + 1] == 69 && buf[offset + 2] == 84)
             {
                 // 1. Obtain the value of the "Sec-WebSocket-Key" request header without any leading or trailing whitespace
                 // 2. Concatenate it with "258EAFA5-E914-47DA-95CA-C5AB0DC85B11" (a special GUID specified by RFC 6455)
@@ -189,6 +299,16 @@ namespace FASTER.server
 
                 //string s = Encoding.UTF8.GetString(buf, offset, length - offset);
                 string s = Encoding.UTF8.GetString(new ReadOnlySpan<byte>((void*)(buf + offset), length - offset).ToArray());
+
+                // Wait until the full HTTP request has arrived before replying to it
+                if (!s.Contains("\r\n\r\n"))
+                {
+                    networkSender.ReturnResponseObject();
+                    if (length - offset > MaxHttpHeaderSize)
+                        throw new FormatException("Websocket upgrade request exceeds the maximum supported header size");
+                    return false;
+                }
+
                 string swk = Regex.Match(s, "Sec-WebSocket-Key: (.*)").Groups[1].Value.Trim();
                 string swka = swk + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
                 byte[] swkaSha1 = System.Security.Cryptography.SHA1.Create().ComputeHash(Encoding.UTF8.GetBytes(swka));
@@ -213,100 +333,31 @@ namespace FASTER.server
             }
             else
             {
-                var decoderInfo = new Decoder();
-
-                bool fin = (buf[offset] & 0b10000000) != 0,
-                    mask = (buf[offset + 1] & 0b10000000) != 0; // must be true, "All messages from the client to the server have this bit set"
-
-                int opcode = buf[offset] & 0b00001111; // expecting 1 - text message
-                offset++;
-
-                msglen = buf[offset] - 128; // & 0111 1111
-
-                if (msglen < 125)
+                // Parse the (possibly fragmented) WebSocket message, validating every length field
+                // against the bytes actually received before any of them is used.
+                if (!TryParseFrames(buf, length, offset, decoderInfoList, out var totalMsgLen, out var nextBufOffset, out var opcode))
                 {
-                    offset++;
-                }
-                else if (msglen == 126)
-                {
-                    msglen = BitConverter.ToUInt16(new byte[] { buf[offset + 2], buf[offset + 1] }, 0);
-                    offset += 3;
-                }
-                else if (msglen == 127)
-                {
-                    msglen = (int)BitConverter.ToUInt64(new byte[] { buf[offset + 8], buf[offset + 7], buf[offset + 6], buf[offset + 5], buf[offset + 4], buf[offset + 3], buf[offset + 2], buf[offset + 1] }, 0);
-                    offset += 9;
+                    // Message has not fully arrived yet; leave readHead untouched and wait for more data
+                    networkSender.ReturnResponseObject();
+                    return false;
                 }
 
-                if (msglen == 0)
-                    Console.WriteLine("msglen == 0");
-
-
-                decoderInfo.maskStart = offset;
-                decoderInfo.msgLen = msglen;
-                decoderInfo.dataStart = offset + 4;
-                decoderInfoList.Add(decoderInfo);
-                totalMsgLen += msglen;
-                offset += 4;
-
-                if (fin == false)
+                if (opcode == OpcodeClose)
                 {
-                    byte[] decodedClientMsgLen = new byte[sizeof(Int32)];
-                    byte[] clientMsgLenMask = new byte[4] { buf[decoderInfo.maskStart], buf[decoderInfo.maskStart + 1], buf[decoderInfo.maskStart + 2], buf[decoderInfo.maskStart + 3] };
-                    for (int i = 0; i < sizeof(Int32); ++i)
-                        decodedClientMsgLen[i] = (byte)(buf[decoderInfo.dataStart + i] ^ clientMsgLenMask[i % 4]);
-                    var clientMsgLen = (int)BitConverter.ToInt32(decodedClientMsgLen, 0);
-                    if (clientMsgLen > bytesRead)
-                        return false;
-                }
-
-                var nextBufOffset = offset;
-                nextBufOffset += msglen;
-
-                while (fin == false)
-                {
-                    fin = (buf[nextBufOffset] & 0b10000000) != 0;
-
-                    nextBufOffset++;
-                    int nextMsgLen = buf[nextBufOffset] & 0b01111111;
-
-                    nextBufOffset++;
-
-                    if (nextMsgLen < 125)
-                    {
-                        nextBufOffset++;
-                    }
-                    else if (nextMsgLen == 126)
-                    {
-                        nextMsgLen = BitConverter.ToUInt16(new byte[] { buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
-                        nextBufOffset += 2;
-                    }
-                    else if (nextMsgLen == 127)
-                    {
-                        nextMsgLen = (int)BitConverter.ToUInt64(new byte[] { buf[nextBufOffset + 7], buf[nextBufOffset + 6], buf[nextBufOffset + 5], buf[nextBufOffset + 4], buf[nextBufOffset + 3], buf[nextBufOffset + 2], buf[nextBufOffset + 1], buf[nextBufOffset] }, 0);
-                        nextBufOffset += 8;
-                    }
-
-                    var nextDecoderInfo = new Decoder
-                    {
-                        msgLen = nextMsgLen,
-                        maskStart = nextBufOffset,
-                        dataStart = nextBufOffset + 4
-                    };
-                    decoderInfoList.Add(nextDecoderInfo);
-                    totalMsgLen += nextMsgLen; // Message length without the mask
-                    nextBufOffset += 4; // 4 bytes of masking
-                    nextBufOffset += nextMsgLen; // remaining message length                }
-                }
-
-                if (msglen == 2)
-                {
+                    networkSender.ReturnResponseObject();
+                    readHead = nextBufOffset;
                     this.Dispose();
                     return false;
                 }
 
-                offset = nextBufOffset;
-                completeWSCommand = true;
+                readHead = nextBufOffset;
+
+                // Ping/pong carry no FASTER payload; consume them and move on
+                if (opcode == OpcodePing || opcode == OpcodePong)
+                {
+                    networkSender.ReturnResponseObject();
+                    return completeWSCommand;
+                }
 
                 var decodedIndex = 0;
                 decoded = new byte[totalMsgLen];
@@ -320,8 +371,13 @@ namespace FASTER.server
                             decoded[decodedIndex++] = (byte)(buf[decoderInfoElem.dataStart + i] ^ masks[i % 4]);
                     }
                 }
+            }
 
-                readHead = offset;
+            // The decoded message is [4 byte size][BatchHeader][messages...]
+            if (decoded.Length < sizeof(int) + BatchHeader.Size)
+            {
+                networkSender.ReturnResponseObject();
+                throw new FormatException("Truncated batch header in websocket request");
             }
 
             dcurr = d;
@@ -332,10 +388,10 @@ namespace FASTER.server
             dcurr += BatchHeader.Size;
             start = 0;
             msgnum = 0;
-
             fixed (byte* ptr1 = &decoded[4])
             {
                 var src = ptr1;
+                var end = ptr1 + (decoded.Length - sizeof(int));
                 ref var header = ref Unsafe.AsRef<BatchHeader>(src);
                 int num = *(int*)(src + 4);
                 src += BatchHeader.Size;
@@ -343,6 +399,8 @@ namespace FASTER.server
 
                 for (msgnum = 0; msgnum < num; msgnum++)
                 {
+                    if (end - src < 1)
+                        throw new FormatException("Truncated message header in websocket request");
                     var message = (MessageType)(*src++);
 
                     switch (message)
@@ -353,7 +411,7 @@ namespace FASTER.server
                                 SendAndReset(ref d, ref dend);
 
                             var keyPtr = src;
-                            status = session.Upsert(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadValueByRef(ref src));
+                            status = session.Upsert(ref serializer.ReadKeyByRef(ref src, end), ref serializer.ReadValueByRef(ref src, end));
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -368,28 +426,28 @@ namespace FASTER.server
                                 SendAndReset(ref d, ref dend);
 
                             long ctx = ((long)message << 32) | (long)pendingSeqNo;
-                            status = session.Read(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src),
-                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr)), ctx, 0);
+                            status = session.Read(ref serializer.ReadKeyByRef(ref src, end), ref serializer.ReadInputByRef(ref src, end),
+                                ref serializer.AsRefOutput(dcurr + 2, (int)(dend - dcurr) - 2), ctx, 0);
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
 
                             if (status.IsPending)
                                 Write(pendingSeqNo++, ref dcurr, (int)(dend - dcurr));
-                            else if (status.Found)
-                                serializer.SkipOutput(ref dcurr);
+                            else if (status.Found && !serializer.SkipOutput(ref dcurr, (int)(dend - dcurr)))
+                                throw new FormatException("Read output does not fit in the response buffer");
 
                             break;
 
                         case MessageType.RMW:
                         case MessageType.RMWAsync:
-                            if ((int)(dend - dcurr) < 2)
+                            if ((int)(dend - dcurr) < 6)
                                 SendAndReset(ref d, ref dend);
 
                             keyPtr = src;
 
                             ctx = ((long)message << 32) | (long)pendingSeqNo;
-                            status = session.RMW(ref serializer.ReadKeyByRef(ref src), ref serializer.ReadInputByRef(ref src), ctx);
+                            status = session.RMW(ref serializer.ReadKeyByRef(ref src, end), ref serializer.ReadInputByRef(ref src, end), ctx);
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -407,7 +465,7 @@ namespace FASTER.server
 
                             keyPtr = src;
 
-                            status = session.Delete(ref serializer.ReadKeyByRef(ref src));
+                            status = session.Delete(ref serializer.ReadKeyByRef(ref src, end));
 
                             hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                             Write(ref status, ref dcurr, (int)(dend - dcurr));
@@ -417,16 +475,17 @@ namespace FASTER.server
                             break;
 
                         case MessageType.SubscribeKV:
-                            Debug.Assert(subscribeKVBroker != null);
+                            if (subscribeKVBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
                             var keyStart = src;
-                            ref Key key = ref serializer.ReadKeyByRef(ref src);
+                            ref Key key = ref serializer.ReadKeyByRef(ref src, end);
 
                             var inputStart = src;
-                            ref Input input = ref serializer.ReadInputByRef(ref src);
+                            ref Input input = ref serializer.ReadInputByRef(ref src, end);
 
                             int sid = subscribeKVBroker.Subscribe(ref keyStart, ref inputStart, this);
                             status = Status.CreatePending();
@@ -439,16 +498,17 @@ namespace FASTER.server
                             break;
 
                         case MessageType.PSubscribeKV:
-                            Debug.Assert(subscribeKVBroker != null);
+                            if (subscribeKVBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
                             keyStart = src;
-                            key = ref serializer.ReadKeyByRef(ref src);
+                            key = ref serializer.ReadKeyByRef(ref src, end);
 
                             inputStart = src;
-                            input = ref serializer.ReadInputByRef(ref src);
+                            input = ref serializer.ReadInputByRef(ref src, end);
 
                             sid = subscribeKVBroker.PSubscribe(ref keyStart, ref inputStart, this);
                             status = Status.CreatePending();
@@ -461,15 +521,16 @@ namespace FASTER.server
                             break;
 
                         case MessageType.Publish:
-                            Debug.Assert(subscribeBroker != null);
+                            if (subscribeBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2)
                                 SendAndReset(ref d, ref dend);
 
                             keyPtr = src;
-                            key = ref serializer.ReadKeyByRef(ref src);
+                            key = ref serializer.ReadKeyByRef(ref src, end);
                             byte* valPtr = src;
-                            ref Value val = ref serializer.ReadValueByRef(ref src);
+                            ref Value val = ref serializer.ReadValueByRef(ref src, end);
                             int valueLength = (int)(src - valPtr);
 
                             status = Status.CreateFound();
@@ -481,13 +542,14 @@ namespace FASTER.server
                             break;
 
                         case MessageType.Subscribe:
-                            Debug.Assert(subscribeBroker != null);
+                            if (subscribeBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
                             keyStart = src;
-                            serializer.ReadKeyByRef(ref src);
+                            serializer.ReadKeyByRef(ref src, end);
 
                             sid = subscribeBroker.Subscribe(ref keyStart, this);
                             status = Status.CreatePending();
@@ -497,13 +559,14 @@ namespace FASTER.server
                             break;
 
                         case MessageType.PSubscribe:
-                            Debug.Assert(subscribeBroker != null);
+                            if (subscribeBroker == null)
+                                throw new FormatException("Subscriptions are not enabled on this server");
 
                             if ((int)(dend - dcurr) < 2 + networkSender.GetMaxSizeSettings.MaxOutputSize)
                                 SendAndReset(ref d, ref dend);
 
                             keyStart = src;
-                            serializer.ReadKeyByRef(ref src);
+                            serializer.ReadKeyByRef(ref src, end);
 
                             sid = subscribeBroker.PSubscribe(ref keyStart, this);
                             status = Status.CreatePending();
@@ -513,7 +576,7 @@ namespace FASTER.server
                             break;
 
                         default:
-                            throw new NotImplementedException();
+                            throw new FormatException($"Unsupported message type ({message}) in websocket request");
                     }
                 }
             }
@@ -575,9 +638,15 @@ namespace FASTER.server
             else
                 outputDcurr = dcurr + 6;
 
+            if (outputDcurr > dend)
+            {
+                networkSender.ReturnResponseObject();
+                return;
+            }
+
             Status status = Status.CreateFound();
             if (valPtr == null)
-                status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - dcurr)), ctx, 0);
+                status = session.Read(ref key, ref serializer.ReadInputByRef(ref inputPtr), ref serializer.AsRefOutput(outputDcurr, (int)(dend - outputDcurr)), ctx, 0);
 
             if (!status.IsPending)
             {
@@ -585,15 +654,22 @@ namespace FASTER.server
                 hrw.Write(message, ref dcurr, (int)(dend - dcurr));
                 Write(ref status, ref dcurr, (int)(dend - dcurr));
                 Write(sid, ref dcurr, (int)(dend - dcurr));
+                bool written = true;
                 if (prefix)
-                    serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
-                if (valPtr != null)
+                    written = serializer.Write(ref key, ref dcurr, (int)(dend - dcurr));
+                if (written && valPtr != null)
                 {
                     ref Value value = ref serializer.ReadValueByRef(ref valPtr);
-                    serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
+                    written = serializer.Write(ref value, ref dcurr, (int)(dend - dcurr));
                 }
-                else if (status.Found)
-                    serializer.SkipOutput(ref dcurr);
+                else if (written && status.Found)
+                    written = serializer.SkipOutput(ref dcurr, (int)(dend - dcurr));
+
+                if (!written)
+                {
+                    networkSender.ReturnResponseObject();
+                    return;
+                }
             }
             else
             {
@@ -651,6 +727,7 @@ namespace FASTER.server
             dcurr = d;
             dcurr += 10;
             dcurr += sizeof(int); // reserve space for size
+            dcurr += BatchHeader.Size;
             start = msgnum;
         }
 

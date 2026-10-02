@@ -47,25 +47,58 @@ namespace FASTER.common
         int GetLength(ref Output o);
 
         /// <summary>
-        /// Read key by reference, from given location
+        /// Read key by reference, from given location. The caller is responsible for ensuring that the
+        /// memory at <paramref name="src"/> holds a well-formed, completely received element; use the
+        /// overload taking a <c>srcEnd</c> bound when reading untrusted (e.g., network) input.
         /// </summary>
         /// <param name="src">Memory location</param>
         /// <returns>Key</returns>
         ref Key ReadKeyByRef(ref byte* src);
 
         /// <summary>
-        /// Read value by reference, from given location
+        /// Read value by reference, from given location. The caller is responsible for ensuring that the
+        /// memory at <paramref name="src"/> holds a well-formed, completely received element; use the
+        /// overload taking a <c>srcEnd</c> bound when reading untrusted (e.g., network) input.
         /// </summary>
         /// <param name="src">Memory location</param>
         /// <returns>Value</returns>
         ref Value ReadValueByRef(ref byte* src);
 
         /// <summary>
-        /// Read input by reference, from given location
+        /// Read input by reference, from given location. The caller is responsible for ensuring that the
+        /// memory at <paramref name="src"/> holds a well-formed, completely received element; use the
+        /// overload taking a <c>srcEnd</c> bound when reading untrusted (e.g., network) input.
         /// </summary>
         /// <param name="src">Memory location</param>
         /// <returns>Input</returns>
         ref Input ReadInputByRef(ref byte* src);
+
+        /// <summary>
+        /// Read key by reference, from given location, without reading past <paramref name="srcEnd"/>.
+        /// </summary>
+        /// <param name="src">Memory location</param>
+        /// <param name="srcEnd">First byte past the end of the readable region starting at <paramref name="src"/></param>
+        /// <returns>Key</returns>
+        /// <exception cref="System.FormatException">The element at <paramref name="src"/> is malformed or extends past <paramref name="srcEnd"/></exception>
+        ref Key ReadKeyByRef(ref byte* src, byte* srcEnd);
+
+        /// <summary>
+        /// Read value by reference, from given location, without reading past <paramref name="srcEnd"/>.
+        /// </summary>
+        /// <param name="src">Memory location</param>
+        /// <param name="srcEnd">First byte past the end of the readable region starting at <paramref name="src"/></param>
+        /// <returns>Value</returns>
+        /// <exception cref="System.FormatException">The element at <paramref name="src"/> is malformed or extends past <paramref name="srcEnd"/></exception>
+        ref Value ReadValueByRef(ref byte* src, byte* srcEnd);
+
+        /// <summary>
+        /// Read input by reference, from given location, without reading past <paramref name="srcEnd"/>.
+        /// </summary>
+        /// <param name="src">Memory location</param>
+        /// <param name="srcEnd">First byte past the end of the readable region starting at <paramref name="src"/></param>
+        /// <returns>Input</returns>
+        /// <exception cref="System.FormatException">The element at <paramref name="src"/> is malformed or extends past <paramref name="srcEnd"/></exception>
+        ref Input ReadInputByRef(ref byte* src, byte* srcEnd);
 
         /// <summary>
         /// Read memory as output (by reference), at given location
@@ -76,9 +109,12 @@ namespace FASTER.common
         ref Output AsRefOutput(byte* src, int length);
 
         /// <summary>
-        /// Skip output (increment address)
+        /// Advance past the output previously obtained from <see cref="AsRefOutput"/>, materializing it at
+        /// <paramref name="src"/> if the operation did not write it there directly.
         /// </summary>
         /// <param name="src">Memory location</param>
-        void SkipOutput(ref byte* src);
+        /// <param name="length">Space (bytes) available at <paramref name="src"/></param>
+        /// <returns>True if the output was consumed, false if it does not fit in the available space</returns>
+        bool SkipOutput(ref byte* src, int length);
     }
 }
