@@ -3591,7 +3591,9 @@ inline bool FasterKv<K, V, D, H, OH>::CompactWithLookup(uint64_t until_address, 
 template <class K, class V, class D, class H, class OH>
 bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address, bool shift_begin_address, int n_threads,
                                                         bool to_other_store, bool checkpoint, Guid& checkpoint_token) {
-  if (hlog.begin_address.load() > until_address) {
+  Address begin_address = hlog.begin_address.load();
+
+  if (begin_address >= until_address) {
     throw std::invalid_argument {"Invalid until address; should be larger than hlog.begin_address"};
   }
   if (until_address > hlog.safe_read_only_address.control()) {
@@ -3610,7 +3612,7 @@ bool FasterKv<K, V, D, H, OH>::InternalCompactWithLookup(uint64_t until_address,
 
   std::deque<std::thread> threads;
 
-  ConcurrentLogPageIterator<faster_t> iter(&hlog, &disk, &epoch_, hlog.begin_address.load(), Address(until_address));
+  ConcurrentLogPageIterator<faster_t> iter(&hlog, &disk, &epoch_, begin_address, Address(until_address));
   compaction_context_.Initialize(&iter, n_threads-1, to_other_store);
 
   // Spawn the threads first
