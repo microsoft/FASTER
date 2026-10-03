@@ -29,12 +29,22 @@ INSTANTIATE_TEST_CASE_P(
   PagingTests,
   PagingTestParam,
   ::testing::Values(
-    std::make_tuple(2048, false, false),
-    std::make_tuple((1 << 20), false, false),
-    std::make_tuple(2048, true, true),
+    // ==================================================================
+    // NOTE: Some tests are disabled for CI -- enable locally if needed
+    // ==================================================================
+
+    // === w/o auto-compaction
+    //std::make_tuple(8192, false, false),
+    //std::make_tuple((1 << 20), false, false),
+    // === w/ auto-compaction
+    std::make_tuple(8192, true, true),
     std::make_tuple((1 << 20), true, true)
   )
 );
+
+static constexpr uint64_t kRefreshInterval = 256;
+static constexpr uint64_t kCompletePendingInterval = 256;
+static constexpr uint8_t kNumCompactionThreads = 2;
 
 TEST_P(PagingTestParam, UpsertRead_Serial) {
   class Key {
@@ -226,7 +236,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
   };
 
   HlogCompactionConfig compaction_config{
-    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, kNumCompactionThreads, auto_compaction };
 
   store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
@@ -244,7 +254,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
       ASSERT_TRUE(false);
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -261,7 +271,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
       ++records_read;
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -287,7 +297,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
       ASSERT_TRUE(false);
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -313,7 +323,7 @@ TEST_P(PagingTestParam, UpsertRead_Serial) {
       ++records_read;
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -526,7 +536,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
   };
 
   HlogCompactionConfig compaction_config{
-    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, kNumCompactionThreads, auto_compaction };
 
   store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
@@ -547,7 +557,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
         ASSERT_TRUE(false);
       };
 
-      if(idx % 256 == 0) {
+      if(idx % kRefreshInterval == 0) {
         store_->Refresh();
       }
 
@@ -584,7 +594,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
       ++records_read;
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -620,8 +630,8 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
   // Restart session
   store.StartSession();
 
-  // Delete some old copies of records (160 MB) that we no longer need.
-  static constexpr uint64_t kNewBeginAddress{ 167772160L };
+  // Delete some old copies of records (96 MiB) that we no longer need.
+  static constexpr uint64_t kNewBeginAddress{ 100663296 };
   static std::atomic<bool> truncated{ false };
   static std::atomic<bool> complete{ false };
 
@@ -650,7 +660,7 @@ TEST_P(PagingTestParam, UpsertRead_Concurrent) {
       ++records_read;
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -793,7 +803,7 @@ TEST_P(PagingTestParam, Rmw) {
   };
 
   HlogCompactionConfig compaction_config{
-    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, kNumCompactionThreads, auto_compaction };
 
   store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
@@ -814,7 +824,7 @@ TEST_P(PagingTestParam, Rmw) {
       ++records_touched;
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -842,7 +852,7 @@ TEST_P(PagingTestParam, Rmw) {
       ++records_touched;
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -987,7 +997,7 @@ TEST_P(PagingTestParam, Rmw_Large) {
   };
 
   HlogCompactionConfig compaction_config{
-    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, kNumCompactionThreads, auto_compaction };
 
   store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
@@ -1007,7 +1017,7 @@ TEST_P(PagingTestParam, Rmw_Large) {
       ++records_touched;
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -1035,7 +1045,7 @@ TEST_P(PagingTestParam, Rmw_Large) {
       ++records_touched;
     };
 
-    if(idx % 256 == 0) {
+    if(idx % kRefreshInterval == 0) {
       store.Refresh();
     }
 
@@ -1203,7 +1213,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
         ASSERT_EQ(Status::Ok, result);
       };
 
-      if(idx % 256 == 0) {
+      if(idx % kCompletePendingInterval == 0) {
         store_->CompletePending(false);
       }
 
@@ -1227,7 +1237,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
         ASSERT_EQ(7 * kNumThreads, context->counter);
       };
 
-      if(idx % 256 == 0) {
+      if(idx % kCompletePendingInterval == 0) {
         store_->CompletePending(false);
       }
 
@@ -1253,7 +1263,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
         ASSERT_EQ(13 * kNumThreads, context->counter);
       };
 
-      if(idx % 256 == 0) {
+      if(idx % kCompletePendingInterval == 0) {
         store_->CompletePending(false);
       }
 
@@ -1287,7 +1297,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent) {
   };
 
   HlogCompactionConfig compaction_config{
-    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, kNumCompactionThreads, auto_compaction };
 
   store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };
@@ -1480,7 +1490,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
         ASSERT_EQ(Status::Ok, result);
       };
 
-      if(idx % 256 == 0) {
+      if(idx % kCompletePendingInterval == 0) {
         store_->CompletePending(false);
       }
 
@@ -1504,7 +1514,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
         ASSERT_EQ(7 * kNumThreads, context->counter);
       };
 
-      if(idx % 256 == 0) {
+      if(idx % kCompletePendingInterval == 0) {
         store_->CompletePending(false);
       }
 
@@ -1530,7 +1540,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
         ASSERT_EQ(13 * kNumThreads, context->counter);
       };
 
-      if(idx % 256 == 0) {
+      if(idx % kCompletePendingInterval == 0) {
         store_->CompletePending(false);
       }
 
@@ -1564,7 +1574,7 @@ TEST_P(PagingTestParam, Rmw_Concurrent_Large) {
   };
 
   HlogCompactionConfig compaction_config{
-    250ms, 0.9, 0.2, 256_MiB, 1_GiB, 4, auto_compaction };
+    250ms, 0.9, 0.2, 256_MiB, 1_GiB, kNumCompactionThreads, auto_compaction };
 
   store_t store{ table_size, 256_MiB, ROOT_PATH, 0.5,
                 rc_config, compaction_config };

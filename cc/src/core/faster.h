@@ -2932,7 +2932,7 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
         checkpoint_.failed = true;
       }
       // Notify the host that the index checkpoint has completed.
-      checkpoint_.IssueIndexPersistenceCallback();
+      checkpoint_.GetIndexPersistenceCallback()();
       break;
     case Phase::IN_PROGRESS: {
       assert(next_state.action != Action::CheckpointIndex);
@@ -2991,13 +2991,14 @@ bool FasterKv<K, V, D, H, OH>::GlobalMoveToNextState(SystemState current_state) 
         if(hash_index_.WriteCheckpointMetadata(checkpoint_) != Status::Ok) {
           checkpoint_.failed = true;
         }
-        //auto index_persistence_callback = checkpoint_.index_persistence_callback;
-        checkpoint_.IssueIndexPersistenceCallback();
+        auto callback = checkpoint_.GetIndexPersistenceCallback();
         // The checkpoint is done; we can reset the contexts now. (Have to reset contexts before
         // another checkpoint can be started.)
         checkpoint_.CheckpointDone();
-        // Checkpoint is done--no more work for threads to do.
+        // Checkpoint is done -- no more work for threads to do.
         system_state_.store(SystemState{ Action::None, Phase::REST, next_state.version });
+        // Notify the host that the index checkpoint has completed.
+        callback();
       }
       break;
     default:
@@ -3206,7 +3207,8 @@ void FasterKv<K, V, D, H, OH>::HandleSpecialPhases() {
         // Handle WAIT_FLUSH -> PERSISTENCE_CALLBACK and PERSISTENCE_CALLBACK -> PERSISTENCE_CALLBACK
         if(previous_state.phase == Phase::WAIT_FLUSH) {
           // Persistence callback
-          checkpoint_.IssueHybridLogPersistenceCallback(prev_thread_ctx().serial_num);
+          auto callback = checkpoint_.GetHybridLogPersistenceCallback();
+          callback(prev_thread_ctx().serial_num);
           // Thread has finished checkpointing.
           thread_ctx().phase = Phase::REST;
           // Thread ack that it has finished checkpointing.

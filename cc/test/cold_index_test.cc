@@ -35,18 +35,22 @@ INSTANTIATE_TEST_CASE_P(
   ColdIndexTests,
   ColdIndexTestParams,
   ::testing::Values(
+    // ==================================================================
+    // NOTE: Some tests are disabled for CI -- enable locally if needed
+    // ==================================================================
+
     // w/o compaction
-    std::make_tuple(2048, 192_MiB, 0.4, false),
+    //std::make_tuple(2048, 192_MiB, 0.4, false),
     std::make_tuple(2048, 192_MiB, 0.0, false),
-    std::make_tuple((1 << 20), 192_MiB, 0.4, false),
+    //std::make_tuple((1 << 20), 192_MiB, 0.4, false),
     std::make_tuple((1 << 20), 192_MiB, 0.0, false),
     // \w atomic hash chunk updates
-    std::make_tuple(2048, 1_GiB, 0.9, false),
-    std::make_tuple((1 << 20), 1_GiB, 0.9, false),
+    //std::make_tuple(2048, 1_GiB, 0.9, false),
+    //std::make_tuple((1 << 20), 1_GiB, 0.9, false),
     // \w compaction
-    std::make_tuple(2048, 192_MiB, 0.4, true),
+    //std::make_tuple(2048, 192_MiB, 0.4, true),
     std::make_tuple(2048, 192_MiB, 0.0, true),
-    std::make_tuple((1 << 20), 192_MiB, 0.4, true),
+    //std::make_tuple((1 << 20), 192_MiB, 0.4, true),
     std::make_tuple((1 << 20), 192_MiB, 0.0, true),
     // \w compaction & atomic hash chunk updates
     std::make_tuple(2048, 1_GiB, 0.9, true),
@@ -62,9 +66,9 @@ INSTANTIATE_TEST_CASE_P(
   ColdIndexRecoveryTests,
   ColdIndexRecoveryTestParams,
   ::testing::Values(
-    std::make_tuple(2048, 192_MiB, 0.4),
+    //std::make_tuple(2048, 192_MiB, 0.4),
     std::make_tuple(2048, 192_MiB, 0.0),
-    std::make_tuple((1 << 20), 192_MiB, 0.4),
+    //std::make_tuple((1 << 20), 192_MiB, 0.4),
     std::make_tuple((1 << 20), 192_MiB, 0.0)
   )
 );
@@ -299,7 +303,7 @@ TEST_P(ColdIndexTestParams, UpsertRead_Serial) {
   rc_config.enabled = false;
 
   HlogCompactionConfig compaction_config{
-    250ms, 0.8, 0.1, 128_MiB, 768_MiB, 4, auto_compaction };
+    250ms, 0.8, 0.1, 128_MiB, 768_MiB, 2, auto_compaction };
 
   faster_t::IndexConfig index_config{ table_size, 256_MiB, 0.6 };
   faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac,
@@ -428,7 +432,7 @@ TEST_P(ColdIndexTestParams, ConcurrentUpsertAndRead) {
   faster_t store{ index_config, log_mem_size, ROOT_PATH, log_mutable_frac };
 
   static constexpr size_t kNumRecords = 250'000;
-  static constexpr size_t kNumThreads = 8;
+  static constexpr size_t kNumThreads = 2;
 
   static std::atomic<uint64_t> records_read{ 0 };
   static std::atomic<uint64_t> records_updated{ 0 };

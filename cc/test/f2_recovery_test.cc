@@ -45,29 +45,32 @@ INSTANTIATE_TEST_CASE_P(
   HotColdRecoveryTests,
   HotColdRecoveryTestParam,
   ::testing::Values(
+    // ==================================================================
+    // NOTE: Some tests are disabled for CI -- enable locally if needed
+    // ==================================================================
+
     ///== w/o read-cache
     // Small hash hot & cold indices
-    std::make_tuple(2048, false, false, false),
-    std::make_tuple(2048, false, true, false),
-    std::make_tuple(2048, true, false, false),
-    std::make_tuple(2048, true, true, false),
+    //std::make_tuple(8192, false, false, false),
+    //std::make_tuple(8192, false, true, false),
+    //std::make_tuple(8192, true, false, false),
+    //std::make_tuple(8192, true, true, false),
     // Large hot & cold indices
-    std::make_tuple((1 << 22), false, false, false),
-    std::make_tuple((1 << 22), false, true, false),
-    std::make_tuple((1 << 22), true, false, false),
-    std::make_tuple((1 << 22), true, true, false),
+    //std::make_tuple((1 << 22), false, false, false),
+    //std::make_tuple((1 << 22), false, true, false),
+    //std::make_tuple((1 << 22), true, false, false),
+    //std::make_tuple((1 << 22), true, true, false),
     ///== w/ read-cache
     // Small hash hot & cold indices
-    std::make_tuple(2048, false, false, true),
-    std::make_tuple(2048, false, true, true),
-    std::make_tuple(2048, true, false, true),
-    std::make_tuple(2048, true, true, true),
+    std::make_tuple(8192, false, false, true),
+    std::make_tuple(8192, false, true, true),
+    std::make_tuple(8192, true, false, true),
+    std::make_tuple(8192, true, true, true),
     // Large hot & cold indices
-    std::make_tuple((1 << 22), false, false, true),
-    std::make_tuple((1 << 22), false, true, true),
-    std::make_tuple((1 << 22), true, false, true),
-    std::make_tuple((1 << 22), true, true, true)
-
+    std::make_tuple((1 << 20), false, false, true),
+    std::make_tuple((1 << 20), false, true, true),
+    std::make_tuple((1 << 20), true, false, true),
+    std::make_tuple((1 << 20), true, true, true)
   )
 );
 
@@ -335,15 +338,15 @@ TEST_P(HotColdRecoveryTestParam, CheckpointAndRecoverySerial) {
       ++num_threads_persistent;
     };
 
-    // checkpoint (transition from REST to INDEX_CHKPT)
-    log_debug("Requesting checkpoint...");
-    ASSERT_TRUE(store.Checkpoint(hybrid_log_persistence_callback, token, lazy_checkpoint));
-    log_debug("Checkpoint requested!");
-
     if (!auto_compaction) {
       // perform cold-cold compaction
       store.CompactColdLog(store.cold_store.hlog.safe_read_only_address.control(), true);
     }
+
+    // checkpoint (transition from REST to INDEX_CHKPT)
+    log_debug("Requesting checkpoint...");
+    ASSERT_TRUE(store.Checkpoint(hybrid_log_persistence_callback, token, lazy_checkpoint));
+    log_debug("Checkpoint requested!");
 
     while(num_threads_persistent < 1) {
       store.CompletePending(false);

@@ -396,8 +396,10 @@ class PersistentMemoryMalloc {
 
     // Shift head address to tail address
     Address desired_head_address{ tail_address.page(), 0 };
-    if(flushed_until_address.load() < desired_head_address) {
-      throw std::runtime_error{ "flushed_until_address < tail_address" };
+    while (flushed_until_address.load() < desired_head_address) {
+      epoch_->ProtectAndDrain();
+      disk->TryComplete();
+      std::this_thread::yield();
     }
 
     Address old_head_address;
