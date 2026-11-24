@@ -253,7 +253,7 @@ namespace FASTER.core
                     if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, long.MaxValue) == long.MaxValue)
                     {
                         drainList[i].action = onDrain;
-                        drainList[i].epoch = PriorEpoch;
+                        Volatile.Write(ref drainList[i].epoch, PriorEpoch);
                         Interlocked.Increment(ref drainCount);
                         break;
                     }
@@ -269,7 +269,7 @@ namespace FASTER.core
                         {
                             var triggerAction = drainList[i].action;
                             drainList[i].action = onDrain;
-                            drainList[i].epoch = PriorEpoch;
+                            Volatile.Write(ref drainList[i].epoch, PriorEpoch);
                             triggerAction();
                             break;
                         }
@@ -400,8 +400,10 @@ namespace FASTER.core
                     {
                         // Store off the trigger action, then set epoch to int.MaxValue to mark this slot as "available for use".
                         var trigger_action = drainList[i].action;
+                        // Release the slot with a volatile write so that the cleared action is visible before the slot
+                        // can be claimed; plain writes are not ordered on weakly ordered hardware (ARM64).
                         drainList[i].action = null;
-                        drainList[i].epoch = long.MaxValue;
+                        Volatile.Write(ref drainList[i].epoch, long.MaxValue);
                         Interlocked.Decrement(ref drainCount);
 
                         // Execute the action
